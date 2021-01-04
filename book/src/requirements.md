@@ -143,7 +143,7 @@ the scope of Pollard R&D is greatly simplified to lower the strategic technical 
 
 ### TSR3. Halo 2 Deployment
 
-**Requirement:** Pollard must use Halo 2 for zeroknowledge proof validation.
+**Requirement:** Pollard must use Halo 2 for zero knowledge proof validation.
 
 **Rationale - Technical Strategy:** By selecting Halo 2 as the ZKP platform for Pollard, the Pollard deployment provides a forcing function to productionize Halo 2.
 
