@@ -190,6 +190,32 @@ clients can assert they are valid independently of the full block.</p>
 <p>TODO: Sean is pretty sure we can just improve the Incremental Merkle Tree implementation
 to work around this, without domain-separating the tree. If we can do that instead, it may
 be simpler.</p>
+<h2><a class="header" href="#uncommitted-leaves" id="uncommitted-leaves">Uncommitted leaves</a></h2>
+<p>The fixed-depth incremental Merkle trees that we use (in Sprout and Sapling, and again in
+Orchard) require specifying an &quot;empty&quot; or &quot;uncommitted&quot; leaf - a value that will never be
+appended to the tree as a regular leaf.</p>
+<ul>
+<li>For Sprout (and trees composed of the outputs of bit-twiddling hash functions), we use
+the all-zeroes array; the probability of a real note having a colliding note commitment
+is cryptographically negligible.</li>
+<li>For Sapling, where leaves are <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.43056em;vertical-align:0em;"></span><span class="mord mathnormal">u</span></span></span></span>-coordinates of Jubjub points, we use the value <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.64444em;vertical-align:0em;"></span><span class="mord">1</span></span></span></span>
+which is not the <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.43056em;vertical-align:0em;"></span><span class="mord mathnormal">u</span></span></span></span>-coordinate of any Jubjub point.</li>
+</ul>
+<p>Orchard note commitments are the <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.43056em;vertical-align:0em;"></span><span class="mord mathnormal">x</span></span></span></span>-coordinates of Pallas points; thus we take the same
+approach as Sapling, using a value that is not the <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.43056em;vertical-align:0em;"></span><span class="mord mathnormal">x</span></span></span></span>-coordinate of any Pallas point as the
+uncommitted leaf value. It happens that <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.64444em;vertical-align:0em;"></span><span class="mord">0</span></span></span></span> is the smallest such value for both Pallas and
+Vesta, because <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.897438em;vertical-align:-0.08333em;"></span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141079999999999em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight">3</span></span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222222222222222em;"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222222222222222em;"></span></span><span class="base"><span class="strut" style="height:0.64444em;vertical-align:0em;"></span><span class="mord">5</span></span></span></span> is not a square in either <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.969438em;vertical-align:-0.286108em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.15139200000000003em;"><span style="top:-2.5500000000000003em;margin-left:-0.13889em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">p</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.286108em;"><span></span></span></span></span></span></span></span></span></span> or <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.969438em;vertical-align:-0.286108em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.15139200000000003em;"><span style="top:-2.5500000000000003em;margin-left:-0.13889em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.03588em;">q</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.286108em;"><span></span></span></span></span></span></span></span></span></span>:</p>
+<pre><code class="language-python">sage: p = 0x40000000000000000000000000000000224698fc094cf91b992d30ed00000001
+sage: q = 0x40000000000000000000000000000000224698fc0994a8dd8c46eb2100000001
+sage: EllipticCurve(GF(p), [0, 5]).count_points() == q
+True
+sage: EllipticCurve(GF(q), [0, 5]).count_points() == p
+True
+sage: Mod(5, p).is_square()
+False
+sage: Mod(5, q).is_square()
+False
+</code></pre>
 
                     </main>
 
