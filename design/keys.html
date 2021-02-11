@@ -1,0 +1,349 @@
+<!DOCTYPE HTML>
+<html lang="en" class="sidebar-visible no-js light">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Keys and addresses - The Orchard Book</title>
+        
+        
+
+
+        <!-- Custom HTML head -->
+        
+
+
+        <meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff" />
+
+        
+        <link rel="icon" href="../favicon.svg">
+        
+        
+        <link rel="shortcut icon" href="../favicon.png">
+        
+        <link rel="stylesheet" href="../css/variables.css">
+        <link rel="stylesheet" href="../css/general.css">
+        <link rel="stylesheet" href="../css/chrome.css">
+        
+        <link rel="stylesheet" href="../css/print.css" media="print">
+        
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../FontAwesome/css/font-awesome.css">
+        
+        <link rel="stylesheet" href="../fonts/fonts.css">
+        
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="../highlight.css">
+        <link rel="stylesheet" href="../tomorrow-night.css">
+        <link rel="stylesheet" href="../ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+        
+
+        
+    </head>
+    <body>
+        <!-- Provide site root to javascript -->
+        <script type="text/javascript">
+            var path_to_root = "../";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script type="text/javascript">
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script type="text/javascript">
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            var html = document.querySelector('html');
+            html.classList.remove('no-js')
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add('js');
+        </script>
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script type="text/javascript">
+            var html = document.querySelector('html');
+            var sidebar = 'hidden';
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            }
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <div class="sidebar-scrollbox">
+                <ol class="chapter"><li class="chapter-item expanded affix "><a href="../index.html">Orchard</a></li><li class="chapter-item expanded "><a href="../concepts.html"><strong aria-hidden="true">1.</strong> Concepts</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../concepts/preliminaries.html"><strong aria-hidden="true">1.1.</strong> Preliminaries</a></li></ol></li><li class="chapter-item expanded "><a href="../user.html"><strong aria-hidden="true">2.</strong> User Documentation</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../user/keys.html"><strong aria-hidden="true">2.1.</strong> Creating keys and addresses</a></li><li class="chapter-item expanded "><a href="../user/creating-notes.html"><strong aria-hidden="true">2.2.</strong> Creating notes</a></li><li class="chapter-item expanded "><a href="../user/spending-notes.html"><strong aria-hidden="true">2.3.</strong> Spending notes</a></li><li class="chapter-item expanded "><a href="../user/integration.html"><strong aria-hidden="true">2.4.</strong> Integration into an existing chain</a></li></ol></li><li class="chapter-item expanded "><a href="../design.html"><strong aria-hidden="true">3.</strong> Design</a></li><li><ol class="section"><li class="chapter-item expanded "><a href="../design/keys.html" class="active"><strong aria-hidden="true">3.1.</strong> Keys and addresses</a></li><li class="chapter-item expanded "><a href="../design/actions.html"><strong aria-hidden="true">3.2.</strong> Actions</a></li><li class="chapter-item expanded "><a href="../design/commitments.html"><strong aria-hidden="true">3.3.</strong> Commitments</a></li><li class="chapter-item expanded "><a href="../design/commitment-tree.html"><strong aria-hidden="true">3.4.</strong> Commitment tree</a></li><li class="chapter-item expanded "><a href="../design/nullifiers.html"><strong aria-hidden="true">3.5.</strong> Nullifiers</a></li><li class="chapter-item expanded "><a href="../design/signatures.html"><strong aria-hidden="true">3.6.</strong> Signatures</a></li><li class="chapter-item expanded "><a href="../design/circuit.html"><strong aria-hidden="true">3.7.</strong> Circuit</a></li></ol></li></ol>
+            </div>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky bordered">
+                    <div class="left-buttons">
+                        <button id="sidebar-toggle" class="icon-button" type="button" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </button>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light (default)</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                        
+                    </div>
+
+                    <h1 class="menu-title">The Orchard Book</h1>
+
+                    <div class="right-buttons">
+                        
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        
+                        
+                    </div>
+                </div>
+
+                
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" name="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+                
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script type="text/javascript">
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css" integrity="sha384-AfEj0r4/OFrOo5t7NnNe46zW/tFgW6x/bCJG8FqQCEo3+Aro6EYUG4+cU+KJWu/X" crossorigin="anonymous">
+<h1><a class="header" href="#keys-and-addresses" id="keys-and-addresses">Keys and addresses</a></h1>
+<p>Orchard keys and payment addresses are structurally similar to Sapling. The main change is
+that Orchard keys use the Pallas curve instead of Jubjub, in order to enable the future
+use of the Pallas-Vesta curve cycle in the Orchard protocol. (We already use Vesta as
+the curve on which Halo 2 proofs are computed, but this doesn't yet require a cycle.)</p>
+<p>Using the Pallas curve and making the most efficient use of the Halo 2 proof system
+involves corresponding changes to the key derivation process, such as using Sinsemilla
+for Pallas-efficient commitments. We also take the opportunity to remove all uses of
+expensive general-purpose hashes (such as BLAKE2s) from the circuit.</p>
+<p>We make several structural changes, building on the lessons learned from Sapling:</p>
+<ul>
+<li>
+<p>The nullifier private key <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">n</span><span class="mord mathsf">s</span><span class="mord mathsf">k</span></span></span></span></span> is removed. Its purpose in Sapling was as
+defense-in-depth, in case RedDSA was found to have weaknesses; an adversary who could
+recover <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">a</span><span class="mord mathsf">s</span><span class="mord mathsf">k</span></span></span></span></span> would not be able to spend funds. In practice it has not been
+feasible to manage <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">n</span><span class="mord mathsf">s</span><span class="mord mathsf">k</span></span></span></span></span> much more securely than a full viewing key, as the
+computational power required to generate Sapling proofs has made it necessary to perform
+this step on the same device that is creating the overall transaction (rather than on a
+more constrained device like a hardware wallet). We are also more confident in RedDSA
+now.</p>
+</li>
+<li>
+<p><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">n</span><span class="mord mathsf">k</span></span></span></span></span> is now a field element instead of a curve point, making it more efficient
+to generate nullifiers.</p>
+</li>
+<li>
+<p><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">o</span><span class="mord mathsf" style="margin-right:0.01389em;">v</span><span class="mord mathsf">k</span></span></span></span></span> is now derived from <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf" style="margin-right:0.06944em;">f</span><span class="mord mathsf" style="margin-right:0.01389em;">v</span><span class="mord mathsf">k</span></span></span></span></span>, instead of being derived in parallel.
+This places it in a similar position within the key structure to <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">i</span><span class="mord mathsf" style="margin-right:0.01389em;">v</span><span class="mord mathsf">k</span></span></span></span></span>, and
+also removes an issue where two full viewing keys could be constructed that have the
+same <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">i</span><span class="mord mathsf" style="margin-right:0.01389em;">v</span><span class="mord mathsf">k</span></span></span></span></span> but different <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">o</span><span class="mord mathsf" style="margin-right:0.01389em;">v</span><span class="mord mathsf">k</span></span></span></span></span>s. Users still have control over whether
+<span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.69444em;vertical-align:0em;"></span><span class="mord"><span class="mord mathsf">o</span><span class="mord mathsf" style="margin-right:0.01389em;">v</span><span class="mord mathsf">k</span></span></span></span></span> is used when constructing a transaction.</p>
+</li>
+<li>
+<p>All diversifiers now result in valid payment addresses, due to group hashing into Pallas
+being specified to be infallible. This removes significant complexity from the use cases
+for diversified addresses.</p>
+</li>
+</ul>
+<p>Other than the above, Orchard retains the same design rationale for its keys and addresses
+as Sapling, and the same bech32 encoding. For example, diversifiers remain at 11 bytes, so
+that Orchard addresses are the same length as Sapling addresses.</p>
+<p>The &quot;human-readable part&quot; for Orchard payment addresses is &quot;zo&quot;, i.e. all addresses
+have the prefix &quot;zo1&quot;. Other prefixes and key formats will be described in section 5.6
+of the protocol specification. </p>
+<h2><a class="header" href="#hierarchical-deterministic-wallets" id="hierarchical-deterministic-wallets">Hierarchical deterministic wallets</a></h2>
+<p>When designing Sapling, we defined a <a href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP 32</a>-like mechanism for generating hierarchical
+deterministic wallets in <a href="https://zips.z.cash/zip-0032">ZIP 32</a>. We decided at the time to stick closely to the design
+of BIP 32, on the assumption that there were Bitcoin use cases that used both hardened and
+non-hardened derivation that we might not be aware of. This decision created significant
+complexity for Sapling: we needed to handle derivation separately for each component of
+the expanded spending key and full viewing key (whereas for transparent addresses there is
+only a single component in the spending key).</p>
+<p>Non-hardened derivation enables creating a multi-level path of child addresses below some
+parent address, without involving the parent spending key. The primary use case for this
+is HD wallets for transparent addresses, which use the following structure defined in
+<a href="https://github.com/bitcoin/bips/blob/master/bip-0044.mediawiki">BIP 44</a>:</p>
+<ul>
+<li>(H) BIP 44
+<ul>
+<li>(H) Coin type: Zcash
+<ul>
+<li>(H) Account 0
+<ul>
+<li>(N) Normal addresses
+<ul>
+<li>(N) Address 0</li>
+<li>(N) Address 1...</li>
+</ul>
+</li>
+<li>(N) Change addresses
+<ul>
+<li>(N) Change address 0</li>
+<li>(N) Change address 1...</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>(H) Account 1...</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>Shielded accounts do not require separating change addresses from normal addresses, because
+addresses are not revealed in transactions. Similarly, there is also no need to generate
+a fresh spending key for every transaction, and in fact this would cause a linear slow-down
+in wallet scanning. But for users who do want to generate multiple addresses per account,
+they can generate the following structure, which does not use non-hardened derivation:</p>
+<ul>
+<li>(H) ZIP 32
+<ul>
+<li>(H) Coin type: Zcash
+<ul>
+<li>(H) Account 0
+<ul>
+<li>Diversified address 0</li>
+<li>Diversified address 1...</li>
+</ul>
+</li>
+<li>(H) Account 1...</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<p>Non-hardened derivation is therefore only required for use-cases that require the ability
+to derive more than one child layer of addresses. However, in the years since Sapling was
+deployed, we have not seen <em>any</em> such use cases appear.</p>
+<p>Therefore, for Orchard we only define hardened derivation, and do so with a much simpler
+design than ZIP 32. All derivations produce an opaque binary spending key, from which the
+keys and addresses are then derived. As a side benefit, this makes key formats
+shorter. (The formats that will actually be used in practice for Orchard will correspond
+to the simpler Sapling formats in the protocol specification, rather than the longer
+and more complicated &quot;extended&quot; ones defined by ZIP 32.)</p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                        
+                            <a rel="prev" href="../design.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+                        
+
+                        
+                            <a rel="next" href="../design/actions.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+                        
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                
+                    <a rel="prev" href="../design.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+                
+
+                
+                    <a rel="next" href="../design/actions.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+                
+            </nav>
+
+        </div>
+
+        
+
+        
+
+        
+
+        
+        <script type="text/javascript">
+            window.playground_copyable = true;
+        </script>
+        
+
+        
+
+        
+        <script src="../elasticlunr.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../mark.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../searcher.js" type="text/javascript" charset="utf-8"></script>
+        
+
+        <script src="../clipboard.min.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../highlight.js" type="text/javascript" charset="utf-8"></script>
+        <script src="../book.js" type="text/javascript" charset="utf-8"></script>
+
+        <!-- Custom JS scripts -->
+        
+
+        
+
+    </body>
+</html>
