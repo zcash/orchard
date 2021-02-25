@@ -1,8 +1,7 @@
 # Requirements
 
-The design of Orchard aimed to be mostly identical to the Sapling circuit in
-functionality. We used this opportunity to clarify the requirements for Orchard at
-the product and engineering levels.
+The design of Orchard aims to be mostly identical to the Sapling circuit in
+functionality.
 
 ## Protocol Product Requirements
 
