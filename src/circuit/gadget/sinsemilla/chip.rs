@@ -4,7 +4,7 @@ use super::SinsemillaInstructions;
 use crate::primitives::sinsemilla::Q_PERSONALIZATION;
 use group::Curve;
 use halo2::{
-    arithmetic::{CurveAffine, CurveExt, FieldExt},
+    arithmetic::{CurveAffine, CurveExt, Field, FieldExt},
     circuit::{Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
@@ -193,7 +193,79 @@ impl<C: CurveAffine> SinsemillaInstructions<C> for SinsemillaChip<C> {
         let q = Self::Q(domain_prefix);
         let (mut x_a, mut y_a) = q.to_affine().get_xy().unwrap();
 
-        // TODO: Assign cells
+        layouter.assign_region(
+            || "Assign message",
+            |mut region| {
+                // Initialize `(x_a, y_a)` to be `(x_q, y_q)`
+                let q = Self::Q(domain_prefix).to_affine().get_xy().unwrap();
+                x_a = q.0;
+                y_a = q.1;
+
+                // Initialize `z_0` = 0;
+                let mut z = 0u64;
+
+                if words.len() > 0 {
+                    for row in 0..(words.len() - 1) {
+                        // Activate `Sinsemilla` custom gate
+                        region.assign_fixed(
+                            || "Sinsemilla expr1",
+                            config.columns.sinsemilla,
+                            row,
+                            || Ok(C::Base::one()),
+                        )?;
+                    }
+                }
+
+                // Assign initialized values
+                region.assign_advice(|| "z_0", config.columns.z, 0, || Ok(C::Base::from_u64(z)))?;
+                region.assign_advice(|| "x_q", config.columns.x_a, 0, || Ok(x_a))?;
+
+                for row in 0..words.len() {
+                    let word = words[row];
+                    let gen = generators[row];
+                    let x_p = gen.0;
+                    let y_p = gen.1;
+
+                    // Assign `x_p`
+                    region.assign_advice(|| "x_p", config.columns.x_p, row, || Ok(x_p))?;
+
+                    // Compute and assign `z` for the next row
+                    z = z * (1 << K) + (word as u64);
+                    region.assign_advice(
+                        || "z",
+                        config.columns.z,
+                        row + 1,
+                        || Ok(C::Base::from_u64(z)),
+                    )?;
+
+                    // Compute and assign `lambda1, lambda2`
+                    let lambda1 = (y_a - y_p) * (x_a - x_p).invert().unwrap();
+                    let x_r = lambda1 * lambda1 - x_a - x_p;
+                    let lambda2 =
+                        C::Base::from_u64(2) * y_a * (x_a - x_r).invert().unwrap() - lambda1;
+                    region.assign_advice(
+                        || "lambda1",
+                        config.columns.lambda1,
+                        row,
+                        || Ok(lambda1),
+                    )?;
+                    region.assign_advice(
+                        || "lambda2",
+                        config.columns.lambda2,
+                        row,
+                        || Ok(lambda2),
+                    )?;
+
+                    // Compute and assign `x_a` for the next row
+                    let x_a_new = lambda2 * lambda2 - x_a - x_r;
+                    y_a = lambda2 * (x_a - x_a_new) - y_a;
+                    x_a = x_a_new;
+                    region.assign_advice(|| "x_a", config.columns.x_a, row + 1, || Ok(x_a))?;
+                }
+
+                Ok(())
+            },
+        )?;
 
         Ok(C::from_xy(x_a, y_a).unwrap())
     }
