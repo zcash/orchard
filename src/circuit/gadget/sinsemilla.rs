@@ -5,6 +5,9 @@ use halo2::{
     plonk::Error,
 };
 
+mod chip;
+pub use chip::{SinsemillaChip, SinsemillaColumns, SinsemillaConfig};
+
 /// The set of circuit instructions required to use the [`Sinsemilla`](https://zcash.github.io/halo2/design/gadgets/sinsemilla.html) gadget.
 pub trait SinsemillaInstructions<C: CurveAffine>: Chip<Field = C::Base> {
     type Message: IntoIterator<Item = bool>;
