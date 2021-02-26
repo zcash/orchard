@@ -9,6 +9,7 @@ use halo2::{
 };
 
 mod chip;
+pub use chip::{CellValue, EccPoint};
 
 /// Trait allowing circuit's fixed points to be enumerated.
 pub trait FixedPoints<C: CurveAffine>: Clone + fmt::Debug {}

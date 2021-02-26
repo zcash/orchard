@@ -449,6 +449,7 @@ impl<C: CurveAffine> Chip for EccChip<C> {
     }
 }
 
+/// A struct containing a cell and the value assigned to it
 #[derive(Clone, Debug)]
 pub struct CellValue<F: FieldExt> {
     cell: Cell,
