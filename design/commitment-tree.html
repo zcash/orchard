@@ -165,31 +165,17 @@
                     <main>
                         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css" integrity="sha384-AfEj0r4/OFrOo5t7NnNe46zW/tFgW6x/bCJG8FqQCEo3+Aro6EYUG4+cU+KJWu/X" crossorigin="anonymous">
 <h1><a class="header" href="#commitment-tree" id="commitment-tree">Commitment tree</a></h1>
-<p>One of the things we learned from Sapling is that having a single global commitment tree
-makes life hard for light client wallets. When a new note is received, the wallet derives
-its incremental witness from the state of the global tree at the point when the note's
-commitment is appended; this incremental state then needs to be updated with every
-subsequent commitment in the block in-order. It isn't efficient for a server to
-pre-compute and send over the necessary incremental updates for every new note in a block,
-and if a wallet requested a specific update from the server it would leak the specific
-note that was received.</p>
-<p>Orchard addresses this by splitting the commitment tree into several sub-trees:</p>
+<p>The commitment tree structure for Orchard is identical to Sapling:</p>
 <ul>
-<li>Bundle tree, that accumulates the commitments within a single bundle (and thus a single
-transaction).</li>
-<li>Block tree, that accumulates the bundle tree roots within a single block.</li>
-<li>Global tree, that accumulates the block tree roots.</li>
+<li>A single global commitment tree of fixed depth 32.</li>
+<li>Note commitments are appended to the tree in-order from the block.</li>
+<li>Valid Orchard anchors correspond to the global tree state at block boundaries (after all
+commitments from a block have been appended, and before any commitments from the next
+block have been appended).</li>
 </ul>
-<p>Each of these trees has a fixed depth (necessary for being able to create proofs).</p>
-<p>Chains that integrate Orchard can decouple the limits on commitments-per-subtree from
-higher-layer constraints like block size, by enabling their blocks and transactions to be
-structured internally as a series of Orchard blocks or txs (e.g. a Zcash block would
-contain a <code>Vec&lt;BlockTreeRoot&gt;</code>, that each get appended in-order).</p>
-<p>Zcash level: we also bind these roots into the FlyClient history leaves, so that light
-clients can assert they are valid independently of the full block.</p>
-<p>TODO: Sean is pretty sure we can just improve the Incremental Merkle Tree implementation
-to work around this, without domain-separating the tree. If we can do that instead, it may
-be simpler.</p>
+<p>The only difference is that we instantiate <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9334479999999998em;vertical-align:0em;"></span><span class="mord"><span class="mord"><span class="mord mathsf">M</span><span class="mord mathsf">e</span><span class="mord mathsf" style="margin-right:0.01389em;">r</span><span class="mord mathsf">k</span><span class="mord mathsf">l</span><span class="mord mathsf">e</span><span class="mord mathsf">C</span><span class="mord mathsf">R</span><span class="mord mathsf">H</span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9334479999999998em;"><span style="top:-3.1473400000000002em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathsf mtight">O</span><span class="mord mathsf mtight" style="margin-right:0.01389em;">r</span><span class="mord mathsf mtight">c</span><span class="mord mathsf mtight">h</span><span class="mord mathsf mtight">a</span><span class="mord mathsf mtight" style="margin-right:0.01389em;">r</span><span class="mord mathsf mtight">d</span></span></span></span></span></span></span></span></span></span></span></span> with
+Sinsemilla (whereas <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.9334479999999998em;vertical-align:0em;"></span><span class="mord"><span class="mord"><span class="mord mathsf">M</span><span class="mord mathsf">e</span><span class="mord mathsf" style="margin-right:0.01389em;">r</span><span class="mord mathsf">k</span><span class="mord mathsf">l</span><span class="mord mathsf">e</span><span class="mord mathsf">C</span><span class="mord mathsf">R</span><span class="mord mathsf">H</span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.9334479999999998em;"><span style="top:-3.1473400000000002em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mathsf mtight">S</span><span class="mord mathsf mtight">a</span><span class="mord mathsf mtight">p</span><span class="mord mathsf mtight">l</span><span class="mord mathsf mtight">i</span><span class="mord mathsf mtight">n</span><span class="mord mathsf mtight" style="margin-right:0.01389em;">g</span></span></span></span></span></span></span></span></span></span></span></span> used a Bowe--Hopwood Pedersen
+hash).</p>
 <h2><a class="header" href="#uncommitted-leaves" id="uncommitted-leaves">Uncommitted leaves</a></h2>
 <p>The fixed-depth incremental Merkle trees that we use (in Sprout and Sapling, and again in
 Orchard) require specifying an &quot;empty&quot; or &quot;uncommitted&quot; leaf - a value that will never be
@@ -216,6 +202,29 @@ False
 sage: Mod(5, q).is_square()
 False
 </code></pre>
+<h2><a class="header" href="#considered-alternatives" id="considered-alternatives">Considered alternatives</a></h2>
+<p>We considered splitting the commitment tree into several sub-trees:</p>
+<ul>
+<li>Bundle tree, that accumulates the commitments within a single bundle (and thus a single
+transaction).</li>
+<li>Block tree, that accumulates the bundle tree roots within a single block.</li>
+<li>Global tree, that accumulates the block tree roots.</li>
+</ul>
+<p>Each of these trees would have had a fixed depth (necessary for being able to create
+proofs). Chains that integrated Orchard could have decoupled the limits on
+commitments-per-subtree from higher-layer constraints like block size, by enabling their
+blocks and transactions to be structured internally as a series of Orchard blocks or txs
+(e.g. a Zcash block would have contained  a <code>Vec&lt;BlockTreeRoot&gt;</code>, that each were appended
+in-order).</p>
+<p>The motivation for considering this change was to improve the lives of light client wallet
+developers. When a new note is received, the wallet derives its incremental witness from
+the state of the global tree at the point when the note's commitment is appended; this
+incremental state then needs to be updated with every subsequent commitment in the block
+in-order. Wallets can't get help from the server to create these for new notes without
+leaking the specific note that was received.</p>
+<p>We decided that this was too large a change from Sapling, and that it should be possible
+to improve the Incremental Merkle Tree implementation to work around the efficiency issues
+without domain-separating the tree.</p>
 
                     </main>
 
