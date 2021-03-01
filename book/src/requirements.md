@@ -13,6 +13,8 @@ functionality.
 
 **Rationale - UX:** A new address format reinforces the fact that users must migrate funds to opt into Orchard.
 
+**Rationale - UX:** A new address format, in combination with the turnstile design, signals to users a boundary for turnstile-based supply integrity protections.
+
 **Rationale - UX:** A new address format, in combination with the turnstile design, signals to users a boundary for privacy-guarantees.
 
 **Counter-rationale - UX:** This complicates the simplified narrative of "z→z has strong privacy" because migrating between pools has a privacy cost.
@@ -26,8 +28,6 @@ functionality.
 **Rationale - UX:** A separate shielded pool clarifies which funds rely on which underlying ZKP/cryptographic platform.
 
 **Rationale - UX:** A separate shielded pool associated with a new address type makes it easier to reason about migration.
-
-**Rationale - UX:** FIXME - protects users funds from turnstile Sapling compromise, but cannot protect price, of course.
 
 ## Mobile Wallet SDK Product Requirements
 
