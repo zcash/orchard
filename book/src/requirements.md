@@ -77,6 +77,12 @@ the scope of Orchard R&D is greatly simplified to lower the strategic technical 
 
 **Rationale - UX:** Users can act independently in opting into the Orchard Pool without coordinating globally.
 
+### TSR5. Full Design Verifiability
+
+**Requirement:** Any arbitrary future reviewer should be able to verify the entire design and public state of the Zcash blockchain without relying on external authorities. Note that the Trusted Setup ceremonies for Sprout and Sapling violate this goal, and while Orchard activation itself does not achieve the goal, it can be achieved if Sprout and Sapling pools are eventually retired.
+
+**Rationale - Technical Strategy:** A permissionless system requires the possibility of full-design validation by any arbitrary participant, and the need for this grows as the technology grows in importance.
+
 ## Non-Requirements
 
 This section documents potential requirements that are explicitly not required, and their implementation is up to the product and engineering teams best judgement.
