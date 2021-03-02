@@ -16,9 +16,11 @@ These scope clarifications exlude some draft requirements found in earlier revis
 
 **Requirement:** The Orchard shielded transfer circuit uses a Zeroknowledge Proving System which is secure in the Uniform Random String (URS) Model, and therefore has no reliance on a trusted setup.
 
-**Rationale UX:** Users who rely on Orchard are not directly vulnerable to the class of trusted parameter compromises.
+**Rationale - UX:** Users who rely on Orchard are not directly vulnerable to the class of trusted parameter compromises.
 
-**Rationale Strategic:** As Sprout and Sapling usage declines or are deprecated, the ZEC a whole will become protected from any previous trusted setup compromise henceforth.
+**Rationale - Strategic:** As Sprout and Sapling usage declines or are deprecated, the ZEC a whole will become protected from any previous trusted setup compromise henceforth.
+
+**Rationale - Strategic:** By avoiding a requirement on a trusted setup, Orchard *and future* upgrades no longer need a parameter setup MPC process, which improves protocol agility.
 
 ### ProtoPR2. Orchard Addresses
 
