@@ -6,7 +6,9 @@ The design of Orchard aims to be mostly identical to the Sapling circuit in func
 
 These requirements are scoped to the protocol design itself, which excludes important broader considerations for Orchard as a whole, such as usability goals for a wallet which aren't directly constrained by the protocol. Additionally, an ideal criteria for these requirements is that any outside reviewer with sufficient domain expertise should be able to verify that the existing protocol specification meets the requirements in this document. This excludes requirements based on specific authorities / orgs / people.
 
-These two scope clarifications exlude some draft requirements found in earlier revisions of this document, in pull request comments, or elsewhere. Many of those could become ZIPs in their own right.
+Finally, there is a category of proposed requirements that could have been coherently in-scope for Orchard which were excluded due to time & complexity constraints.
+
+These scope clarifications exlude some draft requirements found in earlier revisions of this document, in pull request comments, or elsewhere. Many of those could become ZIPs in their own right.
 
 ## Protocol Product Requirements
 
