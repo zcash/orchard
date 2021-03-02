@@ -44,6 +44,12 @@ These scope clarifications exlude some draft requirements found in earlier revis
 
 **Rationale - UX:** A separate shielded pool associated with a new address type makes it easier to reason about migration.
 
+### ProtoPR4. Orchard Privacy Protections are Independent of Soundness.
+
+**Requirement:** Orchard's privacy protections are independent of proving system soundness so that a soundness compromise does not compromise any privacy protections.
+
+**Rationale - UX:** Users can rely on the full privacy protections of Orchard even in the face of an Orchard soundness compromise, such as a successful countereiting attack.
+
 ## Technical Strategy Requirements
 
 ### TSR1. Sapling-equivalent Functionality
