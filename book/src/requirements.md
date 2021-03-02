@@ -1,11 +1,18 @@
 # Requirements
 
-The design of Orchard aims to be mostly identical to the Sapling circuit in
-functionality.
+The design of Orchard aims to be mostly identical to the Sapling circuit in functionality.
 
 ## Protocol Product Requirements
 
-### ProtoPR1. Orchard Addresses
+### ProtoPR1. Orchard Relies on a Zeroknowledge Proving System which is Secure in The Uniform Random String Model
+
+**Requirement:** The Orchard shielded transfer circuit uses a Zeroknowledge Proving System which is secure in the Uniform Random String (URS) Model, and therefore has no reliance on a trusted setup.
+
+**Rationale UX:** Users who rely on Orchard are not directly vulnerable to the class of trusted parameter compromises.
+
+**Rationale Strategic:** As Sprout and Sapling usage declines or are deprecated, the ZEC a whole will become protected from any previous trusted setup compromise henceforth.
+
+### ProtoPR2. Orchard Addresses
 
 **Requirement:** Orchard introduces a new address format with an unambiguous user-facing encoding.
 
@@ -21,7 +28,7 @@ functionality.
 
 **Rationale - Engineering:** A new address format simplifies cryptographic design and performance.
 
-### ProtoPR2. A Orchard Shielded Pool and Turnstile
+### ProtoPR3. An Orchard Shielded Pool and Turnstile
 
 **Requirement:** A new shielded pool is introduced with Orchard. ZEC may only enter the Orchard pool from t-addrs or shielded migration transactions, following the same "turnstile" design as for Sprout and Sapling.
 
