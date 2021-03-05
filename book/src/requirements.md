@@ -12,7 +12,7 @@ These scope clarifications exlude some draft requirements found in earlier revis
 
 ## Protocol Product Requirements
 
-### ProtoPR1. Orchard Relies on a Zeroknowledge Proving System which is Secure in The Uniform Random String Model
+### ProtoPR1. Orchard Relies on a Zero-Knowledge Proving System that is Secure in The Uniform Random String Model
 
 **Requirement:** The Orchard shielded transfer circuit uses a Zeroknowledge Proving System which is secure in the Uniform Random String (URS) Model, and therefore has no reliance on a trusted setup.
 
