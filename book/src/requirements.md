@@ -64,7 +64,7 @@ user base can immediately carry over most conceptual knowledge and UX habits fro
 Sapling to Orchard.
 
 **Rationale - Technical Strategy:** Orchard is the first step in removing the toxic waste
-vulnerability as well as in deploying Halo 2. By targeting Sapling circuit functionality,
+attack surface as well as in deploying Halo 2. By targeting Sapling shielded protocol functionality,
 the scope of Orchard R&D is greatly simplified to lower the strategic technical risk.
 
 ### TSR2. Differences from Sapling Design Document
