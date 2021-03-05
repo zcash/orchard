@@ -75,7 +75,7 @@ the scope of Orchard R&D is greatly simplified to lower the strategic technical 
 
 ### TSR3. Halo 2 Deployment
 
-**Requirement:** Orchard must use Halo 2 for zero knowledge proof validation.
+**Requirement:** Orchard must use Halo 2 for zero-knowledge proof validation.
 
 **Rationale - Technical Strategy:** By selecting Halo 2 as the ZKP platform for Orchard, the Orchard deployment provides a forcing function to productionize Halo 2.
 
