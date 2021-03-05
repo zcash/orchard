@@ -20,7 +20,7 @@ These scope clarifications exlude some draft requirements found in earlier revis
 
 **Rationale - Strategic:** As Sprout and Sapling usage declines or are deprecated, the ZEC a whole will become protected from any previous trusted setup compromise henceforth.
 
-**Rationale - Strategic:** By avoiding a requirement on a trusted setup, Orchard *and future* upgrades no longer need a parameter setup MPC process, which improves protocol agility.
+**Rationale - Strategic:** By avoiding a requirement on a trusted setup, Orchard *and future* upgrades no longer need a parameter setup MPC process, which improves protocol agility and the ability to respond quickly to security vulnerabilities.
 
 ### ProtoPR2. Orchard Addresses
 
