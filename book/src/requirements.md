@@ -95,6 +95,12 @@ the scope of Orchard R&D is greatly simplified to lower the strategic technical 
 
 This section documents potential requirements that are explicitly not required, and their implementation is up to the product and engineering teams best judgement.
 
+### NonR1. Removing Sprout Functionality from the Consensus Protocol.
+
+**Non-Requirement:** There is no requirement to change what is possible with Sprout funds at the consensus layer. (This leaves open the question of whether it will be possible to migrate funds directly from Sprout to Orchard within a single transaction.)
+
+**Rationale - Engineering:** This reduces the scope of consensus changes associated with NU5. Similar effects can be obtained by non-consensus restrictions (or just omission of functionality) in wallets. Consensus-level restrictions would have required changes in the migration design of [ZIP 308](https://zips.z.cash/zip-0308). They may also have required changes to the JoinSplit circuit, which are infeasible in the proposed timeframe.
+
 ### NonR2. User-Defined Asset Precursor Support
 
 **Non-Requirement:** The protocol does not require precursor support for a future User-Defined Assets feature.
