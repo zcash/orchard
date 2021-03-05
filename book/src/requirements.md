@@ -57,7 +57,7 @@ These scope clarifications exlude some draft requirements found in earlier revis
 ### TSR1. Sapling-equivalent Functionality
 
 **Requirement:** Unless other product or engineering concerns dictate, the functionality of
-Orchard should match that of the Sapling circuit.
+Orchard should match that of the Sapling shielded protocol.
 
 **Rationale - UX:** By being functional equivalent to Sapling, the existing Sapling
 user base can immediately carry over most conceptual knowledge and UX habits from
