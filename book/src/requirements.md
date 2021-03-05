@@ -48,7 +48,7 @@ These scope clarifications exlude some draft requirements found in earlier revis
 
 ### ProtoPR4. Orchard Privacy Protections are Independent of Soundness.
 
-**Requirement:** Orchard's privacy protections are independent of proving system soundness so that a soundness compromise does not compromise any privacy protections.
+**Requirement:** Orchard's privacy protections are independent of proving system soundness (in the sense that the security arguments are disentangled from each other and can be separately verified) so that a soundness compromise does not compromise any privacy protections.
 
 **Rationale - UX:** Users can reasonably rely on the full privacy protections of Orchard even in the face of an Orchard soundness compromise, such as a successful counterfeiting attack.
 
