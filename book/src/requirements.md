@@ -60,7 +60,7 @@ These scope clarifications exlude some draft requirements found in earlier revis
 Orchard should match that of the Sapling circuit.
 
 **Rationale - UX:** By being functional equivalent to Sapling, the existing Sapling
-userbase can immediately carry over most conceptual knowledge and UX habits from
+user base can immediately carry over most conceptual knowledge and UX habits from
 Sapling to Orchard.
 
 **Rationale - Technical Strategy:** Orchard is the first step in removing the toxic waste
