@@ -106,3 +106,5 @@ This section documents potential requirements that are explicitly not required, 
 **Non-Requirement:** The protocol does not require precursor support for a future User-Defined Assets feature.
 
 **Rationale - Technical Strategy:** Getting precursor support right requires certainty about a subset of UDA requirements, and blocking Orchard on clarifying future UDA requirements introduces more deployment & execution risk.
+
+**Rationale - Engineering:** It appears to be possible to add UDAs in any case (modulo unresolved questions about economics and issuance policy) without explicit precursor support in this upgrade.
