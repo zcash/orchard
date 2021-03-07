@@ -6,9 +6,11 @@ use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{Cell, Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
+    poly::Rotation,
 };
 
 mod util;
+mod witness_point;
 
 /// Configuration for the ECC chip
 #[derive(Clone, Debug)]
@@ -113,6 +115,16 @@ impl<C: CurveAffine> EccChip<C> {
         let perm_scalar = Permutation::new(meta, &[bits.into()]);
 
         let perm_sum = Permutation::new(meta, &[P.0.into(), P.1.into(), A.0.into(), A.1.into()]);
+
+        // Create witness point gate
+        {
+            let q_point = meta.query_selector(q_point, Rotation::cur());
+            let P = (
+                meta.query_advice(P.0, Rotation::cur()),
+                meta.query_advice(P.1, Rotation::cur()),
+            );
+            witness_point::create_gate::<C>(meta, q_point, P.0, P.1);
+        }
 
         EccConfig {
             window_width,
@@ -294,7 +306,14 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<Self>,
         value: Option<C>,
     ) -> Result<Self::Point, Error> {
-        todo!()
+        let config = layouter.config().clone();
+
+        let point = layouter.assign_region(
+            || "witness point",
+            |mut region| witness_point::assign_region(value, 0, &mut region, config.clone()),
+        )?;
+
+        Ok(point)
     }
 
     fn extract_p(point: &Self::Point) -> &Self::X {
