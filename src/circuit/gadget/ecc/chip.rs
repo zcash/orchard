@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, marker::PhantomData};
 
 use super::{EccInstructions, FixedPoints};
 use crate::constants::{self, FixedBase, OrchardFixedBases};
+use ff::PrimeField;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{Cell, Chip, Layouter},
@@ -13,6 +14,7 @@ mod add;
 mod double;
 mod util;
 mod witness_point;
+mod witness_scalar_fixed;
 
 /// Configuration for the ECC chip
 #[derive(Clone, Debug)]
@@ -91,6 +93,8 @@ impl<C: CurveAffine> EccChip<C> {
         add_complete_bool: [Column<Advice>; 4],
         add_complete_inv: [Column<Advice>; 4],
     ) -> EccConfig {
+        let number_base = 1 << window_width;
+
         let q_add = meta.selector();
         let q_add_complete = meta.selector();
         let q_double = meta.selector();
@@ -126,6 +130,13 @@ impl<C: CurveAffine> EccChip<C> {
                 meta.query_advice(P.1, Rotation::cur()),
             );
             witness_point::create_gate::<C>(meta, q_point, P.0, P.1);
+        }
+
+        // Create witness scalar_fixed gate
+        {
+            let q_scalar_fixed = meta.query_selector(q_scalar_fixed, Rotation::cur());
+            let k = meta.query_advice(bits, Rotation::cur());
+            witness_scalar_fixed::create_gate::<C>(meta, number_base, q_scalar_fixed, k);
         }
 
         // Create point doubling gate
@@ -423,7 +434,22 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<Self>,
         value: Option<C::Scalar>,
     ) -> Result<Self::ScalarFixed, Error> {
-        todo!()
+        let config = layouter.config().clone();
+
+        let scalar = layouter.assign_region(
+            || "witness scalar for fixed-base mul",
+            |mut region| {
+                witness_scalar_fixed::assign_region(
+                    value,
+                    C::Scalar::NUM_BITS as usize,
+                    0,
+                    &mut region,
+                    config.clone(),
+                )
+            },
+        )?;
+
+        Ok(scalar)
     }
 
     fn witness_scalar_fixed_short(
