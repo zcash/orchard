@@ -13,8 +13,12 @@ pub trait FixedPoints<C: CurveAffine>: Clone + fmt::Debug {}
 
 /// The set of circuit instructions required to use the ECC gadgets.
 pub trait EccInstructions<C: CurveAffine>: Chip<Field = C::Base> {
-    /// Variable representing an element of the elliptic curve's scalar field.
-    type Scalar: Clone + fmt::Debug;
+    /// Variable representing an element of the elliptic curve's scalar field, to be used for variable-base scalar mul.
+    type ScalarVar: Clone + fmt::Debug;
+    /// Variable representing a full-width element of the elliptic curve's scalar field, to be used for fixed-base scalar mul.
+    type ScalarFixed: Clone + fmt::Debug;
+    /// Variable representing a signed short element of the elliptic curve's scalar field, to be used for fixed-base scalar mul.
+    type ScalarFixedShort: Clone + fmt::Debug;
     /// Variable representing an elliptic curve point.
     type Point: Clone + fmt::Debug;
     /// Variable representing the set of fixed bases in the circuit.
@@ -22,11 +26,23 @@ pub trait EccInstructions<C: CurveAffine>: Chip<Field = C::Base> {
     /// Variable representing a fixed elliptic curve point (constant in the circuit).
     type FixedPoint: Clone + fmt::Debug;
 
-    /// Witnesses the given scalar as a private input to the circuit.
-    fn witness_scalar(
+    /// Witnesses the given scalar as a private input to the circuit for variable-based scalar mul.
+    fn witness_scalar_var(
         layouter: &mut impl Layouter<Self>,
         value: Option<C::Scalar>,
-    ) -> Result<Self::Scalar, Error>;
+    ) -> Result<Self::ScalarVar, Error>;
+
+    /// Witnesses the given full-width scalar as a private input to the circuit for fixed-based scalar mul.
+    fn witness_scalar_fixed(
+        layouter: &mut impl Layouter<Self>,
+        value: Option<C::Scalar>,
+    ) -> Result<Self::ScalarFixed, Error>;
+
+    /// Witnesses the given signed short scalar as a private input to the circuit for fixed-based scalar mul.
+    fn witness_scalar_fixed_short(
+        layouter: &mut impl Layouter<Self>,
+        value: Option<C::Scalar>,
+    ) -> Result<Self::ScalarFixedShort, Error>;
 
     /// Witnesses the given point as a private input to the circuit.
     fn witness_point(
@@ -53,31 +69,71 @@ pub trait EccInstructions<C: CurveAffine>: Chip<Field = C::Base> {
     /// Performs variable-base scalar multiplication, returning `[scalar] base`.
     fn mul(
         layouter: &mut impl Layouter<Self>,
-        scalar: &Self::Scalar,
+        scalar: &Self::ScalarVar,
         base: &Self::Point,
     ) -> Result<Self::Point, Error>;
 
-    /// Performs fixed-base scalar multiplication, returning `[scalar] base`.
+    /// Performs fixed-base scalar multiplication using a full-width scalar, returning `[scalar] base`.
     fn mul_fixed(
         layouter: &mut impl Layouter<Self>,
-        scalar: &Self::Scalar,
+        scalar: &Self::ScalarFixed,
+        base: &Self::FixedPoint,
+    ) -> Result<Self::Point, Error>;
+
+    /// Performs fixed-base scalar multiplication using a short signed scalar, returning `[scalar] base`.
+    fn mul_fixed_short(
+        layouter: &mut impl Layouter<Self>,
+        scalar: &Self::ScalarFixedShort,
         base: &Self::FixedPoint,
     ) -> Result<Self::Point, Error>;
 }
 
-/// An element of the given elliptic curve's scalar field.
+/// An element of the given elliptic curve's scalar field, to be used for variable-base scalar mul.
 #[derive(Debug)]
-pub struct Scalar<C: CurveAffine, EccChip: EccInstructions<C>> {
-    inner: EccChip::Scalar,
+pub struct ScalarVar<C: CurveAffine, EccChip: EccInstructions<C>> {
+    inner: EccChip::ScalarVar,
 }
 
-impl<C: CurveAffine, EccChip: EccInstructions<C>> Scalar<C, EccChip> {
-    /// Constructs a new point with the given value.
+impl<C: CurveAffine, EccChip: EccInstructions<C>> ScalarVar<C, EccChip> {
+    /// Constructs a new ScalarVar with the given value.
     pub fn new(
         mut layouter: impl Layouter<EccChip>,
         value: Option<C::Scalar>,
     ) -> Result<Self, Error> {
-        EccChip::witness_scalar(&mut layouter, value).map(|inner| Scalar { inner })
+        EccChip::witness_scalar_var(&mut layouter, value).map(|inner| ScalarVar { inner })
+    }
+}
+
+/// A full-width element of the given elliptic curve's scalar field, to be used for fixed-base scalar mul.
+#[derive(Debug)]
+pub struct ScalarFixed<C: CurveAffine, EccChip: EccInstructions<C>> {
+    inner: EccChip::ScalarFixed,
+}
+
+impl<C: CurveAffine, EccChip: EccInstructions<C>> ScalarFixed<C, EccChip> {
+    /// Constructs a new ScalarFixed with the given value.
+    pub fn new(
+        mut layouter: impl Layouter<EccChip>,
+        value: Option<C::Scalar>,
+    ) -> Result<Self, Error> {
+        EccChip::witness_scalar_fixed(&mut layouter, value).map(|inner| ScalarFixed { inner })
+    }
+}
+
+/// A signed short element of the given elliptic curve's scalar field, to be used for fixed-base scalar mul.
+#[derive(Debug)]
+pub struct ScalarFixedShort<C: CurveAffine, EccChip: EccInstructions<C>> {
+    inner: EccChip::ScalarFixedShort,
+}
+
+impl<C: CurveAffine, EccChip: EccInstructions<C>> ScalarFixedShort<C, EccChip> {
+    /// Constructs a new ScalarFixedShort with the given value.
+    pub fn new(
+        mut layouter: impl Layouter<EccChip>,
+        value: Option<C::Scalar>,
+    ) -> Result<Self, Error> {
+        EccChip::witness_scalar_fixed_short(&mut layouter, value)
+            .map(|inner| ScalarFixedShort { inner })
     }
 }
 
@@ -107,7 +163,7 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> Point<C, EccChip> {
     pub fn mul(
         &self,
         mut layouter: impl Layouter<EccChip>,
-        by: &Scalar<C, EccChip>,
+        by: &ScalarVar<C, EccChip>,
     ) -> Result<Self, Error> {
         EccChip::mul(&mut layouter, &by.inner, &self.inner).map(|inner| Point { inner })
     }
@@ -133,7 +189,7 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> FixedPoint<C, EccChip> {
     pub fn mul(
         &self,
         mut layouter: impl Layouter<EccChip>,
-        by: &Scalar<C, EccChip>,
+        by: &ScalarFixed<C, EccChip>,
     ) -> Result<Point<C, EccChip>, Error> {
         EccChip::mul_fixed(&mut layouter, &by.inner, &self.inner).map(|inner| Point { inner })
     }
