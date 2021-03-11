@@ -12,6 +12,7 @@ use halo2::{
 
 mod add;
 mod double;
+mod mul_fixed;
 mod util;
 mod witness_point;
 mod witness_scalar_fixed;
@@ -169,6 +170,28 @@ impl<C: CurveAffine> EccChip<C> {
             let y_a = meta.query_advice(A.1, Rotation::next());
 
             add::create_gate::<C>(meta, q_add, x_p, y_p, x_q, y_q, x_a, y_a);
+        }
+
+        // Create fixed-base scalar mul gate
+        {
+            let q_mul_fixed = meta.query_selector(q_mul_fixed, Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+            let k = meta.query_advice(bits, Rotation::cur());
+            let u = meta.query_advice(u, Rotation::cur());
+            let z = meta.query_fixed(fixed_z, Rotation::cur());
+
+            mul_fixed::create_gate::<C>(
+                meta,
+                number_base,
+                lagrange_coeffs,
+                q_mul_fixed,
+                x_p,
+                y_p,
+                k,
+                u,
+                z,
+            );
         }
 
         EccConfig {
@@ -565,7 +588,24 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarFixed,
         base: &Self::FixedPoint,
     ) -> Result<Self::Point, Error> {
-        todo!()
+        let config = layouter.config().clone();
+        let num_windows = C::Scalar::NUM_BITS / config.window_width as u32;
+
+        let point = layouter.assign_region(
+            || format!("Multiply {:?}", base.fixed_point),
+            |mut region| {
+                mul_fixed::assign_region(
+                    scalar,
+                    base,
+                    0,
+                    &mut region,
+                    config.clone(),
+                    num_windows as usize,
+                )
+            },
+        )?;
+
+        Ok(point)
     }
 
     fn mul_fixed_short(
