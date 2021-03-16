@@ -13,6 +13,7 @@ use halo2::{
 mod add;
 mod add_complete;
 mod double;
+mod mul;
 mod mul_fixed;
 mod mul_fixed_short;
 mod util;
@@ -259,6 +260,32 @@ impl<C: CurveAffine> EccChip<C> {
             let y_p = meta.query_advice(P.1, Rotation::cur());
 
             mul_fixed_short::create_gate::<C>(meta, q_mul_fixed_short, s, y_a, y_p);
+        }
+
+        // Create variable-base scalar mul gate
+        {
+            let q_mul = meta.query_selector(q_mul, Rotation::cur());
+            let x_a_cur = meta.query_advice(A.0, Rotation::cur());
+            let x_a_next = meta.query_advice(A.0, Rotation::next());
+            let x_p_cur = meta.query_advice(P.0, Rotation::cur());
+            let x_p_next = meta.query_advice(P.0, Rotation::next());
+            let lambda1_cur = meta.query_advice(lambda.0, Rotation::cur());
+            let lambda1_next = meta.query_advice(lambda.0, Rotation::next());
+            let lambda2_cur = meta.query_advice(lambda.1, Rotation::cur());
+            let lambda2_next = meta.query_advice(lambda.1, Rotation::next());
+
+            mul::create_gate::<C>(
+                meta,
+                q_mul,
+                x_a_cur,
+                x_a_next,
+                x_p_cur,
+                x_p_next,
+                lambda1_cur,
+                lambda1_next,
+                lambda2_cur,
+                lambda2_next,
+            )
         }
 
         EccConfig {
@@ -667,7 +694,14 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarVar,
         base: &Self::Point,
     ) -> Result<Self::Point, Error> {
-        todo!()
+        let config = layouter.config().clone();
+
+        let point = layouter.assign_region(
+            || "variable-base mul",
+            |mut region| mul::assign_region(scalar, base, 0, &mut region, config.clone()),
+        )?;
+
+        Ok(point)
     }
 
     fn mul_fixed(
