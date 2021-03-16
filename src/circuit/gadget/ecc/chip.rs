@@ -8,6 +8,8 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
 };
 
+mod util;
+
 /// Configuration for the ECC chip
 #[derive(Clone, Debug)]
 #[allow(non_snake_case)]
