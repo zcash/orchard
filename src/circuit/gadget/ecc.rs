@@ -68,6 +68,13 @@ pub trait EccInstructions<C: CurveAffine>: Chip<Field = C::Base> {
         b: &Self::Point,
     ) -> Result<Self::Point, Error>;
 
+    /// Performs complete point addition, returning `a + b`.
+    fn add_complete(
+        layouter: &mut impl Layouter<Self>,
+        a: &Self::Point,
+        b: &Self::Point,
+    ) -> Result<Self::Point, Error>;
+
     /// Performs point doubling, returning `[2] a`.
     fn double(layouter: &mut impl Layouter<Self>, a: &Self::Point) -> Result<Self::Point, Error>;
 
