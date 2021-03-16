@@ -11,6 +11,7 @@ use halo2::{
 };
 
 mod add;
+mod add_complete;
 mod double;
 mod mul_fixed;
 mod mul_fixed_short;
@@ -180,6 +181,52 @@ impl<C: CurveAffine> EccChip<C> {
             let y_a = meta.query_advice(A.1, Rotation::next());
 
             add::create_gate::<C>(meta, q_add, x_p, y_p, x_q, y_q, x_a, y_a);
+        }
+
+        // Create complete point addition gate
+        {
+            let q_add_complete = meta.query_selector(q_add_complete, Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+            let x_q = meta.query_advice(A.0, Rotation::cur());
+            let y_q = meta.query_advice(A.1, Rotation::cur());
+            let x_r = meta.query_advice(A.0, Rotation::next());
+            let y_r = meta.query_advice(A.1, Rotation::next());
+            let lambda = meta.query_advice(lambda.0, Rotation::cur());
+
+            let a = meta.query_advice(add_complete_bool[0], Rotation::cur());
+            let b = meta.query_advice(add_complete_bool[1], Rotation::cur());
+            let c = meta.query_advice(add_complete_bool[2], Rotation::cur());
+            let d = meta.query_advice(add_complete_bool[3], Rotation::cur());
+
+            // \alpha = (x_q - x_p)^{-1}
+            let alpha = meta.query_advice(add_complete_inv[0], Rotation::cur());
+            // \beta = x_p^{-1}
+            let beta = meta.query_advice(add_complete_inv[1], Rotation::cur());
+            // \gamma = x_q^{-1}
+            let gamma = meta.query_advice(add_complete_inv[2], Rotation::cur());
+            // \delta = (y_p + y_q)^{-1}
+            let delta = meta.query_advice(add_complete_inv[3], Rotation::cur());
+
+            add_complete::create_gate::<C>(
+                meta,
+                q_add_complete,
+                a,
+                b,
+                c,
+                d,
+                alpha,
+                beta,
+                gamma,
+                delta,
+                lambda,
+                x_p,
+                y_p,
+                x_q,
+                y_q,
+                x_r,
+                y_r,
+            );
         }
 
         // Create fixed-base full-width scalar mul gate
@@ -588,7 +635,14 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         a: &Self::Point,
         b: &Self::Point,
     ) -> Result<Self::Point, Error> {
-        todo!()
+        let config = layouter.config().clone();
+
+        let point = layouter.assign_region(
+            || "point addition",
+            |mut region| add_complete::assign_region(a, b, 0, &mut region, config.clone()),
+        )?;
+
+        Ok(point)
     }
 
     fn double(layouter: &mut impl Layouter<Self>, a: &Self::Point) -> Result<Self::Point, Error> {
