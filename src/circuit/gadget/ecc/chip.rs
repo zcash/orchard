@@ -22,6 +22,27 @@ mod witness_scalar_fixed;
 mod witness_scalar_fixed_short;
 mod witness_scalar_var;
 
+/// A curve point represented in affine (x, y) coordinates. Each coordinate is
+/// assigned to a cell.
+#[derive(Clone, Debug)]
+pub struct EccPoint<F: FieldExt> {
+    x: CellValue<F>,
+    y: CellValue<F>,
+}
+
+/// A structure containing a cell and its assigned value.
+#[derive(Clone, Debug)]
+pub struct CellValue<F: FieldExt> {
+    cell: Cell,
+    value: Option<F>,
+}
+
+impl<F: FieldExt> CellValue<F> {
+    pub fn new(cell: Cell, value: Option<F>) -> Self {
+        CellValue { cell, value }
+    }
+}
+
 /// Configuration for the ECC chip
 #[derive(Clone, Debug)]
 #[allow(non_snake_case)]
@@ -519,19 +540,6 @@ impl<C: CurveAffine> Chip for EccChip<C> {
     }
 }
 
-/// Struct containing a cell and the value assigned to it.
-#[derive(Clone, Debug)]
-pub struct CellValue<F: FieldExt> {
-    cell: Cell,
-    value: Option<F>,
-}
-
-impl<F: FieldExt> CellValue<F> {
-    pub fn new(cell: Cell, value: Option<F>) -> Self {
-        CellValue { cell, value }
-    }
-}
-
 #[derive(Clone, Debug)]
 /// A scalar used for variable-base scalar multiplication. This is decomposed
 /// bitwise in big-endian order, i.e. [k_n, k_{n-1}, ..., k_0] where
@@ -560,14 +568,6 @@ pub struct EccScalarFixedShort<C: CurveAffine> {
     magnitude: Option<C::Scalar>,
     sign: CellValue<C::Base>,
     k_bits: Vec<CellValue<C::Base>>,
-}
-
-/// A curve point represented in affine (x, y) coordinates. Each coordinate is
-/// assigned to a cell.
-#[derive(Clone, Debug)]
-pub struct EccPoint<F: FieldExt> {
-    x: CellValue<F>,
-    y: CellValue<F>,
 }
 
 /// A fixed point representing one of the Orchard fixed bases. Contains:
@@ -800,5 +800,188 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         )?;
 
         Ok(point)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::constants::{self, FIXED_BASE_WINDOW_SIZE, L_VALUE, NUM_COMPLETE_BITS};
+    use group::{Curve, Group};
+    use halo2::{
+        arithmetic::{CurveAffine, FieldExt},
+        circuit::{layouter, Chip},
+        dev::MockProver,
+        pasta::pallas,
+        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+    };
+
+    use super::super::EccInstructions;
+    use super::{EccChip, EccConfig, EccFixedPoints};
+
+    struct MyCircuit<C: CurveAffine> {
+        _marker: std::marker::PhantomData<C>,
+    }
+
+    #[allow(non_snake_case)]
+    impl<C: CurveAffine> Circuit<C::Base> for MyCircuit<C> {
+        type Config = EccConfig;
+
+        fn configure(meta: &mut ConstraintSystem<C::Base>) -> EccConfig {
+            let bits = meta.advice_column();
+            let u = meta.advice_column();
+            let A = (meta.advice_column(), meta.advice_column());
+            let P = (meta.advice_column(), meta.advice_column());
+            let lambda = (meta.advice_column(), meta.advice_column());
+            let add_complete_inv = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+            let add_complete_bool = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+
+            EccChip::<C>::configure(
+                meta,
+                FIXED_BASE_WINDOW_SIZE,
+                NUM_COMPLETE_BITS,
+                L_VALUE,
+                bits,
+                u,
+                A,
+                P,
+                lambda,
+                add_complete_inv,
+                add_complete_bool,
+            )
+        }
+
+        fn synthesize(
+            &self,
+            cs: &mut impl Assignment<C::Base>,
+            config: EccConfig,
+        ) -> Result<(), Error> {
+            let mut layouter = layouter::SingleChip::new(cs, config.clone())?;
+            EccChip::<C>::load(&mut layouter)?;
+
+            // Generate a random point
+            let point_val = C::CurveExt::random(rand::rngs::OsRng).to_affine(); // P
+            let point = EccChip::<C>::witness_point(&mut layouter, Some(point_val))?;
+
+            // Check doubled point [2]P
+            let real_doubled = point_val * C::Scalar::from_u64(2); // [2]P
+            let doubled = EccChip::<C>::double(&mut layouter, &point)?;
+            if let (Some(x), Some(y)) = (doubled.x.value, doubled.y.value) {
+                assert_eq!(real_doubled.to_affine(), C::from_xy(x, y).unwrap());
+            }
+
+            let real_added = point_val * C::Scalar::from_u64(3); // [3]P
+
+            // Check incomplete addition point [3]P
+            {
+                let added = EccChip::<C>::add(&mut layouter, &point, &doubled)?;
+                if let (Some(x), Some(y)) = (added.x.value, added.y.value) {
+                    assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
+                }
+            }
+
+            // Check complete addition point [3]P
+            {
+                let added_complete = EccChip::<C>::add_complete(&mut layouter, &point, &doubled)?;
+                if let (Some(x), Some(y)) = (added_complete.x.value, added_complete.y.value) {
+                    if C::from_xy(x, y).is_some().into() {
+                        assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
+                    }
+                }
+            }
+
+            // Check fixed-base scalar multiplication
+            {
+                let scalar_fixed = C::Scalar::rand();
+                let nullifier_k = constants::nullifier_k::generator();
+                let base = nullifier_k.0.value();
+                let real_mul_fixed = base * scalar_fixed;
+
+                let scalar_fixed =
+                    EccChip::<C>::witness_scalar_fixed(&mut layouter, Some(scalar_fixed))?;
+                let nullifier_k = EccChip::<C>::get_fixed(
+                    &mut layouter,
+                    EccFixedPoints::NullifierK(nullifier_k),
+                )?;
+                let mul_fixed =
+                    EccChip::<C>::mul_fixed(&mut layouter, &scalar_fixed, &nullifier_k)?;
+                if let (Some(x), Some(y)) = (mul_fixed.x.value, mul_fixed.y.value) {
+                    assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
+                }
+            }
+
+            // Check short signed fixed-base scalar multiplication
+            {
+                let scalar_fixed_short = C::Scalar::from_u64(rand::random::<u64>());
+                let value_commit_v = constants::value_commit_v::generator();
+                let real_mul_fixed_short = value_commit_v.0.value() * scalar_fixed_short;
+
+                let scalar_fixed_short = EccChip::<C>::witness_scalar_fixed_short(
+                    &mut layouter,
+                    Some(scalar_fixed_short),
+                )?;
+                let value_commit_v = EccChip::<C>::get_fixed(
+                    &mut layouter,
+                    EccFixedPoints::ValueCommitV(value_commit_v),
+                )?;
+                let mul_fixed_short = EccChip::<C>::mul_fixed_short(
+                    &mut layouter,
+                    &scalar_fixed_short,
+                    &value_commit_v,
+                )?;
+                if let (Some(x), Some(y)) = (mul_fixed_short.x.value, mul_fixed_short.y.value) {
+                    assert_eq!(real_mul_fixed_short.to_affine(), C::from_xy(x, y).unwrap());
+                }
+            }
+
+            // Check variable-base scalar multiplication
+            {
+                // The scalar field `F_q = 2^254 + t_q`
+                // FIXME: Derive this from constants in `Fq` module
+                let t_q = 45560315531506369815346746415080538113;
+
+                let scalar_val = C::Scalar::rand();
+                let real_mul = point_val * scalar_val;
+                let scalar_var = EccChip::<C>::witness_scalar_var(&mut layouter, Some(scalar_val))?;
+
+                let computed_scalar: Option<Vec<C::Base>> =
+                    scalar_var.k_bits.iter().map(|bit| bit.value).collect();
+                let computed_scalar: Option<C::Scalar> = computed_scalar.map(|bits| {
+                    bits.iter().fold(C::Scalar::default(), |acc, bit| {
+                        acc * C::Scalar::from_u64(2)
+                            + C::Scalar::from_bytes(&bit.to_bytes()).unwrap()
+                    })
+                });
+                if let Some(computed_scalar) = computed_scalar {
+                    assert_eq!(scalar_val + C::Scalar::from_u128(t_q), computed_scalar);
+                }
+
+                let mul = EccChip::<C>::mul(&mut layouter, &scalar_var, &point)?;
+                if let (Some(x), Some(y)) = (mul.x.value, mul.y.value) {
+                    assert_eq!(real_mul.to_affine(), C::from_xy(x, y).unwrap());
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn ecc() {
+        let k = 11;
+        let circuit = MyCircuit::<pallas::Affine> {
+            _marker: std::marker::PhantomData,
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()))
     }
 }
