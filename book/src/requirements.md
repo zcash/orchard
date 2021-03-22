@@ -18,15 +18,15 @@ These scope clarifications exlude some draft requirements found in earlier revis
 
 **Rationale - UX:** Users who rely on Orchard are not directly vulnerable to the class of trusted parameter compromises.
 
-**Rationale - Strategic:** As Sprout and Sapling usage declines or are deprecated, the ZEC a whole will become protected from any previous trusted setup compromise henceforth.
+**Rationale - Strategic:** As Sprout and Sapling usage declines or are deprecated, the ZEC monetary base as a whole will become protected from any previous trusted setup compromise henceforth.
 
-**Rationale - Strategic:** By avoiding a requirement on a trusted setup, Orchard *and future* upgrades no longer need a parameter setup MPC process, which improves protocol agility and the ability to respond quickly to security vulnerabilities.
+**Rationale - Strategic:** By avoiding a requirement on a trusted setup, Orchard *and future* upgrades no longer need a parameter setup multiparty computation (MPC) process, which improves protocol agility and the ability to respond quickly to security vulnerabilities.
 
 ### ProtoR2. Orchard Addresses
 
 **Requirement:** Orchard introduces a new address format with an unambiguous user-facing encoding.
 
-**Rationale - UX:** A new address format allows users to identify which ZKP platform their funds rely on.
+**Rationale - UX:** A new address format allows users to identify which zero-knowledge proof (ZKP) platform their funds rely on.
 
 **Rationale - UX:** A new address format reinforces the fact that users must migrate funds to opt into Orchard.
 
@@ -87,9 +87,9 @@ the scope of Orchard R&D is greatly simplified to lower the strategic technical 
 
 #### TSR4. User Opt-in upon Activation
 
-**Requirement:** Users may individually shield funds or migrate into a Orchard Pool as soon as the feature activates.
+**Requirement:** Users may individually shield funds or migrate into the Orchard Pool as soon as the feature activates.
 
-**Rationale - UX:** Users can act independently in opting into the Orchard Pool without coordinating globally.
+**Rationale - UX:** Users can act independently in opting in to using the Orchard Pool without coordinating globally.
 
 #### TSR5. Full Design Verifiability
 
