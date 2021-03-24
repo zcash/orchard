@@ -15,6 +15,7 @@ mod double;
 mod util;
 mod witness_point;
 mod witness_scalar_fixed;
+mod witness_scalar_fixed_short;
 
 /// Configuration for the ECC chip
 #[derive(Clone, Debug)]
@@ -137,6 +138,13 @@ impl<C: CurveAffine> EccChip<C> {
             let q_scalar_fixed = meta.query_selector(q_scalar_fixed, Rotation::cur());
             let k = meta.query_advice(bits, Rotation::cur());
             witness_scalar_fixed::create_gate::<C>(meta, number_base, q_scalar_fixed, k);
+        }
+
+        // Create witness scalar_fixed_short gate
+        {
+            let q_scalar_fixed_short = meta.query_selector(q_scalar_fixed_short, Rotation::cur());
+            let k = meta.query_advice(bits, Rotation::cur());
+            witness_scalar_fixed_short::create_gate::<C>(meta, q_scalar_fixed_short, k);
         }
 
         // Create point doubling gate
@@ -501,7 +509,22 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<Self>,
         value: Option<C::Scalar>,
     ) -> Result<Self::ScalarFixedShort, Error> {
-        todo!()
+        let config = layouter.config().clone();
+
+        let scalar = layouter.assign_region(
+            || "witness scalar for fixed-base mul",
+            |mut region| {
+                witness_scalar_fixed_short::assign_region(
+                    value,
+                    constants::L_VALUE,
+                    0,
+                    &mut region,
+                    config.clone(),
+                )
+            },
+        )?;
+
+        Ok(scalar)
     }
 
     fn witness_point(
