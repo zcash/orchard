@@ -1,5 +1,6 @@
 use super::super::EccInstructions;
 use super::{add, util, witness_point, EccChip, EccPoint};
+use crate::constants;
 
 use group::Curve;
 use halo2::{
@@ -11,8 +12,7 @@ use halo2::{
 
 pub(super) fn create_gate<C: CurveAffine>(
     meta: &mut ConstraintSystem<C::Base>,
-    number_base: usize,
-    lagrange_coeffs: [Column<Fixed>; 8],
+    lagrange_coeffs: [Column<Fixed>; constants::H],
     q_mul_fixed: Expression<C::Base>,
     x_p: Expression<C::Base>,
     y_p: Expression<C::Base>,
@@ -22,7 +22,7 @@ pub(super) fn create_gate<C: CurveAffine>(
 ) {
     // Check interpolation of x-coordinate
     meta.create_gate("fixed-base scalar mul (x)", |meta| {
-        let k_pow: Vec<Expression<C::Base>> = (0..number_base)
+        let k_pow: Vec<Expression<C::Base>> = (0..constants::H)
             .map(|pow| {
                 (0..pow).fold(Expression::Constant(C::Base::one()), |acc, _| {
                     acc * k.clone()
@@ -50,14 +50,13 @@ pub(super) fn assign_region<C: CurveAffine>(
     offset: usize,
     region: &mut Region<'_, EccChip<C>>,
     config: <EccChip<C> as Chip>::Config,
-    num_windows: usize,
 ) -> Result<EccPoint<C::Base>, Error> {
     // Assign fixed columns for given fixed base
-    for w in 0..num_windows {
+    for w in 0..constants::NUM_WINDOWS {
         // Enable `q_mul_fixed` selector
         config.q_mul_fixed.enable(region, w + offset)?;
 
-        for k in 0..(1 << config.window_width) {
+        for k in 0..(constants::H) {
             // Assign x-coordinate Lagrange interpolation coefficients
             region.assign_fixed(
                 || {
@@ -126,7 +125,7 @@ pub(super) fn assign_region<C: CurveAffine>(
         .collect::<Vec<_>>();
 
     // This is 2^w, where w is the window width
-    let number_base = C::Scalar::from_u64(1u64 << config.window_width);
+    let h = C::Scalar::from_u64(constants::H as u64);
 
     // Process the least significant window outside the for loop
     let mul_b = k[0].map(|k_0| b * (k_0 + C::Scalar::one()));
@@ -175,7 +174,7 @@ pub(super) fn assign_region<C: CurveAffine>(
         let w = w + 1;
 
         // Compute [(k_w + 1) ⋅ 8^w]B
-        let mul_b = k.map(|k| b * (k + C::Scalar::one()) * number_base.pow(&[w as u64, 0, 0, 0]));
+        let mul_b = k.map(|k| b * (k + C::Scalar::one()) * h.pow(&[w as u64, 0, 0, 0]));
         let mul_b = witness_point::assign_region(
             mul_b.map(|point| point.to_affine()),
             offset + w,
@@ -192,17 +191,17 @@ pub(super) fn assign_region<C: CurveAffine>(
     }
 
     // Process most significant window outside the for loop
-    let offset_sum = (0..(num_windows - 1)).fold(C::ScalarExt::zero(), |acc, w| {
-        acc + number_base.pow(&[w as u64, 0, 0, 0])
+    let offset_sum = (0..(constants::NUM_WINDOWS - 1)).fold(C::ScalarExt::zero(), |acc, w| {
+        acc + h.pow(&[w as u64, 0, 0, 0])
     });
 
     // `scalar = [k * 8^84 - offset_sum]`, where `offset_sum = \sum_{j = 0}^{83} 8^j`.
     let scalar = k[k.len() - 1]
-        .map(|k| k * number_base.pow(&[(num_windows - 1) as u64, 0, 0, 0]) - offset_sum);
+        .map(|k| k * h.pow(&[(constants::NUM_WINDOWS - 1) as u64, 0, 0, 0]) - offset_sum);
     let mul_b = scalar.map(|scalar| b * scalar);
     let mul_b = witness_point::assign_region(
         mul_b.map(|point| point.to_affine()),
-        offset + num_windows - 1,
+        offset + constants::NUM_WINDOWS - 1,
         region,
         config.clone(),
     )?;
@@ -212,16 +211,22 @@ pub(super) fn assign_region<C: CurveAffine>(
         let u_val = base
             .u
             .as_ref()
-            .zip(k_usize[num_windows - 1])
-            .map(|(u, k)| u[num_windows - 1][k]);
+            .zip(k_usize[constants::NUM_WINDOWS - 1])
+            .map(|(u, k)| u[constants::NUM_WINDOWS - 1][k]);
         region.assign_advice(
             || "u",
             config.u,
-            offset + num_windows - 1,
+            offset + constants::NUM_WINDOWS - 1,
             || u_val.ok_or(Error::SynthesisError),
         )?;
     }
 
     // Add to the cumulative sum and return the final result as `[scalar]B`.
-    add::assign_region(&mul_b, &sum, offset + num_windows - 1, region, config)
+    add::assign_region(
+        &mul_b,
+        &sum,
+        offset + constants::NUM_WINDOWS - 1,
+        region,
+        config,
+    )
 }
