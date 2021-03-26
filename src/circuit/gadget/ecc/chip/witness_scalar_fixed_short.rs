@@ -1,5 +1,5 @@
 use super::{CellValue, EccChip, EccScalarFixedShort};
-use crate::constants::util;
+use crate::constants::{self, util};
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},
     circuit::{Chip, Region},
@@ -21,7 +21,6 @@ pub(super) fn create_gate<C: CurveAffine>(
 
 pub(super) fn assign_region<C: CurveAffine>(
     value: Option<C::Scalar>,
-    scalar_num_bits: usize,
     offset: usize,
     region: &mut Region<'_, EccChip<C>>,
     config: <EccChip<C> as Chip>::Config,
@@ -58,27 +57,31 @@ pub(super) fn assign_region<C: CurveAffine>(
         }
     });
 
-    // Decompose magnitude into three-bit windows
+    // Decompose magnitude into windows
     let bits: Option<Vec<u8>> = magnitude.map(|magnitude| {
-        util::decompose_scalar_fixed::<C>(magnitude, scalar_num_bits, config.window_width)
+        util::decompose_scalar_fixed::<C>(
+            magnitude,
+            constants::L_VALUE,
+            constants::FIXED_BASE_WINDOW_SIZE,
+        )
     });
 
     // Assign and store the magnitude decomposition
     let mut k_bits: Vec<CellValue<C::Base>> = Vec::new();
 
     if let Some(bits) = bits {
-        for (idx, three_bits) in bits.iter().enumerate() {
+        for (idx, window) in bits.iter().enumerate() {
             // Enable `q_scalar_fixed` selector
             config.q_scalar_fixed.enable(region, offset + idx)?;
 
-            let three_bits = C::Base::from_u64(*three_bits as u64);
+            let window = C::Base::from_u64(*window as u64);
             let k_var = region.assign_advice(
                 || format!("k[{:?}]", offset + idx),
                 config.bits,
                 offset + idx,
-                || Ok(three_bits),
+                || Ok(window),
             )?;
-            k_bits.push(CellValue::new(k_var, Some(three_bits)));
+            k_bits.push(CellValue::new(k_var, Some(window)));
         }
     }
 

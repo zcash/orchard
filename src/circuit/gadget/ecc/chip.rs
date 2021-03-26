@@ -26,13 +26,6 @@ mod witness_scalar_var;
 #[derive(Clone, Debug)]
 #[allow(non_snake_case)]
 pub struct EccConfig {
-    // Width of windows used in fixed-base scalar multiplication
-    window_width: usize,
-    // Number of bits for which we use complete addition (in variable-base scalar multiplication)
-    complete_bits: usize,
-    // Number of bits in a short signed scalar
-    short_signed_bits: usize,
-
     // Advice column for scalar decomposition into bits
     bits: Column<Advice>,
     // Witness u = (y + z).sqrt(), used in fixed-base scalar multiplication
@@ -48,7 +41,7 @@ pub struct EccConfig {
     // [alpha, beta, gamma, delta] inverses used in complete addition
     add_complete_inv: [Column<Advice>; 4],
     // Coefficients of interpolation polynomials for x-coordinates (used in fixed-base scalar multiplication)
-    lagrange_coeffs: [Column<Fixed>; 8],
+    lagrange_coeffs: [Column<Fixed>; constants::H],
     // Fixed z such that y + z = u^2 some square, and -y + z is a non-square. (Used in fixed-base scalar multiplication)
     fixed_z: Column<Fixed>,
 
@@ -88,9 +81,6 @@ pub struct EccChip<C: CurveAffine> {
 impl<C: CurveAffine> EccChip<C> {
     fn configure(
         meta: &mut ConstraintSystem<C::Base>,
-        window_width: usize,
-        complete_bits: usize,
-        short_signed_bits: usize,
         bits: Column<Advice>,
         u: Column<Advice>,
         A: (Column<Advice>, Column<Advice>),
@@ -99,8 +89,6 @@ impl<C: CurveAffine> EccChip<C> {
         add_complete_bool: [Column<Advice>; 4],
         add_complete_inv: [Column<Advice>; 4],
     ) -> EccConfig {
-        let number_base = 1 << window_width;
-
         let q_add = meta.selector();
         let q_add_complete = meta.selector();
         let q_double = meta.selector();
@@ -150,7 +138,7 @@ impl<C: CurveAffine> EccChip<C> {
         {
             let q_scalar_fixed = meta.query_selector(q_scalar_fixed, Rotation::cur());
             let k = meta.query_advice(bits, Rotation::cur());
-            witness_scalar_fixed::create_gate::<C>(meta, number_base, q_scalar_fixed, k);
+            witness_scalar_fixed::create_gate::<C>(meta, q_scalar_fixed, k);
         }
 
         // Create witness scalar_fixed_short gate
@@ -239,17 +227,7 @@ impl<C: CurveAffine> EccChip<C> {
             let u = meta.query_advice(u, Rotation::cur());
             let z = meta.query_fixed(fixed_z, Rotation::cur());
 
-            mul_fixed::create_gate::<C>(
-                meta,
-                number_base,
-                lagrange_coeffs,
-                q_mul_fixed,
-                x_p,
-                y_p,
-                k,
-                u,
-                z,
-            );
+            mul_fixed::create_gate::<C>(meta, lagrange_coeffs, q_mul_fixed, x_p, y_p, k, u, z);
         }
 
         // Create fixed-base short signed scalar mul gate
@@ -289,9 +267,6 @@ impl<C: CurveAffine> EccChip<C> {
         }
 
         EccConfig {
-            window_width,
-            complete_bits,
-            short_signed_bits,
             bits,
             u,
             A,
@@ -324,8 +299,8 @@ impl<C: CurveAffine> EccChip<C> {
 pub struct EccLoaded<C: CurveAffine> {
     lagrange_coeffs: BTreeMap<OrchardFixedBases<C>, Vec<Vec<C::Base>>>,
     lagrange_coeffs_short: BTreeMap<OrchardFixedBases<C>, Vec<Vec<C::Base>>>,
-    z: BTreeMap<OrchardFixedBases<C>, [u64; 85]>,
-    z_short: BTreeMap<OrchardFixedBases<C>, [u64; 22]>,
+    z: BTreeMap<OrchardFixedBases<C>, [u64; constants::NUM_WINDOWS]>,
+    z_short: BTreeMap<OrchardFixedBases<C>, [u64; constants::NUM_WINDOWS_SHORT]>,
     u: BTreeMap<OrchardFixedBases<C>, Vec<Vec<C::Base>>>,
     u_short: BTreeMap<OrchardFixedBases<C>, Vec<Vec<C::Base>>>,
 }
@@ -339,11 +314,11 @@ impl<C: CurveAffine> EccLoaded<C> {
         self.lagrange_coeffs_short.get(&point).cloned()
     }
 
-    fn z(&self, point: OrchardFixedBases<C>) -> Option<[u64; 85]> {
+    fn z(&self, point: OrchardFixedBases<C>) -> Option<[u64; constants::NUM_WINDOWS]> {
         self.z.get(&point).cloned()
     }
 
-    fn z_short(&self, point: OrchardFixedBases<C>) -> Option<[u64; 22]> {
+    fn z_short(&self, point: OrchardFixedBases<C>) -> Option<[u64; constants::NUM_WINDOWS_SHORT]> {
         self.z_short.get(&point).cloned()
     }
 
@@ -532,8 +507,8 @@ pub struct EccFixedPoint<C: CurveAffine> {
     fixed_point: OrchardFixedBases<C>,
     lagrange_coeffs: Option<Vec<Vec<C::Base>>>,
     lagrange_coeffs_short: Option<Vec<Vec<C::Base>>>,
-    z: Option<[u64; 85]>,
-    z_short: Option<[u64; 22]>,
+    z: Option<[u64; constants::NUM_WINDOWS]>,
+    z_short: Option<[u64; constants::NUM_WINDOWS_SHORT]>,
     u: Option<Vec<Vec<C::Base>>>,
     u_short: Option<Vec<Vec<C::Base>>>,
 }
@@ -591,13 +566,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         let scalar = layouter.assign_region(
             || "witness scalar for fixed-base mul",
             |mut region| {
-                witness_scalar_fixed_short::assign_region(
-                    value,
-                    constants::L_VALUE,
-                    0,
-                    &mut region,
-                    config.clone(),
-                )
+                witness_scalar_fixed_short::assign_region(value, 0, &mut region, config.clone())
             },
         )?;
 
@@ -704,20 +673,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         base: &Self::FixedPoint,
     ) -> Result<Self::Point, Error> {
         let config = layouter.config().clone();
-        let num_windows = C::Scalar::NUM_BITS / config.window_width as u32;
 
         let point = layouter.assign_region(
             || format!("Multiply {:?}", base.fixed_point),
-            |mut region| {
-                mul_fixed::assign_region(
-                    scalar,
-                    base,
-                    0,
-                    &mut region,
-                    config.clone(),
-                    num_windows as usize,
-                )
-            },
+            |mut region| mul_fixed::assign_region(scalar, base, 0, &mut region, config.clone()),
         )?;
 
         Ok(point)
@@ -730,21 +689,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::Point, Error> {
         let config = layouter.config().clone();
 
-        // CEIL(l_value / window_width)
-        let num_windows =
-            (config.short_signed_bits + config.window_width - 1) / config.window_width;
-
         let point = layouter.assign_region(
             || format!("Multiply {:?}", base.fixed_point),
             |mut region| {
-                mul_fixed_short::assign_region(
-                    scalar,
-                    base,
-                    0,
-                    &mut region,
-                    config.clone(),
-                    num_windows as usize,
-                )
+                mul_fixed_short::assign_region(scalar, base, 0, &mut region, config.clone())
             },
         )?;
 
@@ -754,7 +702,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::constants::{self, FIXED_BASE_WINDOW_SIZE, L_VALUE, NUM_COMPLETE_BITS};
+    use crate::constants;
     use group::{Curve, Group};
     use halo2::{
         arithmetic::{CurveAffine, FieldExt},
@@ -795,9 +743,6 @@ mod tests {
 
             EccChip::<C>::configure(
                 meta,
-                FIXED_BASE_WINDOW_SIZE,
-                NUM_COMPLETE_BITS,
-                L_VALUE,
                 bits,
                 u,
                 A,
