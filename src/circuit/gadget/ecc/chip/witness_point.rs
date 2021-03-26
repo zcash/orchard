@@ -1,7 +1,7 @@
 use super::{CellValue, EccChip, EccPoint};
 
 use halo2::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::CurveAffine,
     circuit::{Chip, Region},
     plonk::{ConstraintSystem, Error, Expression},
 };
@@ -15,9 +15,7 @@ pub(super) fn create_gate<C: CurveAffine>(
     meta.create_gate("witness point", |_| {
         // Check that y^2 = x^3 + b, where b = 5 in the Pallas equation
         q_point
-            * (y_p.clone() * y_p
-                - (x_p.clone() * x_p.clone() * x_p)
-                - Expression::Constant(C::Base::from_u64(5)))
+            * (y_p.clone() * y_p - (x_p.clone() * x_p.clone() * x_p) - Expression::Constant(C::b()))
     });
 }
 
