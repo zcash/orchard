@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, marker::PhantomData};
 
 use super::{EccInstructions, FixedPoints};
-use crate::constants::OrchardFixedBases;
+use crate::constants::{self, FixedBase, OrchardFixedBases};
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{Cell, Chip, Layouter},
@@ -228,8 +228,113 @@ impl<C: CurveAffine> Chip for EccChip<C> {
     type Loaded = EccLoaded<C>;
 
     fn load(layouter: &mut impl Layouter<Self>) -> Result<Self::Loaded, Error> {
-        // Load fixed bases (interpolation polynomials)
-        todo!()
+        let mut lagrange_coeffs = BTreeMap::<OrchardFixedBases<C>, Vec<Vec<C::Base>>>::new();
+        let mut lagrange_coeffs_short = BTreeMap::<OrchardFixedBases<C>, Vec<Vec<C::Base>>>::new();
+        let mut z = BTreeMap::<OrchardFixedBases<C>, [u64; constants::NUM_WINDOWS]>::new();
+        let mut z_short =
+            BTreeMap::<OrchardFixedBases<C>, [u64; constants::NUM_WINDOWS_SHORT]>::new();
+        let mut u = BTreeMap::<OrchardFixedBases<C>, Vec<Vec<C::Base>>>::new();
+        let mut u_short = BTreeMap::<OrchardFixedBases<C>, Vec<Vec<C::Base>>>::new();
+
+        let bases: [(
+            constants::OrchardFixedBases<C>,
+            [u64; constants::NUM_WINDOWS],
+            [u64; constants::NUM_WINDOWS_SHORT],
+            [[[u8; 32]; constants::H]; constants::NUM_WINDOWS],
+            [[[u8; 32]; constants::H]; constants::NUM_WINDOWS_SHORT],
+        ); 5] = [
+            (
+                constants::commit_ivk_r::generator(),
+                constants::commit_ivk_r::Z,
+                constants::commit_ivk_r::Z_SHORT,
+                constants::commit_ivk_r::U,
+                constants::commit_ivk_r::U_SHORT,
+            ),
+            (
+                constants::note_commit_r::generator(),
+                constants::note_commit_r::Z,
+                constants::note_commit_r::Z_SHORT,
+                constants::note_commit_r::U,
+                constants::note_commit_r::U_SHORT,
+            ),
+            (
+                constants::nullifier_k::generator(),
+                constants::nullifier_k::Z,
+                constants::nullifier_k::Z_SHORT,
+                constants::nullifier_k::U,
+                constants::nullifier_k::U_SHORT,
+            ),
+            (
+                constants::value_commit_r::generator(),
+                constants::value_commit_r::Z,
+                constants::value_commit_r::Z_SHORT,
+                constants::value_commit_r::U,
+                constants::value_commit_r::U_SHORT,
+            ),
+            (
+                constants::value_commit_v::generator(),
+                constants::value_commit_v::Z,
+                constants::value_commit_v::Z_SHORT,
+                constants::value_commit_v::U,
+                constants::value_commit_v::U_SHORT,
+            ),
+        ];
+
+        for base in bases.iter() {
+            lagrange_coeffs.insert(
+                base.0,
+                base.0
+                    .inner()
+                    .compute_lagrange_coeffs(constants::NUM_WINDOWS)
+                    .iter()
+                    .map(|window| window.to_vec())
+                    .collect(),
+            );
+            lagrange_coeffs_short.insert(
+                base.0,
+                base.0
+                    .inner()
+                    .compute_lagrange_coeffs(constants::NUM_WINDOWS_SHORT)
+                    .iter()
+                    .map(|window| window.to_vec())
+                    .collect(),
+            );
+            z.insert(base.0, base.1);
+            z_short.insert(base.0, base.2);
+            u.insert(
+                base.0,
+                base.3
+                    .iter()
+                    .map(|window_us| {
+                        window_us
+                            .iter()
+                            .map(|u| C::Base::from_bytes(&u).unwrap())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>(),
+            );
+            u_short.insert(
+                base.0,
+                base.4
+                    .iter()
+                    .map(|window_us| {
+                        window_us
+                            .iter()
+                            .map(|u| C::Base::from_bytes(&u).unwrap())
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>(),
+            );
+        }
+
+        Ok(EccLoaded {
+            lagrange_coeffs,
+            lagrange_coeffs_short,
+            z,
+            z_short,
+            u,
+            u_short,
+        })
     }
 }
 
