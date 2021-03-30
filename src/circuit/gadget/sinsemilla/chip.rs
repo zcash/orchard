@@ -143,7 +143,10 @@ impl<C: CurveAffine> SinsemillaInstructions<C> for SinsemillaChip<C> {
         todo!()
     }
 
+    #[allow(non_snake_case)]
     fn load_Q(domain_prefix: &str) -> Result<Self::Point, Error> {
+        let hasher = C::Curve::hash_to_curve(Q_PERSONALIZATION);
+        let Q: C = hasher(domain_prefix.as_bytes()).to_affine();
         todo!()
     }
 
