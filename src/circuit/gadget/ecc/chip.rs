@@ -450,7 +450,7 @@ impl<C: CurveAffine> Chip for EccChip<C> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct CellValue<F: FieldExt> {
+pub struct CellValue<F: FieldExt> {
     cell: Cell,
     value: Option<F>,
 }
@@ -458,6 +458,14 @@ pub(crate) struct CellValue<F: FieldExt> {
 impl<F: FieldExt> CellValue<F> {
     pub fn new(cell: Cell, value: Option<F>) -> Self {
         CellValue { cell, value }
+    }
+
+    pub fn value(&self) -> Option<F> {
+        self.value
+    }
+
+    pub fn cell(&self) -> Cell {
+        self.cell
     }
 }
 
@@ -497,6 +505,16 @@ pub struct EccScalarFixedShort<C: CurveAffine> {
 pub struct EccPoint<F: FieldExt> {
     x: CellValue<F>,
     y: CellValue<F>,
+}
+
+impl<F: FieldExt> EccPoint<F> {
+    pub fn x(&self) -> &CellValue<F> {
+        &self.x
+    }
+
+    pub fn y(&self) -> &CellValue<F> {
+        &self.y
+    }
 }
 
 /// A fixed point representing one of the Orchard fixed bases. Contains:
