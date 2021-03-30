@@ -279,11 +279,13 @@ for diversified addresses.</p>
 </li>
 </ul>
 <p>Other than the above, Orchard retains the same design rationale for its keys and addresses
-as Sapling, and the same bech32 encoding. For example, diversifiers remain at 11 bytes, so
-that Orchard addresses are the same length as Sapling addresses.</p>
-<p>The &quot;human-readable part&quot; for Orchard payment addresses is &quot;zo&quot;, i.e. all addresses
-have the prefix &quot;zo1&quot;. Other prefixes and key formats will be described in section 5.6
-of the protocol specification. </p>
+as Sapling. For example, diversifiers remain at 11 bytes, so that a raw Orchard address is
+the same length as a raw Sapling address.</p>
+<p>Orchard payment addresses do not have a stand-alone string encoding. Instead, we define
+&quot;unified addresses&quot; that can bundle together addresses of different types, including
+Orchard. Unified addresses have a Human-Readable Part of &quot;u&quot; on Mainnet, i.e. they will
+have the prefix &quot;u1&quot;. For specifications of this and other formats (e.g. for Orchard viewing
+and spending keys), see section 5.6.4 of the NU5 protocol specification [#NU5-orchardencodings].</p>
 <h2><a class="header" href="#hierarchical-deterministic-wallets" id="hierarchical-deterministic-wallets">Hierarchical deterministic wallets</a></h2>
 <p>When designing Sapling, we defined a <a href="https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki">BIP 32</a>-like mechanism for generating hierarchical
 deterministic wallets in <a href="https://zips.z.cash/zip-0032">ZIP 32</a>. We decided at the time to stick closely to the design
