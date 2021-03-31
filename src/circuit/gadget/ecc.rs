@@ -21,6 +21,8 @@ pub trait EccInstructions<C: CurveAffine>: Chip<Field = C::Base> {
     type ScalarFixedShort: Clone + fmt::Debug;
     /// Variable representing an elliptic curve point.
     type Point: Clone + fmt::Debug;
+    /// Variable representing the x-coordinate of an elliptic curve point.
+    type X: Clone + fmt::Debug;
     /// Variable representing the set of fixed bases in the circuit.
     type FixedPoints: FixedPoints<C>;
     /// Variable representing a fixed elliptic curve point (constant in the circuit).
@@ -171,6 +173,19 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> Point<C, EccChip> {
         by: &ScalarVar<C, EccChip>,
     ) -> Result<Self, Error> {
         EccChip::mul(&mut layouter, &by.inner, &self.inner).map(|inner| Point { inner })
+    }
+}
+
+/// The x-coordinate of an elliptic curve point over the given curve.
+#[derive(Debug)]
+pub struct X<C: CurveAffine, EccChip: EccInstructions<C>> {
+    inner: EccChip::X,
+}
+
+impl<C: CurveAffine, EccChip: EccInstructions<C>> X<C, EccChip> {
+    /// Wraps the given x-coordinate (obtained directly from an instruction) in a gadget.
+    pub fn from_inner(inner: EccChip::X) -> Self {
+        X { inner }
     }
 }
 
