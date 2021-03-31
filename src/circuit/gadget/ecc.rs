@@ -8,7 +8,7 @@ use halo2::{
     plonk::Error,
 };
 
-mod chip;
+pub(super) mod chip;
 
 /// Trait allowing circuit's fixed points to be enumerated.
 pub trait FixedPoints<C: CurveAffine>: Clone + fmt::Debug {}

@@ -1,31 +1,46 @@
 //! Gadget and chips for the Sinsemilla hash function.
+use crate::circuit::gadget::ecc::{self, EccInstructions};
+use halo2::{arithmetic::CurveAffine, circuit::Layouter, plonk::Error};
 use std::fmt;
 
-use halo2::{arithmetic::CurveAffine, circuit::Layouter, plonk::Error};
-
-use crate::circuit::gadget::ecc::{self, EccInstructions};
-
-// mod chip;
+mod chip;
 // pub use chip::{SinsemillaChip, SinsemillaColumns, SinsemillaConfig};
 
-/// Trait allowing circuit's Sinsemilla domains to be enumerated.
-pub trait Domains<C: CurveAffine, F: ecc::FixedPoints<C>>: Clone + fmt::Debug {
-    /// Returns the fixed point corresponding to the R constant for this domain.
-    fn get_r(&self) -> F;
+/// Trait allowing circuit's Sinsemilla HashDomains to be enumerated.
+pub trait HashDomains<C: CurveAffine>: Clone + fmt::Debug {}
+
+/// Trait allowing circuit's Sinsemilla CommitDomains to be enumerated.
+pub trait CommitDomains<C: CurveAffine, F: ecc::FixedPoints<C>, H: HashDomains<C>>:
+    Clone + fmt::Debug
+{
+    /// Returns the fixed point corresponding to the R constant for this CommitDomain.
+    fn r(&self) -> F;
+
+    /// Returns the HashDomain contained in this CommitDomain
+    fn hash_domain(&self) -> H;
 }
 
 /// The set of circuit instructions required to use the [`Sinsemilla`](https://zcash.github.io/halo2/design/gadgets/sinsemilla.html) gadget.
 pub trait SinsemillaInstructions<C: CurveAffine>: EccInstructions<C> {
     /// Witnessed message.
     type Message: Clone + fmt::Debug;
-    /// Variable representing the set of fixed bases in the circuit.
-    type Domains: Domains<C, <Self as EccInstructions<C>>::FixedPoints>;
-    /// Variable representing a Q fixed point for a domain.
+    /// Variable representing the set of CommitDomains in the circuit.
+    type CommitDomains: CommitDomains<
+        C,
+        <Self as EccInstructions<C>>::FixedPoints,
+        Self::HashDomains,
+    >;
+    /// Variable representing the set of HashDomains in the circuit.
+    type HashDomains: HashDomains<C>;
+    /// Variable representing a Q fixed point for a HashDomain.
     type Q: Clone + fmt::Debug;
 
     /// Gets the Q constant for the given domain.
     #[allow(non_snake_case)]
-    fn get_Q(layouter: &mut impl Layouter<Self>, domain: &Self::Domains) -> Result<Self::Q, Error>;
+    fn get_Q(
+        layouter: &mut impl Layouter<Self>,
+        domain: &Self::HashDomains,
+    ) -> Result<Self::Q, Error>;
 
     /// Witnesses a message in the form of a bitstring.
     fn witness_message(
@@ -53,10 +68,10 @@ pub struct HashDomain<C: CurveAffine, SinsemillaChip: SinsemillaInstructions<C>>
 
 impl<C: CurveAffine, SinsemillaChip: SinsemillaInstructions<C>> HashDomain<C, SinsemillaChip> {
     #[allow(non_snake_case)]
-    /// Constructs a new `CommitDomain` for the given domain.
+    /// Constructs a new `HashDomain` for the given domain.
     pub fn new(
         mut layouter: impl Layouter<SinsemillaChip>,
-        domain: &SinsemillaChip::Domains,
+        domain: &SinsemillaChip::HashDomains,
     ) -> Result<Self, Error> {
         SinsemillaChip::get_Q(&mut layouter, domain).map(|Q| HashDomain { Q })
     }
@@ -95,11 +110,11 @@ impl<C: CurveAffine, SinsemillaChip: SinsemillaInstructions<C>> CommitDomain<C, 
     /// Constructs a new `CommitDomain` for the given domain.
     pub fn new(
         mut layouter: impl Layouter<SinsemillaChip>,
-        domain: &SinsemillaChip::Domains,
+        domain: &SinsemillaChip::CommitDomains,
     ) -> Result<Self, Error> {
         Ok(CommitDomain {
-            M: HashDomain::new(layouter.namespace(|| "M"), domain)?,
-            R: ecc::FixedPoint::get(layouter.namespace(|| "R"), domain.get_r())?,
+            M: HashDomain::new(layouter.namespace(|| "M"), &domain.hash_domain())?,
+            R: ecc::FixedPoint::get(layouter.namespace(|| "R"), domain.r())?,
         })
     }
 
