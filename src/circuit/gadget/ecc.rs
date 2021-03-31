@@ -149,6 +149,11 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> Point<C, EccChip> {
         EccChip::witness_point(&mut layouter, value).map(|inner| Point { inner })
     }
 
+    /// Wraps the given point (obtained directly from an instruction) in a gadget.
+    pub fn from_inner(inner: EccChip::Point) -> Self {
+        Point { inner }
+    }
+
     /// Returns `self + other`.
     pub fn add(&self, mut layouter: impl Layouter<EccChip>, other: &Self) -> Result<Self, Error> {
         EccChip::add(&mut layouter, &self.inner, &other.inner).map(|inner| Point { inner })
