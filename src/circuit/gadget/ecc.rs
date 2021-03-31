@@ -52,6 +52,9 @@ pub trait EccInstructions<C: CurveAffine>: Chip<Field = C::Base> {
         value: Option<C>,
     ) -> Result<Self::Point, Error>;
 
+    /// Extracts the x-coordinate of a point.
+    fn extract_p(point: &Self::Point) -> &Self::X;
+
     /// Gets a fixed point into the circuit.
     fn get_fixed(
         layouter: &mut impl Layouter<Self>,
@@ -149,6 +152,11 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> Point<C, EccChip> {
     /// Constructs a new point with the given value.
     pub fn new(mut layouter: impl Layouter<EccChip>, value: Option<C>) -> Result<Self, Error> {
         EccChip::witness_point(&mut layouter, value).map(|inner| Point { inner })
+    }
+
+    /// Extracts the x-coordinate of a point.
+    pub fn extract_p(&self) -> X<C, EccChip> {
+        X::from_inner(EccChip::extract_p(&self.inner).clone())
     }
 
     /// Wraps the given point (obtained directly from an instruction) in a gadget.
