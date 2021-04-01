@@ -1,12 +1,15 @@
-use super::super::ecc::chip::EccChip;
+use super::super::ecc::chip::{EccChip, EccConfig};
 use super::{CommitDomains, HashDomains, SinsemillaInstructions};
 
 use crate::constants::OrchardFixedBases;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{Cell, Layouter},
-    plonk::Error,
+    plonk::{Error, Selector},
 };
+
+mod generator_table;
+use generator_table::*;
 
 /// A structure containing a cell and its assigned value.
 #[derive(Clone, Debug)]
