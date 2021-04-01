@@ -47,49 +47,49 @@ impl<F: FieldExt> CellValue<F> {
 #[derive(Clone, Debug)]
 #[allow(non_snake_case)]
 pub struct EccConfig {
-    // Advice column for scalar decomposition into bits
-    bits: Column<Advice>,
-    // Witness u = (y + z).sqrt(), used in fixed-base scalar multiplication
-    u: Column<Advice>,
-    // Holds a point (x_a, y_a) that is usually the result of an addition
-    A: (Column<Advice>, Column<Advice>),
-    // Holds a point (x_p, y_p)
-    P: (Column<Advice>, Column<Advice>),
-    // A pair (lambda1, lambda2) representing gradients
-    lambda: (Column<Advice>, Column<Advice>),
-    // [A, B, C, D] boolean flags used in complete addition
-    add_complete_bool: [Column<Advice>; 4],
-    // [alpha, beta, gamma, delta] inverses used in complete addition
-    add_complete_inv: [Column<Advice>; 4],
-    // Coefficients of interpolation polynomials for x-coordinates (used in fixed-base scalar multiplication)
-    lagrange_coeffs: [Column<Fixed>; constants::H],
-    // Fixed z such that y + z = u^2 some square, and -y + z is a non-square. (Used in fixed-base scalar multiplication)
-    fixed_z: Column<Fixed>,
+    /// Advice column for scalar decomposition into bits
+    pub bits: Column<Advice>,
+    /// Witness u = (y + z).sqrt(), used in fixed-base scalar multiplication
+    pub u: Column<Advice>,
+    /// Holds a point (x_a, y_a) that is usually the result of an addition
+    pub A: (Column<Advice>, Column<Advice>),
+    /// Holds a point (x_p, y_p)
+    pub P: (Column<Advice>, Column<Advice>),
+    /// A pair (lambda1, lambda2) representing gradients
+    pub lambda: (Column<Advice>, Column<Advice>),
+    /// [A, B, C, D] boolean flags used in complete addition
+    pub add_complete_bool: [Column<Advice>; 4],
+    /// [alpha, beta, gamma, delta] inverses used in complete addition
+    pub add_complete_inv: [Column<Advice>; 4],
+    /// Coefficients of interpolation polynomials for x-coordinates (used in fixed-base scalar multiplication)
+    pub lagrange_coeffs: [Column<Fixed>; constants::H],
+    /// Fixed z such that y + z = u^2 some square, and -y + z is a non-square. (Used in fixed-base scalar multiplication)
+    pub fixed_z: Column<Fixed>,
 
-    // Incomplete addition
-    q_add: Selector,
-    // Complete addition
-    q_add_complete: Selector,
-    // Point doubling
-    q_double: Selector,
-    // Variable-base scalar multiplication
-    q_mul: Selector,
-    // Fixed-base full-width scalar multiplication
-    q_mul_fixed: Selector,
-    // Fixed-base signed short scalar multiplication
-    q_mul_fixed_short: Selector,
-    // Witness point
-    q_point: Selector,
-    // Witness scalar for variable-base scalar mul
-    q_scalar_var: Selector,
-    // Witness full-width scalar for fixed-base scalar mul
-    q_scalar_fixed: Selector,
-    // Witness signed short scalar for full-width fixed-base scalar mul
-    q_scalar_fixed_short: Selector,
-    // Copy bits of decomposed scalars
-    perm_scalar: Permutation,
-    // Copy between (x_p, y_p) and (x_a, y_a)
-    perm_sum: Permutation,
+    /// Incomplete addition
+    pub q_add: Selector,
+    /// Complete addition
+    pub q_add_complete: Selector,
+    /// Point doubling
+    pub q_double: Selector,
+    /// Variable-base scalar multiplication
+    pub q_mul: Selector,
+    /// Fixed-base full-width scalar multiplication
+    pub q_mul_fixed: Selector,
+    /// Fixed-base signed short scalar multiplication
+    pub q_mul_fixed_short: Selector,
+    /// Witness point
+    pub q_point: Selector,
+    /// Witness scalar for variable-base scalar mul
+    pub q_scalar_var: Selector,
+    /// Witness full-width scalar for fixed-base scalar mul
+    pub q_scalar_fixed: Selector,
+    /// Witness signed short scalar for full-width fixed-base scalar mul
+    pub q_scalar_fixed_short: Selector,
+    /// Copy bits of decomposed scalars
+    pub perm_scalar: Permutation,
+    /// Copy between (x_p, y_p) and (x_a, y_a)
+    pub perm_sum: Permutation,
 }
 
 /// A chip implementing EccInstructions
@@ -100,7 +100,7 @@ pub struct EccChip<C: CurveAffine> {
 
 #[allow(non_snake_case)]
 impl<C: CurveAffine> EccChip<C> {
-    fn configure(
+    pub fn configure(
         meta: &mut ConstraintSystem<C::Base>,
         bits: Column<Advice>,
         u: Column<Advice>,
