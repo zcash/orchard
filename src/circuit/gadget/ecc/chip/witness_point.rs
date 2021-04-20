@@ -1,8 +1,8 @@
-use super::{CellValue, EccChip, EccPoint};
+use super::{CellValue, EccConfig, EccPoint};
 
 use halo2::{
     arithmetic::CurveAffine,
-    circuit::{Chip, Region},
+    circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},
 };
 
@@ -22,16 +22,16 @@ pub(super) fn create_gate<C: CurveAffine>(
 pub(super) fn assign_region<C: CurveAffine>(
     value: Option<C>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccPoint<C::Base>, Error> {
     // Enable `q_point` selector
     config.q_point.enable(region, offset)?;
 
-    let value = value.map(|value| value.get_xy().unwrap());
+    let value = value.map(|value| value.coordinates().unwrap());
 
     // Assign `x_p` value
-    let x_p_val = value.map(|value| value.0);
+    let x_p_val = value.map(|value| *value.x());
     let x_p_var = region.assign_advice(
         || "x_p",
         config.P.0,
@@ -40,7 +40,7 @@ pub(super) fn assign_region<C: CurveAffine>(
     )?;
 
     // Assign `y_p` value
-    let y_p_val = value.map(|value| value.1);
+    let y_p_val = value.map(|value| *value.y());
     let y_p_var = region.assign_advice(
         || "y_p",
         config.P.1,
@@ -49,7 +49,7 @@ pub(super) fn assign_region<C: CurveAffine>(
     )?;
 
     Ok(EccPoint {
-        x: CellValue::new(x_p_var, x_p_val),
-        y: CellValue::new(y_p_var, y_p_val),
+        x: CellValue::<C::Base>::new(x_p_var, x_p_val),
+        y: CellValue::<C::Base>::new(y_p_var, y_p_val),
     })
 }

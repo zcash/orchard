@@ -31,7 +31,7 @@ subtle = "2.3"
 
 [dependencies.halo2]
 git = "https://github.com/zcash/halo2.git"
-rev = "6acacf1aca12f34fc311aa59056e40adc0e6d8bd"
+branch = "chip-config"
 
 [dependencies.pasta_curves]
 git = "https://github.com/zcash/pasta_curves.git"

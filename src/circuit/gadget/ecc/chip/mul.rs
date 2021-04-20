@@ -1,34 +1,33 @@
-use super::super::EccInstructions;
-use super::{add_complete, double, util, CellValue, EccChip, EccPoint};
+use super::{add_complete, double, util, EccConfig, EccPoint, EccScalarVar};
 use crate::constants;
 
 use ff::PrimeField;
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},
-    circuit::{Chip, Region},
+    circuit::{CellValue, Region},
     plonk::{ConstraintSystem, Error, Expression},
 };
 
-pub(super) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
-    q_mul: Expression<C::Base>,
-    x_a_cur: Expression<C::Base>,
-    x_a_next: Expression<C::Base>,
-    x_p_cur: Expression<C::Base>,
-    x_p_next: Expression<C::Base>,
-    lambda1_cur: Expression<C::Base>,
-    lambda1_next: Expression<C::Base>,
-    lambda2_cur: Expression<C::Base>,
-    lambda2_next: Expression<C::Base>,
+pub(super) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_mul: Expression<F>,
+    x_a_cur: Expression<F>,
+    x_a_next: Expression<F>,
+    x_p_cur: Expression<F>,
+    x_p_next: Expression<F>,
+    lambda1_cur: Expression<F>,
+    lambda1_next: Expression<F>,
+    lambda2_cur: Expression<F>,
+    lambda2_next: Expression<F>,
 ) {
     let y_a_cur = (lambda1_cur.clone() + lambda2_cur.clone())
         * (x_a_cur.clone()
             - (lambda1_cur.clone() * lambda1_cur.clone() - x_a_cur.clone() - x_p_cur.clone()))
-        * C::Base::TWO_INV;
+        * F::TWO_INV;
 
     let y_a_next = (lambda1_next.clone() + lambda2_next)
         * (x_a_next.clone() - (lambda1_next.clone() * lambda1_next - x_a_next.clone() - x_p_next))
-        * C::Base::TWO_INV;
+        * F::TWO_INV;
 
     // λ_{2,i}^2 − x_{A,i+1} −(λ_{1,i}^2 − x_{A,i} − x_{P,i}) − x_{A,i} = 0
     meta.create_gate("Double-and-add expr1", |_| {
@@ -49,11 +48,11 @@ pub(super) fn create_gate<C: CurveAffine>(
 }
 
 pub(super) fn assign_region<C: CurveAffine>(
-    scalar: &<EccChip<C> as EccInstructions<C>>::ScalarVar,
-    base: &<EccChip<C> as EccInstructions<C>>::Point,
+    scalar: &EccScalarVar<C>,
+    base: &EccPoint<C::Base>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccPoint<C::Base>, Error> {
     // Copy the scalar decomposition
     for (w, k) in scalar.k_bits.iter().enumerate() {
@@ -63,12 +62,12 @@ pub(super) fn assign_region<C: CurveAffine>(
             config.bits,
             w + offset,
             k,
-            &config.perm_scalar,
+            &config.perm_bits,
         )?;
     }
 
     // Initialise acc := [2]B
-    let mut acc = double::assign_region(&base, offset, region, config.clone()).unwrap();
+    let mut acc = double::assign_region::<C>(&base, offset, region, config.clone()).unwrap();
     let mut x_a = acc.x.value;
     let mut y_a = acc.y.value;
 
@@ -182,8 +181,8 @@ pub(super) fn assign_region<C: CurveAffine>(
             || y_a.ok_or(Error::SynthesisError),
         )?;
         acc = EccPoint {
-            x: CellValue::new(x_a_cell, x_a),
-            y: CellValue::new(y_a_cell, y_a),
+            x: CellValue::<C::Base>::new(x_a_cell, x_a),
+            y: CellValue::<C::Base>::new(y_a_cell, y_a),
         };
     }
 
@@ -215,12 +214,13 @@ pub(super) fn assign_region<C: CurveAffine>(
             || y_p.ok_or(Error::SynthesisError),
         )?;
         let p = EccPoint {
-            x: CellValue::new(x_p_cell, x_p),
-            y: CellValue::new(y_p_cell, y_p),
+            x: CellValue::<C::Base>::new(x_p_cell, x_p),
+            y: CellValue::<C::Base>::new(y_p_cell, y_p),
         };
 
         // Acc + U
-        let tmp_acc = add_complete::assign_region(&p, &acc, row + offset, region, config.clone())?;
+        let tmp_acc =
+            add_complete::assign_region::<C>(&p, &acc, row + offset, region, config.clone())?;
 
         // Copy acc from `x_a`, `y_a` over to `x_p`, `y_p` on the next row
         let acc_x = util::assign_and_constrain(
@@ -243,8 +243,13 @@ pub(super) fn assign_region<C: CurveAffine>(
         acc = EccPoint { x: acc_x, y: acc_y };
 
         // Acc + U + Acc
-        acc =
-            add_complete::assign_region(&acc, &tmp_acc, row + offset + 1, region, config.clone())?;
+        acc = add_complete::assign_region::<C>(
+            &acc,
+            &tmp_acc,
+            row + offset + 1,
+            region,
+            config.clone(),
+        )?;
     }
 
     // Process the least significant bit
@@ -269,12 +274,12 @@ pub(super) fn assign_region<C: CurveAffine>(
                 || y_p.ok_or(Error::SynthesisError),
             )?;
             let p = EccPoint {
-                x: CellValue::new(x_p_cell, x_p),
-                y: CellValue::new(y_p_cell, y_p),
+                x: CellValue::<C::Base>::new(x_p_cell, x_p),
+                y: CellValue::<C::Base>::new(y_p_cell, y_p),
             };
 
             // Return the result of the final complete addition as `[scalar]B`
-            add_complete::assign_region(&p, &acc, k_0_row + offset, region, config.clone())
+            add_complete::assign_region::<C>(&p, &acc, k_0_row + offset, region, config.clone())
         } else {
             // If `k_0` is 1, simply return `Acc`
             Ok(acc)

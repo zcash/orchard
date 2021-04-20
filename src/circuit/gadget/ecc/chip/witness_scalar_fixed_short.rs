@@ -1,29 +1,29 @@
-use super::{CellValue, EccChip, EccScalarFixedShort};
+use super::{CellValue, EccConfig, EccScalarFixedShort};
 use crate::constants::{self, util};
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},
-    circuit::{Chip, Region},
+    circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},
 };
 
-pub(super) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
-    q_scalar_fixed_short: Expression<C::Base>,
-    s: Expression<C::Base>,
+pub(super) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_scalar_fixed_short: Expression<F>,
+    s: Expression<F>,
 ) {
     // Check that s \in {1, -1}
     meta.create_gate("check sign", |_| {
         q_scalar_fixed_short
-            * (s.clone() + Expression::Constant(C::Base::one()))
-            * (s - Expression::Constant(C::Base::one()))
+            * (s.clone() + Expression::Constant(F::one()))
+            * (s - Expression::Constant(F::one()))
     });
 }
 
 pub(super) fn assign_region<C: CurveAffine>(
     value: Option<C::Scalar>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccScalarFixedShort<C>, Error> {
     // Compute the scalar's sign
     let sign = value.map(|value| {
@@ -98,7 +98,7 @@ pub(super) fn assign_region<C: CurveAffine>(
 
     Ok(EccScalarFixedShort {
         magnitude,
-        sign: CellValue::new(sign_cell, sign),
+        sign: CellValue::<C::Base>::new(sign_cell, sign),
         k_bits,
     })
 }

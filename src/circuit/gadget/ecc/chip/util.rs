@@ -1,19 +1,19 @@
-use super::{CellValue, EccChip};
+use super::CellValue;
 use halo2::{
-    arithmetic::CurveAffine,
+    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, Error, Permutation},
 };
 
 /// Assign a cell the same value as another cell and set up a copy constraint between them.
-pub(super) fn assign_and_constrain<A, AR, C: CurveAffine>(
-    region: &mut Region<'_, EccChip<C>>,
+pub(super) fn assign_and_constrain<A, AR, F: FieldExt>(
+    region: &mut Region<'_, F>,
     annotation: A,
     column: Column<Advice>,
     row: usize,
-    copy: &CellValue<C::Base>,
+    copy: &CellValue<F>,
     perm: &Permutation,
-) -> Result<CellValue<C::Base>, Error>
+) -> Result<CellValue<F>, Error>
 where
     A: Fn() -> AR,
     AR: Into<String>,

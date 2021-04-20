@@ -1,21 +1,20 @@
-use super::super::EccInstructions;
-use super::{util, CellValue, EccChip, EccPoint};
+use super::{util, EccConfig, EccPoint};
 use group::Curve;
 use halo2::{
-    arithmetic::CurveAffine,
-    circuit::{Chip, Region},
+    arithmetic::{CurveAffine, FieldExt},
+    circuit::{CellValue, Region},
     plonk::{ConstraintSystem, Error, Expression},
 };
 
-pub(super) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
-    q_add: Expression<C::Base>,
-    x_p: Expression<C::Base>,
-    y_p: Expression<C::Base>,
-    x_q: Expression<C::Base>,
-    y_q: Expression<C::Base>,
-    x_a: Expression<C::Base>,
-    y_a: Expression<C::Base>,
+pub(super) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_add: Expression<F>,
+    x_p: Expression<F>,
+    y_p: Expression<F>,
+    x_q: Expression<F>,
+    y_q: Expression<F>,
+    x_a: Expression<F>,
+    y_a: Expression<F>,
 ) {
     // (x_a + x_q + x_p)⋅(x_p − x_q)^2 − (y_p − y_q)^2 = 0
     meta.create_gate("point addition expr1", |_| {
@@ -36,11 +35,11 @@ pub(super) fn create_gate<C: CurveAffine>(
 }
 
 pub(super) fn assign_region<C: CurveAffine>(
-    a: &<EccChip<C> as EccInstructions<C>>::Point,
-    b: &<EccChip<C> as EccInstructions<C>>::Point,
+    a: &EccPoint<C::Base>,
+    b: &EccPoint<C::Base>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccPoint<C::Base>, Error> {
     // Enable `q_add` selector
     config.q_add.enable(region, offset)?;
@@ -64,11 +63,11 @@ pub(super) fn assign_region<C: CurveAffine>(
         .map(|(((x_p, y_p), x_q), y_q)| {
             let p = C::from_xy(x_p, y_p).unwrap();
             let q = C::from_xy(x_q, y_q).unwrap();
-            (p + q).to_affine().get_xy().unwrap()
+            (p + q).to_affine().coordinates().unwrap()
         });
 
     // Assign the sum to `x_a`, `y_a` columns in the next row
-    let x_a_val = sum.map(|sum| sum.0);
+    let x_a_val = sum.map(|sum| *sum.x());
     let x_a_var = region.assign_advice(
         || "x_a",
         config.A.0,
@@ -76,7 +75,7 @@ pub(super) fn assign_region<C: CurveAffine>(
         || x_a_val.ok_or(Error::SynthesisError),
     )?;
 
-    let y_a_val = sum.map(|sum| sum.1);
+    let y_a_val = sum.map(|sum| *sum.y());
     let y_a_var = region.assign_advice(
         || "y_a",
         config.A.1,
@@ -85,7 +84,7 @@ pub(super) fn assign_region<C: CurveAffine>(
     )?;
 
     Ok(EccPoint {
-        x: CellValue::new(x_a_var, x_a_val),
-        y: CellValue::new(y_a_var, y_a_val),
+        x: CellValue::<C::Base>::new(x_a_var, x_a_val),
+        y: CellValue::<C::Base>::new(y_a_var, y_a_val),
     })
 }

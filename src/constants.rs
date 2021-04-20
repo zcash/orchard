@@ -56,13 +56,13 @@ pub const NUM_WINDOWS_SHORT: usize =
 /// Number of bits used in complete addition (for variable-base scalar mul)
 pub const NUM_COMPLETE_BITS: usize = 3;
 
-pub trait OrchardFixedBases {
+pub trait Name {
     fn name(&self) -> &[u8];
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct CommitIvkR<C: CurveAffine>(pub OrchardFixedBase<C>);
-impl<C: CurveAffine> OrchardFixedBases for CommitIvkR<C> {
+impl<C: CurveAffine> Name for CommitIvkR<C> {
     fn name(&self) -> &[u8] {
         b"CommitIvkR"
     }
@@ -70,7 +70,7 @@ impl<C: CurveAffine> OrchardFixedBases for CommitIvkR<C> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct NoteCommitR<C: CurveAffine>(pub OrchardFixedBase<C>);
-impl<C: CurveAffine> OrchardFixedBases for NoteCommitR<C> {
+impl<C: CurveAffine> Name for NoteCommitR<C> {
     fn name(&self) -> &[u8] {
         b"NoteCommitR"
     }
@@ -78,7 +78,7 @@ impl<C: CurveAffine> OrchardFixedBases for NoteCommitR<C> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct NullifierK<C: CurveAffine>(pub OrchardFixedBase<C>);
-impl<C: CurveAffine> OrchardFixedBases for NullifierK<C> {
+impl<C: CurveAffine> Name for NullifierK<C> {
     fn name(&self) -> &[u8] {
         b"NullifierK"
     }
@@ -86,7 +86,7 @@ impl<C: CurveAffine> OrchardFixedBases for NullifierK<C> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct ValueCommitR<C: CurveAffine>(pub OrchardFixedBase<C>);
-impl<C: CurveAffine> OrchardFixedBases for ValueCommitR<C> {
+impl<C: CurveAffine> Name for ValueCommitR<C> {
     fn name(&self) -> &[u8] {
         b"ValueCommitR"
     }
@@ -94,7 +94,7 @@ impl<C: CurveAffine> OrchardFixedBases for ValueCommitR<C> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct ValueCommitV<C: CurveAffine>(pub OrchardFixedBase<C>);
-impl<C: CurveAffine> OrchardFixedBases for ValueCommitV<C> {
+impl<C: CurveAffine> Name for ValueCommitV<C> {
     fn name(&self) -> &[u8] {
         b"ValueCommitV"
     }

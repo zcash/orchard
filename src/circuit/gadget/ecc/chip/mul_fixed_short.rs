@@ -1,22 +1,24 @@
-use super::super::EccInstructions;
-use super::{add, util, witness_point, EccChip, EccFixedPoints, EccPoint};
+use super::{
+    add, util, witness_point, EccConfig, EccFixedPoint, EccPoint, EccScalarFixedShort,
+    OrchardFixedBases,
+};
 use crate::constants;
 
 use group::Curve;
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},
-    circuit::{Chip, Region},
+    circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},
 };
 
 // We reuse the constraints in the `mul_fixed` gate so exclude them here.
 // Here, we add some new constraints specific to the short signed case.
-pub(super) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
-    q_mul_fixed_short: Expression<C::Base>,
-    s: Expression<C::Base>,
-    y_a: Expression<C::Base>,
-    y_p: Expression<C::Base>,
+pub(super) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_mul_fixed_short: Expression<F>,
+    s: Expression<F>,
+    y_a: Expression<F>,
+    y_p: Expression<F>,
 ) {
     // `(x_a, y_a)` is the result of `[m]B`, where `m` is the magnitude.
     // We conditionally negate this result using `y_p = y_a * s`, where `s` is the sign.
@@ -31,11 +33,11 @@ pub(super) fn create_gate<C: CurveAffine>(
 }
 
 pub(super) fn assign_region<C: CurveAffine>(
-    scalar: &<EccChip<C> as EccInstructions<C>>::ScalarFixedShort,
-    base: &<EccChip<C> as EccInstructions<C>>::FixedPoint,
+    scalar: &EccScalarFixedShort<C>,
+    base: &EccFixedPoint<C>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccPoint<C::Base>, Error> {
     // Assign fixed columns for given fixed base
     for w in 0..constants::NUM_WINDOWS_SHORT {
@@ -83,17 +85,17 @@ pub(super) fn assign_region<C: CurveAffine>(
             config.bits,
             w + offset,
             k,
-            &config.perm_scalar,
+            &config.perm_bits,
         )?;
     }
 
     // Get the value of the fixed base
     let b = match base.fixed_point {
-        EccFixedPoints::CommitIvkR(inner) => inner.0.value(),
-        EccFixedPoints::NoteCommitR(inner) => inner.0.value(),
-        EccFixedPoints::NullifierK(inner) => inner.0.value(),
-        EccFixedPoints::ValueCommitR(inner) => inner.0.value(),
-        EccFixedPoints::ValueCommitV(inner) => inner.0.value(),
+        OrchardFixedBases::CommitIvkR(inner) => inner.0.value(),
+        OrchardFixedBases::NoteCommitR(inner) => inner.0.value(),
+        OrchardFixedBases::NullifierK(inner) => inner.0.value(),
+        OrchardFixedBases::ValueCommitR(inner) => inner.0.value(),
+        OrchardFixedBases::ValueCommitV(inner) => inner.0.value(),
     };
 
     // The scalar decomposition was done in the base field. For computation
@@ -183,7 +185,7 @@ pub(super) fn assign_region<C: CurveAffine>(
         region.assign_advice(|| "u", config.u, w, || u_val.ok_or(Error::SynthesisError))?;
 
         // Add to the cumulative sum
-        sum = add::assign_region(&mul_b, &sum, offset + w, region, config.clone()).unwrap();
+        sum = add::assign_region::<C>(&mul_b, &sum, offset + w, region, config.clone()).unwrap();
     }
 
     // Process most significant window outside the for loop
@@ -219,7 +221,7 @@ pub(super) fn assign_region<C: CurveAffine>(
     }
 
     // Add to the cumulative sum to get `[magnitude]B`.
-    let magnitude_mul = add::assign_region(
+    let magnitude_mul = add::assign_region::<C>(
         &mul_b,
         &sum,
         offset + constants::NUM_WINDOWS_SHORT - 1,
@@ -234,14 +236,14 @@ pub(super) fn assign_region<C: CurveAffine>(
         config.bits,
         offset + constants::NUM_WINDOWS_SHORT,
         &scalar.sign,
-        &config.perm_scalar,
+        &config.perm_bits,
     )?;
 
     // Conditionally negate `y`-coordinate
     let y_val = match sign.value {
         Some(sign) => {
             if sign == -C::Base::one() {
-                magnitude_mul.y.value.map(|y| -y)
+                magnitude_mul.y.value.map(|y: C::Base| -y)
             } else {
                 magnitude_mul.y.value
             }
