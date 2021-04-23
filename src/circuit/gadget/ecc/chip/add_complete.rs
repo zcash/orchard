@@ -1,45 +1,44 @@
-use super::super::EccInstructions;
-use super::{util, CellValue, EccChip, EccPoint};
+use super::{util, EccConfig, EccPoint};
 
 use group::Curve;
 use halo2::{
     arithmetic::{CurveAffine, CurveExt, Field, FieldExt},
-    circuit::{Chip, Region},
+    circuit::{CellValue, Region},
     plonk::{ConstraintSystem, Error, Expression},
 };
 
-pub(crate) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
-    q_add_complete: Expression<C::Base>,
-    a: Expression<C::Base>,
-    b: Expression<C::Base>,
-    c: Expression<C::Base>,
-    d: Expression<C::Base>,
-    alpha: Expression<C::Base>,
-    beta: Expression<C::Base>,
-    gamma: Expression<C::Base>,
-    delta: Expression<C::Base>,
-    lambda: Expression<C::Base>,
-    x_p: Expression<C::Base>,
-    y_p: Expression<C::Base>,
-    x_q: Expression<C::Base>,
-    y_q: Expression<C::Base>,
-    x_r: Expression<C::Base>,
-    y_r: Expression<C::Base>,
+pub(crate) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_add_complete: Expression<F>,
+    a: Expression<F>,
+    b: Expression<F>,
+    c: Expression<F>,
+    d: Expression<F>,
+    alpha: Expression<F>,
+    beta: Expression<F>,
+    gamma: Expression<F>,
+    delta: Expression<F>,
+    lambda: Expression<F>,
+    x_p: Expression<F>,
+    y_p: Expression<F>,
+    x_q: Expression<F>,
+    y_q: Expression<F>,
+    x_r: Expression<F>,
+    y_r: Expression<F>,
 ) {
     // Boolean checks on A, B, C, D
     {
         meta.create_gate("Check A is boolean", |_| {
-            q_add_complete.clone() * a.clone() * (Expression::Constant(C::Base::one()) - a.clone())
+            q_add_complete.clone() * a.clone() * (Expression::Constant(F::one()) - a.clone())
         });
         meta.create_gate("Check B is boolean", |_| {
-            q_add_complete.clone() * b.clone() * (Expression::Constant(C::Base::one()) - b.clone())
+            q_add_complete.clone() * b.clone() * (Expression::Constant(F::one()) - b.clone())
         });
         meta.create_gate("Check C is boolean", |_| {
-            q_add_complete.clone() * c.clone() * (Expression::Constant(C::Base::one()) - c.clone())
+            q_add_complete.clone() * c.clone() * (Expression::Constant(F::one()) - c.clone())
         });
         meta.create_gate("Check D is boolean", |_| {
-            q_add_complete.clone() * d.clone() * (Expression::Constant(C::Base::one()) - d.clone())
+            q_add_complete.clone() * d.clone() * (Expression::Constant(F::one()) - d.clone())
         });
     }
 
@@ -48,14 +47,14 @@ pub(crate) fn create_gate<C: CurveAffine>(
         // x_q = x_p ⟹ A
         meta.create_gate("x_q = x_p ⟹ A", |_| {
             let lhs = (x_q.clone() - x_p.clone()) * alpha.clone();
-            let rhs = Expression::Constant(C::Base::one()) - a.clone();
+            let rhs = Expression::Constant(F::one()) - a.clone();
             q_add_complete.clone() * (lhs - rhs)
         });
 
         // x_p = 0 ⟹ B
         meta.create_gate("x_p = 0 ⟹ B", |_| {
             let lhs = x_p.clone() * beta.clone();
-            let rhs = Expression::Constant(C::Base::one()) - b.clone();
+            let rhs = Expression::Constant(F::one()) - b.clone();
             q_add_complete.clone() * (lhs - rhs)
         });
 
@@ -67,7 +66,7 @@ pub(crate) fn create_gate<C: CurveAffine>(
         // x_q = 0 ⟹ C
         meta.create_gate("x_q = 0 ⟹ C", |_| {
             let lhs = x_q.clone() * gamma.clone();
-            let rhs = Expression::Constant(C::Base::one()) - c.clone();
+            let rhs = Expression::Constant(F::one()) - c.clone();
             q_add_complete.clone() * (lhs - rhs)
         });
 
@@ -79,7 +78,7 @@ pub(crate) fn create_gate<C: CurveAffine>(
         // y_q = -y_p ⟹ D
         meta.create_gate("y_q = y_p ⟹ D", |_| {
             let lhs = (y_q.clone() + y_p.clone()) * delta.clone();
-            let rhs = Expression::Constant(C::Base::one()) - d.clone();
+            let rhs = Expression::Constant(F::one()) - d.clone();
             q_add_complete.clone() * (lhs - rhs)
         });
     }
@@ -95,17 +94,16 @@ pub(crate) fn create_gate<C: CurveAffine>(
 
         // A ∧ y_p ≠ 0 ⟹ λ = (3 * x_p^2) / 2 * y_p
         meta.create_gate("x equal, y nonzero", |_| {
-            let three_x_p_sq =
-                Expression::Constant(C::Base::from_u64(3)) * x_p.clone() * x_p.clone();
-            let two_y_p = Expression::Constant(C::Base::from_u64(2)) * y_p.clone();
+            let three_x_p_sq = Expression::Constant(F::from_u64(3)) * x_p.clone() * x_p.clone();
+            let two_y_p = Expression::Constant(F::from_u64(2)) * y_p.clone();
             let gradient = two_y_p * lambda.clone() - three_x_p_sq;
             q_add_complete.clone() * a.clone() * gradient
         });
 
         // (¬B ∧ ¬C ⟹ x_r = λ^2 − x_p − x_q) ∧ (B ⟹ x_r = x_q)
         meta.create_gate("x_r check", |_| {
-            let not_b = Expression::Constant(C::Base::one()) - b.clone();
-            let not_c = Expression::Constant(C::Base::one()) - c.clone();
+            let not_b = Expression::Constant(F::one()) - b.clone();
+            let not_c = Expression::Constant(F::one()) - c.clone();
             let x_r_lambda =
                 lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone();
             let x_r_x_q = b.clone() * (x_r.clone() - x_q.clone());
@@ -114,8 +112,8 @@ pub(crate) fn create_gate<C: CurveAffine>(
 
         // ¬B ∧ ¬C ⟹ y_r = λ⋅(x_p − x_r) − y_p) ∧ (B ⟹ y_r = y_q)
         meta.create_gate("y_r check", |_| {
-            let not_b = Expression::Constant(C::Base::one()) - b.clone();
-            let not_c = Expression::Constant(C::Base::one()) - c.clone();
+            let not_b = Expression::Constant(F::one()) - b.clone();
+            let not_c = Expression::Constant(F::one()) - c.clone();
             let y_r_lambda =
                 lambda.clone() * (x_p.clone() - x_r.clone()) - y_p.clone() - y_r.clone();
             let y_r_y_q = b.clone() * (y_r.clone() - y_q.clone());
@@ -145,11 +143,11 @@ pub(crate) fn create_gate<C: CurveAffine>(
 }
 
 pub(super) fn assign_region<C: CurveAffine>(
-    a: &<EccChip<C> as EccInstructions<C>>::Point,
-    b: &<EccChip<C> as EccInstructions<C>>::Point,
+    a: &EccPoint<C::Base>,
+    b: &EccPoint<C::Base>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccPoint<C::Base>, Error> {
     // Enable `q_add_complete` selector
     config.q_add_complete.enable(region, offset)?;
@@ -248,18 +246,18 @@ pub(super) fn assign_region<C: CurveAffine>(
     r.map_or(Err(Error::SynthesisError), |r| {
         if r.is_on_curve().into() {
             // Assign `x_r`
-            let x_r_val = r.to_affine().get_xy().unwrap().0;
+            let x_r_val = *r.to_affine().coordinates().unwrap().x();
             let x_r_cell =
                 region.assign_advice(|| "set x_r", config.A.0, offset + 1, || Ok(x_r_val))?;
 
             // Assign `y_r`
-            let y_r_val = r.to_affine().get_xy().unwrap().1;
+            let y_r_val = *r.to_affine().coordinates().unwrap().y();
             let y_r_cell =
                 region.assign_advice(|| "set y_r", config.A.1, offset + 1, || Ok(y_r_val))?;
 
             Ok(EccPoint {
-                x: CellValue::new(x_r_cell, Some(x_r_val)),
-                y: CellValue::new(y_r_cell, Some(y_r_val)),
+                x: CellValue::<C::Base>::new(x_r_cell, Some(x_r_val)),
+                y: CellValue::<C::Base>::new(y_r_cell, Some(y_r_val)),
             })
         } else {
             Err(Error::SynthesisError)

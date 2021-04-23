@@ -1,39 +1,38 @@
-use super::super::EccInstructions;
-use super::{add, util, witness_point, EccChip, EccFixedPoints, EccPoint};
+use super::{
+    add, util, witness_point, EccConfig, EccFixedPoint, EccPoint, EccScalarFixed, OrchardFixedBases,
+};
 use crate::constants;
 
 use group::Curve;
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},
-    circuit::{Chip, Region},
+    circuit::Region,
     plonk::{Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 
-pub(super) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
+pub(super) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
     lagrange_coeffs: [Column<Fixed>; constants::H],
-    q_mul_fixed: Expression<C::Base>,
-    x_p: Expression<C::Base>,
-    y_p: Expression<C::Base>,
-    k: Expression<C::Base>,
-    u: Expression<C::Base>,
-    z: Expression<C::Base>,
+    q_mul_fixed: Expression<F>,
+    x_p: Expression<F>,
+    y_p: Expression<F>,
+    k: Expression<F>,
+    u: Expression<F>,
+    z: Expression<F>,
 ) {
     // Check interpolation of x-coordinate
     meta.create_gate("fixed-base scalar mul (x)", |meta| {
-        let k_pow: Vec<Expression<C::Base>> = (0..constants::H)
-            .map(|pow| {
-                (0..pow).fold(Expression::Constant(C::Base::one()), |acc, _| {
-                    acc * k.clone()
-                })
-            })
+        let k_pow: Vec<Expression<F>> = (0..constants::H)
+            .map(|pow| (0..pow).fold(Expression::Constant(F::one()), |acc, _| acc * k.clone()))
             .collect();
 
-        let interpolated_x = k_pow.iter().zip(lagrange_coeffs.iter()).fold(
-            Expression::Constant(C::Base::zero()),
-            |acc, (k_pow, coeff)| acc + (k_pow.clone() * meta.query_fixed(*coeff, Rotation::cur())),
-        );
+        let interpolated_x = k_pow
+            .iter()
+            .zip(lagrange_coeffs.iter())
+            .fold(Expression::Constant(F::zero()), |acc, (k_pow, coeff)| {
+                acc + (k_pow.clone() * meta.query_fixed(*coeff, Rotation::cur()))
+            });
 
         q_mul_fixed.clone() * (interpolated_x - x_p)
     });
@@ -45,11 +44,11 @@ pub(super) fn create_gate<C: CurveAffine>(
 }
 
 pub(super) fn assign_region<C: CurveAffine>(
-    scalar: &<EccChip<C> as EccInstructions<C>>::ScalarFixed,
-    base: &<EccChip<C> as EccInstructions<C>>::FixedPoint,
+    scalar: &EccScalarFixed<C>,
+    base: &EccFixedPoint<C>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccPoint<C::Base>, Error> {
     // Assign fixed columns for given fixed base
     for w in 0..constants::NUM_WINDOWS {
@@ -97,17 +96,17 @@ pub(super) fn assign_region<C: CurveAffine>(
             config.bits,
             w + offset,
             k,
-            &config.perm_scalar,
+            &config.perm_bits,
         )?;
     }
 
     // Get the value of the fixed base
     let b = match base.fixed_point {
-        EccFixedPoints::CommitIvkR(inner) => inner.0.value(),
-        EccFixedPoints::NoteCommitR(inner) => inner.0.value(),
-        EccFixedPoints::NullifierK(inner) => inner.0.value(),
-        EccFixedPoints::ValueCommitR(inner) => inner.0.value(),
-        EccFixedPoints::ValueCommitV(inner) => inner.0.value(),
+        OrchardFixedBases::CommitIvkR(inner) => inner.0.value(),
+        OrchardFixedBases::NoteCommitR(inner) => inner.0.value(),
+        OrchardFixedBases::NullifierK(inner) => inner.0.value(),
+        OrchardFixedBases::ValueCommitR(inner) => inner.0.value(),
+        OrchardFixedBases::ValueCommitV(inner) => inner.0.value(),
     };
 
     // The scalar decomposition was done in the base field. For computation
@@ -193,7 +192,7 @@ pub(super) fn assign_region<C: CurveAffine>(
         region.assign_advice(|| "u", config.u, w, || u_val.ok_or(Error::SynthesisError))?;
 
         // Add to the cumulative sum
-        sum = add::assign_region(&mul_b, &sum, offset + w, region, config.clone())?;
+        sum = add::assign_region::<C>(&mul_b, &sum, offset + w, region, config.clone())?;
     }
 
     // Process most significant window outside the for loop
@@ -228,7 +227,7 @@ pub(super) fn assign_region<C: CurveAffine>(
     }
 
     // Add to the cumulative sum and return the final result as `[scalar]B`.
-    add::assign_region(
+    add::assign_region::<C>(
         &mul_b,
         &sum,
         offset + constants::NUM_WINDOWS - 1,

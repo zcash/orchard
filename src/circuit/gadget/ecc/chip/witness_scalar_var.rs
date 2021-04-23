@@ -1,28 +1,28 @@
-use super::{CellValue, EccChip, EccScalarVar};
+use super::{CellValue, EccConfig, EccScalarVar};
 
 use ff::PrimeField;
 use halo2::{
-    arithmetic::{CurveAffine, Field, FieldExt},
-    circuit::{Chip, Region},
+    arithmetic::{CurveAffine, FieldExt},
+    circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},
 };
 
-pub(super) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
-    q_scalar_var: Expression<C::Base>,
-    k: Expression<C::Base>,
+pub(super) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_scalar_var: Expression<F>,
+    k: Expression<F>,
 ) {
     meta.create_gate("witness point", |_| {
         // Check that k \in {0, 1}
-        q_scalar_var * (k.clone()) * (Expression::Constant(C::Base::one()) - k)
+        q_scalar_var * (k.clone()) * (Expression::Constant(F::one()) - k)
     });
 }
 
 pub(super) fn assign_region<C: CurveAffine>(
     value: Option<C::Scalar>,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccScalarVar<C>, Error> {
     // The scalar field `F_q = 2^254 + t_q`
     // FIXME: Derive this from constants in `Fq` module

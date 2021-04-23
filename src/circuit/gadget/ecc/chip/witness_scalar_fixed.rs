@@ -1,20 +1,20 @@
-use super::{CellValue, EccChip, EccScalarFixed};
+use super::{CellValue, EccConfig, EccScalarFixed};
 use crate::constants::{self, util};
 use halo2::{
-    arithmetic::{CurveAffine, Field, FieldExt},
-    circuit::{Chip, Region},
+    arithmetic::{CurveAffine, FieldExt},
+    circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},
 };
 
-pub(super) fn create_gate<C: CurveAffine>(
-    meta: &mut ConstraintSystem<C::Base>,
-    q_scalar_fixed: Expression<C::Base>,
-    k: Expression<C::Base>,
+pub(super) fn create_gate<F: FieldExt>(
+    meta: &mut ConstraintSystem<F>,
+    q_scalar_fixed: Expression<F>,
+    k: Expression<F>,
 ) {
     meta.create_gate("witness scalar fixed", |_| {
         // Check that `k` is within the allowed window size
-        let range_check = (0..constants::H).fold(Expression::Constant(C::Base::one()), |acc, i| {
-            acc * (k.clone() - Expression::Constant(C::Base::from_u64(i as u64)))
+        let range_check = (0..constants::H).fold(Expression::Constant(F::one()), |acc, i| {
+            acc * (k.clone() - Expression::Constant(F::from_u64(i as u64)))
         });
         q_scalar_fixed * range_check
     });
@@ -24,8 +24,8 @@ pub(super) fn assign_region<C: CurveAffine>(
     value: Option<C::Scalar>,
     scalar_num_bits: usize,
     offset: usize,
-    region: &mut Region<'_, EccChip<C>>,
-    config: <EccChip<C> as Chip>::Config,
+    region: &mut Region<'_, C::Base>,
+    config: EccConfig,
 ) -> Result<EccScalarFixed<C>, Error> {
     // Decompose scalar into windows
     let bits: Option<Vec<u8>> = value.map(|value| {
