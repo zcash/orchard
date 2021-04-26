@@ -16,7 +16,7 @@ mod load;
 // mod mul_fixed;
 // mod mul_fixed_short;
 mod util;
-// mod witness_point;
+mod witness_point;
 // mod witness_scalar_fixed;
 // mod witness_scalar_fixed_short;
 
@@ -203,7 +203,15 @@ impl<C: CurveAffine> EccChip<C> {
             ],
         );
 
-        // TODO: Create witness point gate
+        // Create witness point gate
+        {
+            let q_point = meta.query_selector(q_point, Rotation::cur());
+            let P = (
+                meta.query_advice(P.0, Rotation::cur()),
+                meta.query_advice(P.1, Rotation::cur()),
+            );
+            witness_point::create_gate::<C>(meta, q_point, P.0, P.1);
+        }
 
         // TODO: Create witness scalar_fixed gate
 
@@ -327,7 +335,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::Point, Error> {
         let config = self.config();
 
-        todo!()
+        layouter.assign_region(
+            || "witness point",
+            |mut region| witness_point::assign_region(value, 0, &mut region, config.clone()),
+        )
     }
 
     fn extract_p(point: &Self::Point) -> &Self::X {
