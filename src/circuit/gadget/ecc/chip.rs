@@ -8,7 +8,7 @@ use halo2::{
     poly::Rotation,
 };
 
-// mod add;
+mod add;
 mod add_incomplete;
 mod double;
 mod load;
@@ -251,7 +251,36 @@ impl<C: CurveAffine> EccChip<C> {
             add_incomplete::create_gate(meta, q_add, x_p, y_p, x_q, y_q, x_a, y_a);
         }
 
-        // TODO: Create complete point addition gate
+        // Create complete point addition gate
+        {
+            let q_add = meta.query_selector(q_add, Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+            let x_q = meta.query_advice(extras[0], Rotation::cur());
+            let y_q = meta.query_advice(extras[1], Rotation::cur());
+            let x_r = meta.query_advice(extras[0], Rotation::next());
+            let y_r = meta.query_advice(extras[1], Rotation::next());
+            let lambda_cur = meta.query_advice(lambda.0, Rotation::cur());
+
+            let a = meta.query_advice(extras[2], Rotation::cur());
+            let b = meta.query_advice(extras[3], Rotation::cur());
+            let c = meta.query_advice(extras[4], Rotation::cur());
+            let d = meta.query_advice(lambda.1, Rotation::cur());
+
+            // \alpha = (x_q - x_p)^{-1}
+            let alpha = meta.query_advice(extras[2], Rotation::next());
+            // \beta = x_p^{-1}
+            let beta = meta.query_advice(extras[3], Rotation::next());
+            // \gamma = x_q^{-1}
+            let gamma = meta.query_advice(extras[4], Rotation::next());
+            // \delta = (y_p + y_q)^{-1}
+            let delta = meta.query_advice(lambda.1, Rotation::next());
+
+            add::create_gate(
+                meta, q_add, a, b, c, d, alpha, beta, gamma, delta, lambda_cur, x_p, y_p, x_q, y_q,
+                x_r, y_r,
+            );
+        }
 
         // Create fixed-base full-width scalar mul gate
         {
@@ -442,7 +471,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::Point, Error> {
         let config = self.config();
 
-        todo!()
+        layouter.assign_region(
+            || "point addition",
+            |mut region| add::assign_region::<C>(a, b, 0, &mut region, config.clone()),
+        )
     }
 
     fn double(
