@@ -9,7 +9,7 @@ use halo2::{
 };
 
 // mod add;
-// mod add_incomplete;
+mod add_incomplete;
 mod double;
 mod load;
 // mod mul;
@@ -228,7 +228,18 @@ impl<C: CurveAffine> EccChip<C> {
             double::create_gate(meta, q_double, x_a, y_a, x_p, y_p);
         }
 
-        // TODO: Create point addition gate
+        // Create incomplete point addition gate
+        {
+            let q_add = meta.query_selector(q_add_incomplete, Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+            let x_q = meta.query_advice(extras[0], Rotation::cur());
+            let y_q = meta.query_advice(extras[1], Rotation::cur());
+            let x_a = meta.query_advice(extras[0], Rotation::next());
+            let y_a = meta.query_advice(extras[1], Rotation::next());
+
+            add_incomplete::create_gate(meta, q_add, x_p, y_p, x_q, y_q, x_a, y_a);
+        }
 
         // TODO: Create complete point addition gate
 
@@ -373,7 +384,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::Point, Error> {
         let config = self.config();
 
-        todo!()
+        layouter.assign_region(
+            || "point addition",
+            |mut region| add_incomplete::assign_region(a, b, 0, &mut region, config.clone()),
+        )
     }
 
     fn add(
