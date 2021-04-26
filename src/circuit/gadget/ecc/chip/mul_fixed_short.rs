@@ -139,7 +139,7 @@ pub(super) fn assign_region<C: CurveAffine>(
             .map(|(u, k_0)| u[0][k_0]);
         region.assign_advice(
             || "u",
-            config.u,
+            config.mul_fixed_u,
             offset,
             || u_val.ok_or(Error::SynthesisError),
         )?;
@@ -182,7 +182,12 @@ pub(super) fn assign_region<C: CurveAffine>(
 
         // Assign u = (y_p + z_w).sqrt()
         let u_val = base.u_short.as_ref().zip(k_usize[w]).map(|(u, k)| u[w][k]);
-        region.assign_advice(|| "u", config.u, w, || u_val.ok_or(Error::SynthesisError))?;
+        region.assign_advice(
+            || "u",
+            config.mul_fixed_u,
+            w,
+            || u_val.ok_or(Error::SynthesisError),
+        )?;
 
         // Add to the cumulative sum
         sum = add::assign_region::<C>(&mul_b, &sum, offset + w, region, config.clone()).unwrap();
@@ -214,7 +219,7 @@ pub(super) fn assign_region<C: CurveAffine>(
             .map(|(u, k)| u[constants::NUM_WINDOWS_SHORT - 1][k]);
         region.assign_advice(
             || "u",
-            config.u,
+            config.mul_fixed_u,
             offset + constants::NUM_WINDOWS_SHORT - 1,
             || u_val.ok_or(Error::SynthesisError),
         )?;

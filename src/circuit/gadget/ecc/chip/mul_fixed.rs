@@ -11,6 +11,7 @@ use halo2::{
     poly::Rotation,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn create_gate<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     lagrange_coeffs: [Column<Fixed>; constants::H],
@@ -146,7 +147,7 @@ pub(super) fn assign_region<C: CurveAffine>(
         let u_val = base.u.as_ref().zip(k_usize[0]).map(|(u, k_0)| u[0][k_0]);
         region.assign_advice(
             || "u",
-            config.u,
+            config.mul_fixed_u,
             offset,
             || u_val.ok_or(Error::SynthesisError),
         )?;
@@ -189,7 +190,12 @@ pub(super) fn assign_region<C: CurveAffine>(
 
         // Assign u = (y_p + z_w).sqrt()
         let u_val = base.u.as_ref().zip(k_usize[w]).map(|(u, k)| u[w][k]);
-        region.assign_advice(|| "u", config.u, w, || u_val.ok_or(Error::SynthesisError))?;
+        region.assign_advice(
+            || "u",
+            config.mul_fixed_u,
+            w,
+            || u_val.ok_or(Error::SynthesisError),
+        )?;
 
         // Add to the cumulative sum
         sum = add::assign_region::<C>(&mul_b, &sum, offset + w, region, config.clone())?;
@@ -220,7 +226,7 @@ pub(super) fn assign_region<C: CurveAffine>(
             .map(|(u, k)| u[constants::NUM_WINDOWS - 1][k]);
         region.assign_advice(
             || "u",
-            config.u,
+            config.mul_fixed_u,
             offset + constants::NUM_WINDOWS - 1,
             || u_val.ok_or(Error::SynthesisError),
         )?;

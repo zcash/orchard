@@ -7,6 +7,7 @@ use halo2::{
     plonk::{ConstraintSystem, Error, Expression},
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn create_gate<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_add_complete: Expression<F>,
@@ -142,6 +143,7 @@ pub(crate) fn create_gate<F: FieldExt>(
     }
 }
 
+#[allow(clippy::many_single_char_names)]
 pub(super) fn assign_region<C: CurveAffine>(
     a: &EccPoint<C::Base>,
     b: &EccPoint<C::Base>,

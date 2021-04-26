@@ -15,9 +15,11 @@ pub(super) fn create_gate<F: FieldExt>(
     x_p: Expression<F>,
     y_p: Expression<F>,
 ) {
+    let x_p_2 = x_p.clone() * x_p.clone();
+    let x_p_4 = x_p_2.clone() * x_p_2.clone();
+
     // 4⋅(y_p)^2⋅(x_a + 2⋅x_p) − 9⋅(x_p)^4 = 0
     meta.create_gate("point doubling expr1", |_| {
-        let x_p_4 = x_p.clone() * x_p.clone() * x_p.clone() * x_p.clone();
         let expr1 = y_p.clone()
             * y_p.clone()
             * (x_a.clone() + x_p.clone() * F::from_u64(2))
@@ -28,8 +30,8 @@ pub(super) fn create_gate<F: FieldExt>(
 
     // 2⋅y_p⋅(y_a + y_p) − 3⋅(x_p)^2⋅(x_p − x_a) = 0
     meta.create_gate("point doubling expr2", |_| {
-        let expr2 = y_p.clone() * (y_a + y_p) * F::from_u64(2)
-            - x_p.clone() * x_p.clone() * (x_p - x_a) * F::from_u64(3);
+        let expr2 =
+            y_p.clone() * (y_a + y_p) * F::from_u64(2) - x_p_2 * (x_p - x_a) * F::from_u64(3);
 
         q_double * expr2
     });

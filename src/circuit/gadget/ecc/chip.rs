@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, convert::TryFrom, marker::PhantomData};
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use super::{EccInstructions, FixedPoints};
 use crate::constants::{self, FixedBase, Name};
@@ -6,7 +6,7 @@ use ff::PrimeField;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{CellValue, Chip, Config, Layouter, Loaded},
-    plonk::{Advice, Any, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
     poly::Rotation,
 };
 
@@ -39,7 +39,7 @@ pub struct EccConfig {
     /// Advice column for scalar decomposition into bits
     pub bits: Column<Advice>,
     /// Witness u = (y + z).sqrt(), used in fixed-base scalar multiplication
-    pub u: Column<Advice>,
+    pub mul_fixed_u: Column<Advice>,
     /// Holds a point (x_a, y_a) that is usually the result of an addition
     pub A: (Column<Advice>, Column<Advice>),
     /// Holds a point (x_p, y_p)
@@ -84,6 +84,7 @@ pub struct EccConfig {
 /// Enum for the EccConfig
 #[derive(Clone, Debug)]
 #[allow(non_snake_case)]
+#[allow(clippy::large_enum_variant)]
 pub enum EccConfigEnum {
     Empty,
     Config(EccConfig),
@@ -232,30 +233,21 @@ impl<C: CurveAffine> EccChip<C> {
     }
 
     #[allow(non_snake_case)]
+    #[allow(clippy::many_single_char_names)]
+    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         &mut self,
         meta: &mut ConstraintSystem<C::Base>,
-        _selectors: BTreeMap<&str, Selector>,
-        columns: BTreeMap<&str, Column<Any>>,
-        perms: BTreeMap<&str, Permutation>,
+        bits: Column<Advice>,
+        mul_fixed_u: Column<Advice>,
+        A: (Column<Advice>, Column<Advice>),
+        P: (Column<Advice>, Column<Advice>),
+        lambda: (Column<Advice>, Column<Advice>),
+        add_complete_bool: [Column<Advice>; 4],
+        add_complete_inv: [Column<Advice>; 4],
+        perm_bits: Permutation,
+        perm_sum: Permutation,
     ) -> <Self as Chip<C::Base>>::Config {
-        let bits = *columns.get("bits").unwrap();
-        let u = *columns.get("u").unwrap();
-        let x_a = *columns.get("x_a").unwrap();
-        let y_a = *columns.get("y_a").unwrap();
-        let x_p = *columns.get("x_p").unwrap();
-        let y_p = *columns.get("y_p").unwrap();
-        let lambda1 = *columns.get("lambda1").unwrap();
-        let lambda2 = *columns.get("lambda2").unwrap();
-        let bool_a = *columns.get("bool_a").unwrap();
-        let bool_b = *columns.get("bool_b").unwrap();
-        let bool_c = *columns.get("bool_c").unwrap();
-        let bool_d = *columns.get("bool_d").unwrap();
-        let inv_alpha = *columns.get("inv_alpha").unwrap();
-        let inv_beta = *columns.get("inv_beta").unwrap();
-        let inv_gamma = *columns.get("inv_gamma").unwrap();
-        let inv_delta = *columns.get("inv_delta").unwrap();
-
         let q_add = meta.selector();
         let q_add_complete = meta.selector();
         let q_double = meta.selector();
@@ -279,15 +271,12 @@ impl<C: CurveAffine> EccChip<C> {
         ];
         let fixed_z = meta.fixed_column();
 
-        let perm_bits = perms.get("perm_bits").unwrap();
-        let perm_sum = perms.get("perm_sum").unwrap();
-
         // Create witness point gate
         {
             let q_point = meta.query_selector(q_point, Rotation::cur());
             let P = (
-                meta.query_any(x_p, Rotation::cur()),
-                meta.query_any(y_p, Rotation::cur()),
+                meta.query_advice(P.0, Rotation::cur()),
+                meta.query_advice(P.1, Rotation::cur()),
             );
             witness_point::create_gate::<C>(meta, q_point, P.0, P.1);
         }
@@ -295,7 +284,7 @@ impl<C: CurveAffine> EccChip<C> {
         // Create witness scalar_var gate
         {
             let q_scalar_var = meta.query_selector(q_scalar_var, Rotation::cur());
-            let k = meta.query_any(bits, Rotation::cur());
+            let k = meta.query_advice(bits, Rotation::cur());
 
             witness_scalar_var::create_gate(meta, q_scalar_var, k);
         }
@@ -303,24 +292,24 @@ impl<C: CurveAffine> EccChip<C> {
         // Create witness scalar_fixed gate
         {
             let q_scalar_fixed = meta.query_selector(q_scalar_fixed, Rotation::cur());
-            let k = meta.query_any(bits, Rotation::cur());
+            let k = meta.query_advice(bits, Rotation::cur());
             witness_scalar_fixed::create_gate(meta, q_scalar_fixed, k);
         }
 
         // Create witness scalar_fixed_short gate
         {
             let q_scalar_fixed_short = meta.query_selector(q_scalar_fixed_short, Rotation::cur());
-            let k = meta.query_any(bits, Rotation::cur());
+            let k = meta.query_advice(bits, Rotation::cur());
             witness_scalar_fixed_short::create_gate(meta, q_scalar_fixed_short, k);
         }
 
         // Create point doubling gate
         {
             let q_double = meta.query_selector(q_double, Rotation::cur());
-            let x_a = meta.query_any(x_a, Rotation::cur());
-            let y_a = meta.query_any(y_a, Rotation::cur());
-            let x_p = meta.query_any(x_p, Rotation::cur());
-            let y_p = meta.query_any(y_p, Rotation::cur());
+            let x_a = meta.query_advice(A.0, Rotation::cur());
+            let y_a = meta.query_advice(A.1, Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
 
             double::create_gate(meta, q_double, x_a, y_a, x_p, y_p);
         }
@@ -328,12 +317,12 @@ impl<C: CurveAffine> EccChip<C> {
         // Create point addition gate
         {
             let q_add = meta.query_selector(q_add, Rotation::cur());
-            let x_p = meta.query_any(x_p, Rotation::cur());
-            let y_p = meta.query_any(y_p, Rotation::cur());
-            let x_q = meta.query_any(x_a, Rotation::cur());
-            let y_q = meta.query_any(y_a, Rotation::cur());
-            let x_a = meta.query_any(x_a, Rotation::next());
-            let y_a = meta.query_any(y_a, Rotation::next());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+            let x_q = meta.query_advice(A.0, Rotation::cur());
+            let y_q = meta.query_advice(A.1, Rotation::cur());
+            let x_a = meta.query_advice(A.0, Rotation::next());
+            let y_a = meta.query_advice(A.1, Rotation::next());
 
             add::create_gate(meta, q_add, x_p, y_p, x_q, y_q, x_a, y_a);
         }
@@ -341,27 +330,27 @@ impl<C: CurveAffine> EccChip<C> {
         // Create complete point addition gate
         {
             let q_add_complete = meta.query_selector(q_add_complete, Rotation::cur());
-            let x_p = meta.query_any(x_p, Rotation::cur());
-            let y_p = meta.query_any(y_p, Rotation::cur());
-            let x_q = meta.query_any(x_a, Rotation::cur());
-            let y_q = meta.query_any(y_a, Rotation::cur());
-            let x_r = meta.query_any(x_a, Rotation::next());
-            let y_r = meta.query_any(y_a, Rotation::next());
-            let lambda = meta.query_any(lambda1, Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+            let x_q = meta.query_advice(A.0, Rotation::cur());
+            let y_q = meta.query_advice(A.1, Rotation::cur());
+            let x_r = meta.query_advice(A.0, Rotation::next());
+            let y_r = meta.query_advice(A.1, Rotation::next());
+            let lambda = meta.query_advice(lambda.0, Rotation::cur());
 
-            let a = meta.query_any(bool_a, Rotation::cur());
-            let b = meta.query_any(bool_b, Rotation::cur());
-            let c = meta.query_any(bool_c, Rotation::cur());
-            let d = meta.query_any(bool_d, Rotation::cur());
+            let a = meta.query_advice(add_complete_bool[0], Rotation::cur());
+            let b = meta.query_advice(add_complete_bool[1], Rotation::cur());
+            let c = meta.query_advice(add_complete_bool[2], Rotation::cur());
+            let d = meta.query_advice(add_complete_bool[3], Rotation::cur());
 
             // \alpha = (x_q - x_p)^{-1}
-            let alpha = meta.query_any(inv_alpha, Rotation::cur());
+            let alpha = meta.query_advice(add_complete_inv[0], Rotation::cur());
             // \beta = x_p^{-1}
-            let beta = meta.query_any(inv_beta, Rotation::cur());
+            let beta = meta.query_advice(add_complete_inv[1], Rotation::cur());
             // \gamma = x_q^{-1}
-            let gamma = meta.query_any(inv_gamma, Rotation::cur());
+            let gamma = meta.query_advice(add_complete_inv[2], Rotation::cur());
             // \delta = (y_p + y_q)^{-1}
-            let delta = meta.query_any(inv_delta, Rotation::cur());
+            let delta = meta.query_advice(add_complete_inv[3], Rotation::cur());
 
             add_complete::create_gate(
                 meta,
@@ -387,10 +376,10 @@ impl<C: CurveAffine> EccChip<C> {
         // Create fixed-base full-width scalar mul gate
         {
             let q_mul_fixed = meta.query_selector(q_mul_fixed, Rotation::cur());
-            let x_p = meta.query_any(x_p, Rotation::cur());
-            let y_p = meta.query_any(y_p, Rotation::cur());
-            let k = meta.query_any(bits, Rotation::cur());
-            let u = meta.query_any(u, Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+            let k = meta.query_advice(bits, Rotation::cur());
+            let u = meta.query_advice(mul_fixed_u, Rotation::cur());
             let z = meta.query_fixed(fixed_z, Rotation::cur());
 
             mul_fixed::create_gate(meta, lagrange_coeffs, q_mul_fixed, x_p, y_p, k, u, z);
@@ -399,9 +388,9 @@ impl<C: CurveAffine> EccChip<C> {
         // Create fixed-base short signed scalar mul gate
         {
             let q_mul_fixed_short = meta.query_selector(q_mul_fixed_short, Rotation::cur());
-            let s = meta.query_any(bits, Rotation::cur());
-            let y_a = meta.query_any(y_a, Rotation::cur());
-            let y_p = meta.query_any(y_p, Rotation::cur());
+            let s = meta.query_advice(bits, Rotation::cur());
+            let y_a = meta.query_advice(A.1, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
 
             mul_fixed_short::create_gate(meta, q_mul_fixed_short, s, y_a, y_p);
         }
@@ -409,14 +398,14 @@ impl<C: CurveAffine> EccChip<C> {
         // Create variable-base scalar mul gate
         {
             let q_mul = meta.query_selector(q_mul, Rotation::cur());
-            let x_a_cur = meta.query_any(x_a, Rotation::cur());
-            let x_a_next = meta.query_any(x_a, Rotation::next());
-            let x_p_cur = meta.query_any(x_p, Rotation::cur());
-            let x_p_next = meta.query_any(x_p, Rotation::next());
-            let lambda1_cur = meta.query_any(lambda1, Rotation::cur());
-            let lambda1_next = meta.query_any(lambda1, Rotation::next());
-            let lambda2_cur = meta.query_any(lambda2, Rotation::cur());
-            let lambda2_next = meta.query_any(lambda2, Rotation::next());
+            let x_a_cur = meta.query_advice(A.0, Rotation::cur());
+            let x_a_next = meta.query_advice(A.0, Rotation::next());
+            let x_p_cur = meta.query_advice(P.0, Rotation::cur());
+            let x_p_next = meta.query_advice(P.0, Rotation::next());
+            let lambda1_cur = meta.query_advice(lambda.0, Rotation::cur());
+            let lambda1_next = meta.query_advice(lambda.0, Rotation::next());
+            let lambda2_cur = meta.query_advice(lambda.1, Rotation::cur());
+            let lambda2_next = meta.query_advice(lambda.1, Rotation::next());
 
             mul::create_gate(
                 meta,
@@ -433,32 +422,13 @@ impl<C: CurveAffine> EccChip<C> {
         }
 
         let config = EccConfigEnum::Config(EccConfig {
-            bits: Column::<Advice>::try_from(bits).unwrap(),
-            u: Column::<Advice>::try_from(u).unwrap(),
-            A: (
-                Column::<Advice>::try_from(x_a).unwrap(),
-                Column::<Advice>::try_from(y_a).unwrap(),
-            ),
-            P: (
-                Column::<Advice>::try_from(x_p).unwrap(),
-                Column::<Advice>::try_from(y_p).unwrap(),
-            ),
-            lambda: (
-                Column::<Advice>::try_from(lambda1).unwrap(),
-                Column::<Advice>::try_from(lambda2).unwrap(),
-            ),
-            add_complete_bool: [
-                Column::<Advice>::try_from(bool_a).unwrap(),
-                Column::<Advice>::try_from(bool_b).unwrap(),
-                Column::<Advice>::try_from(bool_c).unwrap(),
-                Column::<Advice>::try_from(bool_d).unwrap(),
-            ],
-            add_complete_inv: [
-                Column::<Advice>::try_from(inv_alpha).unwrap(),
-                Column::<Advice>::try_from(inv_beta).unwrap(),
-                Column::<Advice>::try_from(inv_gamma).unwrap(),
-                Column::<Advice>::try_from(inv_delta).unwrap(),
-            ],
+            bits,
+            mul_fixed_u,
+            A,
+            P,
+            lambda,
+            add_complete_bool,
+            add_complete_inv,
             lagrange_coeffs,
             fixed_z,
             q_add,
@@ -471,13 +441,14 @@ impl<C: CurveAffine> EccChip<C> {
             q_scalar_var,
             q_scalar_fixed,
             q_scalar_fixed_short,
-            perm_bits: perm_bits.clone(),
-            perm_sum: perm_sum.clone(),
+            perm_bits,
+            perm_sum,
         });
         self.config = config.clone();
         config
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn load(
         &mut self,
         _layouter: &mut impl Layouter<C::Base>,
@@ -885,7 +856,6 @@ mod tests {
         pasta::pallas,
         plonk::{Assignment, Circuit, ConstraintSystem, Error, Permutation},
     };
-    use std::collections::BTreeMap;
 
     use super::super::EccInstructions;
     use super::{EccChip, EccConfigEnum, OrchardFixedBases};
@@ -899,44 +869,41 @@ mod tests {
         type Config = EccConfigEnum;
 
         fn configure(meta: &mut ConstraintSystem<C::Base>) -> Self::Config {
-            let mut columns = BTreeMap::new();
             let bits = meta.advice_column();
-            let x_p = meta.advice_column();
-            let y_p = meta.advice_column();
-            let x_a = meta.advice_column();
-            let y_a = meta.advice_column();
+            let A = (meta.advice_column(), meta.advice_column());
+            let P = (meta.advice_column(), meta.advice_column());
+            let lambda = (meta.advice_column(), meta.advice_column());
 
-            columns.insert("bits", bits.into());
-            columns.insert("u", meta.advice_column().into());
-
-            columns.insert("x_a", x_a.into());
-            columns.insert("y_a", y_a.into());
-
-            columns.insert("x_p", x_p.into());
-            columns.insert("y_p", y_p.into());
-
-            columns.insert("lambda1", meta.advice_column().into());
-            columns.insert("lambda2", meta.advice_column().into());
-
-            columns.insert("inv_alpha", meta.advice_column().into());
-            columns.insert("inv_beta", meta.advice_column().into());
-            columns.insert("inv_gamma", meta.advice_column().into());
-            columns.insert("inv_delta", meta.advice_column().into());
-
-            columns.insert("bool_a", meta.advice_column().into());
-            columns.insert("bool_b", meta.advice_column().into());
-            columns.insert("bool_c", meta.advice_column().into());
-            columns.insert("bool_d", meta.advice_column().into());
-
-            let mut perms = BTreeMap::new();
-            perms.insert("perm_bits", Permutation::new(meta, &[bits.into()]));
-            perms.insert(
-                "perm_sum",
-                Permutation::new(meta, &[x_p.into(), y_p.into(), x_a.into(), y_a.into()]),
-            );
+            let mul_fixed_u = meta.advice_column();
+            let add_complete_bool = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+            let add_complete_inv = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+            let perm_bits = Permutation::new(meta, &[bits.into()]);
+            let perm_sum =
+                Permutation::new(meta, &[P.0.into(), P.1.into(), A.0.into(), A.1.into()]);
 
             let mut chip = EccChip::<C>::new();
-            chip.configure(meta, BTreeMap::new(), columns, perms)
+            chip.configure(
+                meta,
+                bits,
+                mul_fixed_u,
+                A,
+                P,
+                lambda,
+                add_complete_bool,
+                add_complete_inv,
+                perm_bits,
+                perm_sum,
+            )
         }
 
         fn synthesize(

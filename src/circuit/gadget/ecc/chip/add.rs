@@ -6,6 +6,7 @@ use halo2::{
     plonk::{ConstraintSystem, Error, Expression},
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn create_gate<F: FieldExt>(
     meta: &mut ConstraintSystem<F>,
     q_add: Expression<F>,
