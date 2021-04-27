@@ -10,7 +10,7 @@ use halo2::{
 
 // mod add;
 // mod add_incomplete;
-// mod double;
+mod double;
 mod load;
 // mod mul;
 // mod mul_fixed;
@@ -217,7 +217,16 @@ impl<C: CurveAffine> EccChip<C> {
 
         // TODO: Create witness scalar_fixed_short gate
 
-        // TODO: Create point doubling gate
+        // Create point doubling gate
+        {
+            let q_double = meta.query_selector(q_double, Rotation::cur());
+            let x_a = meta.query_advice(extras[0], Rotation::cur());
+            let y_a = meta.query_advice(extras[1], Rotation::cur());
+            let x_p = meta.query_advice(P.0, Rotation::cur());
+            let y_p = meta.query_advice(P.1, Rotation::cur());
+
+            double::create_gate(meta, q_double, x_a, y_a, x_p, y_p);
+        }
 
         // TODO: Create point addition gate
 
@@ -385,7 +394,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::Point, Error> {
         let config = self.config();
 
-        todo!()
+        layouter.assign_region(
+            || "point doubling",
+            |mut region| double::assign_region(a, 0, &mut region, config.clone()),
+        )
     }
 
     fn mul(
