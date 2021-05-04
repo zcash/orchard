@@ -382,7 +382,18 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<C::Base>,
         value: Option<C::Base>,
     ) -> Result<Self::ScalarVar, Error> {
-        todo!()
+        layouter.assign_region(
+            || "Witness scalar var",
+            |mut region| {
+                let cell = region.assign_advice(
+                    || "Scalar var",
+                    self.config().P.0,
+                    0,
+                    || value.ok_or(Error::SynthesisError),
+                )?;
+                Ok(CellValue::new(cell, value))
+            },
+        )
     }
 
     fn witness_scalar_fixed(
