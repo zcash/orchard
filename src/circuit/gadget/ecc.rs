@@ -378,3 +378,168 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> FixedPoin
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::constants;
+    use ff::Field;
+    use group::{Curve, Group};
+    use halo2::{
+        arithmetic::{CurveAffine, FieldExt},
+        circuit::{layouter::SingleChipLayouter, Layouter},
+        dev::MockProver,
+        pasta::pallas,
+        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+    };
+
+    use super::chip::{EccChip, EccConfig, OrchardFixedBases, OrchardFixedBasesShort};
+
+    struct MyCircuit<C: CurveAffine> {
+        _marker: std::marker::PhantomData<C>,
+    }
+
+    #[allow(non_snake_case)]
+    impl<C: CurveAffine> Circuit<C::Base> for MyCircuit<C> {
+        type Config = EccConfig;
+
+        fn configure(meta: &mut ConstraintSystem<C::Base>) -> Self::Config {
+            let bits = meta.advice_column();
+            let P = (meta.advice_column(), meta.advice_column());
+            let lambda = (meta.advice_column(), meta.advice_column());
+            let extras = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+            ];
+
+            EccChip::<C>::configure(meta, bits, P, lambda, extras)
+        }
+
+        fn synthesize(
+            &self,
+            cs: &mut impl Assignment<C::Base>,
+            config: Self::Config,
+        ) -> Result<(), Error> {
+            let mut layouter = SingleChipLayouter::new(cs)?;
+            let loaded = EccChip::<C>::load();
+            let chip = EccChip::construct(config, loaded);
+
+            // Generate a random point P
+            let p_val = C::CurveExt::random(rand::rngs::OsRng).to_affine(); // P
+            let p = super::Point::new(chip.clone(), layouter.namespace(|| "point"), Some(p_val))?;
+
+            // Generate a random point Q
+            let q_val = C::CurveExt::random(rand::rngs::OsRng).to_affine(); // P
+            let q = super::Point::new(chip.clone(), layouter.namespace(|| "point"), Some(q_val))?;
+
+            // Check complete addition point P + Q
+            {
+                let real_added = p_val + q_val;
+                let added_complete = p.add(layouter.namespace(|| "P + Q"), &q)?;
+                if let (Some(x), Some(y)) =
+                    (added_complete.inner.x.value, added_complete.inner.y.value)
+                {
+                    if C::from_xy(x, y).is_some().into() {
+                        assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
+                    }
+                }
+            }
+
+            // Check incomplete addition point P + Q
+            {
+                let real_added = p_val + q_val;
+                let added_incomplete = p.add_incomplete(layouter.namespace(|| "P + Q"), &q)?;
+                if let (Some(x), Some(y)) = (
+                    added_incomplete.inner.x.value,
+                    added_incomplete.inner.y.value,
+                ) {
+                    if C::from_xy(x, y).is_some().into() {
+                        assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
+                    }
+                }
+            }
+
+            // Check fixed-base scalar multiplication
+            {
+                let scalar_fixed = C::Scalar::rand();
+                let nullifier_k = constants::nullifier_k::generator();
+                let base = nullifier_k.0.value();
+                let real_mul_fixed = base * scalar_fixed;
+
+                let scalar_fixed = super::ScalarFixed::new(
+                    chip.clone(),
+                    layouter.namespace(|| "ScalarFixed"),
+                    Some(scalar_fixed),
+                )?;
+                let nullifier_k = super::FixedPoint::get(
+                    chip.clone(),
+                    OrchardFixedBases::NullifierK(nullifier_k),
+                )?;
+                let mul_fixed = nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
+                if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
+                    assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
+                }
+            }
+
+            // Check short signed fixed-base scalar multiplication
+            {
+                let scalar_fixed_short = C::Scalar::from_u64(rand::random::<u64>());
+                let mut sign = C::Scalar::one();
+                if rand::random::<bool>() {
+                    sign = -sign;
+                }
+                let scalar_fixed_short = sign * scalar_fixed_short;
+                let value_commit_v = constants::value_commit_v::generator();
+                let real_mul_fixed_short = value_commit_v.0.value() * scalar_fixed_short;
+
+                let scalar_fixed_short = super::ScalarFixedShort::new(
+                    chip.clone(),
+                    layouter.namespace(|| "ScalarFixedShort"),
+                    Some(scalar_fixed_short),
+                )?;
+                let value_commit_v = super::FixedPointShort::get(
+                    chip.clone(),
+                    OrchardFixedBasesShort(value_commit_v),
+                )?;
+                let mul_fixed_short =
+                    value_commit_v.mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+                if let (Some(x), Some(y)) =
+                    (mul_fixed_short.inner.x.value, mul_fixed_short.inner.y.value)
+                {
+                    assert_eq!(real_mul_fixed_short.to_affine(), C::from_xy(x, y).unwrap());
+                }
+            }
+
+            // Check variable-base scalar multiplication
+            {
+                let scalar_val = C::Scalar::rand();
+                let real_mul = p_val * scalar_val;
+
+                let scalar_val = C::Base::from_bytes(&scalar_val.to_bytes()).unwrap();
+                let scalar = super::ScalarVar::new(
+                    chip,
+                    layouter.namespace(|| "ScalarVar"),
+                    Some(scalar_val),
+                )?;
+                let mul = p.mul(layouter.namespace(|| "mul"), &scalar)?;
+                if let (Some(x), Some(y)) = (mul.inner.x.value, mul.inner.y.value) {
+                    assert_eq!(real_mul.to_affine(), C::from_xy(x, y).unwrap());
+                }
+            }
+
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn ecc() {
+        let k = 11;
+        let circuit = MyCircuit::<pallas::Affine> {
+            _marker: std::marker::PhantomData,
+        };
+        let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+        assert_eq!(prover.verify(), Ok(()))
+    }
+}
