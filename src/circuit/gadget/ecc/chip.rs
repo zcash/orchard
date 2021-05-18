@@ -3,15 +3,15 @@ use crate::constants;
 use ff::PrimeField;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
-    circuit::{Cell, Chip, Layouter, Region},
-    plonk::{Advice, Any, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
+    circuit::{Cell, Chip, Layouter},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
     poly::Rotation,
 };
 
 // mod add;
 // mod add_incomplete;
 // mod double;
-// mod load;
+mod load;
 // mod mul;
 // mod mul_fixed;
 // mod mul_fixed_short;
@@ -19,6 +19,8 @@ use halo2::{
 // mod witness_point;
 // mod witness_scalar_fixed;
 // mod witness_scalar_fixed_short;
+
+pub use load::*;
 
 /// A structure containing a cell and its assigned value.
 #[derive(Clone, Debug)]
@@ -44,6 +46,18 @@ pub struct EccPoint<F: FieldExt> {
     pub x: CellValue<F>,
     /// y-coordinate
     pub y: CellValue<F>,
+}
+
+#[derive(Clone, Debug)]
+/// For each Orchard fixed base, we precompute:
+/// * coefficients for x-coordinate interpolation polynomials, and
+/// * z-values such that y + z = u^2 some square while -y + z is non-square.
+pub struct EccLoaded<C: CurveAffine> {
+    commit_ivk_r: OrchardFixedBase<C>,
+    note_commit_r: OrchardFixedBase<C>,
+    nullifier_k: OrchardFixedBase<C>,
+    value_commit_r: OrchardFixedBase<C>,
+    value_commit_v: OrchardFixedBaseShort<C>,
 }
 
 /// Configuration for the ECC chip
@@ -87,23 +101,6 @@ pub struct EccConfig {
     pub perm: Permutation,
 }
 
-/// TODO
-#[derive(Clone, Debug)]
-pub struct EccLoaded<C: CurveAffine>(C);
-
-/// TODO
-#[derive(Clone, Debug)]
-pub struct OrchardFixedBase<C: CurveAffine>(C);
-/// TODO
-#[derive(Clone, Debug)]
-pub struct OrchardFixedBaseShort<C: CurveAffine>(C);
-/// TODO
-#[derive(Clone, Debug)]
-pub struct OrchardFixedBases<C: CurveAffine>(C);
-/// TODO
-#[derive(Clone, Debug)]
-pub struct OrchardFixedBasesShort<C: CurveAffine>(C);
-
 /// A chip implementing EccInstructions
 #[derive(Clone, Debug)]
 pub struct EccChip<C: CurveAffine> {
@@ -119,6 +116,21 @@ impl<C: CurveAffine> PartialEq for EccChip<C> {
 }
 
 impl<C: CurveAffine> Eq for EccChip<C> {}
+
+impl<C: CurveAffine> EccLoaded<C> {
+    fn get(&self, point: OrchardFixedBases<C>) -> OrchardFixedBase<C> {
+        match point {
+            OrchardFixedBases::CommitIvkR(_) => self.commit_ivk_r.clone(),
+            OrchardFixedBases::NoteCommitR(_) => self.note_commit_r.clone(),
+            OrchardFixedBases::NullifierK(_) => self.nullifier_k.clone(),
+            OrchardFixedBases::ValueCommitR(_) => self.value_commit_r.clone(),
+        }
+    }
+
+    fn get_short(&self, _point: OrchardFixedBasesShort<C>) -> OrchardFixedBaseShort<C> {
+        self.value_commit_v.clone()
+    }
+}
 
 impl<C: CurveAffine> Chip<C::Base> for EccChip<C> {
     type Config = EccConfig;
@@ -231,11 +243,20 @@ impl<C: CurveAffine> EccChip<C> {
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn load(
-        config: <Self as Chip<C::Base>>::Config,
-        layouter: &mut impl Layouter<C::Base>,
-    ) -> Result<<Self as Chip<C::Base>>::Loaded, Error> {
-        todo!()
+    pub fn load() -> <Self as Chip<C::Base>>::Loaded {
+        let commit_ivk_r = load::commit_ivk_r();
+        let note_commit_r = load::note_commit_r();
+        let nullifier_k = load::nullifier_k();
+        let value_commit_r = load::value_commit_r();
+        let value_commit_v = load::value_commit_v();
+
+        EccLoaded {
+            commit_ivk_r,
+            note_commit_r,
+            nullifier_k,
+            value_commit_r,
+            value_commit_v,
+        }
     }
 }
 
@@ -314,14 +335,14 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     }
 
     fn get_fixed(&self, fixed_point: Self::FixedPoints) -> Result<Self::FixedPoint, Error> {
-        todo!()
+        Ok(self.loaded().get(fixed_point))
     }
 
     fn get_fixed_short(
         &self,
         fixed_point: Self::FixedPointsShort,
     ) -> Result<Self::FixedPointShort, Error> {
-        todo!()
+        Ok(self.loaded().get_short(fixed_point))
     }
 
     fn add_incomplete(
