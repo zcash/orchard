@@ -222,16 +222,26 @@ pub(super) fn assign_region<C: CurveAffine>(
         }
     };
 
-    let mut z_val = z.value.unwrap();
+    let mut z_val = z.value;
     // Complete addition
     for (iter, k) in k_complete.iter().enumerate() {
         // Each iteration uses 4 rows (two complete additions)
         let row = k_incomplete_lo.len() + 4 * iter + 3;
 
         // Check scalar decomposition here
-        region.assign_advice(|| "z", config.bits, row + offset - 1, || Ok(z_val))?;
-        z_val = C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64);
-        region.assign_advice(|| "z", config.bits, row + offset, || Ok(z_val))?;
+        region.assign_advice(
+            || "z",
+            config.bits,
+            row + offset - 1,
+            || z_val.ok_or(Error::SynthesisError),
+        )?;
+        z_val = z_val.map(|z_val| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64));
+        region.assign_advice(
+            || "z",
+            config.bits,
+            row + offset,
+            || z_val.ok_or(Error::SynthesisError),
+        )?;
         config.q_mul_decompose.enable(region, row + offset)?;
 
         let x_p = base.x.value;
@@ -280,7 +290,7 @@ pub(super) fn assign_region<C: CurveAffine>(
 
         acc = EccPoint { x: acc_x, y: acc_y };
 
-        // Acc + U + Acc
+        // Acc + P + Acc
         acc = add::assign_region::<C>(&acc, &tmp_acc, row + offset + 2, region, config.clone())?;
     }
 
@@ -299,8 +309,13 @@ pub(super) fn assign_region<C: CurveAffine>(
     // to be in the base field of the curve. (See non-normative notes in
     // https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents.)
 
-    z_val = C::Base::from_u64(2) * z_val + C::Base::from_u64(*k_0 as u64);
-    region.assign_advice(|| "final z", config.bits, k_0_row + offset, || Ok(z_val))?;
+    z_val = z_val.map(|z_val| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k_0 as u64));
+    region.assign_advice(
+        || "final z",
+        config.bits,
+        k_0_row + offset,
+        || z_val.ok_or(Error::SynthesisError),
+    )?;
     region.assign_fixed(
         || "original k",
         config.mul_decompose,
@@ -392,9 +407,18 @@ fn add_incomplete<C: CurveAffine>(
     acc: (X<C::Base>, Y<C::Base>, ZValue<C::Base>),
 ) -> Result<(X<C::Base>, Y<C::Base>, ZValue<C::Base>), Error> {
     // Initialise the running `z` sum for the scalar bits.
-    let mut z_val = acc.2.value.unwrap();
-    let mut z_cell = region.assign_advice(|| "starting z", columns.z, offset, || Ok(z_val))?;
+    let mut z_val = acc.2.value;
+    let mut z_cell = region.assign_advice(
+        || "starting z",
+        columns.z,
+        offset,
+        || z_val.ok_or(Error::SynthesisError),
+    )?;
     region.constrain_equal(&config.perm, z_cell, acc.2.cell)?;
+
+    // Define `x_p`, `y_p`
+    let x_p = base.x.value;
+    let y_p = base.y.value;
 
     let offset = offset + 1;
 
@@ -417,28 +441,32 @@ fn add_incomplete<C: CurveAffine>(
     // Incomplete addition
     for (row, k) in bits.iter().enumerate() {
         // z_{i} = 2 * z_{i+1} + k_i
-        z_val = C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64);
-        z_cell = region.assign_advice(|| "z", columns.z, row + offset, || Ok(z_val))?;
+        z_val = z_val.map(|z_val| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64));
+        z_cell = region.assign_advice(
+            || "z",
+            columns.z,
+            row + offset,
+            || z_val.ok_or(Error::SynthesisError),
+        )?;
 
-        let x_p = base.x.value;
+        // Assign `x_p`, `y_p`
         region.assign_advice(
             || "x_p",
             config.P.0,
             row + offset,
             || x_p.ok_or(Error::SynthesisError),
         )?;
-
-        // If the bit is set, use `y`; if the bit is not set, use `-y`
-        let y_p = base.y.value;
         region.assign_advice(
             || "y_p",
             config.P.1,
             row + offset,
             || y_p.ok_or(Error::SynthesisError),
         )?;
+
+        // If the bit is set, use `y`; if the bit is not set, use `-y`
         let y_p = y_p.map(|y_p| if !k { -y_p } else { y_p });
 
-        // Compute and assign `lambda1`
+        // Compute and assign λ1⋅(x_A − x_P) = y_A − y_P
         let lambda1 = y_a
             .zip(y_p)
             .zip(x_a)
@@ -451,11 +479,13 @@ fn add_incomplete<C: CurveAffine>(
             || lambda1.ok_or(Error::SynthesisError),
         )?;
 
-        // Compute and assign `lambda2`
+        // x_R = λ1^2 - x_A - x_P
         let x_r = lambda1
             .zip(x_a)
             .zip(x_p)
             .map(|((lambda1, x_a), x_p)| lambda1 * lambda1 - x_a - x_p);
+
+        // λ2 = (2(y_A) / (x_A - x_R)) - λ1
         let lambda2 = lambda1
             .zip(y_a)
             .zip(x_a)
@@ -491,7 +521,7 @@ fn add_incomplete<C: CurveAffine>(
     Ok((
         X(CellValue::<C::Base>::new(x_a_cell, x_a)),
         Y(y_a),
-        ZValue(CellValue::<C::Base>::new(z_cell, Some(z_val))),
+        ZValue(CellValue::<C::Base>::new(z_cell, z_val)),
     ))
 }
 

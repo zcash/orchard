@@ -547,10 +547,24 @@ mod tests {
                     chip.clone(),
                     OrchardFixedBases::NullifierK(nullifier_k),
                 )?;
+
+                // [a]B
                 let mul_fixed = nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
                 if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
                     assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
                 }
+
+                // [0]B should return an error since fixed-base scalar multiplication
+                // uses incomplete addition internally.
+                let scalar_fixed = C::Scalar::zero();
+                let scalar_fixed = super::ScalarFixed::new(
+                    chip.clone(),
+                    layouter.namespace(|| "ScalarFixed"),
+                    Some(scalar_fixed),
+                )?;
+                nullifier_k
+                    .mul(layouter.namespace(|| "mul"), &scalar_fixed)
+                    .expect_err("[0]B should return an error");
             }
 
             // Check short signed fixed-base scalar multiplication
@@ -573,6 +587,8 @@ mod tests {
                     chip.clone(),
                     OrchardFixedBasesShort(value_commit_v),
                 )?;
+
+                // [a]B
                 let mul_fixed_short =
                     value_commit_v.mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
                 if let (Some(x), Some(y)) =
@@ -580,6 +596,18 @@ mod tests {
                 {
                     assert_eq!(real_mul_fixed_short.to_affine(), C::from_xy(x, y).unwrap());
                 }
+
+                // [0]B should return an error since fixed-base scalar multiplication
+                // uses incomplete addition internally.
+                let scalar_fixed = C::Scalar::zero();
+                let scalar_fixed = super::ScalarFixedShort::new(
+                    chip.clone(),
+                    layouter.namespace(|| "ScalarFixedShort"),
+                    Some(scalar_fixed),
+                )?;
+                value_commit_v
+                    .mul(layouter.namespace(|| "mul"), &scalar_fixed)
+                    .expect_err("[0]B should return an error");
             }
 
             // Check variable-base scalar multiplication
@@ -589,13 +617,34 @@ mod tests {
 
                 let scalar_val = C::Base::from_bytes(&scalar_val.to_bytes()).unwrap();
                 let scalar = super::ScalarVar::new(
+                    chip.clone(),
+                    layouter.namespace(|| "ScalarVar"),
+                    Some(scalar_val),
+                )?;
+
+                // [a]B
+                let mul = p.mul(layouter.namespace(|| "mul"), &scalar)?;
+                if let (Some(x), Some(y)) = (mul.inner.x.value, mul.inner.y.value) {
+                    assert_eq!(real_mul.to_affine(), C::from_xy(x, y).unwrap());
+                }
+
+                // [a]𝒪 should return an error since variable-base scalar multiplication
+                // uses incomplete addition at the beginning of its double-and-add.
+                zero.mul(layouter.namespace(|| "mul"), &scalar)
+                    .expect_err("[a]𝒪 should return an error");
+
+                // [0]B should return (0,0) since variable-base scalar multiplication
+                // uses complete addition for the final bits of the scalar.
+                let scalar_val = C::Base::zero();
+                let scalar = super::ScalarVar::new(
                     chip,
                     layouter.namespace(|| "ScalarVar"),
                     Some(scalar_val),
                 )?;
                 let mul = p.mul(layouter.namespace(|| "mul"), &scalar)?;
                 if let (Some(x), Some(y)) = (mul.inner.x.value, mul.inner.y.value) {
-                    assert_eq!(real_mul.to_affine(), C::from_xy(x, y).unwrap());
+                    assert_eq!(C::Base::zero(), x);
+                    assert_eq!(C::Base::zero(), y);
                 }
             }
 
@@ -605,7 +654,7 @@ mod tests {
 
     #[test]
     fn ecc() {
-        let k = 9;
+        let k = 11;
         let circuit = MyCircuit::<pallas::Affine> {
             _marker: std::marker::PhantomData,
         };
