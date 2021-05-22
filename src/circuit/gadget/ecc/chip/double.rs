@@ -43,6 +43,17 @@ pub(super) fn assign_region<F: FieldExt>(
     region: &mut Region<'_, F>,
     config: EccConfig,
 ) -> Result<EccPoint<F>, Error> {
+    // Handle point at infinity
+    (a.x.value)
+        .zip(a.y.value)
+        .map(|(x, y)| {
+            if x == F::zero() && y == F::zero() {
+                return Err(Error::SynthesisError);
+            }
+            Ok(())
+        })
+        .unwrap_or(Err(Error::SynthesisError))?;
+
     // Rename columns
     let A = (config.extras[0], config.extras[1]);
 
@@ -70,6 +81,7 @@ pub(super) fn assign_region<F: FieldExt>(
     // Compute the doubled point
     let (x_p, y_p) = (a.x.value, a.y.value);
     let r = x_p.zip(y_p).map(|(x_p, y_p)| {
+        // λ = 3(x_p)^2 / (2 * y_p)
         let lambda = F::from_u64(3) * x_p * x_p * F::TWO_INV * y_p.invert().unwrap();
         let x_r = lambda * lambda - x_p - x_p;
         let y_r = lambda * (x_p - x_r) - y_p;
