@@ -1,8 +1,8 @@
 use super::{util, CellValue, EccConfig, EccPoint};
-
-use group::Curve;
+use ff::Field;
+use group::{Curve, Group};
 use halo2::{
-    arithmetic::{CurveAffine, CurveExt, Field, FieldExt},
+    arithmetic::{CurveAffine, FieldExt},
     circuit::Region,
     plonk::{ConstraintSystem, Error, Expression},
 };
@@ -188,11 +188,16 @@ pub(super) fn assign_region<C: CurveAffine>(
             .zip(y_p)
             .zip(y_q)
             .map(|(((x_p, x_q), y_p), y_q)| -> Result<(), Error> {
+                println!("x_p: {:?}", x_p);
+                println!("y_p: {:?}", y_p);
+                println!("x_q: {:?}", x_q);
+                println!("y_q: {:?}", y_q);
+
                 if x_q == x_p {
                     // x_q = x_p ⟹ A
                     region.assign_advice(|| "set A", a, offset, || Ok(C::Base::one()))?;
 
-                    // Doubling case, λ = (y_q − y_p) / (x_q − x_p)
+                    // Doubling case, λ = 3(x_p)^2 / (2 * y_p)
                     if y_p != C::Base::zero() {
                         let lambda_val = C::Base::from_u64(3)
                             * x_p
@@ -245,28 +250,54 @@ pub(super) fn assign_region<C: CurveAffine>(
         .zip(x_q)
         .zip(y_q)
         .map(|(((x_p, y_p), x_q), y_q)| {
-            let p = C::from_xy(x_p, y_p).unwrap();
-            let q = C::from_xy(x_q, y_q).unwrap();
+            // If either `p` or `q` are (0,0) represent them as C::zero()
+            let p = if x_p == C::Base::zero() && y_p == C::Base::zero() {
+                C::identity()
+            } else {
+                C::from_xy(x_p, y_p).unwrap()
+            };
+            let q = if x_q == C::Base::zero() && y_q == C::Base::zero() {
+                C::identity()
+            } else {
+                C::from_xy(x_q, y_q).unwrap()
+            };
             p + q
         });
 
-    // `r` can be the point at infinity.
-    r.map_or(Err(Error::SynthesisError), |r| {
-        if r.is_on_curve().into() {
-            // Assign `x_r`
-            let x_r_val = *r.to_affine().coordinates().unwrap().x();
-            let x_r_cell = region.assign_advice(|| "set x_r", A.0, offset + 1, || Ok(x_r_val))?;
-
-            // Assign `y_r`
-            let y_r_val = *r.to_affine().coordinates().unwrap().y();
-            let y_r_cell = region.assign_advice(|| "set y_r", A.1, offset + 1, || Ok(y_r_val))?;
-
-            Ok(EccPoint {
-                x: CellValue::<C::Base>::new(x_r_cell, Some(x_r_val)),
-                y: CellValue::<C::Base>::new(y_r_cell, Some(y_r_val)),
-            })
+    let x_r_val = r.map(|r| {
+        if r.is_identity().into() {
+            C::Base::zero()
         } else {
-            Err(Error::SynthesisError)
+            *r.to_affine().coordinates().unwrap().x()
         }
+    });
+
+    let y_r_val = r.map(|r| {
+        if r.is_identity().into() {
+            C::Base::zero()
+        } else {
+            *r.to_affine().coordinates().unwrap().y()
+        }
+    });
+
+    // Assign `x_r`
+    let x_r_cell = region.assign_advice(
+        || "set x_r",
+        A.0,
+        offset + 1,
+        || x_r_val.ok_or(Error::SynthesisError),
+    )?;
+
+    // Assign `y_r`
+    let y_r_cell = region.assign_advice(
+        || "set y_r",
+        A.1,
+        offset + 1,
+        || y_r_val.ok_or(Error::SynthesisError),
+    )?;
+
+    Ok(EccPoint {
+        x: CellValue::<C::Base>::new(x_r_cell, x_r_val),
+        y: CellValue::<C::Base>::new(y_r_cell, y_r_val),
     })
 }
