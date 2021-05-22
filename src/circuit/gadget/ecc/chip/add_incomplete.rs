@@ -61,7 +61,8 @@ pub(super) fn assign_region<F: FieldExt>(
                 return Err(Error::SynthesisError);
             }
             Ok(())
-        });
+        })
+        .unwrap_or(Err(Error::SynthesisError))?;
 
     // Rename columns for `add` context
     let A = (config.extras[0], config.extras[1]);

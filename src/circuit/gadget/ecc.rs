@@ -429,26 +429,76 @@ mod tests {
             // Generate a random point P
             let p_val = C::CurveExt::random(rand::rngs::OsRng).to_affine(); // P
             let p = super::Point::new(chip.clone(), layouter.namespace(|| "point"), Some(p_val))?;
+            let p_neg = -p_val;
+            let p_neg =
+                super::Point::new(chip.clone(), layouter.namespace(|| "point"), Some(p_neg))?;
 
             // Generate a random point Q
             let q_val = C::CurveExt::random(rand::rngs::OsRng).to_affine(); // P
             let q = super::Point::new(chip.clone(), layouter.namespace(|| "point"), Some(q_val))?;
 
-            // Check complete addition point P + Q
+            // Make sure P and Q are not the same point.
+            assert_ne!(p_val, q_val);
+
+            // Check complete addition P + (-P)
+            let zero = {
+                let zero = p.add(layouter.namespace(|| "P + (-P)"), &p_neg)?;
+                if let (Some(x), Some(y)) = (zero.inner.x.value, zero.inner.y.value) {
+                    assert_eq!(C::Base::zero(), x);
+                    assert_eq!(C::Base::zero(), y);
+                }
+                zero
+            };
+
+            // Check complete addition 𝒪 + 𝒪
             {
+                let zero = zero.add(layouter.namespace(|| "𝒪 + 𝒪"), &zero)?;
+                if let (Some(x), Some(y)) = (zero.inner.x.value, zero.inner.y.value) {
+                    assert_eq!(C::Base::zero(), x);
+                    assert_eq!(C::Base::zero(), y);
+                }
+            }
+
+            // Check complete addition (other cases)
+            {
+                let mut checks = Vec::<(C::CurveExt, super::Point<C, EccChip<C>>)>::new();
+
+                // P + Q
                 let real_added = p_val + q_val;
                 let added_complete = p.add(layouter.namespace(|| "P + Q"), &q)?;
-                if let (Some(x), Some(y)) =
-                    (added_complete.inner.x.value, added_complete.inner.y.value)
-                {
-                    if C::from_xy(x, y).is_some().into() {
-                        assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
+                checks.push((real_added, added_complete));
+
+                // P + P
+                let real_added = p_val + p_val;
+                let added_complete = p.add(layouter.namespace(|| "P + P"), &p)?;
+                checks.push((real_added, added_complete));
+
+                // 𝒪 + P
+                let real_added = p_val.to_curve();
+                let added_complete = p.add(layouter.namespace(|| "𝒪 + P"), &zero)?;
+                checks.push((real_added, added_complete));
+
+                // P + 𝒪
+                let real_added = p_val.to_curve();
+                let added_complete = zero.add(layouter.namespace(|| "P + 𝒪"), &p)?;
+                checks.push((real_added, added_complete));
+
+                for check in checks.into_iter() {
+                    let real_added = check.0;
+                    let added_complete = check.1;
+                    if let (Some(x), Some(y)) =
+                        (added_complete.inner.x.value, added_complete.inner.y.value)
+                    {
+                        if C::from_xy(x, y).is_some().into() {
+                            assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
+                        }
                     }
                 }
             }
 
-            // Check incomplete addition point P + Q
+            // Check incomplete addition
             {
+                // P + Q
                 let real_added = p_val + q_val;
                 let added_incomplete = p.add_incomplete(layouter.namespace(|| "P + Q"), &q)?;
                 if let (Some(x), Some(y)) = (
@@ -459,6 +509,26 @@ mod tests {
                         assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
                     }
                 }
+
+                // P + P should return an error
+                p.add_incomplete(layouter.namespace(|| "P + P"), &p)
+                    .expect_err("P + P should return an error");
+
+                // P + (-P) should return an error
+                p.add_incomplete(layouter.namespace(|| "P + (-P)"), &p_neg)
+                    .expect_err("P + (-P) should return an error");
+
+                // P + 𝒪 should return an error
+                p.add_incomplete(layouter.namespace(|| "P + 𝒪"), &zero)
+                    .expect_err("P + 0 should return an error");
+
+                // 𝒪 + P should return an error
+                zero.add_incomplete(layouter.namespace(|| "𝒪 + P"), &p)
+                    .expect_err("0 + P should return an error");
+
+                // 𝒪 + 𝒪 should return an error
+                zero.add_incomplete(layouter.namespace(|| "𝒪 + 𝒪"), &zero)
+                    .expect_err("𝒪 + 𝒪 should return an error");
             }
 
             // Check fixed-base scalar multiplication
@@ -535,7 +605,7 @@ mod tests {
 
     #[test]
     fn ecc() {
-        let k = 11;
+        let k = 9;
         let circuit = MyCircuit::<pallas::Affine> {
             _marker: std::marker::PhantomData,
         };
