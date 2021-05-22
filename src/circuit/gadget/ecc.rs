@@ -569,45 +569,90 @@ mod tests {
 
             // Check short signed fixed-base scalar multiplication
             {
-                let scalar_fixed_short = C::Scalar::from_u64(rand::random::<u64>());
-                let mut sign = C::Scalar::one();
-                if rand::random::<bool>() {
-                    sign = -sign;
-                }
-                let scalar_fixed_short = sign * scalar_fixed_short;
-                let value_commit_v = constants::value_commit_v::generator();
-                let real_mul_fixed_short = value_commit_v.0.value() * scalar_fixed_short;
-
-                let scalar_fixed_short = super::ScalarFixedShort::new(
-                    chip.clone(),
-                    layouter.namespace(|| "ScalarFixedShort"),
-                    Some(scalar_fixed_short),
-                )?;
+                let value_commit_v_inner = constants::value_commit_v::generator();
                 let value_commit_v = super::FixedPointShort::get(
                     chip.clone(),
-                    OrchardFixedBasesShort(value_commit_v),
+                    OrchardFixedBasesShort(value_commit_v_inner),
                 )?;
-
-                // [a]B
-                let mul_fixed_short =
-                    value_commit_v.mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
-                if let (Some(x), Some(y)) =
-                    (mul_fixed_short.inner.x.value, mul_fixed_short.inner.y.value)
-                {
-                    assert_eq!(real_mul_fixed_short.to_affine(), C::from_xy(x, y).unwrap());
-                }
 
                 // [0]B should return an error since fixed-base scalar multiplication
                 // uses incomplete addition internally.
-                let scalar_fixed = C::Scalar::zero();
-                let scalar_fixed = super::ScalarFixedShort::new(
-                    chip.clone(),
-                    layouter.namespace(|| "ScalarFixedShort"),
-                    Some(scalar_fixed),
-                )?;
-                value_commit_v
-                    .mul(layouter.namespace(|| "mul"), &scalar_fixed)
-                    .expect_err("[0]B should return an error");
+                {
+                    let scalar_fixed = C::Scalar::zero();
+                    let scalar_fixed = super::ScalarFixedShort::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixedShort"),
+                        Some(scalar_fixed),
+                    )?;
+                    value_commit_v
+                        .mul(layouter.namespace(|| "mul"), &scalar_fixed)
+                        .expect_err("[0]B should return an error");
+                }
+
+                let mut checks = Vec::<(C::CurveExt, super::Point<C, EccChip<C>>)>::new();
+
+                // Random [a]B
+                {
+                    let scalar_fixed_short = C::Scalar::from_u64(rand::random::<u64>());
+                    let mut sign = C::Scalar::one();
+                    if rand::random::<bool>() {
+                        sign = -sign;
+                    }
+                    let scalar_fixed_short = sign * scalar_fixed_short;
+                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
+
+                    let scalar_fixed_short = super::ScalarFixedShort::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixedShort"),
+                        Some(scalar_fixed_short),
+                    )?;
+                    let mul_fixed_short = value_commit_v
+                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+
+                    checks.push((real_mul_fixed_short, mul_fixed_short));
+                }
+
+                // [2^64 - 1]B
+                {
+                    let scalar_fixed_short = C::Scalar::from_u64(0xFFFF_FFFF_FFFF_FFFFu64);
+                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
+
+                    let scalar_fixed_short = super::ScalarFixedShort::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixedShort"),
+                        Some(scalar_fixed_short),
+                    )?;
+                    let mul_fixed_short = value_commit_v
+                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+
+                    checks.push((real_mul_fixed_short, mul_fixed_short));
+                }
+
+                // [-(2^64 - 1)]B
+                {
+                    let scalar_fixed_short = -C::Scalar::from_u64(0xFFFF_FFFF_FFFF_FFFFu64);
+                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
+
+                    let scalar_fixed_short = super::ScalarFixedShort::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixedShort"),
+                        Some(scalar_fixed_short),
+                    )?;
+                    let mul_fixed_short = value_commit_v
+                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+
+                    checks.push((real_mul_fixed_short, mul_fixed_short));
+                }
+
+                for check in checks.into_iter() {
+                    let real_mul_fixed_short = check.0;
+                    let mul_fixed_short = check.1;
+                    if let (Some(x), Some(y)) =
+                        (mul_fixed_short.inner.x.value, mul_fixed_short.inner.y.value)
+                    {
+                        assert_eq!(real_mul_fixed_short.to_affine(), C::from_xy(x, y).unwrap());
+                    }
+                }
             }
 
             // Check variable-base scalar multiplication
