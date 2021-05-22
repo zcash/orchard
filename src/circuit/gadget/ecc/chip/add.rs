@@ -45,34 +45,34 @@ pub(crate) fn create_gate<F: FieldExt>(
 
     // Logical implications of Boolean flags
     {
-        // x_q = x_p ⟹ A
+        // (x_q − x_p)⋅α = 1 − A
         meta.create_gate("x_q = x_p ⟹ A", |_| {
             let lhs = (x_q.clone() - x_p.clone()) * alpha.clone();
             let rhs = Expression::Constant(F::one()) - a.clone();
             q_add.clone() * (lhs - rhs)
         });
 
-        // x_p = 0 ⟹ B
+        // x_p⋅β = 1 − B
         meta.create_gate("x_p = 0 ⟹ B", |_| {
             let lhs = x_p.clone() * beta.clone();
             let rhs = Expression::Constant(F::one()) - b.clone();
             q_add.clone() * (lhs - rhs)
         });
 
-        // B ⟹ x_p = 0
+        // B⋅x_p = 0
         meta.create_gate("B ⟹ x_p = 0", |_| q_add.clone() * b.clone() * x_p.clone());
 
-        // x_q = 0 ⟹ C
+        // x_q⋅γ = 1 − C
         meta.create_gate("x_q = 0 ⟹ C", |_| {
             let lhs = x_q.clone() * gamma.clone();
             let rhs = Expression::Constant(F::one()) - c.clone();
             q_add.clone() * (lhs - rhs)
         });
 
-        // C ⟹ x_q = 0
+        // C⋅x_q = 0
         meta.create_gate("C ⟹ x_q = 0", |_| q_add.clone() * c.clone() * x_q.clone());
 
-        // y_q = -y_p ⟹ D
+        // (y_q + y_p)⋅δ = 1 − D
         meta.create_gate("y_q = y_p ⟹ D", |_| {
             let lhs = (y_q.clone() + y_p.clone()) * delta.clone();
             let rhs = Expression::Constant(F::one()) - d.clone();
@@ -82,14 +82,14 @@ pub(crate) fn create_gate<F: FieldExt>(
 
     // Handle cases in incomplete addition
     {
-        // x_q ≠ x_p ⟹ λ = (y_q − y_p)/(x_q − x_p)
+        // (x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p))=0
         meta.create_gate("x equality", |_| {
             let equal = x_q.clone() - x_p.clone();
             let unequal = equal.clone() * lambda.clone() - (y_q.clone() - y_p.clone());
             q_add.clone() * equal * unequal
         });
 
-        // A ∧ y_p ≠ 0 ⟹ λ = (3 * x_p^2) / 2 * y_p
+        // A⋅(2y_p⋅λ − 3x_p^2) = 0
         meta.create_gate("x equal, y nonzero", |_| {
             let three_x_p_sq = Expression::Constant(F::from_u64(3)) * x_p.clone() * x_p.clone();
             let two_y_p = Expression::Constant(F::from_u64(2)) * y_p.clone();
@@ -97,40 +97,42 @@ pub(crate) fn create_gate<F: FieldExt>(
             q_add.clone() * a.clone() * gradient
         });
 
-        // (¬B ∧ ¬C ⟹ x_r = λ^2 − x_p − x_q) ∧ (B ⟹ x_r = x_q)
+        // (1 − B)⋅(1 − C)⋅(1 − D)⋅(λ^2 − x_p − x_q − x_r) + B⋅(x_r − x_q) = 0
         meta.create_gate("x_r check", |_| {
             let not_b = Expression::Constant(F::one()) - b.clone();
             let not_c = Expression::Constant(F::one()) - c.clone();
+            let not_d = Expression::Constant(F::one()) - d.clone();
             let x_r_lambda =
                 lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone();
             let x_r_x_q = b.clone() * (x_r.clone() - x_q.clone());
-            q_add.clone() * (not_b * not_c * x_r_lambda - x_r_x_q)
+            q_add.clone() * (not_b * not_c * not_d * x_r_lambda + x_r_x_q)
         });
 
-        // ¬B ∧ ¬C ⟹ y_r = λ⋅(x_p − x_r) − y_p) ∧ (B ⟹ y_r = y_q)
+        // (1 − B)⋅(1 − C)⋅(1 − D)⋅(λ⋅(x_p − x_r) − y_p − y_r) + B⋅(y_r − y_q) = 0
         meta.create_gate("y_r check", |_| {
             let not_b = Expression::Constant(F::one()) - b.clone();
             let not_c = Expression::Constant(F::one()) - c.clone();
+            let not_d = Expression::Constant(F::one()) - d.clone();
             let y_r_lambda =
                 lambda.clone() * (x_p.clone() - x_r.clone()) - y_p.clone() - y_r.clone();
             let y_r_y_q = b.clone() * (y_r.clone() - y_q.clone());
-            q_add.clone() * (not_b * not_c * y_r_lambda - y_r_y_q)
+            q_add.clone() * (not_b * not_c * not_d * y_r_lambda + y_r_y_q)
         });
 
-        // C ⟹ x_r = x_p
+        // C⋅(x_r − x_p) = 0
         meta.create_gate("x_r = x_p when x_q = 0", |_| {
             q_add.clone() * (c.clone() * (x_r.clone() - x_p.clone()))
         });
 
-        // C ⟹ y_r = y_p
+        // C⋅(y_r − y_p) = 0
         meta.create_gate("y_r = y_p when x_q = 0", |_| {
             q_add.clone() * (c.clone() * (y_r.clone() - y_p.clone()))
         });
 
-        // D ⟹ x_r = 0
+        // D⋅x_r = 0
         meta.create_gate("D ⟹ x_r = 0", |_| q_add.clone() * d.clone() * x_r.clone());
 
-        // D ⟹ y_r = 0
+        // D⋅y_r = 0
         meta.create_gate("D ⟹ y_r = 0", |_| q_add.clone() * d.clone() * y_r.clone());
     }
 }
@@ -188,11 +190,6 @@ pub(super) fn assign_region<C: CurveAffine>(
             .zip(y_p)
             .zip(y_q)
             .map(|(((x_p, x_q), y_p), y_q)| -> Result<(), Error> {
-                println!("x_p: {:?}", x_p);
-                println!("y_p: {:?}", y_p);
-                println!("x_q: {:?}", x_q);
-                println!("y_q: {:?}", y_q);
-
                 if x_q == x_p {
                     // x_q = x_p ⟹ A
                     region.assign_advice(|| "set A", a, offset, || Ok(C::Base::one()))?;
