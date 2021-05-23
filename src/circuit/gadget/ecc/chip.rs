@@ -1,11 +1,9 @@
 use super::EccInstructions;
 use crate::constants;
-use ff::PrimeField;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{Cell, Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
-    poly::Rotation,
 };
 
 mod add;
@@ -14,11 +12,9 @@ mod double;
 mod load;
 mod mul;
 mod mul_fixed;
-mod mul_fixed_short;
 mod util;
 mod witness_point;
 mod witness_scalar_fixed;
-mod witness_scalar_fixed_short;
 
 pub use load::*;
 
@@ -91,7 +87,7 @@ pub struct EccConfig {
     /// Variable-base scalar multiplication (lo half)
     pub q_mul_lo: Selector,
     /// Variable-base scalar multiplication (final scalar)
-    pub q_mul_decompose: Selector,
+    pub q_mul_complete: Selector,
     /// Fixed-base full-width scalar multiplication
     pub q_mul_fixed: Selector,
     /// Fixed-base signed short scalar multiplication
@@ -172,253 +168,90 @@ impl<C: CurveAffine> EccChip<C> {
         lambda: (Column<Advice>, Column<Advice>),
         extras: [Column<Advice>; 5],
     ) -> <Self as Chip<C::Base>>::Config {
-        let q_double = meta.selector();
-        let q_add_incomplete = meta.selector();
-        let q_add = meta.selector();
-        let q_mul_hi = meta.selector();
-        let q_mul_lo = meta.selector();
-        let q_mul_decompose = meta.selector();
-        let q_mul_fixed = meta.selector();
-        let q_mul_fixed_short = meta.selector();
-        let q_point = meta.selector();
-        let q_scalar_fixed = meta.selector();
-        let q_scalar_fixed_short = meta.selector();
-
-        let lagrange_coeffs = [
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-            meta.fixed_column(),
-        ];
-        let fixed_z = meta.fixed_column();
-        let mul_decompose = meta.fixed_column();
-
-        // Set up permutations
-        let perm = Permutation::new(
-            meta,
-            &[
-                P.0.into(),
-                P.1.into(),
-                bits.into(),
-                extras[0].into(),
-                extras[1].into(),
-                extras[2].into(),
-            ],
-        );
-
-        // Create witness point gate
-        {
-            let q_point = meta.query_selector(q_point, Rotation::cur());
-            let P = (
-                meta.query_advice(P.0, Rotation::cur()),
-                meta.query_advice(P.1, Rotation::cur()),
-            );
-            witness_point::create_gate::<C>(meta, q_point, P.0, P.1);
-        }
-
-        // Create witness scalar_fixed gate
-        {
-            let q_scalar_fixed = meta.query_selector(q_scalar_fixed, Rotation::cur());
-            let k = meta.query_advice(bits, Rotation::cur());
-            witness_scalar_fixed::create_gate(meta, q_scalar_fixed, k);
-        }
-
-        // Create witness scalar_fixed_short gate
-        {
-            let q_scalar_fixed_short = meta.query_selector(q_scalar_fixed_short, Rotation::cur());
-            let k = meta.query_advice(bits, Rotation::cur());
-            witness_scalar_fixed_short::create_gate(meta, q_scalar_fixed_short, k);
-        }
-
-        // Create point doubling gate
-        {
-            let q_double = meta.query_selector(q_double, Rotation::cur());
-            let x_a = meta.query_advice(extras[0], Rotation::cur());
-            let y_a = meta.query_advice(extras[1], Rotation::cur());
-            let x_p = meta.query_advice(P.0, Rotation::cur());
-            let y_p = meta.query_advice(P.1, Rotation::cur());
-
-            double::create_gate(meta, q_double, x_a, y_a, x_p, y_p);
-        }
-
-        // Create incomplete point addition gate
-        {
-            let q_add = meta.query_selector(q_add_incomplete, Rotation::cur());
-            let x_p = meta.query_advice(P.0, Rotation::cur());
-            let y_p = meta.query_advice(P.1, Rotation::cur());
-            let x_q = meta.query_advice(extras[0], Rotation::cur());
-            let y_q = meta.query_advice(extras[1], Rotation::cur());
-            let x_a = meta.query_advice(extras[0], Rotation::next());
-            let y_a = meta.query_advice(extras[1], Rotation::next());
-
-            add_incomplete::create_gate(meta, q_add, x_p, y_p, x_q, y_q, x_a, y_a);
-        }
-
-        // Create complete point addition gate
-        {
-            let q_add = meta.query_selector(q_add, Rotation::cur());
-            let x_p = meta.query_advice(P.0, Rotation::cur());
-            let y_p = meta.query_advice(P.1, Rotation::cur());
-            let x_q = meta.query_advice(extras[0], Rotation::cur());
-            let y_q = meta.query_advice(extras[1], Rotation::cur());
-            let x_r = meta.query_advice(extras[0], Rotation::next());
-            let y_r = meta.query_advice(extras[1], Rotation::next());
-            let lambda_cur = meta.query_advice(lambda.0, Rotation::cur());
-
-            let a = meta.query_advice(extras[2], Rotation::cur());
-            let b = meta.query_advice(extras[3], Rotation::cur());
-            let c = meta.query_advice(extras[4], Rotation::cur());
-            let d = meta.query_advice(lambda.1, Rotation::cur());
-
-            // \alpha = (x_q - x_p)^{-1}
-            let alpha = meta.query_advice(extras[2], Rotation::next());
-            // \beta = x_p^{-1}
-            let beta = meta.query_advice(extras[3], Rotation::next());
-            // \gamma = x_q^{-1}
-            let gamma = meta.query_advice(extras[4], Rotation::next());
-            // \delta = (y_p + y_q)^{-1}
-            let delta = meta.query_advice(lambda.1, Rotation::next());
-
-            add::create_gate(
-                meta, q_add, a, b, c, d, alpha, beta, gamma, delta, lambda_cur, x_p, y_p, x_q, y_q,
-                x_r, y_r,
-            );
-        }
-
-        // Create fixed-base full-width scalar mul gate
-        {
-            let q_mul_fixed = meta.query_selector(q_mul_fixed, Rotation::cur());
-            let x_p = meta.query_advice(P.0, Rotation::cur());
-            let y_p = meta.query_advice(P.1, Rotation::cur());
-            let k = meta.query_advice(bits, Rotation::cur());
-            let u = meta.query_advice(extras[2], Rotation::cur());
-            let z = meta.query_fixed(fixed_z, Rotation::cur());
-
-            mul_fixed::create_gate(meta, lagrange_coeffs, q_mul_fixed, x_p, y_p, k, u, z);
-        }
-
-        // Create fixed-base short signed scalar mul gate
-        {
-            let q_mul_fixed_short = meta.query_selector(q_mul_fixed_short, Rotation::cur());
-            let s = meta.query_advice(bits, Rotation::cur());
-            let y_a = meta.query_advice(extras[1], Rotation::cur());
-            let y_p = meta.query_advice(P.1, Rotation::cur());
-
-            mul_fixed_short::create_gate(meta, q_mul_fixed_short, s, y_a, y_p);
-        }
-
-        // Create variable-base scalar mul gate (hi half)
-        {
-            let q_mul = meta.query_selector(q_mul_hi, Rotation::cur());
-
-            let z_cur = meta.query_advice(bits, Rotation::cur());
-            let z_prev = meta.query_advice(bits, Rotation::prev());
-            let x_a_cur = meta.query_advice(extras[0], Rotation::cur());
-            let x_a_next = meta.query_advice(extras[0], Rotation::next());
-            let x_p_cur = meta.query_advice(P.0, Rotation::cur());
-            let x_p_next = meta.query_advice(P.0, Rotation::next());
-            let y_p_cur = meta.query_advice(P.1, Rotation::cur());
-            let y_p_next = meta.query_advice(P.1, Rotation::next());
-            let lambda1_cur = meta.query_advice(lambda.0, Rotation::cur());
-            let lambda2_cur = meta.query_advice(lambda.1, Rotation::cur());
-            let lambda1_next = meta.query_advice(lambda.0, Rotation::next());
-            let lambda2_next = meta.query_advice(lambda.1, Rotation::next());
-
-            mul::create_gate(
-                meta,
-                q_mul,
-                z_cur,
-                z_prev,
-                x_a_cur,
-                x_a_next,
-                x_p_cur,
-                x_p_next,
-                y_p_cur,
-                y_p_next,
-                lambda1_cur,
-                lambda2_cur,
-                lambda1_next,
-                lambda2_next,
-            )
-        }
-
-        // Create variable-base scalar mul gate (lo half)
-        {
-            let q_mul = meta.query_selector(q_mul_lo, Rotation::cur());
-
-            let z_cur = meta.query_advice(extras[1], Rotation::cur());
-            let z_prev = meta.query_advice(extras[1], Rotation::prev());
-            let x_a_cur = meta.query_advice(extras[2], Rotation::cur());
-            let x_a_next = meta.query_advice(extras[2], Rotation::next());
-            let x_p_cur = meta.query_advice(P.0, Rotation::cur());
-            let x_p_next = meta.query_advice(P.0, Rotation::next());
-            let y_p_cur = meta.query_advice(P.1, Rotation::cur());
-            let y_p_next = meta.query_advice(P.1, Rotation::next());
-            let lambda1_cur = meta.query_advice(extras[3], Rotation::cur());
-            let lambda2_cur = meta.query_advice(extras[4], Rotation::cur());
-            let lambda1_next = meta.query_advice(extras[3], Rotation::next());
-            let lambda2_next = meta.query_advice(extras[4], Rotation::next());
-
-            mul::create_gate(
-                meta,
-                q_mul,
-                z_cur,
-                z_prev,
-                x_a_cur,
-                x_a_next,
-                x_p_cur,
-                x_p_next,
-                y_p_cur,
-                y_p_next,
-                lambda1_cur,
-                lambda2_cur,
-                lambda1_next,
-                lambda2_next,
-            )
-        }
-
-        // Create scalar decomposition gate for complete addition part of variable-base scalar mul
-        {
-            let q_mul_decompose = meta.query_selector(q_mul_decompose, Rotation::cur());
-            let z_cur = meta.query_advice(bits, Rotation::cur());
-            let z_prev = meta.query_advice(bits, Rotation::prev());
-
-            mul::create_decompose_gate(meta, q_mul_decompose, z_cur, z_prev)
-        }
-
-        // Create final scalar check gate for variable-base scalar mul
-        {
-            let mul_decompose = meta.query_fixed(mul_decompose, Rotation::cur());
-            let z_cur = meta.query_advice(bits, Rotation::cur());
-
-            mul::create_final_scalar_gate::<C>(meta, mul_decompose, z_cur)
-        }
-
-        EccConfig {
+        let config = EccConfig {
             bits,
             P,
             lambda,
             extras,
-            lagrange_coeffs,
-            fixed_z,
-            mul_decompose,
-            q_double,
-            q_add_incomplete,
-            q_add,
-            q_mul_hi,
-            q_mul_lo,
-            q_mul_decompose,
-            q_mul_fixed,
-            q_mul_fixed_short,
-            q_point,
-            q_scalar_fixed,
-            q_scalar_fixed_short,
-            perm,
+            lagrange_coeffs: [
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+                meta.fixed_column(),
+            ],
+            fixed_z: meta.fixed_column(),
+            mul_decompose: meta.fixed_column(),
+            q_double: meta.selector(),
+            q_add_incomplete: meta.selector(),
+            q_add: meta.selector(),
+            q_mul_hi: meta.selector(),
+            q_mul_lo: meta.selector(),
+            q_mul_complete: meta.selector(),
+            q_mul_fixed: meta.selector(),
+            q_mul_fixed_short: meta.selector(),
+            q_point: meta.selector(),
+            q_scalar_fixed: meta.selector(),
+            q_scalar_fixed_short: meta.selector(),
+            perm: Permutation::new(
+                meta,
+                &[
+                    P.0.into(),
+                    P.1.into(),
+                    bits.into(),
+                    extras[0].into(),
+                    extras[1].into(),
+                    extras[2].into(),
+                ],
+            ),
+        };
+
+        // Create witness point gate
+        {
+            let config: witness_point::Config = (&config).into();
+            config.create_gate::<C>(meta);
         }
+
+        // Create witness scalar_fixed gates (both full-width and short)
+        {
+            let config: witness_scalar_fixed::Config = (&config).into();
+            config.create_gate::<C>(meta);
+        }
+
+        // Create point doubling gate
+        {
+            let config: double::Config = (&config).into();
+            config.create_gate(meta);
+        }
+
+        // Create incomplete point addition gate
+        {
+            let config: add_incomplete::Config = (&config).into();
+            config.create_gate(meta);
+        }
+
+        // Create complete point addition gate
+        {
+            let add_config: add::Config = (&config).into();
+            add_config.create_gate(meta);
+        }
+
+        // Create fixed-base scalar mul gates
+        {
+            let mul_fixed_config: mul_fixed::Config = (&config).into();
+            mul_fixed_config.create_gate::<C>(meta);
+        }
+
+        // Create variable-base scalar mul gates
+        {
+            let mul_config: mul::Config = (&config).into();
+            mul_config.create_gate(meta);
+        }
+
+        config
     }
 
     #[allow(clippy::type_complexity)]
@@ -495,19 +328,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<C::Base>,
         value: Option<C::Scalar>,
     ) -> Result<Self::ScalarFixed, Error> {
-        let config = self.config();
-
+        let config: witness_scalar_fixed::Config = self.config().into();
         layouter.assign_region(
             || "witness scalar for fixed-base mul",
-            |mut region| {
-                witness_scalar_fixed::assign_region(
-                    value,
-                    C::Scalar::NUM_BITS as usize,
-                    0,
-                    &mut region,
-                    config.clone(),
-                )
-            },
+            |mut region| config.assign_region_full(value, 0, &mut region),
         )
     }
 
@@ -516,13 +340,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<C::Base>,
         value: Option<C::Scalar>,
     ) -> Result<Self::ScalarFixedShort, Error> {
-        let config = self.config();
-
+        let config: witness_scalar_fixed::Config = self.config().into();
         layouter.assign_region(
             || "witness scalar for fixed-base mul",
-            |mut region| {
-                witness_scalar_fixed_short::assign_region(value, 0, &mut region, config.clone())
-            },
+            |mut region| config.assign_region_short(value, 0, &mut region),
         )
     }
 
@@ -531,11 +352,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<C::Base>,
         value: Option<C>,
     ) -> Result<Self::Point, Error> {
-        let config = self.config();
-
+        let config: witness_point::Config = self.config().into();
         layouter.assign_region(
             || "witness point",
-            |mut region| witness_point::assign_region(value, 0, &mut region, config.clone()),
+            |mut region| config.assign_region(value, 0, &mut region),
         )
     }
 
@@ -560,11 +380,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         a: &Self::Point,
         b: &Self::Point,
     ) -> Result<Self::Point, Error> {
-        let config = self.config();
-
+        let config: add_incomplete::Config = self.config().into();
         layouter.assign_region(
             || "point addition",
-            |mut region| add_incomplete::assign_region(a, b, 0, &mut region, config.clone()),
+            |mut region| config.assign_region(a, b, 0, &mut region),
         )
     }
 
@@ -574,11 +393,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         a: &Self::Point,
         b: &Self::Point,
     ) -> Result<Self::Point, Error> {
-        let config = self.config();
-
+        let config: add::Config = self.config().into();
         layouter.assign_region(
             || "point addition",
-            |mut region| add::assign_region::<C>(a, b, 0, &mut region, config.clone()),
+            |mut region| config.assign_region::<C>(a, b, 0, &mut region),
         )
     }
 
@@ -587,11 +405,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<C::Base>,
         a: &Self::Point,
     ) -> Result<Self::Point, Error> {
-        let config = self.config();
-
+        let config: double::Config = self.config().into();
         layouter.assign_region(
             || "point doubling",
-            |mut region| double::assign_region(a, 0, &mut region, config.clone()),
+            |mut region| config.assign_region(a, 0, &mut region),
         )
     }
 
@@ -601,11 +418,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarVar,
         base: &Self::Point,
     ) -> Result<Self::Point, Error> {
-        let config = self.config();
-
+        let config: mul::Config = self.config().into();
         layouter.assign_region(
             || "variable-base mul",
-            |mut region| mul::assign_region::<C>(scalar, base, 0, &mut region, config.clone()),
+            |mut region| config.assign_region::<C>(scalar, base, 0, &mut region),
         )
     }
 
@@ -615,13 +431,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarFixed,
         base: &Self::FixedPoint,
     ) -> Result<Self::Point, Error> {
-        let config = self.config();
-
+        let config: mul_fixed::Config = self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base.base),
-            |mut region| {
-                mul_fixed::assign_region::<C>(scalar, base, 0, &mut region, config.clone())
-            },
+            |mut region| config.assign_region_full::<C>(scalar, base, 0, &mut region),
         )
     }
 
@@ -631,13 +444,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarFixedShort,
         base: &Self::FixedPointShort,
     ) -> Result<Self::Point, Error> {
-        let config = self.config();
-
+        let config: mul_fixed::Config = self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base.base),
-            |mut region| {
-                mul_fixed_short::assign_region::<C>(scalar, base, 0, &mut region, config.clone())
-            },
+            |mut region| config.assign_region_short::<C>(scalar, base, 0, &mut region),
         )
     }
 }
