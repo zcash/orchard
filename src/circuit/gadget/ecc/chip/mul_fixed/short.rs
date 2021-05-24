@@ -150,7 +150,7 @@ impl<C: CurveAffine> Config<C> {
         let sign = util::assign_and_constrain(
             region,
             || "sign",
-            self.k_s.into(),
+            self.k_s,
             offset + constants::NUM_WINDOWS_SHORT,
             &scalar.sign,
             &self.perm,

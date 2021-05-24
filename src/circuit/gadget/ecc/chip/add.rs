@@ -200,12 +200,12 @@ impl Config {
         self.q_add.enable(region, offset)?;
 
         // Copy point `a` into `x_p`, `y_p` columns
-        util::assign_and_constrain(region, || "x_p", self.x_p.into(), offset, &a.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_p", self.y_p.into(), offset, &a.y, &self.perm)?;
+        util::assign_and_constrain(region, || "x_p", self.x_p, offset, &a.x, &self.perm)?;
+        util::assign_and_constrain(region, || "y_p", self.y_p, offset, &a.y, &self.perm)?;
 
         // Copy point `b` into `x_qr`, `y_qr` columns
-        util::assign_and_constrain(region, || "x_q", self.x_qr.into(), offset, &b.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_q", self.y_qr.into(), offset, &b.y, &self.perm)?;
+        util::assign_and_constrain(region, || "x_q", self.x_qr, offset, &b.x, &self.perm)?;
+        util::assign_and_constrain(region, || "y_q", self.y_qr, offset, &b.y, &self.perm)?;
 
         let (x_p, y_p) = (a.x.value, a.y.value);
         let (x_q, y_q) = (b.x.value, b.y.value);

@@ -45,6 +45,7 @@ impl<C: CurveAffine> Config<C> {
 
 impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
     const SCALAR_NUM_BITS: usize = constants::L_VALUE as usize;
+    const NUM_WINDOWS: usize = crate::constants::NUM_WINDOWS_SHORT as usize;
     type Scalar = EccScalarFixedShort<C>;
 
     fn q_scalar_fixed(&self) -> Selector {
@@ -60,6 +61,10 @@ impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccScalarFixedShort<C>, Error> {
+        // Enable `q_scalar_fixed_short`
+        self.q_scalar_fixed_short
+            .enable(region, offset + Self::NUM_WINDOWS)?;
+
         // Compute the scalar's sign and magnitude
         let sign = value.map(|value| {
             // t = (p - 1)/2
@@ -91,8 +96,6 @@ impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
             offset + k_bits.len(),
             || sign.ok_or(Error::SynthesisError),
         )?;
-        self.q_scalar_fixed_short
-            .enable(region, offset + k_bits.len())?;
 
         Ok(EccScalarFixedShort {
             magnitude,

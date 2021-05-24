@@ -73,6 +73,7 @@ impl Config {
 
 trait WitnessScalarFixed<C: CurveAffine> {
     const SCALAR_NUM_BITS: usize;
+    const NUM_WINDOWS: usize;
     type Scalar: Clone + std::fmt::Debug;
 
     fn q_scalar_fixed(&self) -> Selector;
@@ -91,6 +92,11 @@ trait WitnessScalarFixed<C: CurveAffine> {
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<Vec<CellValue<C::Base>>, Error> {
+        // Enable `q_scalar_fixed` selector
+        for idx in 0..Self::NUM_WINDOWS {
+            self.q_scalar_fixed().enable(region, offset + idx)?;
+        }
+
         // Decompose scalar into windows
         let bits: Option<Vec<u8>> = value.map(|value| {
             util::decompose_scalar_fixed::<C>(
@@ -105,9 +111,6 @@ trait WitnessScalarFixed<C: CurveAffine> {
 
         if let Some(bits) = bits {
             for (idx, window) in bits.iter().enumerate() {
-                // Enable `q_scalar_fixed` selector
-                self.q_scalar_fixed().enable(region, offset + idx)?;
-
                 let window = C::Base::from_u64(*window as u64);
                 let k_var = region.assign_advice(
                     || format!("k[{:?}]", offset + idx),

@@ -247,7 +247,7 @@ impl<C: CurveAffine> EccChip<C> {
 
         // Create variable-base scalar mul gates
         {
-            let mul_config: mul::Config = (&config).into();
+            let mul_config: mul::Config<C> = (&config).into();
             mul_config.create_gate(meta);
         }
 
@@ -418,10 +418,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarVar,
         base: &Self::Point,
     ) -> Result<Self::Point, Error> {
-        let config: mul::Config = self.config().into();
+        let config: mul::Config<C> = self.config().into();
         layouter.assign_region(
             || "variable-base mul",
-            |mut region| config.assign_region::<C>(scalar, base, 0, &mut region),
+            |mut region| config.assign_region(scalar, base, 0, &mut region),
         )
     }
 

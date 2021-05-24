@@ -126,7 +126,7 @@ fn load_lagrange_coeffs<F: FieldExt>(coeffs: Vec<[F; H]>) -> LagrangeCoeffs<F> {
                 WindowLagrangeCoeffs(
                     window
                         .iter()
-                        .map(|&coeff| coeff)
+                        .copied()
                         .collect::<Vec<_>>()
                         .into_boxed_slice()
                         .try_into()
@@ -148,7 +148,7 @@ fn load_lagrange_coeffs_short<F: FieldExt>(coeffs: Vec<[F; H]>) -> LagrangeCoeff
                 WindowLagrangeCoeffs(
                     window
                         .iter()
-                        .map(|&coeff| coeff)
+                        .copied()
                         .collect::<Vec<_>>()
                         .into_boxed_slice()
                         .try_into()

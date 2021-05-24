@@ -227,6 +227,7 @@ trait MulFixed<C: CurveAffine> {
     fn add_config(&self) -> &add::Config;
     fn add_incomplete_config(&self) -> &add_incomplete::Config;
 
+    #[allow(clippy::type_complexity)]
     fn assign_region_inner(
         &self,
         region: &mut Region<'_, C::Base>,
@@ -292,7 +293,7 @@ trait MulFixed<C: CurveAffine> {
             // Assign z-values for each window
             region.assign_fixed(
                 || format!("z-value for window: {:?}", window),
-                self.fixed_z().into(),
+                self.fixed_z(),
                 window + offset,
                 || Ok(base_z[window]),
             )?;
@@ -312,7 +313,7 @@ trait MulFixed<C: CurveAffine> {
             util::assign_and_constrain(
                 region,
                 || format!("k[{:?}]", window),
-                self.k().into(),
+                self.k(),
                 window + offset,
                 k,
                 self.perm(),
@@ -351,7 +352,7 @@ trait MulFixed<C: CurveAffine> {
         let x = util::assign_and_constrain(
             region,
             || "initialize acc x",
-            self.add_incomplete_config().x_qr.into(),
+            self.add_incomplete_config().x_qr,
             offset + 1,
             &m0.x,
             self.perm(),
@@ -359,7 +360,7 @@ trait MulFixed<C: CurveAffine> {
         let y = util::assign_and_constrain(
             region,
             || "initialize acc y",
-            self.add_incomplete_config().y_qr.into(),
+            self.add_incomplete_config().y_qr,
             offset + 1,
             &m0.y,
             self.perm(),

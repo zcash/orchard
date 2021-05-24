@@ -26,6 +26,7 @@ impl<C: CurveAffine> From<&super::Config> for Config<C> {
 
 impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
     const SCALAR_NUM_BITS: usize = C::Scalar::NUM_BITS as usize;
+    const NUM_WINDOWS: usize = crate::constants::NUM_WINDOWS as usize;
     type Scalar = EccScalarFixed<C>;
 
     fn q_scalar_fixed(&self) -> Selector {

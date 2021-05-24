@@ -13,7 +13,7 @@ use halo2::{
 mod incomplete;
 use incomplete::IncompleteConfig;
 
-pub struct Config {
+pub struct Config<C: CurveAffine> {
     // Selector used to constrain the cells used in complete addition.
     q_mul_complete: Selector,
     // Fixed column used to check recovery of the original scalar after decomposition.
@@ -27,12 +27,12 @@ pub struct Config {
     // Configuration used in point doubling
     double_config: double::Config,
     // Configuration used for `hi` bits of the scalar
-    hi_config: IncompleteConfig,
+    hi_config: IncompleteConfig<C>,
     // Configuration used for `lo` bits of the scalar
-    lo_config: IncompleteConfig,
+    lo_config: IncompleteConfig<C>,
 }
 
-impl From<&EccConfig> for Config {
+impl<C: CurveAffine> From<&EccConfig> for Config<C> {
     fn from(ecc_config: &EccConfig) -> Self {
         Self {
             q_mul_complete: ecc_config.q_mul_complete,
@@ -47,15 +47,15 @@ impl From<&EccConfig> for Config {
     }
 }
 
-impl Config {
-    pub(super) fn create_gate<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) {
+impl<C: CurveAffine> Config<C> {
+    pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
         self.hi_config.create_gate(meta);
         self.lo_config.create_gate(meta);
         self.create_decompose_gate(meta);
         self.create_final_scalar_gate(meta);
     }
 
-    pub(super) fn assign_region<C: CurveAffine>(
+    pub(super) fn assign_region(
         &self,
         scalar: &CellValue<C::Base>,
         base: &EccPoint<C::Base>,
@@ -63,19 +63,27 @@ impl Config {
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C::Base>, Error> {
         // Decompose the scalar bitwise (big-endian bit order).
-        let k_bits = decompose_scalar::<C>(scalar.value.unwrap());
+        let k_bits = scalar.value.map(|scalar| decompose_scalar::<C>(scalar));
 
         // Bits used in incomplete addition. k_{254} to k_{4} inclusive
         let incomplete_range = 0..(C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS);
-        let k_incomplete = &k_bits[incomplete_range];
-        let k_incomplete_hi = &k_incomplete[..k_incomplete.len() / 2];
-        let k_incomplete_lo = &k_incomplete[k_incomplete.len() / 2..];
+        let k_incomplete = k_bits
+            .clone()
+            .map(|k_bits| k_bits[incomplete_range].to_vec());
+        let incomplete_lo_len = (C::Scalar::NUM_BITS as usize - NUM_COMPLETE_BITS) / 2;
 
         // Bits used in complete addition. k_{3} to k_{1} inclusive
         // The LSB k_{0} is handled separately.
         let complete_range = (C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS)
             ..(C::Scalar::NUM_BITS as usize - 1);
-        let k_complete = &k_bits[complete_range.clone()];
+        let k_complete = k_bits
+            .clone()
+            .map(|k_bits| k_bits[complete_range.clone()].to_vec());
+
+        // Enable selectors for complete range
+        for row in complete_range.clone() {
+            self.q_mul_complete.enable(region, row + offset)?;
+        }
 
         // Initialize the accumulator a [2]base
         let acc = self.double_config.assign_region(&base, offset, region)?;
@@ -87,6 +95,9 @@ impl Config {
         let z = CellValue::new(z_cell, Some(z_val));
 
         // Double-and-add (incomplete addition) for the `hi` half of the scalar decomposition
+        let k_incomplete_hi = k_incomplete
+            .clone()
+            .map(|k_incomplete| k_incomplete[..k_incomplete.len() / 2].to_vec());
         let (x, y_a, z) = self.hi_config.double_and_add(
             region,
             &base,
@@ -96,6 +107,8 @@ impl Config {
         )?;
 
         // Double-and-add (incomplete addition) for the `lo` half of the scalar decomposition
+        let k_incomplete_lo =
+            k_incomplete.map(|k_incomplete| k_incomplete[k_incomplete.len() / 2..].to_vec());
         let (x, y_a, z) = self.lo_config.double_and_add(
             region,
             &base,
@@ -107,7 +120,7 @@ impl Config {
         // Move from incomplete addition to complete addition
         let mut acc = {
             let y_a_col = self.add_config.y_qr;
-            let row = k_incomplete_lo.len() + 2;
+            let row = incomplete_lo_len + 2;
 
             let y_a_cell = region.assign_advice(
                 || "y_a",
@@ -118,7 +131,7 @@ impl Config {
             util::assign_and_constrain(
                 region,
                 || "Copy z from incomplete to complete",
-                self.z_complete.into(),
+                self.z_complete,
                 row + offset,
                 &z,
                 &self.perm,
@@ -131,83 +144,87 @@ impl Config {
 
         let mut z_val = z.value;
         // Complete addition
-        for (iter, k) in k_complete.iter().enumerate() {
-            // Each iteration uses 4 rows (two complete additions)
-            let row = k_incomplete_lo.len() + 4 * iter + 3;
+        k_complete.map(|k_complete| -> Result<(), Error> {
+            for (iter, k) in k_complete.iter().enumerate() {
+                // Each iteration uses 4 rows (two complete additions)
+                let row = incomplete_lo_len + 4 * iter + 3;
 
-            // Check scalar decomposition here
-            region.assign_advice(
-                || "z",
-                self.z_complete,
-                row + offset - 1,
-                || z_val.ok_or(Error::SynthesisError),
-            )?;
-            z_val = z_val.map(|z_val| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64));
-            region.assign_advice(
-                || "z",
-                self.z_complete,
-                row + offset,
-                || z_val.ok_or(Error::SynthesisError),
-            )?;
-            self.q_mul_complete.enable(region, row + offset)?;
+                // Check scalar decomposition here
+                region.assign_advice(
+                    || "z",
+                    self.z_complete,
+                    row + offset - 1,
+                    || z_val.ok_or(Error::SynthesisError),
+                )?;
+                z_val =
+                    z_val.map(|z_val| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64));
+                region.assign_advice(
+                    || "z",
+                    self.z_complete,
+                    row + offset,
+                    || z_val.ok_or(Error::SynthesisError),
+                )?;
 
-            let x_p = base.x.value;
-            let x_p_cell = region.assign_advice(
-                || "x_p",
-                self.add_config.x_p,
-                row + offset,
-                || x_p.ok_or(Error::SynthesisError),
-            )?;
+                let x_p = base.x.value;
+                let x_p_cell = region.assign_advice(
+                    || "x_p",
+                    self.add_config.x_p,
+                    row + offset,
+                    || x_p.ok_or(Error::SynthesisError),
+                )?;
 
-            // If the bit is set, use `y`; if the bit is not set, use `-y`
-            let y_p = base.y.value;
-            let y_p = y_p.map(|y_p| if !k { -y_p } else { y_p });
+                // If the bit is set, use `y`; if the bit is not set, use `-y`
+                let y_p = base.y.value;
+                let y_p = y_p.map(|y_p| if !k { -y_p } else { y_p });
 
-            let y_p_cell = region.assign_advice(
-                || "y_p",
-                self.add_config.y_p,
-                row + offset,
-                || y_p.ok_or(Error::SynthesisError),
-            )?;
-            let p = EccPoint {
-                x: CellValue::<C::Base>::new(x_p_cell, x_p),
-                y: CellValue::<C::Base>::new(y_p_cell, y_p),
-            };
+                let y_p_cell = region.assign_advice(
+                    || "y_p",
+                    self.add_config.y_p,
+                    row + offset,
+                    || y_p.ok_or(Error::SynthesisError),
+                )?;
+                let p = EccPoint {
+                    x: CellValue::<C::Base>::new(x_p_cell, x_p),
+                    y: CellValue::<C::Base>::new(y_p_cell, y_p),
+                };
 
-            // Acc + U
-            let tmp_acc = self
-                .add_config
-                .assign_region::<C>(&p, &acc, row + offset, region)?;
+                // Acc + U
+                let tmp_acc = self
+                    .add_config
+                    .assign_region::<C>(&p, &acc, row + offset, region)?;
 
-            // Copy acc from `x_a`, `y_a` over to `x_p`, `y_p` on the next row
-            let acc_x = util::assign_and_constrain(
-                region,
-                || "copy acc x_a",
-                self.add_config.x_p.into(),
-                row + offset + 2,
-                &acc.x,
-                &self.perm,
-            )?;
-            let acc_y = util::assign_and_constrain(
-                region,
-                || "copy acc y_a",
-                self.add_config.y_p.into(),
-                row + offset + 2,
-                &acc.y,
-                &self.perm,
-            )?;
+                // Copy acc from `x_a`, `y_a` over to `x_p`, `y_p` on the next row
+                let acc_x = util::assign_and_constrain(
+                    region,
+                    || "copy acc x_a",
+                    self.add_config.x_p,
+                    row + offset + 2,
+                    &acc.x,
+                    &self.perm,
+                )?;
+                let acc_y = util::assign_and_constrain(
+                    region,
+                    || "copy acc y_a",
+                    self.add_config.y_p,
+                    row + offset + 2,
+                    &acc.y,
+                    &self.perm,
+                )?;
 
-            acc = EccPoint { x: acc_x, y: acc_y };
+                acc = EccPoint { x: acc_x, y: acc_y };
 
-            // Acc + P + Acc
-            acc = self
-                .add_config
-                .assign_region::<C>(&acc, &tmp_acc, row + offset + 2, region)?;
-        }
+                // Acc + P + Acc
+                acc =
+                    self.add_config
+                        .assign_region::<C>(&acc, &tmp_acc, row + offset + 2, region)?;
+            }
+
+            Ok(())
+        });
 
         // Process the least significant bit
-        let k_0_row = k_incomplete_lo.len() + complete_range.len() * 4 + 4;
-        let k_0 = &k_bits[C::Scalar::NUM_BITS as usize - 1];
+        let k_0_row = incomplete_lo_len + complete_range.len() * 4 + 4;
+        let k_0 = k_bits.map(|k_bits| k_bits[C::Scalar::NUM_BITS as usize - 1].clone());
 
         // Check that we recover the original scalar.
         //
@@ -220,48 +237,58 @@ impl Config {
         // to be in the base field of the curve. (See non-normative notes in
         // https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents.)
 
-        z_val = z_val.map(|z_val| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k_0 as u64));
+        z_val = z_val
+            .zip(k_0)
+            .map(|(z_val, k_0)| C::Base::from_u64(2) * z_val + C::Base::from_u64(k_0 as u64));
         region.assign_advice(
             || "final z",
             self.z_complete,
             k_0_row + offset,
             || z_val.ok_or(Error::SynthesisError),
         )?;
+
+        // Cast scalar into base field.
+        let scalar = scalar
+            .value
+            .map(|scalar| C::Base::from_bytes(&scalar.to_bytes()).unwrap());
         region.assign_fixed(
             || "original k",
             self.mul_decompose,
             k_0_row + offset,
-            || Ok(C::Base::from_bytes(&scalar.value.unwrap().to_bytes()).unwrap()),
+            || scalar.ok_or(Error::SynthesisError),
         )?;
 
         // If `k_0` is 0, return `Acc - P`
-        if !k_0 {
-            let (x_p, y_p) = (base.x.value, base.y.value.map(|y_p| -y_p));
-            let x_p_cell = region.assign_advice(
-                || "x_p",
-                self.add_config.x_p,
-                k_0_row + offset,
-                || x_p.ok_or(Error::SynthesisError),
-            )?;
+        k_0.map(|k_0| {
+            if !k_0 {
+                let (x_p, y_p) = (base.x.value, base.y.value.map(|y_p| -y_p));
+                let x_p_cell = region.assign_advice(
+                    || "x_p",
+                    self.add_config.x_p,
+                    k_0_row + offset,
+                    || x_p.ok_or(Error::SynthesisError),
+                )?;
 
-            let y_p_cell = region.assign_advice(
-                || "y_p",
-                self.add_config.y_p,
-                k_0_row + offset,
-                || y_p.ok_or(Error::SynthesisError),
-            )?;
-            let p = EccPoint {
-                x: CellValue::<C::Base>::new(x_p_cell, x_p),
-                y: CellValue::<C::Base>::new(y_p_cell, y_p),
-            };
+                let y_p_cell = region.assign_advice(
+                    || "y_p",
+                    self.add_config.y_p,
+                    k_0_row + offset,
+                    || y_p.ok_or(Error::SynthesisError),
+                )?;
+                let p = EccPoint {
+                    x: CellValue::<C::Base>::new(x_p_cell, x_p),
+                    y: CellValue::<C::Base>::new(y_p_cell, y_p),
+                };
 
-            // Return the result of the final complete addition as `[scalar]B`
-            self.add_config
-                .assign_region::<C>(&p, &acc, k_0_row + offset, region)
-        } else {
-            // If `k_0` is 1, simply return `Acc`
-            Ok(acc)
-        }
+                // Return the result of the final complete addition as `[scalar]B`
+                self.add_config
+                    .assign_region::<C>(&p, &acc, k_0_row + offset, region)
+            } else {
+                // If `k_0` is 1, simply return `Acc`
+                Ok(acc)
+            }
+        })
+        .unwrap_or(Err(Error::SynthesisError))
     }
 
     /// Gate used to check scalar decomposition is correct.
@@ -329,7 +356,7 @@ impl<F: FieldExt> Deref for ZValue<F> {
 }
 
 fn decompose_scalar<C: CurveAffine>(scalar: C::Base) -> Vec<bool> {
-    // Cast into scalar field
+    // Cast from base field into scalar field.
     let scalar = C::Scalar::from_bytes(&scalar.to_bytes()).unwrap();
 
     // The scalar field `F_q = 2^254 + t_q`

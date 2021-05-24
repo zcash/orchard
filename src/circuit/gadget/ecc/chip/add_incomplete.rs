@@ -66,16 +66,17 @@ impl Config {
     #[allow(non_snake_case)]
     pub(super) fn assign_region<F: FieldExt>(
         &self,
-        a: &EccPoint<F>,
-        b: &EccPoint<F>,
+        p: &EccPoint<F>,
+        q: &EccPoint<F>,
         offset: usize,
         region: &mut Region<'_, F>,
     ) -> Result<EccPoint<F>, Error> {
-        // Compute the sum `a + b`
-        let (x_p, y_p) = (a.x.value, a.y.value);
-        let (x_q, y_q) = (b.x.value, b.y.value);
+        // Enable `q_add_incomplete` selector
+        self.q_add_incomplete.enable(region, offset)?;
 
         // Handle exceptional cases
+        let (x_p, y_p) = (p.x.value, p.y.value);
+        let (x_q, y_q) = (q.x.value, q.y.value);
         x_p.zip(y_p)
             .zip(x_q)
             .zip(y_q)
@@ -93,29 +94,28 @@ impl Config {
             })
             .unwrap_or(Err(Error::SynthesisError))?;
 
-        // Enable `q_add_incomplete` selector
-        self.q_add_incomplete.enable(region, offset)?;
+        // Copy point `p` into `x_p`, `y_p` columns
+        util::assign_and_constrain(region, || "x_p", self.x_p, offset, &p.x, &self.perm)?;
+        util::assign_and_constrain(region, || "y_p", self.y_p, offset, &p.y, &self.perm)?;
 
-        // Copy point `a` into `x_p`, `y_p` columns
-        util::assign_and_constrain(region, || "x_p", self.x_p.into(), offset, &a.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_p", self.y_p.into(), offset, &a.y, &self.perm)?;
+        // Copy point `q` into `x_qr`, `y_qr` columns
+        util::assign_and_constrain(region, || "x_q", self.x_qr, offset, &q.x, &self.perm)?;
+        util::assign_and_constrain(region, || "y_q", self.y_qr, offset, &q.y, &self.perm)?;
 
-        // Copy point `b` into `x_a`, `y_a` columns
-        util::assign_and_constrain(region, || "x_q", self.x_qr.into(), offset, &b.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_q", self.y_qr.into(), offset, &b.y, &self.perm)?;
-
+        // Compute the sum `P + Q = R`
         let r = x_p
             .zip(y_p)
             .zip(x_q)
             .zip(y_q)
             .map(|(((x_p, y_p), x_q), y_q)| {
+                // We can invert `(x_q - x_p)` because we rejected the `x_q == x_p` case.
                 let lambda = (y_q - y_p) * (x_q - x_p).invert().unwrap();
                 let x_r = lambda * lambda - x_p - x_q;
                 let y_r = lambda * (x_p - x_r) - y_p;
                 (x_r, y_r)
             });
 
-        // Assign the sum to `x_a`, `y_a` columns in the next row
+        // Assign the sum to `x_qr`, `y_qr` columns in the next row
         let x_r = r.map(|r| r.0);
         let x_r_var = region.assign_advice(
             || "x_r",

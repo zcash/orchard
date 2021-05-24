@@ -67,13 +67,16 @@ impl Config {
     #[allow(non_snake_case)]
     pub(super) fn assign_region<F: FieldExt>(
         &self,
-        a: &EccPoint<F>,
+        p: &EccPoint<F>,
         offset: usize,
         region: &mut Region<'_, F>,
     ) -> Result<EccPoint<F>, Error> {
-        // Handle point at infinity
-        (a.x.value)
-            .zip(a.y.value)
+        // Enable `q_double` selector
+        self.q_double.enable(region, offset)?;
+
+        // Return error if `P` is point at infinity
+        let (x_p, y_p) = (p.x.value, p.y.value);
+        x_p.zip(y_p)
             .map(|(x, y)| {
                 if x == F::zero() && y == F::zero() {
                     return Err(Error::SynthesisError);
@@ -82,17 +85,14 @@ impl Config {
             })
             .unwrap_or(Err(Error::SynthesisError))?;
 
-        // Enable `q_double` selector
-        self.q_double.enable(region, offset)?;
-
-        // Copy the point into `x_p`, `y_p` columns
-        util::assign_and_constrain(region, || "x_p", self.x_p.into(), offset, &a.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_p", self.y_p.into(), offset, &a.y, &self.perm)?;
+        // Copy the point `P` into `x_p`, `y_p` columns
+        util::assign_and_constrain(region, || "x_p", self.x_p, offset, &p.x, &self.perm)?;
+        util::assign_and_constrain(region, || "y_p", self.y_p, offset, &p.y, &self.perm)?;
 
         // Compute the doubled point
-        let (x_p, y_p) = (a.x.value, a.y.value);
         let r = x_p.zip(y_p).map(|(x_p, y_p)| {
             // λ = 3(x_p)^2 / (2 * y_p)
+            // We can invert `y_p` since we already rejected the case where `y_p == 0`.
             let lambda = F::from_u64(3) * x_p * x_p * F::TWO_INV * y_p.invert().unwrap();
             let x_r = lambda * lambda - x_p - x_p;
             let y_r = lambda * (x_p - x_r) - y_p;
