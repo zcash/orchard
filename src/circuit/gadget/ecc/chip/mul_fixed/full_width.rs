@@ -1,4 +1,6 @@
-use super::super::{add_incomplete, witness_point, EccPoint, EccScalarFixed, OrchardFixedBase};
+use super::super::{
+    add, add_incomplete, witness_point, EccPoint, EccScalarFixed, OrchardFixedBase,
+};
 use super::MulFixed;
 
 use crate::constants;
@@ -27,6 +29,8 @@ pub struct Config<C: CurveAffine> {
     u: Column<Advice>,
     // Permutation
     perm: Permutation,
+    // Configuration for `add`
+    add_config: add::Config,
     // Configuration for `add_incomplete`
     add_incomplete_config: add_incomplete::Config,
     // Configuration for `witness_point`
@@ -45,6 +49,7 @@ impl<C: CurveAffine> From<&super::Config> for Config<C> {
             y_p: config.y_p,
             u: config.u,
             perm: config.perm.clone(),
+            add_config: config.add_config.clone(),
             add_incomplete_config: config.add_incomplete_config.clone(),
             witness_point_config: config.witness_point_config.clone(),
             _marker: PhantomData,
@@ -67,6 +72,12 @@ impl<C: CurveAffine> MulFixed<C> for Config<C> {
     fn k(&self) -> Column<Advice> {
         self.k
     }
+    fn x_p(&self) -> Column<Advice> {
+        self.x_p
+    }
+    fn y_p(&self) -> Column<Advice> {
+        self.y_p
+    }
     fn u(&self) -> Column<Advice> {
         self.u
     }
@@ -75,6 +86,9 @@ impl<C: CurveAffine> MulFixed<C> for Config<C> {
     }
     fn witness_point_config(&self) -> &witness_point::Config {
         &self.witness_point_config
+    }
+    fn add_config(&self) -> &add::Config {
+        &self.add_config
     }
     fn add_incomplete_config(&self) -> &add_incomplete::Config {
         &self.add_incomplete_config
@@ -94,11 +108,7 @@ impl<C: CurveAffine> Config<C> {
             self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
 
         // Add to the accumulator and return the final result as `[scalar]B`.
-        self.add_incomplete_config.assign_region(
-            &mul_b,
-            &acc,
-            offset + constants::NUM_WINDOWS - 1,
-            region,
-        )
+        self.add_config
+            .assign_region::<C>(&mul_b, &acc, offset + constants::NUM_WINDOWS, region)
     }
 }

@@ -1,5 +1,5 @@
 use super::{
-    add_incomplete, load::WindowUs, util, witness_point, CellValue, EccConfig, EccPoint,
+    add, add_incomplete, load::WindowUs, util, witness_point, CellValue, EccConfig, EccPoint,
     EccScalarFixed, EccScalarFixedShort, OrchardFixedBase, OrchardFixedBaseShort,
     OrchardFixedBases,
 };
@@ -36,6 +36,8 @@ pub struct Config {
     u: Column<Advice>,
     // Permutation
     perm: Permutation,
+    // Configuration for `add`
+    add_config: add::Config,
     // Configuration for `add_incomplete`
     add_incomplete_config: add_incomplete::Config,
     // Configuration for `witness_point`
@@ -55,6 +57,7 @@ impl From<&EccConfig> for Config {
             y_a: ecc_config.extras[1],
             u: ecc_config.extras[2],
             perm: ecc_config.perm.clone(),
+            add_config: ecc_config.into(),
             add_incomplete_config: ecc_config.into(),
             witness_point_config: ecc_config.into(),
         }
@@ -217,8 +220,11 @@ trait MulFixed<C: CurveAffine> {
     fn fixed_z(&self) -> Column<Fixed>;
     fn k(&self) -> Column<Advice>;
     fn u(&self) -> Column<Advice>;
+    fn x_p(&self) -> Column<Advice>;
+    fn y_p(&self) -> Column<Advice>;
     fn perm(&self) -> &Permutation;
     fn witness_point_config(&self) -> &witness_point::Config;
+    fn add_config(&self) -> &add::Config;
     fn add_incomplete_config(&self) -> &add_incomplete::Config;
 
     fn assign_region_inner(
@@ -240,7 +246,7 @@ trait MulFixed<C: CurveAffine> {
         // Process all windows excluding least and most significant windows
         let acc = self.add_incomplete(region, offset, acc, base, scalar)?;
 
-        // Process most significant window outside the for loop
+        // Process most significant window using complete addition
         let mul_b = self.process_msb(region, offset, base, scalar)?;
 
         Ok((acc, mul_b))
@@ -262,10 +268,11 @@ trait MulFixed<C: CurveAffine> {
                 base.z_short.0.as_ref().to_vec(),
             ),
         };
+
         // Assign fixed columns for given fixed base
-        for w in 0..Self::NUM_WINDOWS {
+        for window in 0..Self::NUM_WINDOWS {
             // Enable `q_mul_fixed` selector
-            self.q_mul_fixed().enable(region, w + offset)?;
+            self.q_mul_fixed().enable(region, window + offset)?;
 
             // Assign x-coordinate Lagrange interpolation coefficients
             for k in 0..(constants::H) {
@@ -273,21 +280,21 @@ trait MulFixed<C: CurveAffine> {
                     || {
                         format!(
                             "Lagrange interpolation coeff for window: {:?}, k: {:?}",
-                            w, k
+                            window, k
                         )
                     },
                     self.lagrange_coeffs()[k],
-                    w + offset,
-                    || Ok(base_lagrange_coeffs[w].0[k]),
+                    window + offset,
+                    || Ok(base_lagrange_coeffs[window].0[k]),
                 )?;
             }
 
             // Assign z-values for each window
             region.assign_fixed(
-                || format!("z-value for window: {:?}", w),
+                || format!("z-value for window: {:?}", window),
                 self.fixed_z().into(),
-                w + offset,
-                || Ok(base_z[w]),
+                window + offset,
+                || Ok(base_z[window]),
             )?;
         }
 
@@ -301,12 +308,12 @@ trait MulFixed<C: CurveAffine> {
         scalar: &ScalarFixed<C>,
     ) -> Result<(), Error> {
         // Copy the scalar decomposition
-        for (w, k) in scalar.k_bits().iter().enumerate() {
+        for (window, k) in scalar.k_bits().iter().enumerate() {
             util::assign_and_constrain(
                 region,
-                || format!("k[{:?}]", w),
+                || format!("k[{:?}]", window),
                 self.k().into(),
-                w + offset,
+                window + offset,
                 k,
                 self.perm(),
             )?;
@@ -322,45 +329,43 @@ trait MulFixed<C: CurveAffine> {
         base: &FixedBase<C>,
         scalar: &ScalarFixed<C>,
     ) -> Result<EccPoint<C::Base>, Error> {
-        // Process the least significant window outside the for loop
-        let mul_b = scalar.k_field()[0].map(|k_0| base.value() * (k_0 + C::Scalar::one()));
-        let mul_b = self.witness_point_config().assign_region(
-            mul_b.map(|point| point.to_affine()),
-            0,
+        // Witness `m0` in `x_p`, `y_p` cells on row 0
+        let k0 = scalar.k_field()[0];
+        let m0 = k0.map(|k0| base.value() * (k0 + C::Scalar::from_u64(2)));
+        let m0 = self.witness_point_config().assign_region(
+            m0.map(|point| point.to_affine()),
+            offset,
             region,
         )?;
 
-        // Assign u = (y_p + z_w).sqrt() for the least significant window
+        // Assign u = (y_p + z_w).sqrt() for `m0`
         {
-            let u_val = scalar.k_usize()[0].map(|k_0| base.u()[0].0[k_0]);
-            region.assign_advice(
-                || "u",
-                self.u(),
-                offset,
-                || u_val.ok_or(Error::SynthesisError),
-            )?;
+            let k0 = scalar.k_usize()[0];
+            let u0 = &base.u()[0];
+            let u0 = k0.map(|k0| u0.0[k0]);
+
+            region.assign_advice(|| "u", self.u(), offset, || u0.ok_or(Error::SynthesisError))?;
         }
 
-        // Initialise the point which will cumulatively sum to [scalar]B.
-        // Copy and assign `mul_b` to x_a, y_a columns on the next row
-        let x_sum = util::assign_and_constrain(
+        // Copy `m0` into `x_qr`, `y_qr` cells on row 1
+        let x = util::assign_and_constrain(
             region,
-            || "initialize sum x",
+            || "initialize acc x",
             self.add_incomplete_config().x_qr.into(),
             offset + 1,
-            &mul_b.x,
+            &m0.x,
             self.perm(),
         )?;
-        let y_sum = util::assign_and_constrain(
+        let y = util::assign_and_constrain(
             region,
-            || "initialize sum y",
+            || "initialize acc y",
             self.add_incomplete_config().y_qr.into(),
             offset + 1,
-            &mul_b.y,
+            &m0.y,
             self.perm(),
         )?;
 
-        Ok(EccPoint { x: x_sum, y: y_sum })
+        Ok(EccPoint { x, y })
     }
 
     fn add_incomplete(
@@ -383,12 +388,12 @@ trait MulFixed<C: CurveAffine> {
             .iter()
             .enumerate()
         {
-            // Offset index by 1 since we already assigned row 0 outside this loop
+            // Offset window index by 1 since we are starting on k_1
             let w = w + 1;
 
-            // Compute [(k_w + 1) ⋅ 8^w]B
+            // Compute [(k_w + 2) ⋅ 8^w]B
             let mul_b =
-                k.map(|k| base_value * (k + C::Scalar::one()) * h.pow(&[w as u64, 0, 0, 0]));
+                k.map(|k| base_value * (k + C::Scalar::from_u64(2)) * h.pow(&[w as u64, 0, 0, 0]));
             let mul_b = self.witness_point_config().assign_region(
                 mul_b.map(|point| point.to_affine()),
                 offset + w,
@@ -397,14 +402,18 @@ trait MulFixed<C: CurveAffine> {
 
             // Assign u = (y_p + z_w).sqrt()
             let u_val = scalar_k_usize[w].map(|k| base_u[w].0[k]);
-            region.assign_advice(|| "u", self.u(), w, || u_val.ok_or(Error::SynthesisError))?;
+            region.assign_advice(
+                || "u",
+                self.u(),
+                offset + w,
+                || u_val.ok_or(Error::SynthesisError),
+            )?;
 
             // Add to the accumulator
             acc = self
                 .add_incomplete_config()
                 .assign_region(&mul_b, &acc, offset + w, region)?;
         }
-
         Ok(acc)
     }
 
@@ -418,10 +427,6 @@ trait MulFixed<C: CurveAffine> {
         // This is 2^w, where w is the window width
         let h = C::Scalar::from_u64(constants::H as u64);
 
-        let offset_acc = (0..(Self::NUM_WINDOWS - 1)).fold(C::ScalarExt::zero(), |acc, w| {
-            acc + h.pow(&[w as u64, 0, 0, 0])
-        });
-
         // Assign u = (y_p + z_w).sqrt() for the most significant window
         {
             let u_val = scalar.k_usize()[Self::NUM_WINDOWS - 1]
@@ -434,9 +439,20 @@ trait MulFixed<C: CurveAffine> {
             )?;
         }
 
-        // `scalar = [k * 8^84 - offset_acc]`, where `offset_acc = \sum_{j = 0}^{83} 8^j`.
+        // offset_acc = \sum_{j = 0}^{NUM_WINDOWS - 2} 2^{FIXED_BASE_WINDOW_SIZE * j+1}
+        let offset_acc = (0..(Self::NUM_WINDOWS - 1)).fold(C::ScalarExt::zero(), |acc, w| {
+            acc + C::Scalar::from_u64(2).pow(&[
+                constants::FIXED_BASE_WINDOW_SIZE as u64 * w as u64 + 1,
+                0,
+                0,
+                0,
+            ])
+        });
+
+        // `scalar = [k * 8^84 - offset_acc]`, where `offset_acc = \sum_{j = 0}^{83} 2^{FIXED_BASE_WINDOW_SIZE * j + 1}`.
         let scalar = scalar.k_field()[scalar.k_field().len() - 1]
             .map(|k| k * h.pow(&[(Self::NUM_WINDOWS - 1) as u64, 0, 0, 0]) - offset_acc);
+
         let mul_b = scalar.map(|scalar| base.value() * scalar);
         self.witness_point_config().assign_region(
             mul_b.map(|point| point.to_affine()),

@@ -1,10 +1,10 @@
 use super::super::{
-    add_incomplete, util, witness_point, EccPoint, EccScalarFixedShort, OrchardFixedBaseShort,
+    add, add_incomplete, util, witness_point, CellValue, EccPoint, EccScalarFixedShort,
+    OrchardFixedBaseShort,
 };
 use super::MulFixed;
 use crate::constants;
 
-use group::Curve;
 use halo2::{
     arithmetic::{CurveAffine, Field},
     circuit::Region,
@@ -33,6 +33,8 @@ pub struct Config<C: CurveAffine> {
     u: Column<Advice>,
     // Permutation
     perm: Permutation,
+    // Configuration for `add`
+    add_config: add::Config,
     // Configuration for `add_incomplete`
     add_incomplete_config: add_incomplete::Config,
     // Configuration for `witness_point`
@@ -53,6 +55,7 @@ impl<C: CurveAffine> From<&super::Config> for Config<C> {
             y_a: config.y_a,
             u: config.u,
             perm: config.perm.clone(),
+            add_config: config.add_config.clone(),
             add_incomplete_config: config.add_incomplete_config.clone(),
             witness_point_config: config.witness_point_config.clone(),
             _marker: PhantomData,
@@ -75,6 +78,12 @@ impl<C: CurveAffine> MulFixed<C> for Config<C> {
     fn k(&self) -> Column<Advice> {
         self.k_s
     }
+    fn x_p(&self) -> Column<Advice> {
+        self.x_p
+    }
+    fn y_p(&self) -> Column<Advice> {
+        self.y_p
+    }
     fn u(&self) -> Column<Advice> {
         self.u
     }
@@ -83,6 +92,9 @@ impl<C: CurveAffine> MulFixed<C> for Config<C> {
     }
     fn witness_point_config(&self) -> &witness_point::Config {
         &self.witness_point_config
+    }
+    fn add_config(&self) -> &add::Config {
+        &self.add_config
     }
     fn add_incomplete_config(&self) -> &add_incomplete::Config {
         &self.add_incomplete_config
@@ -124,12 +136,15 @@ impl<C: CurveAffine> Config<C> {
             self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
 
         // Add to the cumulative sum to get `[magnitude]B`.
-        let magnitude_mul = self.add_incomplete_config.assign_region(
+        let magnitude_mul = self.add_config.assign_region::<C>(
             &mul_b,
             &acc,
-            offset + constants::NUM_WINDOWS_SHORT - 1,
+            offset + constants::NUM_WINDOWS_SHORT,
             region,
         )?;
+
+        // Increase offset by 1 after complete addition
+        let offset = offset + 1;
 
         // Assign sign to `bits` column
         let sign = util::assign_and_constrain(
@@ -159,13 +174,22 @@ impl<C: CurveAffine> Config<C> {
 
         // Assign final `x, y` to `x_p, y_p` columns and return final point
         let x_val = magnitude_mul.x.value;
-        let mul = x_val
-            .zip(y_val)
-            .map(|(x, y)| C::from_xy(x, y).unwrap().to_curve());
-        self.witness_point_config.assign_region(
-            mul.map(|point| point.to_affine()),
+        let x_var = region.assign_advice(
+            || "x_var",
+            self.x_p,
             offset + constants::NUM_WINDOWS_SHORT,
-            region,
-        )
+            || x_val.ok_or(Error::SynthesisError),
+        )?;
+        let y_var = region.assign_advice(
+            || "y_var",
+            self.y_p,
+            offset + constants::NUM_WINDOWS_SHORT,
+            || y_val.ok_or(Error::SynthesisError),
+        )?;
+
+        Ok(EccPoint {
+            x: CellValue::new(x_var, x_val),
+            y: CellValue::new(y_var, y_val),
+        })
     }
 }

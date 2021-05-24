@@ -8,6 +8,7 @@ use halo2::{
     poly::Rotation,
 };
 
+#[derive(Clone, Debug)]
 pub struct Config {
     q_add: Selector,
     // lambda
@@ -17,7 +18,7 @@ pub struct Config {
     // y-coordinate of P in P + Q = R
     pub y_p: Column<Advice>,
     // x-coordinate of Q or R in P + Q = R
-    x_qr: Column<Advice>,
+    pub x_qr: Column<Advice>,
     // y-coordinate of Q or R in P + Q = R
     pub y_qr: Column<Advice>,
     // a or alpha

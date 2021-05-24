@@ -554,17 +554,19 @@ mod tests {
                     assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
                 }
 
-                // [0]B should return an error since fixed-base scalar multiplication
-                // uses incomplete addition internally.
+                // [0]B should return (0,0) since it uses complete addition
+                // on the last step.
                 let scalar_fixed = C::Scalar::zero();
                 let scalar_fixed = super::ScalarFixed::new(
                     chip.clone(),
                     layouter.namespace(|| "ScalarFixed"),
                     Some(scalar_fixed),
                 )?;
-                nullifier_k
-                    .mul(layouter.namespace(|| "mul"), &scalar_fixed)
-                    .expect_err("[0]B should return an error");
+                let mul_fixed = nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
+                if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
+                    assert_eq!(C::Base::zero(), x);
+                    assert_eq!(C::Base::zero(), y);
+                }
             }
 
             // Check short signed fixed-base scalar multiplication
@@ -575,8 +577,8 @@ mod tests {
                     OrchardFixedBasesShort(value_commit_v_inner),
                 )?;
 
-                // [0]B should return an error since fixed-base scalar multiplication
-                // uses incomplete addition internally.
+                // [0]B should return (0,0) since it uses complete addition
+                // on the last step.
                 {
                     let scalar_fixed = C::Scalar::zero();
                     let scalar_fixed = super::ScalarFixedShort::new(
@@ -584,9 +586,12 @@ mod tests {
                         layouter.namespace(|| "ScalarFixedShort"),
                         Some(scalar_fixed),
                     )?;
-                    value_commit_v
-                        .mul(layouter.namespace(|| "mul"), &scalar_fixed)
-                        .expect_err("[0]B should return an error");
+                    let mul_fixed =
+                        value_commit_v.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
+                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
+                        assert_eq!(C::Base::zero(), x);
+                        assert_eq!(C::Base::zero(), y);
+                    }
                 }
 
                 let mut checks = Vec::<(C::CurveExt, super::Point<C, EccChip<C>>)>::new();
