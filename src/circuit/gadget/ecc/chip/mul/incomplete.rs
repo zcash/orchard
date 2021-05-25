@@ -1,7 +1,5 @@
-use super::super::{CellValue, EccConfig, EccPoint};
-use super::{ZValue, X, Y};
-use crate::constants;
-use ff::PrimeField;
+use super::super::{util, CellValue, EccConfig, EccPoint};
+use super::{Mul, X, Y, Z};
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::Region,
@@ -10,7 +8,7 @@ use halo2::{
 };
 use std::marker::PhantomData;
 
-pub(super) struct IncompleteConfig<C: CurveAffine> {
+pub(super) struct Config<C: CurveAffine> {
     // Number of bits covered by this incomplete range.
     num_bits: usize,
     // Selector used to constrain the cells used in incomplete addition.
@@ -32,17 +30,14 @@ pub(super) struct IncompleteConfig<C: CurveAffine> {
     _marker: PhantomData<C>,
 }
 
-impl<C: CurveAffine> IncompleteConfig<C> {
+impl<C: CurveAffine> Mul<C> for Config<C> {}
+
+impl<C: CurveAffine> Config<C> {
     // Columns used in processing the `hi` bits of the scalar.
     // `x_p, y_p` are shared across the `hi` and `lo` halves.
-    pub(super) fn into_hi_config(ecc_config: &EccConfig) -> Self {
-        // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
-        // The `hi` half is k_{254} to k_{130} inclusive (length 125 bits).
-        let incomplete_hi_len =
-            (C::Scalar::NUM_BITS as usize - 1 - constants::NUM_COMPLETE_BITS) / 2;
-
+    pub(super) fn hi_config(ecc_config: &EccConfig) -> Self {
         Self {
-            num_bits: incomplete_hi_len,
+            num_bits: Self::incomplete_hi_len(),
             q_mul: ecc_config.q_mul_hi,
             z: ecc_config.bits,
             x_a: ecc_config.extras[0],
@@ -57,13 +52,9 @@ impl<C: CurveAffine> IncompleteConfig<C> {
 
     // Columns used in processing the `lo` bits of the scalar.
     // `x_p, y_p` are shared across the `hi` and `lo` halves.
-    pub(super) fn into_lo_config(ecc_config: &EccConfig) -> Self {
-        // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
-        // The `lo` half is k_{129} to k_{4} inclusive (length 126 bits).
-        let incomplete_lo_len = (C::Scalar::NUM_BITS as usize - constants::NUM_COMPLETE_BITS) / 2;
-
+    pub(super) fn lo_config(ecc_config: &EccConfig) -> Self {
         Self {
-            num_bits: incomplete_lo_len,
+            num_bits: Self::incomplete_lo_len(),
             q_mul: ecc_config.q_mul_lo,
             z: ecc_config.extras[1],
             x_a: ecc_config.extras[2],
@@ -171,132 +162,138 @@ impl<C: CurveAffine> IncompleteConfig<C> {
     pub(super) fn double_and_add<F: FieldExt>(
         &self,
         region: &mut Region<'_, F>,
-        base: &EccPoint<F>,
         offset: usize,
+        base: &EccPoint<F>,
         bits: Option<Vec<bool>>,
-        acc: (X<F>, Y<F>, ZValue<F>),
-    ) -> Result<(X<F>, Y<F>, ZValue<F>), Error> {
+        acc: (X<F>, Y<F>, Z<F>),
+    ) -> Result<(X<F>, Y<F>, Z<F>), Error> {
         // Enable `q_mul` on all but the last row of the incomplete range.
         for row in 1..(self.num_bits - 1) {
             self.q_mul.enable(region, offset + row)?;
         }
 
         // Initialise the running `z` sum for the scalar bits.
-        let mut z_val = acc.2.value;
-        let mut z_cell = region.assign_advice(
+        let mut z = util::assign_and_constrain(
+            region,
             || "starting z",
             self.z,
             offset,
-            || z_val.ok_or(Error::SynthesisError),
+            &acc.2,
+            &self.perm,
         )?;
-        region.constrain_equal(&self.perm, z_cell, acc.2.cell)?;
+
+        // Increase offset by 1; we used row 0 for initializing `z`.
+        let offset = offset + 1;
 
         // Define `x_p`, `y_p`
         let x_p = base.x.value;
         let y_p = base.y.value;
 
-        let offset = offset + 1;
-
         // Initialise acc
-        let mut x_a = acc.0.value;
-        let mut x_a_cell = region.assign_advice(
+        let mut x_a = util::assign_and_constrain(
+            region,
             || "starting x_a",
             self.x_a,
             offset,
-            || x_a.ok_or(Error::SynthesisError),
+            &acc.0,
+            &self.perm,
         )?;
-        region.constrain_equal(&self.perm, x_a_cell, acc.0.cell)?;
         let mut y_a = *acc.1;
 
+        // Convert Option<Vec<bool>> into Vec<Option<bool>>
+        let bits: Vec<Option<bool>> = if let Some(b) = bits {
+            b.into_iter().map(|v| Some(v)).collect()
+        } else {
+            return Err(Error::SynthesisError);
+        };
+
         // Incomplete addition
-        bits.map(|bits| -> Result<(), Error> {
-            for (row, k) in bits.iter().enumerate() {
-                // z_{i} = 2 * z_{i+1} + k_i
-                z_val = z_val.map(|z_val| F::from_u64(2) * z_val + F::from_u64(*k as u64));
-                z_cell = region.assign_advice(
-                    || "z",
-                    self.z,
-                    row + offset,
-                    || z_val.ok_or(Error::SynthesisError),
-                )?;
+        for (row, k) in bits.into_iter().enumerate() {
+            // z_{i} = 2 * z_{i+1} + k_i
+            let z_val = z
+                .value
+                .zip(k)
+                .map(|(z_val, k)| F::from_u64(2) * z_val + F::from_u64(k as u64));
+            let z_cell = region.assign_advice(
+                || "z",
+                self.z,
+                row + offset,
+                || z_val.ok_or(Error::SynthesisError),
+            )?;
+            z = CellValue::new(z_cell, z_val);
 
-                // Assign `x_p`, `y_p`
-                region.assign_advice(
-                    || "x_p",
-                    self.x_p,
-                    row + offset,
-                    || x_p.ok_or(Error::SynthesisError),
-                )?;
-                region.assign_advice(
-                    || "y_p",
-                    self.y_p,
-                    row + offset,
-                    || y_p.ok_or(Error::SynthesisError),
-                )?;
+            // Assign `x_p`, `y_p`
+            region.assign_advice(
+                || "x_p",
+                self.x_p,
+                row + offset,
+                || x_p.ok_or(Error::SynthesisError),
+            )?;
+            region.assign_advice(
+                || "y_p",
+                self.y_p,
+                row + offset,
+                || y_p.ok_or(Error::SynthesisError),
+            )?;
 
-                // If the bit is set, use `y`; if the bit is not set, use `-y`
-                let y_p = y_p.map(|y_p| if !k { -y_p } else { y_p });
+            // If the bit is set, use `y`; if the bit is not set, use `-y`
+            let y_p = y_p.zip(k).map(|(y_p, k)| if !k { -y_p } else { y_p });
 
-                // Compute and assign λ1⋅(x_A − x_P) = y_A − y_P
-                let lambda1 = y_a
-                    .zip(y_p)
-                    .zip(x_a)
-                    .zip(x_p)
-                    .map(|(((y_a, y_p), x_a), x_p)| (y_a - y_p) * (x_a - x_p).invert().unwrap());
-                region.assign_advice(
-                    || "lambda1",
-                    self.lambda1,
-                    row + offset,
-                    || lambda1.ok_or(Error::SynthesisError),
-                )?;
+            // Compute and assign λ1⋅(x_A − x_P) = y_A − y_P
+            let lambda1 = y_a
+                .zip(y_p)
+                .zip(x_a.value)
+                .zip(x_p)
+                .map(|(((y_a, y_p), x_a), x_p)| (y_a - y_p) * (x_a - x_p).invert().unwrap());
+            region.assign_advice(
+                || "lambda1",
+                self.lambda1,
+                row + offset,
+                || lambda1.ok_or(Error::SynthesisError),
+            )?;
 
-                // x_R = λ1^2 - x_A - x_P
-                let x_r = lambda1
-                    .zip(x_a)
-                    .zip(x_p)
-                    .map(|((lambda1, x_a), x_p)| lambda1 * lambda1 - x_a - x_p);
+            // x_R = λ1^2 - x_A - x_P
+            let x_r = lambda1
+                .zip(x_a.value)
+                .zip(x_p)
+                .map(|((lambda1, x_a), x_p)| lambda1 * lambda1 - x_a - x_p);
 
-                // λ2 = (2(y_A) / (x_A - x_R)) - λ1
-                let lambda2 =
-                    lambda1
-                        .zip(y_a)
-                        .zip(x_a)
-                        .zip(x_r)
-                        .map(|(((lambda1, y_a), x_a), x_r)| {
-                            F::from_u64(2) * y_a * (x_a - x_r).invert().unwrap() - lambda1
-                        });
-                region.assign_advice(
-                    || "lambda2",
-                    self.lambda2,
-                    row + offset,
-                    || lambda2.ok_or(Error::SynthesisError),
-                )?;
-
-                // Compute and assign `x_a` for the next row
-                let x_a_new = lambda2
-                    .zip(x_a)
-                    .zip(x_r)
-                    .map(|((lambda2, x_a), x_r)| lambda2 * lambda2 - x_a - x_r);
-                y_a = lambda2
-                    .zip(x_a)
-                    .zip(x_a_new)
+            // λ2 = (2(y_A) / (x_A - x_R)) - λ1
+            let lambda2 =
+                lambda1
                     .zip(y_a)
-                    .map(|(((lambda2, x_a), x_a_new), y_a)| lambda2 * (x_a - x_a_new) - y_a);
-                x_a = x_a_new;
-                x_a_cell = region.assign_advice(
-                    || "x_a",
-                    self.x_a,
-                    row + offset + 1,
-                    || x_a.ok_or(Error::SynthesisError),
-                )?;
-            }
-            Ok(())
-        });
+                    .zip(x_a.value)
+                    .zip(x_r)
+                    .map(|(((lambda1, y_a), x_a), x_r)| {
+                        F::from_u64(2) * y_a * (x_a - x_r).invert().unwrap() - lambda1
+                    });
+            region.assign_advice(
+                || "lambda2",
+                self.lambda2,
+                row + offset,
+                || lambda2.ok_or(Error::SynthesisError),
+            )?;
 
-        Ok((
-            X(CellValue::<F>::new(x_a_cell, x_a)),
-            Y(y_a),
-            ZValue(CellValue::<F>::new(z_cell, z_val)),
-        ))
+            // Compute and assign `x_a` for the next row
+            let x_a_new = lambda2
+                .zip(x_a.value)
+                .zip(x_r)
+                .map(|((lambda2, x_a), x_r)| lambda2 * lambda2 - x_a - x_r);
+            y_a = lambda2
+                .zip(x_a.value)
+                .zip(x_a_new)
+                .zip(y_a)
+                .map(|(((lambda2, x_a), x_a_new), y_a)| lambda2 * (x_a - x_a_new) - y_a);
+            let x_a_val = x_a_new;
+            let x_a_cell = region.assign_advice(
+                || "x_a",
+                self.x_a,
+                row + offset + 1,
+                || x_a_val.ok_or(Error::SynthesisError),
+            )?;
+            x_a = CellValue::new(x_a_cell, x_a_val);
+        }
+
+        Ok((X(x_a), Y(y_a), Z(z)))
     }
 }

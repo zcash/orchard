@@ -7,6 +7,7 @@ use halo2::{
     poly::Rotation,
 };
 
+#[derive(Clone, Debug)]
 pub struct Config {
     q_double: Selector,
     // x-coordinate of P in [2]P = R
