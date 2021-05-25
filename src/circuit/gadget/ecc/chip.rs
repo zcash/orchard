@@ -396,7 +396,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         let config: add::Config = self.config().into();
         layouter.assign_region(
             || "point addition",
-            |mut region| config.assign_region::<C>(a, b, 0, &mut region),
+            |mut region| config.assign_region(a, b, 0, &mut region),
         )
     }
 

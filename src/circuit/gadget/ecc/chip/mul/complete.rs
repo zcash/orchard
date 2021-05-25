@@ -82,8 +82,8 @@ impl<C: CurveAffine> Config<C> {
 
         // Complete addition
         for (iter, k) in bits.into_iter().enumerate() {
-            // Each iteration uses 4 rows (two complete additions)
-            let row = Self::incomplete_lo_len() + 4 * iter + 3;
+            // Each iteration uses 2 rows (two complete additions)
+            let row = Self::incomplete_lo_len() + 2 * iter + 3;
 
             // Check scalar decomposition here
             region.assign_advice(
@@ -128,14 +128,14 @@ impl<C: CurveAffine> Config<C> {
             // Acc + U
             let tmp_acc = self
                 .add_config
-                .assign_region::<C>(&p, &acc, row + offset, region)?;
+                .assign_region(&p, &acc, row + offset, region)?;
 
             // Copy acc from `x_a`, `y_a` over to `x_p`, `y_p` on the next row
             let acc_x = util::assign_and_constrain(
                 region,
                 || "copy acc x_a",
                 self.add_config.x_p,
-                row + offset + 2,
+                row + offset + 1,
                 &acc.x,
                 &self.perm,
             )?;
@@ -143,7 +143,7 @@ impl<C: CurveAffine> Config<C> {
                 region,
                 || "copy acc y_a",
                 self.add_config.y_p,
-                row + offset + 2,
+                row + offset + 1,
                 &acc.y,
                 &self.perm,
             )?;
@@ -153,7 +153,7 @@ impl<C: CurveAffine> Config<C> {
             // Acc + P + Acc
             acc = self
                 .add_config
-                .assign_region::<C>(&acc, &tmp_acc, row + offset + 2, region)?;
+                .assign_region(&acc, &tmp_acc, row + offset + 1, region)?;
         }
         Ok((acc, z_val))
     }

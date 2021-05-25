@@ -385,7 +385,7 @@ mod tests {
     use ff::Field;
     use group::{Curve, Group};
     use halo2::{
-        arithmetic::{CurveAffine, FieldExt},
+        arithmetic::{CurveAffine, CurveExt, FieldExt},
         circuit::{layouter::SingleChipLayouter, Layouter},
         dev::MockProver,
         pasta::pallas,
@@ -462,7 +462,6 @@ mod tests {
             // Check complete addition (other cases)
             {
                 let mut checks = Vec::<(C::CurveExt, super::Point<C, EccChip<C>>)>::new();
-
                 // P + Q
                 let real_added = p_val + q_val;
                 let added_complete = p.add(layouter.namespace(|| "P + Q"), &q)?;
@@ -481,6 +480,28 @@ mod tests {
                 // P + 𝒪
                 let real_added = p_val.to_curve();
                 let added_complete = zero.add(layouter.namespace(|| "P + 𝒪"), &p)?;
+                checks.push((real_added, added_complete));
+
+                // (x, y) + (ζx, -y) should behave like normal P + Q.
+                let endo_p = p_val.to_curve().endo();
+                let real_added = p_val.to_curve() + endo_p;
+                let endo_p = super::Point::new(
+                    chip.clone(),
+                    layouter.namespace(|| "point"),
+                    Some(endo_p.to_affine()),
+                )?;
+                let added_complete = p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
+                checks.push((real_added, added_complete));
+
+                // (x, y) + ((ζ^2)x, -y)
+                let endo_p = p_val.to_curve().endo().endo();
+                let real_added = p_val.to_curve() + endo_p;
+                let endo_p = super::Point::new(
+                    chip.clone(),
+                    layouter.namespace(|| "point"),
+                    Some(endo_p.to_affine()),
+                )?;
+                let added_complete = p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
                 checks.push((real_added, added_complete));
 
                 for check in checks.into_iter() {

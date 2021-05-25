@@ -1,8 +1,6 @@
 use super::{util, CellValue, EccConfig, EccPoint};
-use ff::Field;
-use group::{Curve, Group};
 use halo2::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::FieldExt,
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
     poly::Rotation,
@@ -21,14 +19,14 @@ pub struct Config {
     pub x_qr: Column<Advice>,
     // y-coordinate of Q or R in P + Q = R
     pub y_qr: Column<Advice>,
-    // a or alpha
-    a_alpha: Column<Advice>,
-    // b or beta
-    b_beta: Column<Advice>,
-    // c or gamma
-    c_gamma: Column<Advice>,
-    // d or delta
-    d_delta: Column<Advice>,
+    // α = inv0(x_q - x_p)
+    alpha: Column<Advice>,
+    // β = inv0(x_p)
+    beta: Column<Advice>,
+    // γ = inv0(x_q)
+    gamma: Column<Advice>,
+    // δ = inv0(y_p + y_q) if x_q = x_p, 0 otherwise
+    delta: Column<Advice>,
     // Permutation
     perm: Permutation,
 }
@@ -42,10 +40,10 @@ impl From<&EccConfig> for Config {
             y_p: ecc_config.P.1,
             x_qr: ecc_config.extras[0],
             y_qr: ecc_config.extras[1],
-            a_alpha: ecc_config.extras[2],
-            b_beta: ecc_config.extras[3],
-            c_gamma: ecc_config.extras[4],
-            d_delta: ecc_config.lambda.1,
+            alpha: ecc_config.extras[2],
+            beta: ecc_config.extras[3],
+            gamma: ecc_config.extras[4],
+            delta: ecc_config.lambda.1,
             perm: ecc_config.perm.clone(),
         }
     }
@@ -63,139 +61,149 @@ impl Config {
         let y_r = meta.query_advice(self.y_qr, Rotation::next());
         let lambda = meta.query_advice(self.lambda, Rotation::cur());
 
-        let a = meta.query_advice(self.a_alpha, Rotation::cur());
-        let b = meta.query_advice(self.b_beta, Rotation::cur());
-        let c = meta.query_advice(self.c_gamma, Rotation::cur());
-        let d = meta.query_advice(self.d_delta, Rotation::cur());
+        // inv0(x) is 0 if x = 0, 1/x otherwise.
+        // α = inv0(x_q - x_p)
+        let alpha = meta.query_advice(self.alpha, Rotation::cur());
+        // β = inv0(x_p)
+        let beta = meta.query_advice(self.beta, Rotation::cur());
+        // γ = inv0(x_q)
+        let gamma = meta.query_advice(self.gamma, Rotation::cur());
+        // δ = inv0(y_p + y_q) if x_q = x_p, 0 otherwise
+        let delta = meta.query_advice(self.delta, Rotation::cur());
 
-        // \alpha = (x_q - x_p)^{-1}
-        let alpha = meta.query_advice(self.a_alpha, Rotation::next());
-        // \beta = x_p^{-1}
-        let beta = meta.query_advice(self.b_beta, Rotation::next());
-        // \gamma = x_q^{-1}
-        let gamma = meta.query_advice(self.c_gamma, Rotation::next());
-        // \delta = (y_p + y_q)^{-1}
-        let delta = meta.query_advice(self.d_delta, Rotation::next());
+        // Useful composite expressions
+        // α ⋅(x_q - x_p)
+        let if_alpha = (x_q.clone() - x_p.clone()) * alpha;
+        // β ⋅ x_p
+        let if_beta = x_p.clone() * beta;
+        // γ ⋅ x_q
+        let if_gamma = x_q.clone() * gamma;
+        // δ ⋅(y_p + y_q)
+        let if_delta = (y_q.clone() + y_p.clone()) * delta;
 
-        // Boolean checks on A, B, C, D
-        {
-            meta.create_gate("Check A is boolean", |_| {
-                q_add.clone() * a.clone() * (Expression::Constant(F::one()) - a.clone())
-            });
-            meta.create_gate("Check B is boolean", |_| {
-                q_add.clone() * b.clone() * (Expression::Constant(F::one()) - b.clone())
-            });
-            meta.create_gate("Check C is boolean", |_| {
-                q_add.clone() * c.clone() * (Expression::Constant(F::one()) - c.clone())
-            });
-            meta.create_gate("Check D is boolean", |_| {
-                q_add.clone() * d.clone() * (Expression::Constant(F::one()) - d.clone())
-            });
-        }
-
-        // Logical implications of Boolean flags
-        {
-            // (x_q − x_p)⋅α = 1 − A
-            meta.create_gate("x_q = x_p ⟹ A", |_| {
-                let lhs = (x_q.clone() - x_p.clone()) * alpha.clone();
-                let rhs = Expression::Constant(F::one()) - a.clone();
-                q_add.clone() * (lhs - rhs)
-            });
-
-            // x_p⋅β = 1 − B
-            meta.create_gate("x_p = 0 ⟹ B", |_| {
-                let lhs = x_p.clone() * beta.clone();
-                let rhs = Expression::Constant(F::one()) - b.clone();
-                q_add.clone() * (lhs - rhs)
-            });
-
-            // B⋅x_p = 0
-            meta.create_gate("B ⟹ x_p = 0", |_| q_add.clone() * b.clone() * x_p.clone());
-
-            // x_q⋅γ = 1 − C
-            meta.create_gate("x_q = 0 ⟹ C", |_| {
-                let lhs = x_q.clone() * gamma.clone();
-                let rhs = Expression::Constant(F::one()) - c.clone();
-                q_add.clone() * (lhs - rhs)
-            });
-
-            // C⋅x_q = 0
-            meta.create_gate("C ⟹ x_q = 0", |_| q_add.clone() * c.clone() * x_q.clone());
-
-            // (y_q + y_p)⋅δ = 1 − D
-            meta.create_gate("y_q = y_p ⟹ D", |_| {
-                let lhs = (y_q.clone() + y_p.clone()) * delta.clone();
-                let rhs = Expression::Constant(F::one()) - d.clone();
-                q_add.clone() * (lhs - rhs)
-            });
-        }
+        // Useful constants
+        let one = Expression::Constant(F::one());
+        let two = Expression::Constant(F::from_u64(2));
+        let three = Expression::Constant(F::from_u64(3));
 
         // Handle cases in incomplete addition
         {
             // (x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p))=0
-            meta.create_gate("x equality", |_| {
-                let equal = x_q.clone() - x_p.clone();
-                let unequal = equal.clone() * lambda.clone() - (y_q.clone() - y_p.clone());
-                q_add.clone() * equal * unequal
+            meta.create_gate(
+                "(x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p))=0",
+                |_| {
+                    let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q − x_p)
+
+                    let y_q_minus_y_p = y_q.clone() - y_p.clone(); // (y_q − y_p)
+                    let incomplete = x_q_minus_x_p.clone() * lambda.clone() - y_q_minus_y_p; // (x_q − x_p)⋅λ − (y_q−y_p)
+
+                    // q_add ⋅(x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p))
+                    q_add.clone() * x_q_minus_x_p * incomplete
+                },
+            );
+
+            // (1 - (x_q - x_p)⋅α)⋅(2y_p ⋅λ - 3x_p^2) = 0
+            meta.create_gate("(1 - (x_q - x_p)⋅α)⋅(2y_p ⋅λ - 3x_p^2) = 0", |_| {
+                let three_x_p_sq = three * x_p.clone() * x_p.clone(); // 3x_p^2
+                let two_y_p = two.clone() * y_p.clone(); // 2y_p
+                let derivative = two_y_p * lambda.clone() - three_x_p_sq; // (2y_p ⋅λ - 3x_p^2)
+
+                // q_add ⋅(1 - (x_q - x_p)⋅α)⋅(2y_p ⋅λ - 3x_p^2)
+                q_add.clone() * (one.clone() - if_alpha.clone()) * derivative
             });
 
-            // A⋅(2y_p⋅λ − 3x_p^2) = 0
-            meta.create_gate("x equal, y nonzero", |_| {
-                let three_x_p_sq = Expression::Constant(F::from_u64(3)) * x_p.clone() * x_p.clone();
-                let two_y_p = Expression::Constant(F::from_u64(2)) * y_p.clone();
-                let gradient = two_y_p * lambda.clone() - three_x_p_sq;
-                q_add.clone() * a.clone() * gradient
-            });
+            // x_p⋅x_q⋅(x_q - x_p)⋅(λ^2 - x_p - x_q - x_r) = 0
+            meta.create_gate(
+                "x_p⋅x_q⋅(x_q - x_p)⋅(λ^2 - x_p - x_q - x_r) = 0",
+                |_| {
+                    let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q - x_p)
+                    let incomplete =
+                        lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone(); // (λ^2 - x_p - x_q - x_r)
 
-            // (1 − B)⋅(1 − C)⋅(1 − D)⋅(λ^2 − x_p − x_q − x_r) + B⋅(x_r − x_q) = 0
-            meta.create_gate("x_r check", |_| {
-                let not_b = Expression::Constant(F::one()) - b.clone();
-                let not_c = Expression::Constant(F::one()) - c.clone();
-                let not_d = Expression::Constant(F::one()) - d.clone();
-                let x_r_lambda =
-                    lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone();
-                let x_r_x_q = b.clone() * (x_r.clone() - x_q.clone());
-                q_add.clone() * (not_b * not_c * not_d * x_r_lambda + x_r_x_q)
-            });
+                    // q_add ⋅ x_p⋅x_q⋅(x_q - x_p)⋅(λ^2 - x_p - x_q - x_r)
+                    q_add.clone() * x_p.clone() * x_q.clone() * x_q_minus_x_p * incomplete
+                },
+            );
 
-            // (1 − B)⋅(1 − C)⋅(1 − D)⋅(λ⋅(x_p − x_r) − y_p − y_r) + B⋅(y_r − y_q) = 0
+            // x_p⋅x_q⋅(x_q - x_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0
+            meta.create_gate(
+                "x_p⋅x_q⋅(x_q - x_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0",
+                |_| {
+                    let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q - x_p)
+                    let x_p_minus_x_r = x_p.clone() - x_r.clone(); // (x_p - x_r)
+
+                    // q_add ⋅ x_p⋅x_q⋅(x_q - x_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r)
+                    q_add.clone()
+                        * x_p.clone()
+                        * x_q.clone()
+                        * x_q_minus_x_p
+                        * (lambda.clone() * x_p_minus_x_r - y_p.clone() - y_r.clone())
+                },
+            );
+
+            // x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r) = 0
             meta.create_gate("y_r check", |_| {
-                let not_b = Expression::Constant(F::one()) - b.clone();
-                let not_c = Expression::Constant(F::one()) - c.clone();
-                let not_d = Expression::Constant(F::one()) - d.clone();
-                let y_r_lambda =
-                    lambda.clone() * (x_p.clone() - x_r.clone()) - y_p.clone() - y_r.clone();
-                let y_r_y_q = b.clone() * (y_r.clone() - y_q.clone());
-                q_add.clone() * (not_b * not_c * not_d * y_r_lambda + y_r_y_q)
+                let y_q_plus_y_p = y_q.clone() + y_p.clone(); // (y_q + y_p)
+                let incomplete =
+                    lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone(); // (λ^2 - x_p - x_q - x_r)
+
+                // q_add ⋅ x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r)
+                q_add.clone() * x_p.clone() * x_q.clone() * y_q_plus_y_p * incomplete
             });
 
-            // C⋅(x_r − x_p) = 0
-            meta.create_gate("x_r = x_p when x_q = 0", |_| {
-                q_add.clone() * (c.clone() * (x_r.clone() - x_p.clone()))
+            // x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0
+            meta.create_gate(
+                "x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0",
+                |_| {
+                    let y_q_plus_y_p = y_q.clone() + y_p.clone(); // (y_q + y_p)
+                    let x_p_minus_x_r = x_p.clone() - x_r.clone(); // (x_p - x_r)
+
+                    // q_add ⋅ x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r)
+                    q_add.clone()
+                        * x_p.clone()
+                        * x_q.clone()
+                        * y_q_plus_y_p
+                        * (lambda.clone() * x_p_minus_x_r - y_p.clone() - y_r.clone())
+                },
+            );
+
+            meta.create_gate("(1 - x_p * β) * (x_r - x_q) = 0", |_| {
+                q_add.clone() * (one.clone() - if_beta.clone()) * (x_r.clone() - x_q.clone())
             });
 
-            // C⋅(y_r − y_p) = 0
-            meta.create_gate("y_r = y_p when x_q = 0", |_| {
-                q_add.clone() * (c.clone() * (y_r.clone() - y_p.clone()))
+            meta.create_gate("(1 - x_p * β) * (y_r - y_q) = 0", |_| {
+                q_add.clone() * (one.clone() - if_beta) * (y_r.clone() - y_q.clone())
             });
 
-            // D⋅x_r = 0
-            meta.create_gate("D ⟹ x_r = 0", |_| q_add.clone() * d.clone() * x_r.clone());
+            meta.create_gate("(1 - x_q * γ) * (x_r - x_p) = 0", |_| {
+                q_add.clone() * (one.clone() - if_gamma.clone()) * (x_r.clone() - x_p.clone())
+            });
 
-            // D⋅y_r = 0
-            meta.create_gate("D ⟹ y_r = 0", |_| q_add.clone() * d.clone() * y_r.clone());
+            meta.create_gate("(1 - x_q * γ) * (y_r - y_p) = 0", |_| {
+                q_add.clone() * (one.clone() - if_gamma) * (y_r.clone() - y_p.clone())
+            });
+
+            // ((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * x_r
+            meta.create_gate("((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * x_r", |_| {
+                q_add.clone() * (one.clone() - if_alpha.clone() - if_delta.clone()) * x_r.clone()
+            });
+
+            // ((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * y_r
+            meta.create_gate("((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * y_r", |_| {
+                q_add * (one - if_alpha - if_delta) * y_r
+            });
         }
     }
 
     #[allow(clippy::many_single_char_names)]
     #[allow(non_snake_case)]
-    pub(super) fn assign_region<C: CurveAffine>(
+    pub(super) fn assign_region<F: FieldExt>(
         &self,
-        a: &EccPoint<C::Base>,
-        b: &EccPoint<C::Base>,
+        a: &EccPoint<F>,
+        b: &EccPoint<F>,
         offset: usize,
-        region: &mut Region<'_, C::Base>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+        region: &mut Region<'_, F>,
+    ) -> Result<EccPoint<F>, Error> {
         // Enable `q_add` selector
         self.q_add.enable(region, offset)?;
 
@@ -210,168 +218,103 @@ impl Config {
         let (x_p, y_p) = (a.x.value, a.y.value);
         let (x_q, y_q) = (b.x.value, b.y.value);
 
-        // Assign A, B, C, D, α, β, γ, δ
-        {
-            x_p.zip(x_q)
-                .zip(y_p)
-                .zip(y_q)
-                .map(|(((x_p, x_q), y_p), y_q)| -> Result<(), Error> {
-                    if x_q == x_p {
-                        // x_q = x_p ⟹ A
-                        region.assign_advice(
-                            || "set A",
-                            self.a_alpha,
-                            offset,
-                            || Ok(C::Base::one()),
-                        )?;
-
-                        // Doubling case, λ = 3(x_p)^2 / (2 * y_p)
-                        if y_p != C::Base::zero() {
-                            let lambda_val = C::Base::from_u64(3)
-                                * x_p
-                                * x_p
-                                * (C::Base::from_u64(2) * y_p).invert().unwrap();
-                            region.assign_advice(
-                                || "set lambda",
-                                self.lambda,
-                                offset,
-                                || Ok(lambda_val),
-                            )?;
-                        }
-                    } else {
-                        // α = 1 / (x_q - x_p)
-                        let alpha_val = (x_q - x_p).invert().unwrap();
-                        region.assign_advice(
-                            || "set alpha",
-                            self.a_alpha,
-                            offset + 1,
-                            || Ok(alpha_val),
-                        )?;
-
-                        // Non-doubling case, λ = (y_q - y_p) / (x_q - x_p)
-                        let lambda_val = (x_q - x_p).invert().unwrap() * (y_q - y_p);
-                        region.assign_advice(
-                            || "set lambda",
-                            self.lambda,
-                            offset,
-                            || Ok(lambda_val),
-                        )?;
-                    }
-
-                    if x_p == C::Base::zero() {
-                        // x_p = 0 ⟹ B
-                        region.assign_advice(
-                            || "set B",
-                            self.b_beta,
-                            offset,
-                            || Ok(C::Base::one()),
-                        )?;
-                    } else {
-                        // β = 1 / x_p
-                        let beta_val = x_p.invert().unwrap();
-                        region.assign_advice(
-                            || "set beta",
-                            self.b_beta,
-                            offset + 1,
-                            || Ok(beta_val),
-                        )?;
-                    }
-                    if x_q == C::Base::zero() {
-                        // x_q = 0 ⟹ C
-                        region.assign_advice(
-                            || "set C",
-                            self.c_gamma,
-                            offset,
-                            || Ok(C::Base::one()),
-                        )?;
-                    } else {
-                        // γ = 1 / x_q
-                        let gamma_val = x_q.invert().unwrap();
-                        region.assign_advice(
-                            || "set gamma",
-                            self.c_gamma,
-                            offset + 1,
-                            || Ok(gamma_val),
-                        )?;
-                    }
-
-                    if y_p == -y_q {
-                        // y_p = -y_p ⟹ D
-                        region.assign_advice(
-                            || "set D",
-                            self.d_delta,
-                            offset,
-                            || Ok(C::Base::one()),
-                        )?;
-                    } else {
-                        // δ = 1 / (y_q + y_p)
-                        let delta_val = (y_q + y_p).invert().unwrap();
-                        region.assign_advice(
-                            || "set delta",
-                            self.d_delta,
-                            offset + 1,
-                            || Ok(delta_val),
-                        )?;
-                    }
-                    Ok(())
-                });
-        }
-
-        // Compute R = P + Q
-        let r = x_p
+        x_p.zip(x_q)
             .zip(y_p)
-            .zip(x_q)
             .zip(y_q)
-            .map(|(((x_p, y_p), x_q), y_q)| {
-                // If either `p` or `q` are (0,0) represent them as C::zero()
-                let p = if x_p == C::Base::zero() && y_p == C::Base::zero() {
-                    C::identity()
+            .map(|(((x_p, x_q), y_p), y_q)| -> Result<EccPoint<F>, Error> {
+                // inv0(x) evaluates to 0 if x = 0, and 1/x otherwise.
+
+                // Assign α = inv0(x_q - x_p)
+                let alpha = if x_q != x_p {
+                    (x_q - x_p).invert().unwrap()
                 } else {
-                    C::from_xy(x_p, y_p).unwrap()
+                    F::zero()
                 };
-                let q = if x_q == C::Base::zero() && y_q == C::Base::zero() {
-                    C::identity()
+                region.assign_advice(|| "α", self.alpha, offset, || Ok(alpha))?;
+
+                // Assign β = inv0(x_p)
+                let beta = if x_p != F::zero() {
+                    x_p.invert().unwrap()
                 } else {
-                    C::from_xy(x_q, y_q).unwrap()
+                    F::zero()
                 };
-                p + q
-            });
+                region.assign_advice(|| "β", self.beta, offset, || Ok(beta))?;
 
-        let x_r_val = r.map(|r| {
-            if r.is_identity().into() {
-                C::Base::zero()
-            } else {
-                *r.to_affine().coordinates().unwrap().x()
-            }
-        });
+                // Assign γ = inv0(x_q)
+                let gamma = if x_q != F::zero() {
+                    x_q.invert().unwrap()
+                } else {
+                    F::zero()
+                };
+                region.assign_advice(|| "γ", self.gamma, offset, || Ok(gamma))?;
 
-        let y_r_val = r.map(|r| {
-            if r.is_identity().into() {
-                C::Base::zero()
-            } else {
-                *r.to_affine().coordinates().unwrap().y()
-            }
-        });
+                // Assign δ = inv0(y_q + y_p) if x_q = x_p, 0 otherwise
+                let delta = if x_q == x_p {
+                    if y_q != -y_p {
+                        (y_q + y_p).invert().unwrap()
+                    } else {
+                        F::zero()
+                    }
+                } else {
+                    F::zero()
+                };
+                region.assign_advice(|| "δ", self.delta, offset, || Ok(delta))?;
 
-        // Assign `x_r`
-        let x_r_cell = region.assign_advice(
-            || "set x_r",
-            self.x_qr,
-            offset + 1,
-            || x_r_val.ok_or(Error::SynthesisError),
-        )?;
+                // Assign lambda
+                let lambda = if x_q != x_p {
+                    // λ = (y_q - y_p)/(x_q - x_p)
+                    (y_q - y_p) * (x_q - x_p).invert().unwrap()
+                } else {
+                    if y_p != F::zero() {
+                        // 3(x_p)^2
+                        let three_x_p_sq = F::from_u64(3) * x_p * x_p;
+                        // 2(y_p)
+                        let two_y_p = F::from_u64(2) * y_p;
+                        // λ = 3(x_p)^2 / 2(y_p)
+                        three_x_p_sq * two_y_p.invert().unwrap()
+                    } else {
+                        F::zero()
+                    }
+                };
+                region.assign_advice(|| "λ", self.lambda, offset, || Ok(lambda))?;
 
-        // Assign `y_r`
-        let y_r_cell = region.assign_advice(
-            || "set y_r",
-            self.y_qr,
-            offset + 1,
-            || y_r_val.ok_or(Error::SynthesisError),
-        )?;
+                // Assign x_r
+                let x_r = if x_p == F::zero() {
+                    // 0 + Q = Q
+                    x_q
+                } else if x_q == F::zero() {
+                    // P + 0 = P
+                    x_p
+                } else if (x_q == x_p) && (y_q == -y_p) {
+                    // P + (-P) maps to (0,0)
+                    F::zero()
+                } else {
+                    // x_r = λ^2 - x_p - x_q
+                    lambda * lambda - x_p - x_q
+                };
+                let x_r_cell = region.assign_advice(|| "x_r", self.x_qr, offset + 1, || Ok(x_r))?;
 
-        Ok(EccPoint {
-            x: CellValue::<C::Base>::new(x_r_cell, x_r_val),
-            y: CellValue::<C::Base>::new(y_r_cell, y_r_val),
-        })
+                // Assign y_r
+                let y_r = if x_p == F::zero() {
+                    // 0 + Q = Q
+                    y_q
+                } else if x_q == F::zero() {
+                    // P + 0 = P
+                    y_p
+                } else if (x_q == x_p) && (y_q == -y_p) {
+                    // P + (-P) maps to (0,0)
+                    F::zero()
+                } else {
+                    // y_r = λ(x_p - x_r) - y_p
+                    lambda * (x_p - x_r) - y_p
+                };
+                let y_r_cell = region.assign_advice(|| "y_r", self.y_qr, offset + 1, || Ok(y_r))?;
+
+                Ok(EccPoint {
+                    x: CellValue::<F>::new(x_r_cell, Some(x_r)),
+                    y: CellValue::<F>::new(y_r_cell, Some(y_r)),
+                })
+            })
+            .unwrap_or(Err(Error::SynthesisError))
     }
 }

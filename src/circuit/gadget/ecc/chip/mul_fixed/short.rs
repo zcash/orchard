@@ -136,7 +136,7 @@ impl<C: CurveAffine> Config<C> {
             self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
 
         // Add to the cumulative sum to get `[magnitude]B`.
-        let magnitude_mul = self.add_config.assign_region::<C>(
+        let magnitude_mul = self.add_config.assign_region(
             &mul_b,
             &acc,
             offset + constants::NUM_WINDOWS_SHORT,

@@ -198,7 +198,7 @@ impl<C: CurveAffine> Config<C> {
         mut z_val: Option<C::Base>,
     ) -> Result<EccPoint<C::Base>, Error> {
         // Assign the final `z` value.
-        let k_0_row = Self::incomplete_lo_len() + self.complete_range().len() * 4 + 4;
+        let k_0_row = Self::incomplete_lo_len() + self.complete_range().len() * 2 + 4;
         z_val = z_val
             .zip(k_0)
             .map(|(z_val, k_0)| C::Base::from_u64(2) * z_val + C::Base::from_u64(k_0 as u64));
@@ -277,7 +277,7 @@ impl<C: CurveAffine> Config<C> {
 
         // Return the result of the final complete addition as `[scalar]B`
         self.add_config
-            .assign_region::<C>(&p, &acc, k_0_row + offset, region)
+            .assign_region(&p, &acc, k_0_row + offset, region)
     }
 }
 

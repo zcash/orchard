@@ -109,6 +109,6 @@ impl<C: CurveAffine> Config<C> {
 
         // Add to the accumulator and return the final result as `[scalar]B`.
         self.add_config
-            .assign_region::<C>(&mul_b, &acc, offset + constants::NUM_WINDOWS, region)
+            .assign_region(&mul_b, &acc, offset + constants::NUM_WINDOWS, region)
     }
 }
