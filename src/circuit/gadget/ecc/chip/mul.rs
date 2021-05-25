@@ -1,4 +1,4 @@
-use super::{add, double, util, CellValue, EccConfig, EccPoint};
+use super::{add, util, CellValue, EccConfig, EccPoint};
 use crate::constants::NUM_COMPLETE_BITS;
 use std::ops::{Deref, Range};
 
@@ -24,8 +24,6 @@ pub struct Config<C: CurveAffine> {
     perm: Permutation,
     // Configuration used in complete addition
     add_config: add::Config,
-    // Configuration used in point doubling
-    double_config: double::Config,
     // Configuration used for `hi` bits of the scalar
     hi_config: incomplete::Config<C>,
     // Configuration used for `lo` bits of the scalar
@@ -40,7 +38,6 @@ impl<C: CurveAffine> From<&EccConfig> for Config<C> {
             z_complete: ecc_config.bits,
             perm: ecc_config.perm.clone(),
             add_config: ecc_config.into(),
-            double_config: ecc_config.into(),
             hi_config: incomplete::Config::hi_config(ecc_config),
             lo_config: incomplete::Config::lo_config(ecc_config),
         }
@@ -108,8 +105,13 @@ impl<C: CurveAffine> Config<C> {
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C::Base>, Error> {
-        // Initialize the accumulator a [2]base
-        let acc = self.double_config.assign_region(&base, offset, region)?;
+        // Initialize the accumulator `acc = [2]base`
+        let acc = self
+            .add_config
+            .assign_region(&base, &base, offset, region)?;
+
+        // Increase the offset by 1 after complete addition.
+        let offset = offset + 1;
 
         // Decompose the scalar bitwise (big-endian bit order).
         let k_bits = scalar.value.map(|scalar| decompose_scalar::<C>(scalar));

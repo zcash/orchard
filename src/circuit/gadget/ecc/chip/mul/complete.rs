@@ -1,4 +1,4 @@
-use super::super::{add, double, util, CellValue, EccPoint};
+use super::super::{add, util, CellValue, EccPoint};
 use super::Mul;
 use ff::Field;
 
@@ -19,8 +19,6 @@ pub struct Config<C: CurveAffine> {
     perm: Permutation,
     // Configuration used in complete addition
     add_config: add::Config,
-    // Configuration used in point doubling
-    double_config: double::Config,
     _marker: PhantomData<C>,
 }
 
@@ -31,7 +29,6 @@ impl<C: CurveAffine> From<&super::Config<C>> for Config<C> {
             z_complete: config.z_complete,
             perm: config.perm.clone(),
             add_config: config.add_config.clone(),
-            double_config: config.double_config.clone(),
             _marker: PhantomData,
         }
     }

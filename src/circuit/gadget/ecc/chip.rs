@@ -8,6 +8,7 @@ use halo2::{
 
 mod add;
 mod add_incomplete;
+#[cfg(test)]
 mod double;
 mod load;
 mod mul;
@@ -76,6 +77,7 @@ pub struct EccConfig {
     /// Fixed column used in scalar decomposition for variable-base scalar mul
     pub mul_decompose: Column<Fixed>,
 
+    #[cfg(test)]
     /// Point doubling
     pub q_double: Selector,
     /// Incomplete addition
@@ -185,6 +187,7 @@ impl<C: CurveAffine> EccChip<C> {
             ],
             fixed_z: meta.fixed_column(),
             mul_decompose: meta.fixed_column(),
+            #[cfg(test)]
             q_double: meta.selector(),
             q_add_incomplete: meta.selector(),
             q_add: meta.selector(),
@@ -222,6 +225,7 @@ impl<C: CurveAffine> EccChip<C> {
         }
 
         // Create point doubling gate
+        #[cfg(test)]
         {
             let config: double::Config = (&config).into();
             config.create_gate(meta);
@@ -400,6 +404,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         )
     }
 
+    #[cfg(test)]
     fn double(
         &self,
         layouter: &mut impl Layouter<C::Base>,

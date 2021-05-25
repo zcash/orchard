@@ -167,6 +167,26 @@ impl<C: CurveAffine> Config<C> {
         bits: Option<Vec<bool>>,
         acc: (X<F>, Y<F>, Z<F>),
     ) -> Result<(X<F>, Y<F>, Z<F>), Error> {
+        // Handle exceptional cases
+        let (x_p, y_p) = (base.x.value, base.y.value);
+        let (x_a, y_a) = (acc.0.value, acc.1 .0);
+        x_p.zip(y_p)
+            .zip(x_a)
+            .zip(y_a)
+            .map(|(((x_p, y_p), x_a), y_a)| {
+                // A is point at infinity
+                if (x_p == F::zero() && y_p == F::zero())
+                // Q is point at infinity
+                || (x_a == F::zero() && y_a == F::zero())
+                // x_p = x_a
+                || (x_p == x_a)
+                {
+                    return Err(Error::SynthesisError);
+                }
+                Ok(())
+            })
+            .unwrap_or(Err(Error::SynthesisError))?;
+
         // Enable `q_mul` on all but the last row of the incomplete range.
         for row in 1..(self.num_bits - 1) {
             self.q_mul.enable(region, offset + row)?;
