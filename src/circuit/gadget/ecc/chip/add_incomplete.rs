@@ -10,9 +10,9 @@ use halo2::{
 pub struct Config {
     q_add_incomplete: Selector,
     // x-coordinate of P in P + Q = R
-    x_p: Column<Advice>,
+    pub x_p: Column<Advice>,
     // y-coordinate of P in P + Q = R
-    y_p: Column<Advice>,
+    pub y_p: Column<Advice>,
     // x-coordinate of Q or R in P + Q = R
     pub x_qr: Column<Advice>,
     // y-coordinate of Q or R in P + Q = R
@@ -35,7 +35,6 @@ impl From<&EccConfig> for Config {
 }
 
 impl Config {
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn create_gate<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) {
         let q_add_incomplete = meta.query_selector(self.q_add_incomplete, Rotation::cur());
         let x_p = meta.query_advice(self.x_p, Rotation::cur());
@@ -63,7 +62,6 @@ impl Config {
         });
     }
 
-    #[allow(non_snake_case)]
     pub(super) fn assign_region<F: FieldExt>(
         &self,
         p: &EccPoint<F>,

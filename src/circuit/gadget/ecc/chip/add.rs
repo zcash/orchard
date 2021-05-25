@@ -50,7 +50,6 @@ impl From<&EccConfig> for Config {
 }
 
 impl Config {
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_gate<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) {
         let q_add = meta.query_selector(self.q_add, Rotation::cur());
         let x_p = meta.query_advice(self.x_p, Rotation::cur());
@@ -195,8 +194,6 @@ impl Config {
         }
     }
 
-    #[allow(clippy::many_single_char_names)]
-    #[allow(non_snake_case)]
     pub(super) fn assign_region<F: FieldExt>(
         &self,
         a: &EccPoint<F>,
@@ -260,6 +257,7 @@ impl Config {
                 };
                 region.assign_advice(|| "δ", self.delta, offset, || Ok(delta))?;
 
+                #[allow(clippy::collapsible_else_if)]
                 // Assign lambda
                 let lambda = if x_q != x_p {
                     // λ = (y_q - y_p)/(x_q - x_p)

@@ -124,7 +124,6 @@ impl<C: CurveAffine> Config<C> {
         });
     }
 
-    #[allow(non_snake_case)]
     pub(super) fn assign_region(
         &self,
         region: &mut Region<'_, C::Base>,

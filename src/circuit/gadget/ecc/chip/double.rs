@@ -65,7 +65,6 @@ impl Config {
         });
     }
 
-    #[allow(non_snake_case)]
     pub(super) fn assign_region<F: FieldExt>(
         &self,
         p: &EccPoint<F>,

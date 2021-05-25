@@ -11,9 +11,9 @@ use halo2::{
 pub struct Config {
     q_point: Selector,
     // x-coordinate
-    x: Column<Advice>,
+    pub x: Column<Advice>,
     // y-coordinate
-    y: Column<Advice>,
+    pub y: Column<Advice>,
 }
 
 impl From<&EccConfig> for Config {

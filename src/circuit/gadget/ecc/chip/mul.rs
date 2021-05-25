@@ -90,8 +90,10 @@ impl<C: CurveAffine> Config<C> {
         let z_cur = meta.query_advice(self.z_complete, Rotation::cur());
 
         meta.create_gate("Decompose scalar", |_| {
-            // q = 2^254 + t_q is the scalar field of Pallas
-            let t_q = C::Base::from_u128(45560315531506369815346746415080538113);
+            // The scalar field `F_q = 2^254 + t_q`.
+            // -((2^127)^2) = -(2^254) = t_q (mod q)
+            let t_q = -(C::Scalar::from_u128(1u128 << 127).square());
+            let t_q = C::Base::from_bytes(&t_q.to_bytes()).unwrap();
 
             // Check that `k = scalar + t_q`
             scalar.clone() * (scalar + Expression::Constant(t_q) - z_cur)
@@ -114,7 +116,7 @@ impl<C: CurveAffine> Config<C> {
         let offset = offset + 1;
 
         // Decompose the scalar bitwise (big-endian bit order).
-        let k_bits = scalar.value.map(|scalar| decompose_scalar::<C>(scalar));
+        let k_bits = scalar.value.map(decompose_scalar::<C>);
 
         // Bits used in incomplete addition. k_{254} to k_{4} inclusive
         let k_incomplete = k_bits
@@ -185,10 +187,11 @@ impl<C: CurveAffine> Config<C> {
             complete_config.assign_region(region, offset, k_complete, base, acc, z.value)?;
 
         // Process the least significant bit
-        let k_0 = k_bits.map(|k_bits| k_bits[C::Scalar::NUM_BITS as usize - 1].clone());
+        let k_0 = k_bits.map(|k_bits| k_bits[C::Scalar::NUM_BITS as usize - 1]);
         self.process_lsb(region, offset, scalar, base, acc, k_0, z_val)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn process_lsb(
         &self,
         region: &mut Region<'_, C::Base>,
@@ -321,6 +324,7 @@ fn decompose_scalar<C: CurveAffine>(scalar: C::Base) -> Vec<bool> {
     let scalar = C::Scalar::from_bytes(&scalar.to_bytes()).unwrap();
 
     // The scalar field `F_q = 2^254 + t_q`.
+    // -((2^127)^2) = -(2^254) = t_q (mod q)
     let t_q = -(C::Scalar::from_u128(1u128 << 127).square());
 
     // We will witness `k = scalar + t_q`

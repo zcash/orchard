@@ -222,7 +222,7 @@ impl<C: CurveAffine> Config<C> {
 
         // Convert Option<Vec<bool>> into Vec<Option<bool>>
         let bits: Vec<Option<bool>> = if let Some(b) = bits {
-            b.into_iter().map(|v| Some(v)).collect()
+            b.into_iter().map(Some).collect()
         } else {
             return Err(Error::SynthesisError);
         };

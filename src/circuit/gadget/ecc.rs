@@ -122,6 +122,7 @@ pub trait EccInstructions<C: CurveAffine>: Chip<C::Base> {
     ) -> Result<Self::Point, Error>;
 
     /// Performs variable-base scalar multiplication, returning `[scalar] base`.
+    /// Multiplication of the identity [a]𝒪 returns an error.
     fn mul(
         &self,
         layouter: &mut impl Layouter<C::Base>,

@@ -56,6 +56,7 @@ impl<C: CurveAffine> Config<C> {
         });
     }
 
+    #[allow(clippy::type_complexity)]
     pub(super) fn assign_region(
         &self,
         region: &mut Region<'_, C::Base>,
@@ -72,7 +73,7 @@ impl<C: CurveAffine> Config<C> {
 
         // Convert Option<Vec<bool>> into Vec<Option<bool>>
         let bits: Vec<Option<bool>> = if let Some(b) = bits {
-            b.into_iter().map(|v| Some(v)).collect()
+            b.into_iter().map(Some).collect()
         } else {
             return Err(Error::SynthesisError);
         };

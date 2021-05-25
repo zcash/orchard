@@ -78,8 +78,9 @@ pub struct EccConfig {
     pub mul_decompose: Column<Fixed>,
 
     #[cfg(test)]
-    /// Point doubling
+    /// Point doubling (not used in the Orchard circuit)
     pub q_double: Selector,
+
     /// Incomplete addition
     pub q_add_incomplete: Selector,
     /// Complete addition
@@ -161,8 +162,6 @@ impl<C: CurveAffine> EccChip<C> {
     }
 
     #[allow(non_snake_case)]
-    #[allow(clippy::many_single_char_names)]
-    #[allow(clippy::too_many_arguments)]
     pub fn configure(
         meta: &mut ConstraintSystem<C::Base>,
         bits: Column<Advice>,
@@ -258,7 +257,6 @@ impl<C: CurveAffine> EccChip<C> {
         config
     }
 
-    #[allow(clippy::type_complexity)]
     pub fn load() -> <Self as Chip<C::Base>>::Loaded {
         let commit_ivk_r = load::commit_ivk_r();
         let note_commit_r = load::note_commit_r();

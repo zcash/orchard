@@ -46,7 +46,7 @@ pub struct Config {
 
 impl From<&EccConfig> for Config {
     fn from(ecc_config: &EccConfig) -> Self {
-        Self {
+        let config = Self {
             q_mul_fixed: ecc_config.q_mul_fixed,
             q_mul_fixed_short: ecc_config.q_mul_fixed_short,
             lagrange_coeffs: ecc_config.lagrange_coeffs,
@@ -60,7 +60,39 @@ impl From<&EccConfig> for Config {
             add_config: ecc_config.into(),
             add_incomplete_config: ecc_config.into(),
             witness_point_config: ecc_config.into(),
-        }
+        };
+
+        // Check relationships between this config and `add_config`.
+        assert_eq!(
+            config.x_p, config.add_config.x_p,
+            "add is used internally in mul_fixed."
+        );
+        assert_eq!(
+            config.y_p, config.add_config.y_p,
+            "add is used internally in mul_fixed."
+        );
+
+        // Check relationships between this config and `add_incomplete_config`.
+        assert_eq!(
+            config.x_p, config.add_incomplete_config.x_p,
+            "add_incomplete is used internally in mul_fixed."
+        );
+        assert_eq!(
+            config.y_p, config.add_incomplete_config.y_p,
+            "add_incomplete is used internally in mul_fixed."
+        );
+
+        // Check relationships between this config and `witness_point_config`.
+        assert_eq!(
+            config.x_p, config.witness_point_config.x,
+            "witness_point is used internally in mul_fixed."
+        );
+        assert_eq!(
+            config.y_p, config.witness_point_config.y,
+            "witness_point is used internally in mul_fixed."
+        );
+
+        config
     }
 }
 
