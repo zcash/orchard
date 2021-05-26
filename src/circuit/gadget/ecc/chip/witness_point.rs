@@ -43,7 +43,7 @@ impl Config {
         value: Option<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         // Enable `q_point` selector
         self.q_point.enable(region, offset)?;
 

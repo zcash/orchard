@@ -1,7 +1,8 @@
 use super::EccInstructions;
 use crate::constants;
+use ff::Field;
 use halo2::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::CurveAffine,
     circuit::{Cell, Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
 };
@@ -38,11 +39,27 @@ impl<T> CellValue<T> {
 /// A curve point represented in affine (x, y) coordinates. Each coordinate is
 /// assigned to a cell.
 #[derive(Clone, Debug)]
-pub struct EccPoint<F: FieldExt> {
+pub struct EccPoint<C: CurveAffine> {
     /// x-coordinate
-    pub x: CellValue<F>,
+    pub x: CellValue<C::Base>,
     /// y-coordinate
-    pub y: CellValue<F>,
+    pub y: CellValue<C::Base>,
+}
+
+impl<C: CurveAffine> EccPoint<C> {
+    /// Returns the value of this curve point, if known.
+    pub fn point(&self) -> Option<C> {
+        match (self.x.value, self.y.value) {
+            (Some(x), Some(y)) => {
+                if x == C::Base::zero() && y == C::Base::zero() {
+                    Some(C::identity())
+                } else {
+                    Some(C::from_xy(x, y).unwrap())
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -74,8 +91,6 @@ pub struct EccConfig {
     pub lagrange_coeffs: [Column<Fixed>; constants::H],
     /// Fixed z such that y + z = u^2 some square, and -y + z is a non-square. (Used in fixed-base scalar multiplication)
     pub fixed_z: Column<Fixed>,
-    /// Fixed column used in scalar decomposition for variable-base scalar mul
-    pub mul_decompose: Column<Fixed>,
 
     #[cfg(test)]
     /// Point doubling (not used in the Orchard circuit)
@@ -89,6 +104,8 @@ pub struct EccConfig {
     pub q_mul_hi: Selector,
     /// Variable-base scalar multiplication (lo half)
     pub q_mul_lo: Selector,
+    /// Selector used in scalar decomposition for variable-base scalar mul
+    pub q_mul_decompose_var: Selector,
     /// Variable-base scalar multiplication (final scalar)
     pub q_mul_complete: Selector,
     /// Fixed-base full-width scalar multiplication
@@ -185,13 +202,13 @@ impl<C: CurveAffine> EccChip<C> {
                 meta.fixed_column(),
             ],
             fixed_z: meta.fixed_column(),
-            mul_decompose: meta.fixed_column(),
             #[cfg(test)]
             q_double: meta.selector(),
             q_add_incomplete: meta.selector(),
             q_add: meta.selector(),
             q_mul_hi: meta.selector(),
             q_mul_lo: meta.selector(),
+            q_mul_decompose_var: meta.selector(),
             q_mul_complete: meta.selector(),
             q_mul_fixed: meta.selector(),
             q_mul_fixed_short: meta.selector(),
@@ -299,7 +316,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     type ScalarFixed = EccScalarFixed<C>;
     type ScalarFixedShort = EccScalarFixedShort<C>;
     type ScalarVar = CellValue<C::Base>;
-    type Point = EccPoint<C::Base>;
+    type Point = EccPoint<C>;
     type X = CellValue<C::Base>;
     type FixedPoint = OrchardFixedBase<C>;
     type FixedPointShort = OrchardFixedBaseShort<C>;

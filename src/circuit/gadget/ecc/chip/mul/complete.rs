@@ -61,22 +61,19 @@ impl<C: CurveAffine> Config<C> {
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
-        bits: Option<Vec<bool>>,
-        base: &EccPoint<C::Base>,
-        mut acc: EccPoint<C::Base>,
+        bits: &[Option<bool>],
+        base: &EccPoint<C>,
+        mut acc: EccPoint<C>,
         mut z_val: Option<C::Base>,
-    ) -> Result<(EccPoint<C::Base>, Option<C::Base>), Error> {
+    ) -> Result<(EccPoint<C>, Option<C::Base>), Error> {
+        // Make sure we have the correct number of bits for the complete addition
+        // part of variable-base scalar mul.
+        assert_eq!(bits.len(), Self::complete_len());
+
         // Enable selectors for complete range
-        for row in self.complete_range() {
+        for row in Self::complete_range() {
             self.q_mul_complete.enable(region, row + offset)?;
         }
-
-        // Convert Option<Vec<bool>> into Vec<Option<bool>>
-        let bits: Vec<Option<bool>> = if let Some(b) = bits {
-            b.into_iter().map(Some).collect()
-        } else {
-            return Err(Error::SynthesisError);
-        };
 
         // Complete addition
         for (iter, k) in bits.into_iter().enumerate() {
@@ -91,8 +88,8 @@ impl<C: CurveAffine> Config<C> {
                 || z_val.ok_or(Error::SynthesisError),
             )?;
             z_val = z_val
-                .zip(k)
-                .map(|(z_val, k)| C::Base::from_u64(2) * z_val + C::Base::from_u64(k as u64));
+                .zip(k.as_ref())
+                .map(|(z_val, k)| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64));
             region.assign_advice(
                 || "z",
                 self.z_complete,
@@ -110,7 +107,9 @@ impl<C: CurveAffine> Config<C> {
 
             // If the bit is set, use `y`; if the bit is not set, use `-y`
             let y_p = base.y.value;
-            let y_p = y_p.zip(k).map(|(y_p, k)| if !k { -y_p } else { y_p });
+            let y_p = y_p
+                .zip(k.as_ref())
+                .map(|(y_p, k)| if !k { -y_p } else { y_p });
 
             let y_p_cell = region.assign_advice(
                 || "y_p",

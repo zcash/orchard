@@ -130,7 +130,7 @@ impl<C: CurveAffine> Config<C> {
         offset: usize,
         scalar: &EccScalarFixedShort<C>,
         base: &OrchardFixedBaseShort<C>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         let (acc, mul_b) =
             self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
 
@@ -156,15 +156,14 @@ impl<C: CurveAffine> Config<C> {
         )?;
 
         // Conditionally negate `y`-coordinate
-        let y_val = match sign.value {
-            Some(sign) => {
-                if sign == -C::Base::one() {
-                    magnitude_mul.y.value.map(|y: C::Base| -y)
-                } else {
-                    magnitude_mul.y.value
-                }
+        let y_val = if let Some(sign) = sign.value {
+            if sign == -C::Base::one() {
+                magnitude_mul.y.value.map(|y: C::Base| -y)
+            } else {
+                magnitude_mul.y.value
             }
-            None => None,
+        } else {
+            None
         };
 
         // Enable mul_fixed_short selector on final row

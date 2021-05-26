@@ -1,6 +1,8 @@
 use super::{util, CellValue, EccConfig, EccPoint};
+use ff::Field;
+use group::Curve;
 use halo2::{
-    arithmetic::FieldExt,
+    arithmetic::{CurveAffine, FieldExt},
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Permutation, Selector},
     poly::Rotation,
@@ -62,13 +64,13 @@ impl Config {
         });
     }
 
-    pub(super) fn assign_region<F: FieldExt>(
+    pub(super) fn assign_region<C: CurveAffine>(
         &self,
-        p: &EccPoint<F>,
-        q: &EccPoint<F>,
+        p: &EccPoint<C>,
+        q: &EccPoint<C>,
         offset: usize,
-        region: &mut Region<'_, F>,
-    ) -> Result<EccPoint<F>, Error> {
+        region: &mut Region<'_, C::Base>,
+    ) -> Result<EccPoint<C>, Error> {
         // Enable `q_add_incomplete` selector
         self.q_add_incomplete.enable(region, offset)?;
 
@@ -80,17 +82,18 @@ impl Config {
             .zip(y_q)
             .map(|(((x_p, y_p), x_q), y_q)| {
                 // P is point at infinity
-                if (x_p == F::zero() && y_p == F::zero())
+                if (x_p == C::Base::zero() && y_p == C::Base::zero())
                 // Q is point at infinity
-                || (x_q == F::zero() && y_q == F::zero())
+                || (x_q == C::Base::zero() && y_q == C::Base::zero())
                 // x_p = x_q
                 || (x_p == x_q)
                 {
-                    return Err(Error::SynthesisError);
+                    Err(Error::SynthesisError)
+                } else {
+                    Ok(())
                 }
-                Ok(())
             })
-            .unwrap_or(Err(Error::SynthesisError))?;
+            .transpose()?;
 
         // Copy point `p` into `x_p`, `y_p` columns
         util::assign_and_constrain(region, || "x_p", self.x_p, offset, &p.x, &self.perm)?;
@@ -101,17 +104,12 @@ impl Config {
         util::assign_and_constrain(region, || "y_q", self.y_qr, offset, &q.y, &self.perm)?;
 
         // Compute the sum `P + Q = R`
-        let r = x_p
-            .zip(y_p)
-            .zip(x_q)
-            .zip(y_q)
-            .map(|(((x_p, y_p), x_q), y_q)| {
-                // We can invert `(x_q - x_p)` because we rejected the `x_q == x_p` case.
-                let lambda = (y_q - y_p) * (x_q - x_p).invert().unwrap();
-                let x_r = lambda * lambda - x_p - x_q;
-                let y_r = lambda * (x_p - x_r) - y_p;
-                (x_r, y_r)
-            });
+        let p = p.point();
+        let q = q.point();
+        let r = p.zip(q).map(|(p, q)| {
+            let r = (p + q).to_affine().coordinates().unwrap();
+            (*r.x(), *r.y())
+        });
 
         // Assign the sum to `x_qr`, `y_qr` columns in the next row
         let x_r = r.map(|r| r.0);
@@ -131,8 +129,8 @@ impl Config {
         )?;
 
         Ok(EccPoint {
-            x: CellValue::<F>::new(x_r_var, x_r),
-            y: CellValue::<F>::new(y_r_var, y_r),
+            x: CellValue::<C::Base>::new(x_r_var, x_r),
+            y: CellValue::<C::Base>::new(y_r_var, y_r),
         })
     }
 }

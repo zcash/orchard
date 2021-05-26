@@ -6,7 +6,7 @@ use ff::PrimeField;
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
     poly::Rotation,
 };
 
@@ -16,10 +16,12 @@ mod incomplete;
 pub struct Config<C: CurveAffine> {
     // Selector used to constrain the cells used in complete addition.
     q_mul_complete: Selector,
-    // Fixed column used to check recovery of the original scalar after decomposition.
-    mul_decompose: Column<Fixed>,
+    // Selector used to check recovery of the original scalar after decomposition.
+    q_mul_decompose_var: Selector,
     // Advice column used to decompose scalar in complete addition.
     z_complete: Column<Advice>,
+    // Advice column where the scalar is copied for use in the final recovery check.
+    scalar: Column<Advice>,
     // Permutation
     perm: Permutation,
     // Configuration used in complete addition
@@ -34,8 +36,9 @@ impl<C: CurveAffine> From<&EccConfig> for Config<C> {
     fn from(ecc_config: &EccConfig) -> Self {
         Self {
             q_mul_complete: ecc_config.q_mul_complete,
-            mul_decompose: ecc_config.mul_decompose,
+            q_mul_decompose_var: ecc_config.q_mul_decompose_var,
             z_complete: ecc_config.bits,
+            scalar: ecc_config.extras[0],
             perm: ecc_config.perm.clone(),
             add_config: ecc_config.into(),
             hi_config: incomplete::Config::hi_config(ecc_config),
@@ -46,27 +49,41 @@ impl<C: CurveAffine> From<&EccConfig> for Config<C> {
 
 trait Mul<C: CurveAffine> {
     // Bits used in incomplete addition. k_{254} to k_{4} inclusive
-    fn incomplete_range(&self) -> Range<usize> {
-        0..(C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS)
+    fn incomplete_len() -> usize {
+        C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS
+    }
+
+    fn incomplete_range() -> Range<usize> {
+        0..Self::incomplete_len()
+    }
+
+    // Bits used in `lo` half of incomplete addition
+    fn incomplete_lo_range() -> Range<usize> {
+        (Self::incomplete_len() / 2)..Self::incomplete_len()
+    }
+
+    // Bits used in `hi` half of incomplete addition
+    fn incomplete_hi_range() -> Range<usize> {
+        0..(Self::incomplete_len() / 2)
     }
 
     // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
     // The `lo` half is k_{129} to k_{4} inclusive (length 126 bits).
     fn incomplete_lo_len() -> usize {
-        (C::Scalar::NUM_BITS as usize - NUM_COMPLETE_BITS) / 2
+        (Self::incomplete_len() + 1) / 2
     }
 
     // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
     // The `hi` half is k_{254} to k_{130} inclusive (length 125 bits).
     fn incomplete_hi_len() -> usize {
-        (C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS) / 2
+        Self::incomplete_len() / 2
     }
 
-    fn complete_range(&self) -> Range<usize> {
-        (C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS)..(C::Scalar::NUM_BITS as usize - 1)
+    fn complete_range() -> Range<usize> {
+        Self::incomplete_len()..(C::Scalar::NUM_BITS as usize - 1)
     }
 
-    fn complete_len(&self) -> usize {
+    fn complete_len() -> usize {
         NUM_COMPLETE_BITS as usize
     }
 }
@@ -86,7 +103,8 @@ impl<C: CurveAffine> Config<C> {
 
     /// Gate used to check final scalar is recovered.
     fn create_final_scalar_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
-        let scalar = meta.query_fixed(self.mul_decompose, Rotation::cur());
+        let q_mul_decompose_var = meta.query_selector(self.q_mul_decompose_var, Rotation::cur());
+        let scalar = meta.query_advice(self.scalar, Rotation::cur());
         let z_cur = meta.query_advice(self.z_complete, Rotation::cur());
 
         meta.create_gate("Decompose scalar", |_| {
@@ -96,17 +114,17 @@ impl<C: CurveAffine> Config<C> {
             let t_q = C::Base::from_bytes(&t_q.to_bytes()).unwrap();
 
             // Check that `k = scalar + t_q`
-            scalar.clone() * (scalar + Expression::Constant(t_q) - z_cur)
+            q_mul_decompose_var * (scalar + Expression::Constant(t_q) - z_cur)
         });
     }
 
     pub(super) fn assign_region(
         &self,
         scalar: &CellValue<C::Base>,
-        base: &EccPoint<C::Base>,
+        base: &EccPoint<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         // Initialize the accumulator `acc = [2]base`
         let acc = self
             .add_config
@@ -116,12 +134,7 @@ impl<C: CurveAffine> Config<C> {
         let offset = offset + 1;
 
         // Decompose the scalar bitwise (big-endian bit order).
-        let k_bits = scalar.value.map(decompose_scalar::<C>);
-
-        // Bits used in incomplete addition. k_{254} to k_{4} inclusive
-        let k_incomplete = k_bits
-            .clone()
-            .map(|k_bits| k_bits[self.incomplete_range()].to_vec());
+        let k_bits = decompose_for_scalar_mul::<C>(scalar.value);
 
         // Initialize the running sum for scalar decomposition to zero
         let z_val = C::Base::zero();
@@ -130,9 +143,7 @@ impl<C: CurveAffine> Config<C> {
         let z = CellValue::new(z_cell, Some(z_val));
 
         // Double-and-add (incomplete addition) for the `hi` half of the scalar decomposition
-        let k_incomplete_hi = k_incomplete
-            .clone()
-            .map(|k_incomplete| k_incomplete[..k_incomplete.len() / 2].to_vec());
+        let k_incomplete_hi = &k_bits[Self::incomplete_hi_range()];
         let (x, y_a, z) = self.hi_config.double_and_add(
             region,
             offset + 1,
@@ -142,8 +153,7 @@ impl<C: CurveAffine> Config<C> {
         )?;
 
         // Double-and-add (incomplete addition) for the `lo` half of the scalar decomposition
-        let k_incomplete_lo =
-            k_incomplete.map(|k_incomplete| k_incomplete[k_incomplete.len() / 2..].to_vec());
+        let k_incomplete_lo = &k_bits[Self::incomplete_lo_range()];
         let (x, y_a, z) = self.lo_config.double_and_add(
             region,
             offset + 1,
@@ -180,14 +190,12 @@ impl<C: CurveAffine> Config<C> {
         let complete_config: complete::Config<C> = self.into();
         // Bits used in complete addition. k_{3} to k_{1} inclusive
         // The LSB k_{0} is handled separately.
-        let k_complete = k_bits
-            .clone()
-            .map(|k_bits| k_bits[self.complete_range()].to_vec());
+        let k_complete = &k_bits[Self::complete_range()];
         let (acc, z_val) =
             complete_config.assign_region(region, offset, k_complete, base, acc, z.value)?;
 
         // Process the least significant bit
-        let k_0 = k_bits.map(|k_bits| k_bits[C::Scalar::NUM_BITS as usize - 1]);
+        let k_0 = k_bits[C::Scalar::NUM_BITS as usize - 1];
         self.process_lsb(region, offset, scalar, base, acc, k_0, z_val)
     }
 
@@ -197,13 +205,13 @@ impl<C: CurveAffine> Config<C> {
         region: &mut Region<'_, C::Base>,
         offset: usize,
         scalar: &CellValue<C::Base>,
-        base: &EccPoint<C::Base>,
-        acc: EccPoint<C::Base>,
+        base: &EccPoint<C>,
+        acc: EccPoint<C>,
         k_0: Option<bool>,
         mut z_val: Option<C::Base>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         // Assign the final `z` value.
-        let k_0_row = Self::incomplete_lo_len() + self.complete_range().len() * 2 + 4;
+        let k_0_row = Self::incomplete_lo_len() + Self::complete_len() * 2 + 4;
         z_val = z_val
             .zip(k_0)
             .map(|(z_val, k_0)| C::Base::from_u64(2) * z_val + C::Base::from_u64(k_0 as u64));
@@ -224,65 +232,60 @@ impl<C: CurveAffine> Config<C> {
         // is in deriving diversified addresses `[ivk] g_d`,  and `ivk` is guaranteed
         // to be in the base field of the curve. (See non-normative notes in
         // https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents.)
-        let scalar = scalar
-            .value
-            .map(|scalar| C::Base::from_bytes(&scalar.to_bytes()).unwrap());
-        region.assign_fixed(
-            || "original k",
-            self.mul_decompose,
+        util::assign_and_constrain(
+            region,
+            || "original scalar",
+            self.scalar,
             k_0_row + offset,
-            || scalar.ok_or(Error::SynthesisError),
+            &scalar,
+            &self.perm,
+        )?;
+        self.q_mul_decompose_var.enable(region, k_0_row + offset)?;
+
+        // If `k_0` is 0, return `Acc + (-P)`. If `k_0` is 1, simply return `Acc + 0`.
+        let x_p = if let Some(k_0) = k_0 {
+            if !k_0 {
+                println!("!k_0");
+                base.x.value
+            } else {
+                Some(C::Base::zero())
+            }
+        } else {
+            None
+        };
+        let y_p = if let Some(k_0) = k_0 {
+            if !k_0 {
+                println!("!k_0");
+                base.y.value.map(|y_p| -y_p)
+            } else {
+                Some(C::Base::zero())
+            }
+        } else {
+            None
+        };
+
+        let x_p_cell = region.assign_advice(
+            || "x_p",
+            self.add_config.x_p,
+            k_0_row + offset,
+            || x_p.ok_or(Error::SynthesisError),
         )?;
 
-        // If `k_0` is 0, return `Acc - P`. If `k_0` is 1, simply return `Acc`.
-        let p = k_0
-            .map(|k_0| {
-                if !k_0 {
-                    // If `k_0` is 0, return `Acc - P`
-                    let (x_p, y_p) = (base.x.value, base.y.value.map(|y_p| -y_p));
-                    let x_p_cell = region.assign_advice(
-                        || "x_p",
-                        self.add_config.x_p,
-                        k_0_row + offset,
-                        || x_p.ok_or(Error::SynthesisError),
-                    )?;
+        let y_p_cell = region.assign_advice(
+            || "y_p",
+            self.add_config.y_p,
+            k_0_row + offset,
+            || y_p.ok_or(Error::SynthesisError),
+        )?;
 
-                    let y_p_cell = region.assign_advice(
-                        || "y_p",
-                        self.add_config.y_p,
-                        k_0_row + offset,
-                        || y_p.ok_or(Error::SynthesisError),
-                    )?;
-                    Ok(EccPoint {
-                        x: CellValue::<C::Base>::new(x_p_cell, x_p),
-                        y: CellValue::<C::Base>::new(y_p_cell, y_p),
-                    })
-                } else {
-                    // If `k_0` is 1, simply return `Acc`
-                    let x_p_cell = region.assign_advice(
-                        || "x_p",
-                        self.add_config.x_p,
-                        k_0_row + offset,
-                        || Ok(C::Base::zero()),
-                    )?;
-
-                    let y_p_cell = region.assign_advice(
-                        || "y_p",
-                        self.add_config.y_p,
-                        k_0_row + offset,
-                        || Ok(C::Base::zero()),
-                    )?;
-                    Ok(EccPoint {
-                        x: CellValue::<C::Base>::new(x_p_cell, Some(C::Base::zero())),
-                        y: CellValue::<C::Base>::new(y_p_cell, Some(C::Base::zero())),
-                    })
-                }
-            })
-            .unwrap_or(Err(Error::SynthesisError))?;
+        let p = EccPoint {
+            x: CellValue::<C::Base>::new(x_p_cell, x_p),
+            y: CellValue::<C::Base>::new(y_p_cell, y_p),
+        };
 
         // Return the result of the final complete addition as `[scalar]B`
         self.add_config
-            .assign_region(&p, &acc, k_0_row + offset, region)
+            .assign_region(&p, &acc, k_0_row + offset + 1, region)
     }
 }
 
@@ -319,27 +322,42 @@ impl<F: FieldExt> Deref for Z<F> {
     }
 }
 
-fn decompose_scalar<C: CurveAffine>(scalar: C::Base) -> Vec<bool> {
-    // Cast from base field into scalar field.
-    let scalar = C::Scalar::from_bytes(&scalar.to_bytes()).unwrap();
+fn decompose_for_scalar_mul<C: CurveAffine>(scalar: Option<C::Base>) -> Vec<Option<bool>> {
+    let bits = scalar.map(|scalar| {
+        // Cast from base field into scalar field.
+        // Assumptions:
+        // - The witnessed scalar field element fits into the base field.
+        // - The scalar field order is larger than the base field order.
+        let scalar = C::Scalar::from_bytes(&scalar.to_bytes()).unwrap();
 
-    // The scalar field `F_q = 2^254 + t_q`.
-    // -((2^127)^2) = -(2^254) = t_q (mod q)
-    let t_q = -(C::Scalar::from_u128(1u128 << 127).square());
+        // The scalar field `F_q = 2^254 + t_q`.
+        // -((2^127)^2) = -(2^254) = t_q (mod q)
+        //
+        // Assumptions:
+        // - The scalar field can be represented in 255 bits.
+        assert_eq!(C::Scalar::NUM_BITS, 255);
+        let t_q = -(C::Scalar::from_u128(1u128 << 127).square());
 
-    // We will witness `k = scalar + t_q`
-    // `k` is decomposed bitwise in-circuit for our double-and-add algorithm.
-    let k = scalar + t_q;
+        // We will witness `k = scalar + t_q`
+        // `k` is decomposed bitwise in-circuit for our double-and-add algorithm.
+        let k = scalar + t_q;
 
-    // `k` is decomposed bitwise (big-endian) into `[k_n, ..., k_0]`, where
-    // each `k_i` is a bit and `scalar = k_n * 2^n + ... + k_1 * 2 + k_0`.
-    let mut bits: Vec<bool> = k
-        .to_le_bits()
-        .into_iter()
-        .take(C::Scalar::NUM_BITS as usize)
-        .collect();
-    bits.reverse();
-    assert_eq!(bits.len(), C::Scalar::NUM_BITS as usize);
+        // `k` is decomposed bitwise (big-endian) into `[k_n, ..., k_0]`, where
+        // each `k_i` is a bit and `scalar = k_n * 2^n + ... + k_1 * 2 + k_0`.
+        let mut bits: Vec<bool> = k
+            .to_le_bits()
+            .into_iter()
+            .take(C::Scalar::NUM_BITS as usize)
+            .collect();
+        bits.reverse();
+        assert_eq!(bits.len(), C::Scalar::NUM_BITS as usize);
 
-    bits
+        bits
+    });
+
+    if let Some(bits) = bits {
+        bits.into_iter().map(Some).collect()
+    } else {
+        vec![None; C::Scalar::NUM_BITS as usize]
+    }
 }

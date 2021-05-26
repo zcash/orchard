@@ -98,7 +98,7 @@ trait WitnessScalarFixed<C: CurveAffine> {
         }
 
         // Decompose scalar into windows
-        let bits: Option<Vec<u8>> = value.map(|value| {
+        let windows: Option<Vec<u8>> = value.map(|value| {
             util::decompose_scalar_fixed::<C>(
                 value,
                 Self::SCALAR_NUM_BITS,
@@ -109,17 +109,23 @@ trait WitnessScalarFixed<C: CurveAffine> {
         // Store the scalar decomposition
         let mut k_bits: Vec<CellValue<C::Base>> = Vec::new();
 
-        if let Some(bits) = bits {
-            for (idx, window) in bits.iter().enumerate() {
-                let window = C::Base::from_u64(*window as u64);
-                let k_var = region.assign_advice(
-                    || format!("k[{:?}]", offset + idx),
-                    self.k(),
-                    offset + idx,
-                    || Ok(window),
-                )?;
-                k_bits.push(CellValue::new(k_var, Some(window)));
-            }
+        let windows: Vec<Option<C::Base>> = if let Some(windows) = windows {
+            windows
+                .into_iter()
+                .map(|window| Some(C::Base::from_u64(window as u64)))
+                .collect()
+        } else {
+            vec![None; Self::NUM_WINDOWS]
+        };
+
+        for (idx, window) in windows.into_iter().enumerate() {
+            let k_var = region.assign_advice(
+                || format!("k[{:?}]", offset + idx),
+                self.k(),
+                offset + idx,
+                || window.ok_or(Error::SynthesisError),
+            )?;
+            k_bits.push(CellValue::new(k_var, window));
         }
 
         Ok(k_bits)

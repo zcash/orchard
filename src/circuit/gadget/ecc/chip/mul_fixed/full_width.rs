@@ -102,7 +102,7 @@ impl<C: CurveAffine> Config<C> {
         offset: usize,
         scalar: &EccScalarFixed<C>,
         base: &OrchardFixedBase<C>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         let (acc, mul_b) =
             self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
 

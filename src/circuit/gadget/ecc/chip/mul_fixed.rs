@@ -109,7 +109,7 @@ impl Config {
         base: &OrchardFixedBase<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         let full_width_config: full_width::Config<C> = self.into();
         full_width_config.assign_region(region, offset, scalar, base)
     }
@@ -120,7 +120,7 @@ impl Config {
         base: &OrchardFixedBaseShort<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         let short_config: short::Config<C> = self.into();
         short_config.assign_region(region, offset, scalar, base)
     }
@@ -266,7 +266,7 @@ trait MulFixed<C: CurveAffine> {
         offset: usize,
         scalar: &ScalarFixed<C>,
         base: &FixedBase<C>,
-    ) -> Result<(EccPoint<C::Base>, EccPoint<C::Base>), Error> {
+    ) -> Result<(EccPoint<C>, EccPoint<C>), Error> {
         // Assign fixed columns for given fixed base
         self.assign_fixed_constants(region, offset, base)?;
 
@@ -361,7 +361,7 @@ trait MulFixed<C: CurveAffine> {
         offset: usize,
         base: &FixedBase<C>,
         scalar: &ScalarFixed<C>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         // Witness `m0` in `x_p`, `y_p` cells on row 0
         let k0 = scalar.k_field()[0];
         let m0 = k0.map(|k0| base.value() * (k0 + C::Scalar::from_u64(2)));
@@ -405,10 +405,10 @@ trait MulFixed<C: CurveAffine> {
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
-        mut acc: EccPoint<C::Base>,
+        mut acc: EccPoint<C>,
         base: &FixedBase<C>,
         scalar: &ScalarFixed<C>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         // This is 2^w, where w is the window width
         let h = C::Scalar::from_u64(constants::H as u64);
 
@@ -456,7 +456,7 @@ trait MulFixed<C: CurveAffine> {
         offset: usize,
         base: &FixedBase<C>,
         scalar: &ScalarFixed<C>,
-    ) -> Result<EccPoint<C::Base>, Error> {
+    ) -> Result<EccPoint<C>, Error> {
         // This is 2^w, where w is the window width
         let h = C::Scalar::from_u64(constants::H as u64);
 

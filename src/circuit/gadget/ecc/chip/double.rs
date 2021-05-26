@@ -1,7 +1,9 @@
 use super::{util, CellValue, EccConfig, EccPoint};
 
+use ff::Field;
+use group::Curve;
 use halo2::{
-    arithmetic::FieldExt,
+    arithmetic::{CurveAffine, FieldExt},
     circuit::Region,
     plonk::{Advice, Column, ConstraintSystem, Error, Permutation, Selector},
     poly::Rotation,
@@ -65,12 +67,12 @@ impl Config {
         });
     }
 
-    pub(super) fn assign_region<F: FieldExt>(
+    pub(super) fn assign_region<C: CurveAffine>(
         &self,
-        p: &EccPoint<F>,
+        p: &EccPoint<C>,
         offset: usize,
-        region: &mut Region<'_, F>,
-    ) -> Result<EccPoint<F>, Error> {
+        region: &mut Region<'_, C::Base>,
+    ) -> Result<EccPoint<C>, Error> {
         // Enable `q_double` selector
         self.q_double.enable(region, offset)?;
 
@@ -78,25 +80,24 @@ impl Config {
         let (x_p, y_p) = (p.x.value, p.y.value);
         x_p.zip(y_p)
             .map(|(x, y)| {
-                if x == F::zero() && y == F::zero() {
-                    return Err(Error::SynthesisError);
+                if x == C::Base::zero() && y == C::Base::zero() {
+                    Err(Error::SynthesisError)
+                } else {
+                    Ok(())
                 }
-                Ok(())
             })
-            .unwrap_or(Err(Error::SynthesisError))?;
+            .transpose()?;
 
         // Copy the point `P` into `x_p`, `y_p` columns
         util::assign_and_constrain(region, || "x_p", self.x_p, offset, &p.x, &self.perm)?;
         util::assign_and_constrain(region, || "y_p", self.y_p, offset, &p.y, &self.perm)?;
 
         // Compute the doubled point
-        let r = x_p.zip(y_p).map(|(x_p, y_p)| {
-            // λ = 3(x_p)^2 / (2 * y_p)
-            // We can invert `y_p` since we already rejected the case where `y_p == 0`.
-            let lambda = F::from_u64(3) * x_p * x_p * F::TWO_INV * y_p.invert().unwrap();
-            let x_r = lambda * lambda - x_p - x_p;
-            let y_r = lambda * (x_p - x_r) - y_p;
-            (x_r, y_r)
+        let r = p.point().map(|p| {
+            let r = p * C::Scalar::from_u64(2);
+            let r = r.to_affine().coordinates().unwrap();
+
+            (*r.x(), *r.y())
         });
         let x_r = r.map(|r| r.0);
         let y_r = r.map(|r| r.1);
@@ -116,8 +117,8 @@ impl Config {
         )?;
 
         Ok(EccPoint {
-            x: CellValue::<F>::new(x_r_var, x_r),
-            y: CellValue::<F>::new(y_r_var, y_r),
+            x: CellValue::<C::Base>::new(x_r_var, x_r),
+            y: CellValue::<C::Base>::new(y_r_var, y_r),
         })
     }
 }

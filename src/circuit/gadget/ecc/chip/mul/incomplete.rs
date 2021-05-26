@@ -1,5 +1,6 @@
 use super::super::{util, CellValue, EccConfig, EccPoint};
 use super::{Mul, X, Y, Z};
+use ff::Field;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::Region,
@@ -159,14 +160,17 @@ impl<C: CurveAffine> Config<C> {
     // non-overlapping columns.
     // Returns (x, y, z).
     #[allow(clippy::type_complexity)]
-    pub(super) fn double_and_add<F: FieldExt>(
+    pub(super) fn double_and_add(
         &self,
-        region: &mut Region<'_, F>,
+        region: &mut Region<'_, C::Base>,
         offset: usize,
-        base: &EccPoint<F>,
-        bits: Option<Vec<bool>>,
-        acc: (X<F>, Y<F>, Z<F>),
-    ) -> Result<(X<F>, Y<F>, Z<F>), Error> {
+        base: &EccPoint<C>,
+        bits: &[Option<bool>],
+        acc: (X<C::Base>, Y<C::Base>, Z<C::Base>),
+    ) -> Result<(X<C::Base>, Y<C::Base>, Z<C::Base>), Error> {
+        // Check that we have the correct number of bits for this double-and-add.
+        assert_eq!(bits.len(), self.num_bits);
+
         // Handle exceptional cases
         let (x_p, y_p) = (base.x.value, base.y.value);
         let (x_a, y_a) = (acc.0.value, acc.1 .0);
@@ -175,9 +179,9 @@ impl<C: CurveAffine> Config<C> {
             .zip(y_a)
             .map(|(((x_p, y_p), x_a), y_a)| {
                 // A is point at infinity
-                if (x_p == F::zero() && y_p == F::zero())
+                if (x_p == C::Base::zero() && y_p == C::Base::zero())
                 // Q is point at infinity
-                || (x_a == F::zero() && y_a == F::zero())
+                || (x_a == C::Base::zero() && y_a == C::Base::zero())
                 // x_p = x_a
                 || (x_p == x_a)
                 {
@@ -220,20 +224,13 @@ impl<C: CurveAffine> Config<C> {
         )?;
         let mut y_a = *acc.1;
 
-        // Convert Option<Vec<bool>> into Vec<Option<bool>>
-        let bits: Vec<Option<bool>> = if let Some(b) = bits {
-            b.into_iter().map(Some).collect()
-        } else {
-            return Err(Error::SynthesisError);
-        };
-
         // Incomplete addition
         for (row, k) in bits.into_iter().enumerate() {
             // z_{i} = 2 * z_{i+1} + k_i
             let z_val = z
                 .value
-                .zip(k)
-                .map(|(z_val, k)| F::from_u64(2) * z_val + F::from_u64(k as u64));
+                .zip(k.as_ref())
+                .map(|(z_val, k)| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64));
             let z_cell = region.assign_advice(
                 || "z",
                 self.z,
@@ -257,7 +254,9 @@ impl<C: CurveAffine> Config<C> {
             )?;
 
             // If the bit is set, use `y`; if the bit is not set, use `-y`
-            let y_p = y_p.zip(k).map(|(y_p, k)| if !k { -y_p } else { y_p });
+            let y_p = y_p
+                .zip(k.as_ref())
+                .map(|(y_p, k)| if !k { -y_p } else { y_p });
 
             // Compute and assign λ1⋅(x_A − x_P) = y_A − y_P
             let lambda1 = y_a
@@ -285,7 +284,7 @@ impl<C: CurveAffine> Config<C> {
                     .zip(x_a.value)
                     .zip(x_r)
                     .map(|(((lambda1, y_a), x_a), x_r)| {
-                        F::from_u64(2) * y_a * (x_a - x_r).invert().unwrap() - lambda1
+                        C::Base::from_u64(2) * y_a * (x_a - x_r).invert().unwrap() - lambda1
                     });
             region.assign_advice(
                 || "lambda2",
