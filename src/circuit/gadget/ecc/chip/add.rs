@@ -61,7 +61,6 @@ impl Config {
         let y_r = meta.query_advice(self.y_qr, Rotation::next());
         let lambda = meta.query_advice(self.lambda, Rotation::cur());
 
-        // inv0(x) is 0 if x = 0, 1/x otherwise.
         // α = inv0(x_q - x_p)
         let alpha = meta.query_advice(self.alpha, Rotation::cur());
         // β = inv0(x_p)
@@ -224,15 +223,8 @@ impl Config {
             self.alpha,
             offset,
             || {
-                let x_p = x_p.ok_or(Error::SynthesisError)?;
-                let x_q = x_q.ok_or(Error::SynthesisError)?;
-
-                let alpha = if x_q != x_p {
-                    (x_q - x_p).invert().unwrap()
-                } else {
-                    C::Base::zero()
-                };
-                Ok(alpha)
+                let alpha = x_p.zip(x_q).map(|(x_p, x_q)| inv0(x_q - x_p));
+                alpha.ok_or(Error::SynthesisError)
             },
         )?;
 
@@ -242,14 +234,8 @@ impl Config {
             self.beta,
             offset,
             || {
-                let x_p = x_p.ok_or(Error::SynthesisError)?;
-
-                let beta = if x_p != C::Base::zero() {
-                    x_p.invert().unwrap()
-                } else {
-                    C::Base::zero()
-                };
-                Ok(beta)
+                let beta = x_p.map(|x_p| inv0(x_p));
+                beta.ok_or(Error::SynthesisError)
             },
         )?;
 
@@ -259,14 +245,8 @@ impl Config {
             self.gamma,
             offset,
             || {
-                let x_q = x_q.ok_or(Error::SynthesisError)?;
-
-                let gamma = if x_q != C::Base::zero() {
-                    x_q.invert().unwrap()
-                } else {
-                    C::Base::zero()
-                };
-                Ok(gamma)
+                let gamma = x_q.map(|x_q| inv0(x_q));
+                gamma.ok_or(Error::SynthesisError)
             },
         )?;
 
@@ -282,11 +262,7 @@ impl Config {
                 let y_q = y_q.ok_or(Error::SynthesisError)?;
 
                 let delta = if x_q == x_p {
-                    if y_q != -y_p {
-                        (y_q + y_p).invert().unwrap()
-                    } else {
-                        C::Base::zero()
-                    }
+                    inv0(y_q + y_p)
                 } else {
                     C::Base::zero()
                 };
@@ -381,5 +357,14 @@ impl Config {
             x: CellValue::<C::Base>::new(x_r_cell, x_r),
             y: CellValue::<C::Base>::new(y_r_cell, y_r),
         })
+    }
+}
+
+// inv0(x) is 0 if x = 0, 1/x otherwise.
+fn inv0<F: FieldExt>(x: F) -> F {
+    if x == F::zero() {
+        F::zero()
+    } else {
+        x.invert().unwrap()
     }
 }
