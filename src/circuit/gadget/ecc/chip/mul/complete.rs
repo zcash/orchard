@@ -1,5 +1,5 @@
 use super::super::{add, util, CellValue, EccPoint};
-use super::Mul;
+use super::{complete_len, complete_range, incomplete_lo_len};
 use ff::Field;
 
 use halo2::{
@@ -34,8 +34,6 @@ impl<C: CurveAffine> From<&super::Config<C>> for Config<C> {
     }
 }
 
-impl<C: CurveAffine> Mul<C> for Config<C> {}
-
 impl<C: CurveAffine> Config<C> {
     /// Gate used to check scalar decomposition is correct.
     /// This is used to check the bits used in complete addition, since the incomplete
@@ -68,17 +66,17 @@ impl<C: CurveAffine> Config<C> {
     ) -> Result<(EccPoint<C>, Option<C::Base>), Error> {
         // Make sure we have the correct number of bits for the complete addition
         // part of variable-base scalar mul.
-        assert_eq!(bits.len(), Self::complete_len());
+        assert_eq!(bits.len(), complete_len::<C>());
 
         // Enable selectors for complete range
-        for row in Self::complete_range() {
+        for row in complete_range::<C>() {
             self.q_mul_complete.enable(region, row + offset)?;
         }
 
         // Complete addition
         for (iter, k) in bits.into_iter().enumerate() {
             // Each iteration uses 2 rows (two complete additions)
-            let row = Self::incomplete_lo_len() + 2 * iter + 3;
+            let row = incomplete_lo_len::<C>() + 2 * iter + 3;
 
             // Check scalar decomposition here
             region.assign_advice(

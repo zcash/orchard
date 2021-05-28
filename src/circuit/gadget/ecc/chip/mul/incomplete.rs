@@ -1,5 +1,5 @@
 use super::super::{util, CellValue, EccConfig, EccPoint};
-use super::{Mul, X, Y, Z};
+use super::{incomplete_hi_len, incomplete_lo_len, X, Y, Z};
 use ff::Field;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
@@ -31,14 +31,12 @@ pub(super) struct Config<C: CurveAffine> {
     _marker: PhantomData<C>,
 }
 
-impl<C: CurveAffine> Mul<C> for Config<C> {}
-
 impl<C: CurveAffine> Config<C> {
     // Columns used in processing the `hi` bits of the scalar.
     // `x_p, y_p` are shared across the `hi` and `lo` halves.
     pub(super) fn hi_config(ecc_config: &EccConfig) -> Self {
         Self {
-            num_bits: Self::incomplete_hi_len(),
+            num_bits: incomplete_hi_len::<C>(),
             q_mul: ecc_config.q_mul_hi,
             z: ecc_config.bits,
             x_a: ecc_config.extras[0],
@@ -55,7 +53,7 @@ impl<C: CurveAffine> Config<C> {
     // `x_p, y_p` are shared across the `hi` and `lo` halves.
     pub(super) fn lo_config(ecc_config: &EccConfig) -> Self {
         Self {
-            num_bits: Self::incomplete_lo_len(),
+            num_bits: incomplete_lo_len::<C>(),
             q_mul: ecc_config.q_mul_lo,
             z: ecc_config.extras[1],
             x_a: ecc_config.extras[2],

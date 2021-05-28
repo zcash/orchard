@@ -47,49 +47,6 @@ impl<C: CurveAffine> From<&EccConfig> for Config<C> {
     }
 }
 
-trait Mul<C: CurveAffine> {
-    // Bits used in incomplete addition. k_{254} to k_{4} inclusive
-    fn incomplete_len() -> usize {
-        C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS
-    }
-
-    fn incomplete_range() -> Range<usize> {
-        0..Self::incomplete_len()
-    }
-
-    // Bits used in `lo` half of incomplete addition
-    fn incomplete_lo_range() -> Range<usize> {
-        (Self::incomplete_len() / 2)..Self::incomplete_len()
-    }
-
-    // Bits used in `hi` half of incomplete addition
-    fn incomplete_hi_range() -> Range<usize> {
-        0..(Self::incomplete_len() / 2)
-    }
-
-    // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
-    // The `lo` half is k_{129} to k_{4} inclusive (length 126 bits).
-    fn incomplete_lo_len() -> usize {
-        (Self::incomplete_len() + 1) / 2
-    }
-
-    // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
-    // The `hi` half is k_{254} to k_{130} inclusive (length 125 bits).
-    fn incomplete_hi_len() -> usize {
-        Self::incomplete_len() / 2
-    }
-
-    fn complete_range() -> Range<usize> {
-        Self::incomplete_len()..(C::Scalar::NUM_BITS as usize - 1)
-    }
-
-    fn complete_len() -> usize {
-        NUM_COMPLETE_BITS as usize
-    }
-}
-
-impl<C: CurveAffine> Mul<C> for Config<C> {}
-
 impl<C: CurveAffine> Config<C> {
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
         self.hi_config.create_gate(meta);
@@ -143,7 +100,7 @@ impl<C: CurveAffine> Config<C> {
         let z = CellValue::new(z_cell, Some(z_val));
 
         // Double-and-add (incomplete addition) for the `hi` half of the scalar decomposition
-        let k_incomplete_hi = &k_bits[Self::incomplete_hi_range()];
+        let k_incomplete_hi = &k_bits[incomplete_hi_range::<C>()];
         let (x, y_a, z) = self.hi_config.double_and_add(
             region,
             offset + 1,
@@ -153,7 +110,7 @@ impl<C: CurveAffine> Config<C> {
         )?;
 
         // Double-and-add (incomplete addition) for the `lo` half of the scalar decomposition
-        let k_incomplete_lo = &k_bits[Self::incomplete_lo_range()];
+        let k_incomplete_lo = &k_bits[incomplete_lo_range::<C>()];
         let (x, y_a, z) = self.lo_config.double_and_add(
             region,
             offset + 1,
@@ -165,7 +122,7 @@ impl<C: CurveAffine> Config<C> {
         // Move from incomplete addition to complete addition
         let acc = {
             let y_a_col = self.add_config.y_qr;
-            let row = Self::incomplete_lo_len() + 2;
+            let row = incomplete_lo_len::<C>() + 2;
 
             let y_a_cell = region.assign_advice(
                 || "y_a",
@@ -190,7 +147,7 @@ impl<C: CurveAffine> Config<C> {
         let complete_config: complete::Config<C> = self.into();
         // Bits used in complete addition. k_{3} to k_{1} inclusive
         // The LSB k_{0} is handled separately.
-        let k_complete = &k_bits[Self::complete_range()];
+        let k_complete = &k_bits[complete_range::<C>()];
         let (acc, z_val) =
             complete_config.assign_region(region, offset, k_complete, base, acc, z.value)?;
 
@@ -211,7 +168,7 @@ impl<C: CurveAffine> Config<C> {
         mut z_val: Option<C::Base>,
     ) -> Result<EccPoint<C>, Error> {
         // Assign the final `z` value.
-        let k_0_row = Self::incomplete_lo_len() + Self::complete_len() * 2 + 4;
+        let k_0_row = incomplete_lo_len::<C>() + complete_len::<C>() * 2 + 4;
         z_val = z_val
             .zip(k_0)
             .map(|(z_val, k_0)| C::Base::from_u64(2) * z_val + C::Base::from_u64(k_0 as u64));
@@ -360,4 +317,43 @@ fn decompose_for_scalar_mul<C: CurveAffine>(scalar: Option<C::Base>) -> Vec<Opti
     } else {
         vec![None; C::Scalar::NUM_BITS as usize]
     }
+}
+
+// Bits used in incomplete addition. k_{254} to k_{4} inclusive
+fn incomplete_len<C: CurveAffine>() -> usize {
+    C::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS
+}
+
+fn incomplete_range<C: CurveAffine>() -> Range<usize> {
+    0..incomplete_len::<C>()
+}
+
+// Bits used in `lo` half of incomplete addition
+fn incomplete_lo_range<C: CurveAffine>() -> Range<usize> {
+    (incomplete_len::<C>() / 2)..incomplete_len::<C>()
+}
+
+// Bits used in `hi` half of incomplete addition
+fn incomplete_hi_range<C: CurveAffine>() -> Range<usize> {
+    0..(incomplete_len::<C>() / 2)
+}
+
+// Bits k_{254} to k_{4} inclusive are used in incomplete addition.
+// The `lo` half is k_{129} to k_{4} inclusive (length 126 bits).
+fn incomplete_lo_len<C: CurveAffine>() -> usize {
+    (incomplete_len::<C>() + 1) / 2
+}
+
+// Bits k_{254} to k_{4} inclusive are used in incomplete addition.
+// The `hi` half is k_{254} to k_{130} inclusive (length 125 bits).
+fn incomplete_hi_len<C: CurveAffine>() -> usize {
+    incomplete_len::<C>() / 2
+}
+
+fn complete_range<C: CurveAffine>() -> Range<usize> {
+    incomplete_len::<C>()..(C::Scalar::NUM_BITS as usize - 1)
+}
+
+fn complete_len<C: CurveAffine>() -> usize {
+    NUM_COMPLETE_BITS as usize
 }
