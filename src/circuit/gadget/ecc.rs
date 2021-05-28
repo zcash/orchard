@@ -550,39 +550,71 @@ mod tests {
 
             // Check fixed-base scalar multiplication
             {
-                let scalar_fixed = C::Scalar::rand();
                 let nullifier_k = constants::nullifier_k::generator();
                 let base = nullifier_k.0.value();
-                let real_mul_fixed = base * scalar_fixed;
-
-                let scalar_fixed = super::ScalarFixed::new(
-                    chip.clone(),
-                    layouter.namespace(|| "ScalarFixed"),
-                    Some(scalar_fixed),
-                )?;
                 let nullifier_k = super::FixedPoint::get(
                     chip.clone(),
                     OrchardFixedBases::NullifierK(nullifier_k),
                 )?;
 
                 // [a]B
-                let mul_fixed = nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
-                if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
-                    assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
+                {
+                    let scalar_fixed = C::Scalar::rand();
+                    let real_mul_fixed = base * scalar_fixed;
+
+                    let scalar_fixed = super::ScalarFixed::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixed"),
+                        Some(scalar_fixed),
+                    )?;
+
+                    let mul_fixed = nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
+                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
+                        assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
+                    }
+                }
+
+                // There is a single canonical sequence of window values for which a doubling occurs on the last step:
+                // 1333333333333333333333333333333333333333333333333333333333333333333333333333333333334 in octal.
+                // (There is another *non-canonical* sequence
+                // 5333333333333333333333333333333333333333332711161673731021062440252244051273333333333 in octal.)
+                {
+                    let h = C::ScalarExt::from_u64(constants::H as u64);
+                    let scalar_fixed = "1333333333333333333333333333333333333333333333333333333333333333333333333333333333334"
+                        .chars()
+                        .fold(C::ScalarExt::zero(), |acc, c| {
+                            acc * h + C::ScalarExt::from_u64(c.to_digit(8).unwrap().into())
+                        });
+                    let real_mul_fixed = base * scalar_fixed;
+
+                    let scalar_fixed = super::ScalarFixed::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixed"),
+                        Some(scalar_fixed),
+                    )?;
+
+                    let mul_fixed =
+                        nullifier_k.mul(layouter.namespace(|| "mul with double"), &scalar_fixed)?;
+                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
+                        assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
+                    }
                 }
 
                 // [0]B should return (0,0) since it uses complete addition
                 // on the last step.
-                let scalar_fixed = C::Scalar::zero();
-                let scalar_fixed = super::ScalarFixed::new(
-                    chip.clone(),
-                    layouter.namespace(|| "ScalarFixed"),
-                    Some(scalar_fixed),
-                )?;
-                let mul_fixed = nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
-                if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
-                    assert_eq!(C::Base::zero(), x);
-                    assert_eq!(C::Base::zero(), y);
+                {
+                    let scalar_fixed = C::Scalar::zero();
+                    let scalar_fixed = super::ScalarFixed::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixed"),
+                        Some(scalar_fixed),
+                    )?;
+                    let mul_fixed =
+                        nullifier_k.mul(layouter.namespace(|| "mul by zero"), &scalar_fixed)?;
+                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
+                        assert_eq!(C::Base::zero(), x);
+                        assert_eq!(C::Base::zero(), y);
+                    }
                 }
             }
 
