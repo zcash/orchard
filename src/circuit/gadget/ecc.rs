@@ -698,6 +698,24 @@ mod tests {
                     checks.push((real_mul_fixed_short, mul_fixed_short));
                 }
 
+                // There is a single canonical sequence of window values for which a doubling occurs on the last step:
+                // 1333333333333333333334 in octal.
+                // [0xB6DB_6DB6_DB6D_B6DC] B
+                {
+                    let scalar_fixed_short = C::Scalar::from_u64(0xB6DB_6DB6_DB6D_B6DCu64);
+                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
+
+                    let scalar_fixed_short = super::ScalarFixedShort::new(
+                        chip.clone(),
+                        layouter.namespace(|| "ScalarFixedShort"),
+                        Some(scalar_fixed_short),
+                    )?;
+                    let mul_fixed_short = value_commit_v
+                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+
+                    checks.push((real_mul_fixed_short, mul_fixed_short));
+                }
+
                 for check in checks.into_iter() {
                     let real_mul_fixed_short = check.0;
                     let mul_fixed_short = check.1;
