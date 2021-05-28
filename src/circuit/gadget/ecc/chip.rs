@@ -62,7 +62,7 @@ impl<C: CurveAffine> EccPoint<C> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// For each Orchard fixed base, we precompute:
 /// * coefficients for x-coordinate interpolation polynomials, and
 /// * z-values such that y + z = u^2 some square while -y + z is non-square.
@@ -75,7 +75,7 @@ pub struct EccLoaded<C: CurveAffine> {
 }
 
 /// Configuration for the ECC chip
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(non_snake_case)]
 pub struct EccConfig {
     /// Advice column for scalar decomposition into bits
@@ -123,20 +123,11 @@ pub struct EccConfig {
 }
 
 /// A chip implementing EccInstructions
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EccChip<C: CurveAffine> {
-    id: u64,
     config: EccConfig,
     loaded: EccLoaded<C>,
 }
-
-impl<C: CurveAffine> PartialEq for EccChip<C> {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-    }
-}
-
-impl<C: CurveAffine> Eq for EccChip<C> {}
 
 impl<C: CurveAffine> EccLoaded<C> {
     fn get(&self, point: OrchardFixedBases<C>) -> OrchardFixedBase<C> {
@@ -171,11 +162,7 @@ impl<C: CurveAffine> EccChip<C> {
         config: <Self as Chip<C::Base>>::Config,
         loaded: <Self as Chip<C::Base>>::Loaded,
     ) -> Self {
-        Self {
-            id: rand::random::<u64>(),
-            config,
-            loaded,
-        }
+        Self { config, loaded }
     }
 
     #[allow(non_snake_case)]

@@ -58,19 +58,19 @@ pub const NUM_WINDOWS_SHORT: usize =
 /// scalar multiplication
 pub const NUM_COMPLETE_BITS: usize = 3;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct CommitIvkR<C: CurveAffine>(pub OrchardFixedBase<C>);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct NoteCommitR<C: CurveAffine>(pub OrchardFixedBase<C>);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct NullifierK<C: CurveAffine>(pub OrchardFixedBase<C>);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ValueCommitR<C: CurveAffine>(pub OrchardFixedBase<C>);
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ValueCommitV<C: CurveAffine>(pub OrchardFixedBase<C>);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

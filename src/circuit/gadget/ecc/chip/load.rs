@@ -3,7 +3,7 @@ use std::convert::TryInto;
 use crate::constants::{self, FixedBase, H, NUM_WINDOWS, NUM_WINDOWS_SHORT};
 use halo2::arithmetic::{CurveAffine, FieldExt};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OrchardFixedBases<C: CurveAffine> {
     CommitIvkR(constants::CommitIvkR<C>),
     NoteCommitR(constants::NoteCommitR<C>),
@@ -11,11 +11,11 @@ pub enum OrchardFixedBases<C: CurveAffine> {
     ValueCommitR(constants::ValueCommitR<C>),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct OrchardFixedBasesShort<C: CurveAffine>(pub constants::ValueCommitV<C>);
 
 /// A fixed base to be used in scalar multiplication with a full-width scalar.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrchardFixedBase<C: CurveAffine> {
     pub base: OrchardFixedBases<C>,
     pub lagrange_coeffs: LagrangeCoeffs<C::Base>,
@@ -24,7 +24,7 @@ pub struct OrchardFixedBase<C: CurveAffine> {
 }
 
 /// A fixed base to be used in scalar multiplication with a short signed exponent.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrchardFixedBaseShort<C: CurveAffine> {
     pub base: OrchardFixedBasesShort<C>,
     pub lagrange_coeffs_short: LagrangeCoeffsShort<C::Base>,
@@ -85,7 +85,7 @@ pub(super) fn value_commit_v<C: CurveAffine>() -> OrchardFixedBaseShort<C> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 8 coefficients per window
 pub struct WindowLagrangeCoeffs<F: FieldExt>(pub Box<[F; H]>);
 
@@ -95,7 +95,7 @@ impl<F: FieldExt> From<&[F; H]> for WindowLagrangeCoeffs<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 85 windows per base (with the exception of ValueCommitV)
 pub struct LagrangeCoeffs<F: FieldExt>(pub Box<[WindowLagrangeCoeffs<F>; constants::NUM_WINDOWS]>);
 
@@ -113,7 +113,7 @@ impl<F: FieldExt> From<Vec<[F; H]>> for LagrangeCoeffs<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 22 windows for ValueCommitV
 pub struct LagrangeCoeffsShort<F: FieldExt>(pub Box<[WindowLagrangeCoeffs<F>; NUM_WINDOWS_SHORT]>);
 
@@ -131,7 +131,7 @@ impl<F: FieldExt> From<Vec<[F; H]>> for LagrangeCoeffsShort<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 85 Z's per base (with the exception of ValueCommitV)
 pub struct Z<F: FieldExt>(pub Box<[F; NUM_WINDOWS]>);
 
@@ -148,7 +148,7 @@ impl<F: FieldExt> From<[u64; NUM_WINDOWS]> for Z<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 22 Z's for ValueCommitV
 pub struct ZShort<F: FieldExt>(pub Box<[F; NUM_WINDOWS_SHORT]>);
 
@@ -165,7 +165,7 @@ impl<F: FieldExt> From<[u64; NUM_WINDOWS_SHORT]> for ZShort<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 8 u's per window
 pub struct WindowUs<F: FieldExt>(pub Box<[F; H]>);
 
@@ -183,7 +183,7 @@ impl<F: FieldExt> From<&[[u8; 32]; H]> for WindowUs<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 85 windows per base (with the exception of ValueCommitV)
 pub struct U<F: FieldExt>(pub Box<[WindowUs<F>; NUM_WINDOWS]>);
 
@@ -200,7 +200,7 @@ impl<F: FieldExt> From<[[[u8; 32]; H]; NUM_WINDOWS]> for U<F> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 // 22 windows for ValueCommitV
 pub struct UShort<F: FieldExt>(pub Box<[WindowUs<F>; NUM_WINDOWS_SHORT]>);
 
