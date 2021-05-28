@@ -20,8 +20,8 @@ impl From<&EccConfig> for Config {
     fn from(ecc_config: &EccConfig) -> Self {
         Self {
             q_point: ecc_config.q_point,
-            x: ecc_config.P.0,
-            y: ecc_config.P.1,
+            x: ecc_config.advices[0],
+            y: ecc_config.advices[1],
         }
     }
 }

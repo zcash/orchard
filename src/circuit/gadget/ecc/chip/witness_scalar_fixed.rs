@@ -22,7 +22,7 @@ impl From<&EccConfig> for Config {
         Self {
             q_scalar_fixed: ecc_config.q_scalar_fixed,
             q_scalar_fixed_short: ecc_config.q_scalar_fixed_short,
-            k_s: ecc_config.bits,
+            k_s: ecc_config.advices[0],
         }
     }
 }

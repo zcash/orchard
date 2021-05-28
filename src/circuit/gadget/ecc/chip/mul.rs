@@ -34,16 +34,37 @@ pub struct Config<C: CurveAffine> {
 
 impl<C: CurveAffine> From<&EccConfig> for Config<C> {
     fn from(ecc_config: &EccConfig) -> Self {
-        Self {
+        let config = Self {
             q_mul_complete: ecc_config.q_mul_complete,
             q_mul_decompose_var: ecc_config.q_mul_decompose_var,
-            z_complete: ecc_config.bits,
-            scalar: ecc_config.extras[0],
+            z_complete: ecc_config.advices[9],
+            scalar: ecc_config.advices[1],
             perm: ecc_config.perm.clone(),
             add_config: ecc_config.into(),
             hi_config: incomplete::Config::hi_config(ecc_config),
             lo_config: incomplete::Config::lo_config(ecc_config),
-        }
+        };
+
+        assert_eq!(
+            config.hi_config.x_p, config.lo_config.x_p,
+            "x_p is shared across hi and lo halves."
+        );
+        assert_eq!(
+            config.hi_config.y_p, config.lo_config.y_p,
+            "y_p is shared across hi and lo halves."
+        );
+
+        let add_config_advices = config.add_config.advice_columns();
+        assert!(
+            !add_config_advices.contains(&config.z_complete),
+            "z_complete cannot overlap with complete addition columns."
+        );
+        assert!(
+            !add_config_advices.contains(&config.hi_config.z),
+            "hi_config z cannot overlap with complete addition columns."
+        );
+
+        config
     }
 }
 
@@ -96,14 +117,17 @@ impl<C: CurveAffine> Config<C> {
         // Initialize the running sum for scalar decomposition to zero
         let z_val = C::Base::zero();
         let z_cell =
-            region.assign_advice(|| "initial z", self.hi_config.z, offset + 1, || Ok(z_val))?;
+            region.assign_advice(|| "initial z", self.hi_config.z, offset, || Ok(z_val))?;
         let z = CellValue::new(z_cell, Some(z_val));
+
+        // Increase the offset by 1 after initializing `z`.
+        let offset = offset + 1;
 
         // Double-and-add (incomplete addition) for the `hi` half of the scalar decomposition
         let k_incomplete_hi = &k_bits[incomplete_hi_range::<C>()];
         let (x, y_a, z) = self.hi_config.double_and_add(
             region,
-            offset + 1,
+            offset,
             &base,
             k_incomplete_hi,
             (X(acc.x.clone()), Y(acc.y.value), Z(z)),
@@ -111,45 +135,52 @@ impl<C: CurveAffine> Config<C> {
 
         // Double-and-add (incomplete addition) for the `lo` half of the scalar decomposition
         let k_incomplete_lo = &k_bits[incomplete_lo_range::<C>()];
-        let (x, y_a, z) = self.lo_config.double_and_add(
-            region,
-            offset + 1,
-            &base,
-            k_incomplete_lo,
-            (x, y_a, z),
-        )?;
+        let (x, y_a, z) =
+            self.lo_config
+                .double_and_add(region, offset, &base, k_incomplete_lo, (x, y_a, z))?;
 
         // Move from incomplete addition to complete addition
-        let acc = {
-            let y_a_col = self.add_config.y_qr;
-            let row = incomplete_lo_len::<C>() + 2;
+        let offset = offset + incomplete_lo_len::<C>() + 1;
 
+        // Get value of acc after incomplete addition
+        let acc = {
+            // Assign final `y_a` output from incomplete addition
             let y_a_cell = region.assign_advice(
                 || "y_a",
-                y_a_col,
-                row + offset,
+                self.add_config.y_qr,
+                offset,
                 || y_a.ok_or(Error::SynthesisError),
             )?;
-            util::assign_and_constrain(
-                region,
-                || "Copy z from incomplete to complete",
-                self.z_complete,
-                row + offset,
-                &z,
-                &self.perm,
-            )?;
+
             EccPoint {
                 x: x.0,
                 y: CellValue::<C::Base>::new(y_a_cell, *y_a),
             }
         };
 
-        let complete_config: complete::Config<C> = self.into();
-        // Bits used in complete addition. k_{3} to k_{1} inclusive
-        // The LSB k_{0} is handled separately.
-        let k_complete = &k_bits[complete_range::<C>()];
-        let (acc, z_val) =
-            complete_config.assign_region(region, offset, k_complete, base, acc, z.value)?;
+        // Initialize `z` running sum for complete addition
+        util::assign_and_constrain(
+            region,
+            || "Initialize `z` running sum for complete addition",
+            self.z_complete,
+            offset,
+            &z,
+            &self.perm,
+        )?;
+
+        // Increase the offset by 1 after complete addition.
+        let offset = offset + 1;
+
+        // Complete addition
+        let (acc, z_val) = {
+            let complete_config: complete::Config<C> = self.into();
+            // Bits used in complete addition. k_{3} to k_{1} inclusive
+            // The LSB k_{0} is handled separately.
+            let k_complete = &k_bits[complete_range::<C>()];
+            complete_config.assign_region(region, offset, k_complete, base, acc, z.value)?
+        };
+
+        let offset = offset + complete_len::<C>() * 2;
 
         // Process the least significant bit
         let k_0 = k_bits[C::Scalar::NUM_BITS as usize - 1];
@@ -168,14 +199,13 @@ impl<C: CurveAffine> Config<C> {
         mut z_val: Option<C::Base>,
     ) -> Result<EccPoint<C>, Error> {
         // Assign the final `z` value.
-        let k_0_row = incomplete_lo_len::<C>() + complete_len::<C>() * 2 + 4;
         z_val = z_val
             .zip(k_0)
             .map(|(z_val, k_0)| C::Base::from_u64(2) * z_val + C::Base::from_u64(k_0 as u64));
         region.assign_advice(
             || "final z",
             self.z_complete,
-            k_0_row + offset,
+            offset,
             || z_val.ok_or(Error::SynthesisError),
         )?;
 
@@ -193,16 +223,15 @@ impl<C: CurveAffine> Config<C> {
             region,
             || "original scalar",
             self.scalar,
-            k_0_row + offset,
+            offset,
             &scalar,
             &self.perm,
         )?;
-        self.q_mul_decompose_var.enable(region, k_0_row + offset)?;
+        self.q_mul_decompose_var.enable(region, offset)?;
 
         // If `k_0` is 0, return `Acc + (-P)`. If `k_0` is 1, simply return `Acc + 0`.
         let x_p = if let Some(k_0) = k_0 {
             if !k_0 {
-                println!("!k_0");
                 base.x.value
             } else {
                 Some(C::Base::zero())
@@ -212,7 +241,6 @@ impl<C: CurveAffine> Config<C> {
         };
         let y_p = if let Some(k_0) = k_0 {
             if !k_0 {
-                println!("!k_0");
                 base.y.value.map(|y_p| -y_p)
             } else {
                 Some(C::Base::zero())
@@ -224,14 +252,14 @@ impl<C: CurveAffine> Config<C> {
         let x_p_cell = region.assign_advice(
             || "x_p",
             self.add_config.x_p,
-            k_0_row + offset,
+            offset + 1,
             || x_p.ok_or(Error::SynthesisError),
         )?;
 
         let y_p_cell = region.assign_advice(
             || "y_p",
             self.add_config.y_p,
-            k_0_row + offset,
+            offset + 1,
             || y_p.ok_or(Error::SynthesisError),
         )?;
 
@@ -241,8 +269,7 @@ impl<C: CurveAffine> Config<C> {
         };
 
         // Return the result of the final complete addition as `[scalar]B`
-        self.add_config
-            .assign_region(&p, &acc, k_0_row + offset + 1, region)
+        self.add_config.assign_region(&p, &acc, offset + 1, region)
     }
 }
 

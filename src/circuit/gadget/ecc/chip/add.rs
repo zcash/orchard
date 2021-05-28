@@ -6,6 +6,7 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
     poly::Rotation,
 };
+use std::collections::HashSet;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -36,21 +37,35 @@ impl From<&EccConfig> for Config {
     fn from(ecc_config: &EccConfig) -> Self {
         Self {
             q_add: ecc_config.q_add,
-            lambda: ecc_config.lambda.0,
-            x_p: ecc_config.P.0,
-            y_p: ecc_config.P.1,
-            x_qr: ecc_config.extras[0],
-            y_qr: ecc_config.extras[1],
-            alpha: ecc_config.extras[2],
-            beta: ecc_config.extras[3],
-            gamma: ecc_config.extras[4],
-            delta: ecc_config.lambda.1,
+            x_p: ecc_config.advices[0],
+            y_p: ecc_config.advices[1],
+            x_qr: ecc_config.advices[2],
+            y_qr: ecc_config.advices[3],
+            lambda: ecc_config.advices[4],
+            alpha: ecc_config.advices[5],
+            beta: ecc_config.advices[6],
+            gamma: ecc_config.advices[7],
+            delta: ecc_config.advices[8],
             perm: ecc_config.perm.clone(),
         }
     }
 }
 
 impl Config {
+    pub(crate) fn advice_columns(&self) -> HashSet<Column<Advice>> {
+        let mut advice_columns = HashSet::new();
+        advice_columns.insert(self.x_p);
+        advice_columns.insert(self.y_p);
+        advice_columns.insert(self.x_qr);
+        advice_columns.insert(self.y_qr);
+        advice_columns.insert(self.lambda);
+        advice_columns.insert(self.alpha);
+        advice_columns.insert(self.beta);
+        advice_columns.insert(self.gamma);
+        advice_columns.insert(self.delta);
+        advice_columns
+    }
+
     pub(crate) fn create_gate<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) {
         let q_add = meta.query_selector(self.q_add, Rotation::cur());
         let x_p = meta.query_advice(self.x_p, Rotation::cur());

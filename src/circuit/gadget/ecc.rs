@@ -397,10 +397,12 @@ mod tests {
         type Config = EccConfig;
 
         fn configure(meta: &mut ConstraintSystem<C::Base>) -> Self::Config {
-            let bits = meta.advice_column();
-            let P = (meta.advice_column(), meta.advice_column());
-            let lambda = (meta.advice_column(), meta.advice_column());
-            let extras = [
+            let advices = [
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
+                meta.advice_column(),
                 meta.advice_column(),
                 meta.advice_column(),
                 meta.advice_column(),
@@ -408,7 +410,7 @@ mod tests {
                 meta.advice_column(),
             ];
 
-            EccChip::<C>::configure(meta, bits, P, lambda, extras)
+            EccChip::<C>::configure(meta, advices)
         }
 
         fn synthesize(

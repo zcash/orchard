@@ -1,5 +1,5 @@
 use super::super::{add, util, CellValue, EccPoint};
-use super::{complete_len, complete_range, incomplete_lo_len};
+use super::{complete_len, complete_range};
 use ff::Field;
 
 use halo2::{
@@ -76,7 +76,7 @@ impl<C: CurveAffine> Config<C> {
         // Complete addition
         for (iter, k) in bits.into_iter().enumerate() {
             // Each iteration uses 2 rows (two complete additions)
-            let row = incomplete_lo_len::<C>() + 2 * iter + 3;
+            let row = 2 * iter;
 
             // Check scalar decomposition here
             region.assign_advice(
@@ -95,6 +95,7 @@ impl<C: CurveAffine> Config<C> {
                 || z_val.ok_or(Error::SynthesisError),
             )?;
 
+            // Assign `x_p` for complete addition
             let x_p = base.x.value;
             let x_p_cell = region.assign_advice(
                 || "x_p",
@@ -103,6 +104,7 @@ impl<C: CurveAffine> Config<C> {
                 || x_p.ok_or(Error::SynthesisError),
             )?;
 
+            // Assign `y_p` for complete addition.
             // If the bit is set, use `y`; if the bit is not set, use `-y`
             let y_p = base.y.value;
             let y_p = y_p

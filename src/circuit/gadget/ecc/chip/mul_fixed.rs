@@ -31,8 +31,6 @@ pub struct Config {
     // y-coordinate of the multiple of the fixed base at the current window.
     y_p: Column<Advice>,
     // y-coordinate of accumulator (only used in the final row).
-    y_a: Column<Advice>,
-    // An integer `u` for the current window, s.t. `y + z = u^2`.
     u: Column<Advice>,
     // Permutation
     perm: Permutation,
@@ -51,11 +49,10 @@ impl From<&EccConfig> for Config {
             q_mul_fixed_short: ecc_config.q_mul_fixed_short,
             lagrange_coeffs: ecc_config.lagrange_coeffs,
             fixed_z: ecc_config.fixed_z,
-            k: ecc_config.bits,
-            x_p: ecc_config.P.0,
-            y_p: ecc_config.P.1,
-            y_a: ecc_config.extras[1],
-            u: ecc_config.extras[2],
+            x_p: ecc_config.advices[0],
+            y_p: ecc_config.advices[1],
+            k: ecc_config.advices[4],
+            u: ecc_config.advices[5],
             perm: ecc_config.perm.clone(),
             add_config: ecc_config.into(),
             add_incomplete_config: ecc_config.into(),
@@ -81,6 +78,16 @@ impl From<&EccConfig> for Config {
             config.y_p, config.add_incomplete_config.y_p,
             "add_incomplete is used internally in mul_fixed."
         );
+        for advice in [config.x_p, config.y_p, config.k, config.u].iter() {
+            assert_ne!(
+                *advice, config.add_config.x_qr,
+                "Do not overlap with output columns of add."
+            );
+            assert_ne!(
+                *advice, config.add_config.y_qr,
+                "Do not overlap with output columns of add."
+            );
+        }
 
         // Check relationships between this config and `witness_point_config`.
         assert_eq!(

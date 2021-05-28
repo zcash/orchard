@@ -76,14 +76,8 @@ pub struct EccLoaded<C: CurveAffine> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(non_snake_case)]
 pub struct EccConfig {
-    /// Advice column for scalar decomposition into bits
-    pub bits: Column<Advice>,
-    /// Holds a point (x_p, y_p)
-    pub P: (Column<Advice>, Column<Advice>),
-    /// A pair (lambda1, lambda2) representing gradients
-    pub lambda: (Column<Advice>, Column<Advice>),
     /// Advice columns needed by instructions in the ECC chip.
-    pub extras: [Column<Advice>; 5],
+    pub advices: [Column<Advice>; 10],
 
     /// Coefficients of interpolation polynomials for x-coordinates (used in fixed-base scalar multiplication)
     pub lagrange_coeffs: [Column<Fixed>; constants::H],
@@ -162,16 +156,10 @@ impl<C: CurveAffine> EccChip<C> {
     #[allow(non_snake_case)]
     pub fn configure(
         meta: &mut ConstraintSystem<C::Base>,
-        bits: Column<Advice>,
-        P: (Column<Advice>, Column<Advice>),
-        lambda: (Column<Advice>, Column<Advice>),
-        extras: [Column<Advice>; 5],
+        advices: [Column<Advice>; 10],
     ) -> <Self as Chip<C::Base>>::Config {
         let config = EccConfig {
-            bits,
-            P,
-            lambda,
-            extras,
+            advices,
             lagrange_coeffs: [
                 meta.fixed_column(),
                 meta.fixed_column(),
@@ -197,12 +185,15 @@ impl<C: CurveAffine> EccChip<C> {
             perm: Permutation::new(
                 meta,
                 &[
-                    P.0.into(),
-                    P.1.into(),
-                    bits.into(),
-                    extras[0].into(),
-                    extras[1].into(),
-                    extras[2].into(),
+                    advices[0].into(),
+                    advices[1].into(),
+                    advices[2].into(),
+                    advices[3].into(),
+                    advices[4].into(),
+                    advices[6].into(),
+                    advices[7].into(),
+                    advices[8].into(),
+                    advices[9].into(),
                 ],
             ),
         };
@@ -305,7 +296,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
             |mut region| {
                 let cell = region.assign_advice(
                     || "Scalar var",
-                    self.config().P.0,
+                    self.config().advices[0],
                     0,
                     || value.ok_or(Error::SynthesisError),
                 )?;

@@ -27,8 +27,6 @@ pub struct Config<C: CurveAffine> {
     x_p: Column<Advice>,
     // y-coordinate of the multiple of the fixed base at the current window.
     y_p: Column<Advice>,
-    // y-coordinate of accumulator (only used in the final row).
-    y_a: Column<Advice>,
     // An integer `u` for the current window, s.t. `y + z = u^2`.
     u: Column<Advice>,
     // Permutation
@@ -52,7 +50,6 @@ impl<C: CurveAffine> From<&super::Config> for Config<C> {
             k_s: config.k,
             x_p: config.x_p,
             y_p: config.y_p,
-            y_a: config.y_a,
             u: config.u,
             perm: config.perm.clone(),
             add_config: config.add_config.clone(),
@@ -107,7 +104,7 @@ impl<C: CurveAffine> Config<C> {
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
         let q_mul_fixed_short = meta.query_selector(self.q_mul_fixed_short, Rotation::cur());
         let y_p = meta.query_advice(self.y_p, Rotation::cur());
-        let y_a = meta.query_advice(self.y_a, Rotation::cur());
+        let y_a = meta.query_advice(self.add_config().y_qr, Rotation::cur());
 
         // `(x_a, y_a)` is the result of `[m]B`, where `m` is the magnitude.
         // We conditionally negate this result using `y_p = y_a * s`, where `s` is the sign.
