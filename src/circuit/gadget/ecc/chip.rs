@@ -9,8 +9,6 @@ use halo2::{
 
 mod add;
 mod add_incomplete;
-#[cfg(test)]
-mod double;
 mod load;
 mod mul;
 mod mul_fixed;
@@ -91,10 +89,6 @@ pub struct EccConfig {
     pub lagrange_coeffs: [Column<Fixed>; constants::H],
     /// Fixed z such that y + z = u^2 some square, and -y + z is a non-square. (Used in fixed-base scalar multiplication)
     pub fixed_z: Column<Fixed>,
-
-    #[cfg(test)]
-    /// Point doubling (not used in the Orchard circuit)
-    pub q_double: Selector,
 
     /// Incomplete addition
     pub q_add_incomplete: Selector,
@@ -189,8 +183,6 @@ impl<C: CurveAffine> EccChip<C> {
                 meta.fixed_column(),
             ],
             fixed_z: meta.fixed_column(),
-            #[cfg(test)]
-            q_double: meta.selector(),
             q_add_incomplete: meta.selector(),
             q_add: meta.selector(),
             q_mul_hi: meta.selector(),
@@ -225,13 +217,6 @@ impl<C: CurveAffine> EccChip<C> {
         {
             let config: witness_scalar_fixed::Config = (&config).into();
             config.create_gate::<C>(meta);
-        }
-
-        // Create point doubling gate
-        #[cfg(test)]
-        {
-            let config: double::Config = (&config).into();
-            config.create_gate(meta);
         }
 
         // Create incomplete point addition gate
@@ -403,19 +388,6 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter.assign_region(
             || "point addition",
             |mut region| config.assign_region(a, b, 0, &mut region),
-        )
-    }
-
-    #[cfg(test)]
-    fn double(
-        &self,
-        layouter: &mut impl Layouter<C::Base>,
-        a: &Self::Point,
-    ) -> Result<Self::Point, Error> {
-        let config: double::Config = self.config().into();
-        layouter.assign_region(
-            || "point doubling",
-            |mut region| config.assign_region(a, 0, &mut region),
         )
     }
 
