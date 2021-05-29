@@ -211,24 +211,24 @@ impl Config {
 
     pub(super) fn assign_region<C: CurveAffine>(
         &self,
-        a: &EccPoint<C>,
-        b: &EccPoint<C>,
+        p: &EccPoint<C>,
+        q: &EccPoint<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
         // Enable `q_add` selector
         self.q_add.enable(region, offset)?;
 
-        // Copy point `a` into `x_p`, `y_p` columns
-        util::assign_and_constrain(region, || "x_p", self.x_p, offset, &a.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_p", self.y_p, offset, &a.y, &self.perm)?;
+        // Copy point `p` into `x_p`, `y_p` columns
+        util::assign_and_constrain(region, || "x_p", self.x_p, offset, &p.x, &self.perm)?;
+        util::assign_and_constrain(region, || "y_p", self.y_p, offset, &p.y, &self.perm)?;
 
-        // Copy point `b` into `x_qr`, `y_qr` columns
-        util::assign_and_constrain(region, || "x_q", self.x_qr, offset, &b.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_q", self.y_qr, offset, &b.y, &self.perm)?;
+        // Copy point `q` into `x_qr`, `y_qr` columns
+        util::assign_and_constrain(region, || "x_q", self.x_qr, offset, &q.x, &self.perm)?;
+        util::assign_and_constrain(region, || "y_q", self.y_qr, offset, &q.y, &self.perm)?;
 
-        let (x_p, y_p) = (a.x.value, a.y.value);
-        let (x_q, y_q) = (b.x.value, b.y.value);
+        let (x_p, y_p) = (p.x.value, p.y.value);
+        let (x_q, y_q) = (q.x.value, q.y.value);
 
         // inv0(x) evaluates to 0 if x = 0, and 1/x otherwise.
 
@@ -368,10 +368,25 @@ impl Config {
             || y_r.ok_or(Error::SynthesisError),
         )?;
 
-        Ok(EccPoint {
+        let result = EccPoint::<C> {
             x: CellValue::<C::Base>::new(x_r_cell, x_r),
             y: CellValue::<C::Base>::new(y_r_cell, y_r),
-        })
+        };
+
+        #[cfg(test)]
+        // Check that the correct sum is obtained.
+        {
+            use group::Curve;
+
+            let p = p.point();
+            let q = q.point();
+            let real_sum = p.zip(q).map(|(p, q)| p + q);
+            let result = result.point();
+
+            assert_eq!(real_sum.unwrap().to_affine(), result.unwrap());
+        }
+
+        Ok(result)
     }
 }
 
@@ -381,5 +396,69 @@ fn inv0<F: FieldExt>(x: F) -> F {
         F::zero()
     } else {
         x.invert().unwrap()
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use group::Curve;
+    use halo2::{
+        arithmetic::{CurveAffine, CurveExt},
+        circuit::Layouter,
+        plonk::Error,
+    };
+
+    use crate::circuit::gadget::ecc::{EccInstructions, Point};
+
+    pub fn test_add<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug>(
+        chip: EccChip,
+        mut layouter: impl Layouter<C::Base>,
+        zero: &Point<C, EccChip>,
+        p_val: C,
+        p: &Point<C, EccChip>,
+        q_val: C,
+        q: &Point<C, EccChip>,
+        p_neg: &Point<C, EccChip>,
+    ) -> Result<(), Error> {
+        // Make sure P and Q are not the same point.
+        assert_ne!(p_val, q_val);
+
+        // Check complete addition P + (-P)
+        p.add(layouter.namespace(|| "P + (-P)"), &p_neg)?;
+
+        // Check complete addition 𝒪 + 𝒪
+        zero.add(layouter.namespace(|| "𝒪 + 𝒪"), &zero)?;
+
+        // Check P + Q
+        p.add(layouter.namespace(|| "P + Q"), &q)?;
+
+        // P + P
+        p.add(layouter.namespace(|| "P + P"), &p)?;
+
+        // P + 𝒪
+        p.add(layouter.namespace(|| "P + 𝒪"), &zero)?;
+
+        // 𝒪 + P
+        zero.add(layouter.namespace(|| "𝒪 + P"), &p)?;
+
+        // (x, y) + (ζx, -y) should behave like normal P + Q.
+        let endo_p = p_val.to_curve().endo();
+        let endo_p = Point::new(
+            chip.clone(),
+            layouter.namespace(|| "point"),
+            Some(endo_p.to_affine()),
+        )?;
+        p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
+
+        // (x, y) + ((ζ^2)x, -y)
+        let endo_p = p_val.to_curve().endo().endo();
+        let endo_p = Point::new(
+            chip.clone(),
+            layouter.namespace(|| "point"),
+            Some(endo_p.to_affine()),
+        )?;
+        p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
+
+        Ok(())
     }
 }

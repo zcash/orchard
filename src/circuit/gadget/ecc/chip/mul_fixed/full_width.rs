@@ -107,7 +107,102 @@ impl<C: CurveAffine> Config<C> {
             self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
 
         // Add to the accumulator and return the final result as `[scalar]B`.
-        self.add_config
-            .assign_region(&mul_b, &acc, offset + constants::NUM_WINDOWS, region)
+        let result =
+            self.add_config
+                .assign_region(&mul_b, &acc, offset + constants::NUM_WINDOWS, region)?;
+
+        #[cfg(test)]
+        // Check that the correct multiple is obtained.
+        {
+            use super::super::OrchardFixedBases;
+            use group::Curve;
+            use halo2::arithmetic::FieldExt;
+
+            let base = match base.base {
+                OrchardFixedBases::CommitIvkR(base) => base.0.value(),
+                OrchardFixedBases::NoteCommitR(base) => base.0.value(),
+                OrchardFixedBases::NullifierK(base) => base.0.value(),
+                OrchardFixedBases::ValueCommitR(base) => base.0.value(),
+            };
+            let scalar = scalar
+                .value
+                .map(|scalar| C::Scalar::from_bytes(&scalar.to_bytes()).unwrap());
+            let real_mul = scalar.map(|scalar| base * scalar);
+            let result = result.point();
+
+            assert_eq!(real_mul.unwrap().to_affine(), result.unwrap());
+        }
+
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use ff::Field;
+    use halo2::{
+        arithmetic::{CurveAffine, FieldExt},
+        circuit::Layouter,
+        plonk::Error,
+    };
+
+    use crate::circuit::gadget::ecc::{EccInstructions, FixedPoint, ScalarFixed};
+    use crate::constants;
+
+    pub fn test_mul_fixed<
+        C: CurveAffine,
+        EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug,
+    >(
+        chip: EccChip,
+        mut layouter: impl Layouter<C::Base>,
+        nullifier_k: FixedPoint<C, EccChip>,
+    ) -> Result<(), Error> {
+        // [a]B
+        {
+            let scalar_fixed = C::Scalar::rand();
+
+            let scalar_fixed = ScalarFixed::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixed"),
+                Some(scalar_fixed),
+            )?;
+
+            nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
+        }
+
+        // There is a single canonical sequence of window values for which a doubling occurs on the last step:
+        // 1333333333333333333333333333333333333333333333333333333333333333333333333333333333334 in octal.
+        // (There is another *non-canonical* sequence
+        // 5333333333333333333333333333333333333333332711161673731021062440252244051273333333333 in octal.)
+        {
+            let h = C::ScalarExt::from_u64(constants::H as u64);
+            let scalar_fixed = "1333333333333333333333333333333333333333333333333333333333333333333333333333333333334"
+                        .chars()
+                        .fold(C::ScalarExt::zero(), |acc, c| {
+                            acc * h + C::ScalarExt::from_u64(c.to_digit(8).unwrap().into())
+                        });
+
+            let scalar_fixed = ScalarFixed::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixed"),
+                Some(scalar_fixed),
+            )?;
+
+            nullifier_k.mul(layouter.namespace(|| "mul with double"), &scalar_fixed)?;
+        }
+
+        // [0]B should return (0,0) since it uses complete addition
+        // on the last step.
+        {
+            let scalar_fixed = C::Scalar::zero();
+            let scalar_fixed = ScalarFixed::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixed"),
+                Some(scalar_fixed),
+            )?;
+            nullifier_k.mul(layouter.namespace(|| "mul by zero"), &scalar_fixed)?;
+        }
+
+        Ok(())
     }
 }

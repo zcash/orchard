@@ -13,8 +13,8 @@ use halo2::{
     poly::Rotation,
 };
 
-mod full_width;
-mod short;
+pub mod full_width;
+pub mod short;
 
 pub struct Config {
     q_mul_fixed: Selector,

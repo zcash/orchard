@@ -227,7 +227,7 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq>
 }
 
 /// An elliptic curve point over the given curve.
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Point<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> {
     chip: EccChip,
     inner: EccChip::Point,
@@ -376,10 +376,9 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> FixedPoin
 #[cfg(test)]
 mod tests {
     use crate::constants;
-    use ff::Field;
     use group::{Curve, Group};
     use halo2::{
-        arithmetic::{CurveAffine, CurveExt, FieldExt},
+        arithmetic::CurveAffine,
         circuit::{layouter::SingleChipLayouter, Layouter},
         dev::MockProver,
         pasta::pallas,
@@ -436,333 +435,68 @@ mod tests {
             // Make sure P and Q are not the same point.
             assert_ne!(p_val, q_val);
 
-            // Check complete addition P + (-P)
-            let zero = {
-                let zero = p.add(layouter.namespace(|| "P + (-P)"), &p_neg)?;
-                if let (Some(x), Some(y)) = (zero.inner.x.value, zero.inner.y.value) {
-                    assert_eq!(C::Base::zero(), x);
-                    assert_eq!(C::Base::zero(), y);
-                }
-                zero
-            };
+            // Generate a (0,0) point to be used in other tests.
+            let zero = p.add(layouter.namespace(|| "P + (-P)"), &p_neg)?;
 
-            // Check complete addition 𝒪 + 𝒪
+            // Test complete addition
             {
-                let zero = zero.add(layouter.namespace(|| "𝒪 + 𝒪"), &zero)?;
-                if let (Some(x), Some(y)) = (zero.inner.x.value, zero.inner.y.value) {
-                    assert_eq!(C::Base::zero(), x);
-                    assert_eq!(C::Base::zero(), y);
-                }
-            }
-
-            // Check complete addition (other cases)
-            {
-                let mut checks = Vec::<(C::CurveExt, super::Point<C, EccChip<C>>)>::new();
-                // P + Q
-                let real_added = p_val + q_val;
-                let added_complete = p.add(layouter.namespace(|| "P + Q"), &q)?;
-                checks.push((real_added, added_complete));
-
-                // P + P
-                let real_added = p_val + p_val;
-                let added_complete = p.add(layouter.namespace(|| "P + P"), &p)?;
-                checks.push((real_added, added_complete));
-
-                // 𝒪 + P
-                let real_added = p_val.to_curve();
-                let added_complete = p.add(layouter.namespace(|| "𝒪 + P"), &zero)?;
-                checks.push((real_added, added_complete));
-
-                // P + 𝒪
-                let real_added = p_val.to_curve();
-                let added_complete = zero.add(layouter.namespace(|| "P + 𝒪"), &p)?;
-                checks.push((real_added, added_complete));
-
-                // (x, y) + (ζx, -y) should behave like normal P + Q.
-                let endo_p = p_val.to_curve().endo();
-                let real_added = p_val.to_curve() + endo_p;
-                let endo_p = super::Point::new(
+                super::chip::add::tests::test_add(
                     chip.clone(),
-                    layouter.namespace(|| "point"),
-                    Some(endo_p.to_affine()),
+                    layouter.namespace(|| "complete addition"),
+                    &zero,
+                    p_val,
+                    &p,
+                    q_val,
+                    &q,
+                    &p_neg,
                 )?;
-                let added_complete = p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
-                checks.push((real_added, added_complete));
+            }
 
-                // (x, y) + ((ζ^2)x, -y)
-                let endo_p = p_val.to_curve().endo().endo();
-                let real_added = p_val.to_curve() + endo_p;
-                let endo_p = super::Point::new(
+            // Test incomplete addition
+            {
+                super::chip::add_incomplete::tests::test_add_incomplete(
+                    layouter.namespace(|| "incomplete addition"),
+                    &zero,
+                    &p,
+                    &q,
+                    &p_neg,
+                )?;
+            }
+
+            // Test variable-base scalar multiplication
+            {
+                super::chip::mul::tests::test_mul(
                     chip.clone(),
-                    layouter.namespace(|| "point"),
-                    Some(endo_p.to_affine()),
+                    layouter.namespace(|| "variable-base scalar mul"),
+                    &zero,
+                    &p,
                 )?;
-                let added_complete = p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
-                checks.push((real_added, added_complete));
-
-                for check in checks.into_iter() {
-                    let real_added = check.0;
-                    let added_complete = check.1;
-                    if let (Some(x), Some(y)) =
-                        (added_complete.inner.x.value, added_complete.inner.y.value)
-                    {
-                        if C::from_xy(x, y).is_some().into() {
-                            assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
-                        }
-                    }
-                }
             }
 
-            // Check incomplete addition
+            // Test full-width fixed-base scalar multiplication
             {
-                // P + Q
-                let real_added = p_val + q_val;
-                let added_incomplete = p.add_incomplete(layouter.namespace(|| "P + Q"), &q)?;
-                if let (Some(x), Some(y)) = (
-                    added_incomplete.inner.x.value,
-                    added_incomplete.inner.y.value,
-                ) {
-                    if C::from_xy(x, y).is_some().into() {
-                        assert_eq!(real_added.to_affine(), C::from_xy(x, y).unwrap());
-                    }
-                }
-
-                // P + P should return an error
-                p.add_incomplete(layouter.namespace(|| "P + P"), &p)
-                    .expect_err("P + P should return an error");
-
-                // P + (-P) should return an error
-                p.add_incomplete(layouter.namespace(|| "P + (-P)"), &p_neg)
-                    .expect_err("P + (-P) should return an error");
-
-                // P + 𝒪 should return an error
-                p.add_incomplete(layouter.namespace(|| "P + 𝒪"), &zero)
-                    .expect_err("P + 0 should return an error");
-
-                // 𝒪 + P should return an error
-                zero.add_incomplete(layouter.namespace(|| "𝒪 + P"), &p)
-                    .expect_err("0 + P should return an error");
-
-                // 𝒪 + 𝒪 should return an error
-                zero.add_incomplete(layouter.namespace(|| "𝒪 + 𝒪"), &zero)
-                    .expect_err("𝒪 + 𝒪 should return an error");
-            }
-
-            // Check fixed-base scalar multiplication
-            {
-                let nullifier_k = constants::nullifier_k::generator();
-                let base = nullifier_k.0.value();
                 let nullifier_k = super::FixedPoint::get(
                     chip.clone(),
-                    OrchardFixedBases::NullifierK(nullifier_k),
+                    OrchardFixedBases::NullifierK(constants::nullifier_k::generator()),
                 )?;
-
-                // [a]B
-                {
-                    let scalar_fixed = C::Scalar::rand();
-                    let real_mul_fixed = base * scalar_fixed;
-
-                    let scalar_fixed = super::ScalarFixed::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixed"),
-                        Some(scalar_fixed),
-                    )?;
-
-                    let mul_fixed = nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
-                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
-                        assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
-                    }
-                }
-
-                // There is a single canonical sequence of window values for which a doubling occurs on the last step:
-                // 1333333333333333333333333333333333333333333333333333333333333333333333333333333333334 in octal.
-                // (There is another *non-canonical* sequence
-                // 5333333333333333333333333333333333333333332711161673731021062440252244051273333333333 in octal.)
-                {
-                    let h = C::ScalarExt::from_u64(constants::H as u64);
-                    let scalar_fixed = "1333333333333333333333333333333333333333333333333333333333333333333333333333333333334"
-                        .chars()
-                        .fold(C::ScalarExt::zero(), |acc, c| {
-                            acc * h + C::ScalarExt::from_u64(c.to_digit(8).unwrap().into())
-                        });
-                    let real_mul_fixed = base * scalar_fixed;
-
-                    let scalar_fixed = super::ScalarFixed::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixed"),
-                        Some(scalar_fixed),
-                    )?;
-
-                    let mul_fixed =
-                        nullifier_k.mul(layouter.namespace(|| "mul with double"), &scalar_fixed)?;
-                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
-                        assert_eq!(real_mul_fixed.to_affine(), C::from_xy(x, y).unwrap());
-                    }
-                }
-
-                // [0]B should return (0,0) since it uses complete addition
-                // on the last step.
-                {
-                    let scalar_fixed = C::Scalar::zero();
-                    let scalar_fixed = super::ScalarFixed::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixed"),
-                        Some(scalar_fixed),
-                    )?;
-                    let mul_fixed =
-                        nullifier_k.mul(layouter.namespace(|| "mul by zero"), &scalar_fixed)?;
-                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
-                        assert_eq!(C::Base::zero(), x);
-                        assert_eq!(C::Base::zero(), y);
-                    }
-                }
+                super::chip::mul_fixed::full_width::tests::test_mul_fixed(
+                    chip.clone(),
+                    layouter.namespace(|| "full-width fixed-base scalar mul"),
+                    nullifier_k,
+                )?;
             }
 
-            // Check short signed fixed-base scalar multiplication
+            // Test signed short fixed-base scalar multiplication
             {
-                let value_commit_v_inner = constants::value_commit_v::generator();
                 let value_commit_v = super::FixedPointShort::get(
                     chip.clone(),
-                    OrchardFixedBasesShort(value_commit_v_inner),
+                    OrchardFixedBasesShort(constants::value_commit_v::generator()),
                 )?;
-
-                // [0]B should return (0,0) since it uses complete addition
-                // on the last step.
-                {
-                    let scalar_fixed = C::Scalar::zero();
-                    let scalar_fixed = super::ScalarFixedShort::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixedShort"),
-                        Some(scalar_fixed),
-                    )?;
-                    let mul_fixed =
-                        value_commit_v.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
-                    if let (Some(x), Some(y)) = (mul_fixed.inner.x.value, mul_fixed.inner.y.value) {
-                        assert_eq!(C::Base::zero(), x);
-                        assert_eq!(C::Base::zero(), y);
-                    }
-                }
-
-                let mut checks = Vec::<(C::CurveExt, super::Point<C, EccChip<C>>)>::new();
-
-                // Random [a]B
-                {
-                    let scalar_fixed_short = C::Scalar::from_u64(rand::random::<u64>());
-                    let mut sign = C::Scalar::one();
-                    if rand::random::<bool>() {
-                        sign = -sign;
-                    }
-                    let scalar_fixed_short = sign * scalar_fixed_short;
-                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
-
-                    let scalar_fixed_short = super::ScalarFixedShort::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixedShort"),
-                        Some(scalar_fixed_short),
-                    )?;
-                    let mul_fixed_short = value_commit_v
-                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
-
-                    checks.push((real_mul_fixed_short, mul_fixed_short));
-                }
-
-                // [2^64 - 1]B
-                {
-                    let scalar_fixed_short = C::Scalar::from_u64(0xFFFF_FFFF_FFFF_FFFFu64);
-                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
-
-                    let scalar_fixed_short = super::ScalarFixedShort::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixedShort"),
-                        Some(scalar_fixed_short),
-                    )?;
-                    let mul_fixed_short = value_commit_v
-                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
-
-                    checks.push((real_mul_fixed_short, mul_fixed_short));
-                }
-
-                // [-(2^64 - 1)]B
-                {
-                    let scalar_fixed_short = -C::Scalar::from_u64(0xFFFF_FFFF_FFFF_FFFFu64);
-                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
-
-                    let scalar_fixed_short = super::ScalarFixedShort::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixedShort"),
-                        Some(scalar_fixed_short),
-                    )?;
-                    let mul_fixed_short = value_commit_v
-                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
-
-                    checks.push((real_mul_fixed_short, mul_fixed_short));
-                }
-
-                // There is a single canonical sequence of window values for which a doubling occurs on the last step:
-                // 1333333333333333333334 in octal.
-                // [0xB6DB_6DB6_DB6D_B6DC] B
-                {
-                    let scalar_fixed_short = C::Scalar::from_u64(0xB6DB_6DB6_DB6D_B6DCu64);
-                    let real_mul_fixed_short = value_commit_v_inner.0.value() * scalar_fixed_short;
-
-                    let scalar_fixed_short = super::ScalarFixedShort::new(
-                        chip.clone(),
-                        layouter.namespace(|| "ScalarFixedShort"),
-                        Some(scalar_fixed_short),
-                    )?;
-                    let mul_fixed_short = value_commit_v
-                        .mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
-
-                    checks.push((real_mul_fixed_short, mul_fixed_short));
-                }
-
-                for check in checks.into_iter() {
-                    let real_mul_fixed_short = check.0;
-                    let mul_fixed_short = check.1;
-                    if let (Some(x), Some(y)) =
-                        (mul_fixed_short.inner.x.value, mul_fixed_short.inner.y.value)
-                    {
-                        assert_eq!(real_mul_fixed_short.to_affine(), C::from_xy(x, y).unwrap());
-                    }
-                }
-            }
-
-            // Check variable-base scalar multiplication
-            {
-                let scalar_val = C::Scalar::rand();
-                let real_mul = p_val * scalar_val;
-
-                let scalar_val = C::Base::from_bytes(&scalar_val.to_bytes()).unwrap();
-                let scalar = super::ScalarVar::new(
+                super::chip::mul_fixed::short::tests::test_mul_fixed_short(
                     chip.clone(),
-                    layouter.namespace(|| "ScalarVar"),
-                    Some(scalar_val),
+                    layouter.namespace(|| "full-width fixed-base scalar mul"),
+                    value_commit_v,
                 )?;
-
-                // [a]B
-                let mul = p.mul(layouter.namespace(|| "mul"), &scalar)?;
-                if let (Some(x), Some(y)) = (mul.inner.x.value, mul.inner.y.value) {
-                    assert_eq!(real_mul.to_affine(), C::from_xy(x, y).unwrap());
-                }
-
-                // [a]𝒪 should return an error since variable-base scalar multiplication
-                // uses incomplete addition at the beginning of its double-and-add.
-                zero.mul(layouter.namespace(|| "mul"), &scalar)
-                    .expect_err("[a]𝒪 should return an error");
-
-                // [0]B should return (0,0) since variable-base scalar multiplication
-                // uses complete addition for the final bits of the scalar.
-                let scalar_val = C::Base::zero();
-                let scalar = super::ScalarVar::new(
-                    chip,
-                    layouter.namespace(|| "ScalarVar"),
-                    Some(scalar_val),
-                )?;
-                let mul = p.mul(layouter.namespace(|| "mul"), &scalar)?;
-                if let (Some(x), Some(y)) = (mul.inner.x.value, mul.inner.y.value) {
-                    assert_eq!(C::Base::zero(), x);
-                    assert_eq!(C::Base::zero(), y);
-                }
             }
 
             Ok(())

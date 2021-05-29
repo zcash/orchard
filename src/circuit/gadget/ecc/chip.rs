@@ -7,14 +7,14 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
 };
 
-mod add;
-mod add_incomplete;
-mod load;
-mod mul;
-mod mul_fixed;
-mod util;
-mod witness_point;
-mod witness_scalar_fixed;
+pub(super) mod add;
+pub(super) mod add_incomplete;
+pub(super) mod load;
+pub(super) mod mul;
+pub(super) mod mul_fixed;
+pub(super) mod util;
+pub(super) mod witness_point;
+pub(super) mod witness_scalar_fixed;
 
 pub use load::*;
 

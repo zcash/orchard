@@ -184,7 +184,24 @@ impl<C: CurveAffine> Config<C> {
 
         // Process the least significant bit
         let k_0 = k_bits[C::Scalar::NUM_BITS as usize - 1];
-        self.process_lsb(region, offset, scalar, base, acc, k_0, z_val)
+        let result = self.process_lsb(region, offset, scalar, base, acc, k_0, z_val)?;
+
+        #[cfg(test)]
+        // Check that the correct multiple is obtained.
+        {
+            use group::Curve;
+
+            let base = base.point();
+            let scalar = scalar
+                .value
+                .map(|scalar| C::Scalar::from_bytes(&scalar.to_bytes()).unwrap());
+            let real_mul = base.zip(scalar).map(|(base, scalar)| base * scalar);
+            let result = result.point();
+
+            assert_eq!(real_mul.unwrap().to_affine(), result.unwrap());
+        }
+
+        Ok(result)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -383,4 +400,47 @@ fn complete_range<C: CurveAffine>() -> Range<usize> {
 
 fn complete_len<C: CurveAffine>() -> usize {
     NUM_COMPLETE_BITS as usize
+}
+
+#[cfg(test)]
+pub mod tests {
+    use ff::Field;
+    use halo2::{
+        arithmetic::{CurveAffine, FieldExt},
+        circuit::Layouter,
+        plonk::Error,
+    };
+
+    use crate::circuit::gadget::ecc::{EccInstructions, Point, ScalarVar};
+
+    pub fn test_mul<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug>(
+        chip: EccChip,
+        mut layouter: impl Layouter<C::Base>,
+        zero: &Point<C, EccChip>,
+        p: &Point<C, EccChip>,
+    ) -> Result<(), Error> {
+        let scalar_val = C::Scalar::rand();
+        let scalar_val = C::Base::from_bytes(&scalar_val.to_bytes()).unwrap();
+        let scalar = ScalarVar::new(
+            chip.clone(),
+            layouter.namespace(|| "ScalarVar"),
+            Some(scalar_val),
+        )?;
+
+        // [a]B
+        p.mul(layouter.namespace(|| "mul"), &scalar)?;
+
+        // [a]𝒪 should return an error since variable-base scalar multiplication
+        // uses incomplete addition at the beginning of its double-and-add.
+        zero.mul(layouter.namespace(|| "mul"), &scalar)
+            .expect_err("[a]𝒪 should return an error");
+
+        // [0]B should return (0,0) since variable-base scalar multiplication
+        // uses complete addition for the final bits of the scalar.
+        let scalar_val = C::Base::zero();
+        let scalar = ScalarVar::new(chip, layouter.namespace(|| "ScalarVar"), Some(scalar_val))?;
+        p.mul(layouter.namespace(|| "mul"), &scalar)?;
+
+        Ok(())
+    }
 }

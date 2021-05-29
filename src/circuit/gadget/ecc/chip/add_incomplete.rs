@@ -104,15 +104,20 @@ impl Config {
         util::assign_and_constrain(region, || "y_q", self.y_qr, offset, &q.y, &self.perm)?;
 
         // Compute the sum `P + Q = R`
-        let p = p.point();
-        let q = q.point();
-        let r = p.zip(q).map(|(p, q)| {
-            let r = (p + q).to_affine().coordinates().unwrap();
-            (*r.x(), *r.y())
-        });
+        let r = {
+            let p = p.point();
+            let q = q.point();
+            let r = p
+                .zip(q)
+                .map(|(p, q)| (p + q).to_affine().coordinates().unwrap());
+            let r_x = r.map(|r| *r.x());
+            let r_y = r.map(|r| *r.y());
+
+            (r_x, r_y)
+        };
 
         // Assign the sum to `x_qr`, `y_qr` columns in the next row
-        let x_r = r.map(|r| r.0);
+        let x_r = r.0;
         let x_r_var = region.assign_advice(
             || "x_r",
             self.x_qr,
@@ -120,7 +125,7 @@ impl Config {
             || x_r.ok_or(Error::SynthesisError),
         )?;
 
-        let y_r = r.map(|r| r.1);
+        let y_r = r.1;
         let y_r_var = region.assign_advice(
             || "y_r",
             self.y_qr,
@@ -128,9 +133,65 @@ impl Config {
             || y_r.ok_or(Error::SynthesisError),
         )?;
 
-        Ok(EccPoint {
+        let result = EccPoint::<C> {
             x: CellValue::<C::Base>::new(x_r_var, x_r),
             y: CellValue::<C::Base>::new(y_r_var, y_r),
-        })
+        };
+
+        #[cfg(test)]
+        // Check that the correct sum is obtained.
+        {
+            let p = p.point();
+            let q = q.point();
+            let real_sum = p.zip(q).map(|(p, q)| p + q);
+            let result = result.point();
+
+            assert_eq!(real_sum.unwrap().to_affine(), result.unwrap());
+        }
+
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use halo2::{arithmetic::CurveAffine, circuit::Layouter, plonk::Error};
+
+    use crate::circuit::gadget::ecc::{EccInstructions, Point};
+
+    pub fn test_add_incomplete<
+        C: CurveAffine,
+        EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug,
+    >(
+        mut layouter: impl Layouter<C::Base>,
+        zero: &Point<C, EccChip>,
+        p: &Point<C, EccChip>,
+        q: &Point<C, EccChip>,
+        p_neg: &Point<C, EccChip>,
+    ) -> Result<(), Error> {
+        // P + Q
+        p.add_incomplete(layouter.namespace(|| "P + Q"), &q)?;
+
+        // P + P should return an error
+        p.add_incomplete(layouter.namespace(|| "P + P"), &p)
+            .expect_err("P + P should return an error");
+
+        // P + (-P) should return an error
+        p.add_incomplete(layouter.namespace(|| "P + (-P)"), &p_neg)
+            .expect_err("P + (-P) should return an error");
+
+        // P + 𝒪 should return an error
+        p.add_incomplete(layouter.namespace(|| "P + 𝒪"), &zero)
+            .expect_err("P + 0 should return an error");
+
+        // 𝒪 + P should return an error
+        zero.add_incomplete(layouter.namespace(|| "𝒪 + P"), &p)
+            .expect_err("0 + P should return an error");
+
+        // 𝒪 + 𝒪 should return an error
+        zero.add_incomplete(layouter.namespace(|| "𝒪 + 𝒪"), &zero)
+            .expect_err("𝒪 + 𝒪 should return an error");
+
+        Ok(())
     }
 }

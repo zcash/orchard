@@ -182,9 +182,126 @@ impl<C: CurveAffine> Config<C> {
             || y_val.ok_or(Error::SynthesisError),
         )?;
 
-        Ok(EccPoint {
+        let result = EccPoint::<C> {
             x: CellValue::new(x_var, x_val),
             y: CellValue::new(y_var, y_val),
-        })
+        };
+
+        #[cfg(test)]
+        // Check that the correct multiple is obtained.
+        {
+            use group::Curve;
+
+            let base = base.base.0 .0.value();
+            let scalar = scalar
+                .magnitude
+                .zip(scalar.sign.value)
+                .map(|(magnitude, sign)| {
+                    let sign = if sign == C::Base::one() {
+                        C::Scalar::one()
+                    } else if sign == -C::Base::one() {
+                        -C::Scalar::one()
+                    } else {
+                        panic!("Sign should be 1 or -1.")
+                    };
+                    magnitude * sign
+                });
+            let real_mul = scalar.map(|scalar| base * scalar);
+            let result = result.point();
+
+            assert_eq!(real_mul.unwrap().to_affine(), result.unwrap());
+        }
+
+        Ok(result)
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use ff::Field;
+    use halo2::{
+        arithmetic::{CurveAffine, FieldExt},
+        circuit::Layouter,
+        plonk::Error,
+    };
+
+    use crate::circuit::gadget::ecc::{EccInstructions, FixedPointShort, ScalarFixedShort};
+
+    pub fn test_mul_fixed_short<
+        C: CurveAffine,
+        EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug,
+    >(
+        chip: EccChip,
+        mut layouter: impl Layouter<C::Base>,
+        value_commit_v: FixedPointShort<C, EccChip>,
+    ) -> Result<(), Error> {
+        // [0]B should return (0,0) since it uses complete addition
+        // on the last step.
+        {
+            let scalar_fixed = C::Scalar::zero();
+            let scalar_fixed = ScalarFixedShort::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixedShort"),
+                Some(scalar_fixed),
+            )?;
+            value_commit_v.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
+        }
+
+        // Random [a]B
+        {
+            let scalar_fixed_short = C::Scalar::from_u64(rand::random::<u64>());
+            let mut sign = C::Scalar::one();
+            if rand::random::<bool>() {
+                sign = -sign;
+            }
+            let scalar_fixed_short = sign * scalar_fixed_short;
+
+            let scalar_fixed_short = ScalarFixedShort::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixedShort"),
+                Some(scalar_fixed_short),
+            )?;
+            value_commit_v.mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+        }
+
+        // [2^64 - 1]B
+        {
+            let scalar_fixed_short = C::Scalar::from_u64(0xFFFF_FFFF_FFFF_FFFFu64);
+
+            let scalar_fixed_short = ScalarFixedShort::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixedShort"),
+                Some(scalar_fixed_short),
+            )?;
+            value_commit_v.mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+        }
+
+        // [-(2^64 - 1)]B
+        {
+            let scalar_fixed_short = -C::Scalar::from_u64(0xFFFF_FFFF_FFFF_FFFFu64);
+
+            let scalar_fixed_short = ScalarFixedShort::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixedShort"),
+                Some(scalar_fixed_short),
+            )?;
+            value_commit_v.mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+        }
+
+        // There is a single canonical sequence of window values for which a doubling occurs on the last step:
+        // 1333333333333333333334 in octal.
+        // [0xB6DB_6DB6_DB6D_B6DC] B
+        {
+            let scalar_fixed_short = C::Scalar::from_u64(0xB6DB_6DB6_DB6D_B6DCu64);
+
+            let scalar_fixed_short = ScalarFixedShort::new(
+                chip.clone(),
+                layouter.namespace(|| "ScalarFixedShort"),
+                Some(scalar_fixed_short),
+            )?;
+            value_commit_v.mul(layouter.namespace(|| "mul fixed"), &scalar_fixed_short)?;
+        }
+
+        Ok(())
     }
 }
