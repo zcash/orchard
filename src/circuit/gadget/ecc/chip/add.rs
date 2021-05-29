@@ -249,7 +249,7 @@ impl Config {
             self.beta,
             offset,
             || {
-                let beta = x_p.map(|x_p| inv0(x_p));
+                let beta = x_p.map(inv0);
                 beta.ok_or(Error::SynthesisError)
             },
         )?;
@@ -260,7 +260,7 @@ impl Config {
             self.gamma,
             offset,
             || {
-                let gamma = x_q.map(|x_q| inv0(x_q));
+                let gamma = x_q.map(inv0);
                 gamma.ok_or(Error::SynthesisError)
             },
         )?;
@@ -441,7 +441,7 @@ pub mod tests {
         // 𝒪 + P
         zero.add(layouter.namespace(|| "𝒪 + P"), &p)?;
 
-        // (x, y) + (ζx, -y) should behave like normal P + Q.
+        // (x, y) + (ζx, y) should behave like normal P + Q.
         let endo_p = p_val.to_curve().endo();
         let endo_p = Point::new(
             chip.clone(),
@@ -450,14 +450,32 @@ pub mod tests {
         )?;
         p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
 
-        // (x, y) + ((ζ^2)x, -y)
-        let endo_p = p_val.to_curve().endo().endo();
-        let endo_p = Point::new(
+        // (x, y) + (ζx, -y) should also behave like normal P + Q.
+        let endo_p_neg = (-p_val).to_curve().endo();
+        let endo_p_neg = Point::new(
             chip.clone(),
             layouter.namespace(|| "point"),
-            Some(endo_p.to_affine()),
+            Some(endo_p_neg.to_affine()),
         )?;
-        p.add(layouter.namespace(|| "P + endo(P)"), &endo_p)?;
+        p.add(layouter.namespace(|| "P + endo(-P)"), &endo_p_neg)?;
+
+        // (x, y) + ((ζ^2)x, y)
+        let endo_2_p = p_val.to_curve().endo().endo();
+        let endo_2_p = Point::new(
+            chip.clone(),
+            layouter.namespace(|| "point"),
+            Some(endo_2_p.to_affine()),
+        )?;
+        p.add(layouter.namespace(|| "P + endo(P)"), &endo_2_p)?;
+
+        // (x, y) + ((ζ^2)x, -y)
+        let endo_2_p_neg = (-p_val).to_curve().endo().endo();
+        let endo_2_p_neg = Point::new(
+            chip.clone(),
+            layouter.namespace(|| "point"),
+            Some(endo_2_p_neg.to_affine()),
+        )?;
+        p.add(layouter.namespace(|| "P + endo(P)"), &endo_2_p_neg)?;
 
         Ok(())
     }
