@@ -1,7 +1,12 @@
 use std::convert::TryInto;
 
+use super::EccChip;
+use crate::circuit::gadget::ecc::{EccInstructions, FixedPoint, FixedPointShort};
 use crate::constants::{self, FixedBase, H, NUM_WINDOWS, NUM_WINDOWS_SHORT};
-use halo2::arithmetic::{CurveAffine, FieldExt};
+use halo2::{
+    arithmetic::{CurveAffine, FieldExt},
+    plonk::Error,
+};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OrchardFixedBases<C: CurveAffine> {
@@ -11,8 +16,25 @@ pub enum OrchardFixedBases<C: CurveAffine> {
     ValueCommitR(constants::ValueCommitR<C>),
 }
 
+impl<C: CurveAffine> OrchardFixedBases<C> {
+    pub fn into_fixed_point(self, chip: EccChip<C>) -> Result<FixedPoint<C, EccChip<C>>, Error> {
+        let base = chip.get_fixed(self)?;
+        Ok(FixedPoint::<C, EccChip<C>>::from_inner(chip, base))
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct OrchardFixedBasesShort<C: CurveAffine>(pub constants::ValueCommitV<C>);
+
+impl<C: CurveAffine> OrchardFixedBasesShort<C> {
+    pub fn into_fixed_point_short(
+        self,
+        chip: EccChip<C>,
+    ) -> Result<FixedPointShort<C, EccChip<C>>, Error> {
+        let base = chip.get_fixed_short(self)?;
+        Ok(FixedPointShort::<C, EccChip<C>>::from_inner(chip, base))
+    }
+}
 
 /// A fixed base to be used in scalar multiplication with a full-width scalar.
 #[derive(Clone, Debug, Eq, PartialEq)]

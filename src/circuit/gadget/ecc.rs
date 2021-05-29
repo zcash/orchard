@@ -340,6 +340,11 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> FixedPoin
                 inner,
             })
     }
+
+    /// Wraps the given fixed base (obtained directly from an instruction) in a gadget.
+    pub fn from_inner(chip: EccChip, inner: EccChip::FixedPoint) -> Self {
+        FixedPoint { chip, inner }
+    }
 }
 
 /// A constant elliptic curve point over the given curve, used in scalar multiplication
@@ -371,11 +376,15 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> FixedPoin
                 inner,
             })
     }
+
+    /// Wraps the given fixed base (obtained directly from an instruction) in a gadget.
+    pub fn from_inner(chip: EccChip, inner: EccChip::FixedPointShort) -> Self {
+        FixedPointShort { chip, inner }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::constants;
     use group::{Curve, Group};
     use halo2::{
         arithmetic::CurveAffine,
@@ -385,7 +394,7 @@ mod tests {
         plonk::{Assignment, Circuit, ConstraintSystem, Error},
     };
 
-    use super::chip::{EccChip, EccConfig, OrchardFixedBases, OrchardFixedBasesShort};
+    use super::chip::{EccChip, EccConfig};
 
     struct MyCircuit<C: CurveAffine> {
         _marker: std::marker::PhantomData<C>,
@@ -475,27 +484,17 @@ mod tests {
 
             // Test full-width fixed-base scalar multiplication
             {
-                let nullifier_k = super::FixedPoint::get(
-                    chip.clone(),
-                    OrchardFixedBases::NullifierK(constants::nullifier_k::generator()),
-                )?;
                 super::chip::mul_fixed::full_width::tests::test_mul_fixed(
                     chip.clone(),
                     layouter.namespace(|| "full-width fixed-base scalar mul"),
-                    nullifier_k,
                 )?;
             }
 
             // Test signed short fixed-base scalar multiplication
             {
-                let value_commit_v = super::FixedPointShort::get(
-                    chip.clone(),
-                    OrchardFixedBasesShort(constants::value_commit_v::generator()),
-                )?;
                 super::chip::mul_fixed::short::tests::test_mul_fixed_short(
                     chip.clone(),
-                    layouter.namespace(|| "full-width fixed-base scalar mul"),
-                    value_commit_v,
+                    layouter.namespace(|| "signed short fixed-base scalar mul"),
                 )?;
             }
 
@@ -505,7 +504,7 @@ mod tests {
 
     #[test]
     fn ecc() {
-        let k = 11;
+        let k = 12;
         let circuit = MyCircuit::<pallas::Affine> {
             _marker: std::marker::PhantomData,
         };

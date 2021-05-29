@@ -146,16 +146,61 @@ pub mod tests {
         plonk::Error,
     };
 
-    use crate::circuit::gadget::ecc::{EccInstructions, FixedPoint, ScalarFixed};
+    use crate::circuit::gadget::ecc::{
+        chip::{EccChip, OrchardFixedBases},
+        FixedPoint, ScalarFixed,
+    };
     use crate::constants;
 
-    pub fn test_mul_fixed<
-        C: CurveAffine,
-        EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug,
-    >(
-        chip: EccChip,
+    pub fn test_mul_fixed<C: CurveAffine>(
+        chip: EccChip<C>,
         mut layouter: impl Layouter<C::Base>,
-        nullifier_k: FixedPoint<C, EccChip>,
+    ) -> Result<(), Error> {
+        // commit_ivk_r
+        let commit_ivk_r = OrchardFixedBases::<C>::CommitIvkR(constants::commit_ivk_r::generator())
+            .into_fixed_point(chip.clone())?;
+        test_single_base(
+            chip.clone(),
+            layouter.namespace(|| "commit_ivk_r"),
+            commit_ivk_r,
+        )?;
+
+        // note_commit_r
+        let note_commit_r =
+            OrchardFixedBases::<C>::NoteCommitR(constants::note_commit_r::generator())
+                .into_fixed_point(chip.clone())?;
+        test_single_base(
+            chip.clone(),
+            layouter.namespace(|| "note_commit_r"),
+            note_commit_r,
+        )?;
+
+        // nullifier_k
+        let nullifier_k = OrchardFixedBases::<C>::NullifierK(constants::nullifier_k::generator())
+            .into_fixed_point(chip.clone())?;
+        test_single_base(
+            chip.clone(),
+            layouter.namespace(|| "nullifier_k"),
+            nullifier_k,
+        )?;
+
+        // value_commit_r
+        let value_commit_r =
+            OrchardFixedBases::<C>::ValueCommitR(constants::value_commit_r::generator())
+                .into_fixed_point(chip.clone())?;
+        test_single_base(
+            chip.clone(),
+            layouter.namespace(|| "value_commit_r"),
+            value_commit_r,
+        )?;
+
+        Ok(())
+    }
+
+    fn test_single_base<C: CurveAffine>(
+        chip: EccChip<C>,
+        mut layouter: impl Layouter<C::Base>,
+        base: FixedPoint<C, EccChip<C>>,
     ) -> Result<(), Error> {
         // [a]B
         {
@@ -167,7 +212,7 @@ pub mod tests {
                 Some(scalar_fixed),
             )?;
 
-            nullifier_k.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
+            base.mul(layouter.namespace(|| "mul"), &scalar_fixed)?;
         }
 
         // There is a single canonical sequence of window values for which a doubling occurs on the last step:
@@ -188,7 +233,7 @@ pub mod tests {
                 Some(scalar_fixed),
             )?;
 
-            nullifier_k.mul(layouter.namespace(|| "mul with double"), &scalar_fixed)?;
+            base.mul(layouter.namespace(|| "mul with double"), &scalar_fixed)?;
         }
 
         // [0]B should return (0,0) since it uses complete addition
@@ -200,7 +245,7 @@ pub mod tests {
                 layouter.namespace(|| "ScalarFixed"),
                 Some(scalar_fixed),
             )?;
-            nullifier_k.mul(layouter.namespace(|| "mul by zero"), &scalar_fixed)?;
+            base.mul(layouter.namespace(|| "mul by zero"), &scalar_fixed)?;
         }
 
         Ok(())

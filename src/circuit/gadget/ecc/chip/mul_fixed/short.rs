@@ -225,16 +225,20 @@ pub mod tests {
         plonk::Error,
     };
 
-    use crate::circuit::gadget::ecc::{EccInstructions, FixedPointShort, ScalarFixedShort};
+    use crate::circuit::gadget::ecc::{
+        chip::{EccChip, OrchardFixedBasesShort},
+        ScalarFixedShort,
+    };
+    use crate::constants;
 
-    pub fn test_mul_fixed_short<
-        C: CurveAffine,
-        EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug,
-    >(
-        chip: EccChip,
+    pub fn test_mul_fixed_short<C: CurveAffine>(
+        chip: EccChip<C>,
         mut layouter: impl Layouter<C::Base>,
-        value_commit_v: FixedPointShort<C, EccChip>,
     ) -> Result<(), Error> {
+        // value_commit_v
+        let value_commit_v = OrchardFixedBasesShort::<C>(constants::value_commit_v::generator())
+            .into_fixed_point_short(chip.clone())?;
+
         // [0]B should return (0,0) since it uses complete addition
         // on the last step.
         {
