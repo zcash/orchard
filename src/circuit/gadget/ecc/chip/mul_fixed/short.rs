@@ -1,9 +1,8 @@
 use super::super::{
     add, add_incomplete, util, witness_point, CellValue, EccPoint, EccScalarFixedShort,
-    OrchardFixedBaseShort,
 };
 use super::MulFixed;
-use crate::constants;
+use crate::constants::{self, load::OrchardFixedBases};
 
 use halo2::{
     arithmetic::{CurveAffine, Field},
@@ -126,10 +125,9 @@ impl<C: CurveAffine> Config<C> {
         region: &mut Region<'_, C::Base>,
         offset: usize,
         scalar: &EccScalarFixedShort<C>,
-        base: &OrchardFixedBaseShort<C>,
+        base: OrchardFixedBases<C>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) =
-            self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
+        let (acc, mul_b) = self.assign_region_inner(region, offset, &scalar.into(), base.into())?;
 
         // Add to the cumulative sum to get `[magnitude]B`.
         let magnitude_mul = self.add_config.assign_region(
@@ -192,7 +190,6 @@ impl<C: CurveAffine> Config<C> {
         {
             use group::Curve;
 
-            let base = base.base.0 .0.value();
             let scalar = scalar
                 .magnitude
                 .zip(scalar.sign.value)
@@ -206,7 +203,7 @@ impl<C: CurveAffine> Config<C> {
                     };
                     magnitude * sign
                 });
-            let real_mul = scalar.map(|scalar| base * scalar);
+            let real_mul = scalar.map(|scalar| base.generator() * scalar);
             let result = result.point();
 
             assert_eq!(real_mul.unwrap().to_affine(), result.unwrap());
@@ -225,19 +222,17 @@ pub mod tests {
         plonk::Error,
     };
 
-    use crate::circuit::gadget::ecc::{
-        chip::{EccChip, OrchardFixedBasesShort},
-        ScalarFixedShort,
-    };
-    use crate::constants;
+    use crate::circuit::gadget::ecc::{chip::EccChip, FixedPointShort, ScalarFixedShort};
+    use crate::constants::load::OrchardFixedBases;
+    use std::marker::PhantomData;
 
     pub fn test_mul_fixed_short<C: CurveAffine>(
         chip: EccChip<C>,
         mut layouter: impl Layouter<C::Base>,
     ) -> Result<(), Error> {
         // value_commit_v
-        let value_commit_v = OrchardFixedBasesShort::<C>(constants::value_commit_v::generator())
-            .into_fixed_point_short(chip.clone())?;
+        let value_commit_v = OrchardFixedBases::ValueCommitV(PhantomData);
+        let value_commit_v = FixedPointShort::from_inner(chip.clone(), value_commit_v);
 
         // [0]B should return (0,0) since it uses complete addition
         // on the last step.

@@ -1,5 +1,5 @@
 use super::super::{
-    add, add_incomplete, witness_point, EccPoint, EccScalarFixed, OrchardFixedBase,
+    add, add_incomplete, witness_point, EccPoint, EccScalarFixed, OrchardFixedBases,
 };
 use super::MulFixed;
 
@@ -101,10 +101,9 @@ impl<C: CurveAffine> Config<C> {
         region: &mut Region<'_, C::Base>,
         offset: usize,
         scalar: &EccScalarFixed<C>,
-        base: &OrchardFixedBase<C>,
+        base: OrchardFixedBases<C>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) =
-            self.assign_region_inner(region, offset, &scalar.into(), &base.into())?;
+        let (acc, mul_b) = self.assign_region_inner(region, offset, &scalar.into(), base.into())?;
 
         // Add to the accumulator and return the final result as `[scalar]B`.
         let result =
@@ -114,20 +113,13 @@ impl<C: CurveAffine> Config<C> {
         #[cfg(test)]
         // Check that the correct multiple is obtained.
         {
-            use super::super::OrchardFixedBases;
             use group::Curve;
             use halo2::arithmetic::FieldExt;
 
-            let base = match base.base {
-                OrchardFixedBases::CommitIvkR(base) => base.0.value(),
-                OrchardFixedBases::NoteCommitR(base) => base.0.value(),
-                OrchardFixedBases::NullifierK(base) => base.0.value(),
-                OrchardFixedBases::ValueCommitR(base) => base.0.value(),
-            };
             let scalar = scalar
                 .value
                 .map(|scalar| C::Scalar::from_bytes(&scalar.to_bytes()).unwrap());
-            let real_mul = scalar.map(|scalar| base * scalar);
+            let real_mul = scalar.map(|scalar| base.generator() * scalar);
             let result = result.point();
 
             assert_eq!(real_mul.unwrap().to_affine(), result.unwrap());
@@ -151,14 +143,15 @@ pub mod tests {
         FixedPoint, ScalarFixed,
     };
     use crate::constants;
+    use std::marker::PhantomData;
 
     pub fn test_mul_fixed<C: CurveAffine>(
         chip: EccChip<C>,
         mut layouter: impl Layouter<C::Base>,
     ) -> Result<(), Error> {
         // commit_ivk_r
-        let commit_ivk_r = OrchardFixedBases::<C>::CommitIvkR(constants::commit_ivk_r::generator())
-            .into_fixed_point(chip.clone())?;
+        let commit_ivk_r = OrchardFixedBases::CommitIvkR(PhantomData);
+        let commit_ivk_r = FixedPoint::from_inner(chip.clone(), commit_ivk_r);
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "commit_ivk_r"),
@@ -166,9 +159,8 @@ pub mod tests {
         )?;
 
         // note_commit_r
-        let note_commit_r =
-            OrchardFixedBases::<C>::NoteCommitR(constants::note_commit_r::generator())
-                .into_fixed_point(chip.clone())?;
+        let note_commit_r = OrchardFixedBases::NoteCommitR(PhantomData);
+        let note_commit_r = FixedPoint::from_inner(chip.clone(), note_commit_r);
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "note_commit_r"),
@@ -176,8 +168,8 @@ pub mod tests {
         )?;
 
         // nullifier_k
-        let nullifier_k = OrchardFixedBases::<C>::NullifierK(constants::nullifier_k::generator())
-            .into_fixed_point(chip.clone())?;
+        let nullifier_k = OrchardFixedBases::NullifierK(PhantomData);
+        let nullifier_k = FixedPoint::from_inner(chip.clone(), nullifier_k);
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "nullifier_k"),
@@ -185,9 +177,8 @@ pub mod tests {
         )?;
 
         // value_commit_r
-        let value_commit_r =
-            OrchardFixedBases::<C>::ValueCommitR(constants::value_commit_r::generator())
-                .into_fixed_point(chip.clone())?;
+        let value_commit_r = OrchardFixedBases::ValueCommitR(PhantomData);
+        let value_commit_r = FixedPoint::from_inner(chip.clone(), value_commit_r);
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "value_commit_r"),

@@ -1,9 +1,11 @@
 use super::{
-    add, add_incomplete, load::WindowUs, util, witness_point, CellValue, EccConfig, EccPoint,
-    EccScalarFixed, EccScalarFixedShort, OrchardFixedBase, OrchardFixedBaseShort,
-    OrchardFixedBases,
+    add, add_incomplete, util, witness_point, CellValue, EccConfig, EccPoint, EccScalarFixed,
+    EccScalarFixedShort,
 };
-use crate::constants;
+use crate::constants::{
+    self,
+    load::{OrchardFixedBase, OrchardFixedBaseShort, OrchardFixedBases},
+};
 
 use group::Curve;
 use halo2::{
@@ -113,7 +115,7 @@ impl Config {
     pub(super) fn assign_region_full<C: CurveAffine>(
         &self,
         scalar: &EccScalarFixed<C>,
-        base: &OrchardFixedBase<C>,
+        base: OrchardFixedBases<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
@@ -124,7 +126,7 @@ impl Config {
     pub(super) fn assign_region_short<C: CurveAffine>(
         &self,
         scalar: &EccScalarFixedShort<C>,
-        base: &OrchardFixedBaseShort<C>,
+        base: OrchardFixedBases<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
@@ -162,44 +164,6 @@ impl Config {
 
             q_mul_fixed * (u.clone() * u - y_p - z)
         });
-    }
-}
-
-enum FixedBase<C: CurveAffine> {
-    FullWidth(OrchardFixedBase<C>),
-    Short(OrchardFixedBaseShort<C>),
-}
-
-impl<C: CurveAffine> From<&OrchardFixedBase<C>> for FixedBase<C> {
-    fn from(fixed_base: &OrchardFixedBase<C>) -> Self {
-        Self::FullWidth(fixed_base.clone())
-    }
-}
-
-impl<C: CurveAffine> From<&OrchardFixedBaseShort<C>> for FixedBase<C> {
-    fn from(fixed_base: &OrchardFixedBaseShort<C>) -> Self {
-        Self::Short(fixed_base.clone())
-    }
-}
-
-impl<C: CurveAffine> FixedBase<C> {
-    fn value(&self) -> C {
-        match self {
-            FixedBase::FullWidth(base) => match base.base {
-                OrchardFixedBases::CommitIvkR(inner) => inner.0.value(),
-                OrchardFixedBases::NoteCommitR(inner) => inner.0.value(),
-                OrchardFixedBases::NullifierK(inner) => inner.0.value(),
-                OrchardFixedBases::ValueCommitR(inner) => inner.0.value(),
-            },
-            FixedBase::Short(base) => base.base.0 .0.value(),
-        }
-    }
-
-    fn u(&self) -> Vec<WindowUs<C::Base>> {
-        match self {
-            FixedBase::FullWidth(base) => base.u.0.as_ref().to_vec(),
-            FixedBase::Short(base) => base.u_short.0.as_ref().to_vec(),
-        }
     }
 }
 
@@ -272,7 +236,7 @@ trait MulFixed<C: CurveAffine> {
         region: &mut Region<'_, C::Base>,
         offset: usize,
         scalar: &ScalarFixed<C>,
-        base: &FixedBase<C>,
+        base: OrchardFixedBases<C>,
     ) -> Result<(EccPoint<C>, EccPoint<C>), Error> {
         // Assign fixed columns for given fixed base
         self.assign_fixed_constants(region, offset, base)?;
@@ -296,17 +260,23 @@ trait MulFixed<C: CurveAffine> {
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
-        base: &FixedBase<C>,
+        base: OrchardFixedBases<C>,
     ) -> Result<(), Error> {
-        let (base_lagrange_coeffs, base_z) = match base {
-            FixedBase::FullWidth(base) => (
-                base.lagrange_coeffs.0.as_ref().to_vec(),
-                base.z.0.as_ref().to_vec(),
-            ),
-            FixedBase::Short(base) => (
-                base.lagrange_coeffs_short.0.as_ref().to_vec(),
-                base.z_short.0.as_ref().to_vec(),
-            ),
+        let (lagrange_coeffs, z) = match base {
+            OrchardFixedBases::ValueCommitV(_) => {
+                let base: OrchardFixedBaseShort<C> = base.into();
+                (
+                    base.lagrange_coeffs_short.0.as_ref().to_vec(),
+                    base.z_short.0.as_ref().to_vec(),
+                )
+            }
+            _ => {
+                let base: OrchardFixedBase<C> = base.into();
+                (
+                    base.lagrange_coeffs.0.as_ref().to_vec(),
+                    base.z.0.as_ref().to_vec(),
+                )
+            }
         };
 
         // Assign fixed columns for given fixed base
@@ -325,7 +295,7 @@ trait MulFixed<C: CurveAffine> {
                     },
                     self.lagrange_coeffs()[k],
                     window + offset,
-                    || Ok(base_lagrange_coeffs[window].0[k]),
+                    || Ok(lagrange_coeffs[window].0[k]),
                 )?;
             }
 
@@ -334,7 +304,7 @@ trait MulFixed<C: CurveAffine> {
                 || format!("z-value for window: {:?}", window),
                 self.fixed_z(),
                 window + offset,
-                || Ok(base_z[window]),
+                || Ok(z[window]),
             )?;
         }
 
@@ -366,12 +336,12 @@ trait MulFixed<C: CurveAffine> {
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
-        base: &FixedBase<C>,
+        base: OrchardFixedBases<C>,
         scalar: &ScalarFixed<C>,
     ) -> Result<EccPoint<C>, Error> {
         // Witness `m0` in `x_p`, `y_p` cells on row 0
         let k0 = scalar.k_field()[0];
-        let m0 = k0.map(|k0| base.value() * (k0 + C::Scalar::from_u64(2)));
+        let m0 = k0.map(|k0| base.generator() * (k0 + C::Scalar::from_u64(2)));
         let m0 = self.witness_point_config().assign_region(
             m0.map(|point| point.to_affine()),
             offset,
@@ -413,13 +383,13 @@ trait MulFixed<C: CurveAffine> {
         region: &mut Region<'_, C::Base>,
         offset: usize,
         mut acc: EccPoint<C>,
-        base: &FixedBase<C>,
+        base: OrchardFixedBases<C>,
         scalar: &ScalarFixed<C>,
     ) -> Result<EccPoint<C>, Error> {
         // This is 2^w, where w is the window width
         let h = C::Scalar::from_u64(constants::H as u64);
 
-        let base_value = base.value();
+        let base_value = base.generator();
         let base_u = base.u();
         let scalar_k_field = scalar.k_field();
         let scalar_k_usize = scalar.k_usize();
@@ -461,7 +431,7 @@ trait MulFixed<C: CurveAffine> {
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
-        base: &FixedBase<C>,
+        base: OrchardFixedBases<C>,
         scalar: &ScalarFixed<C>,
     ) -> Result<EccPoint<C>, Error> {
         // This is 2^w, where w is the window width
@@ -493,7 +463,7 @@ trait MulFixed<C: CurveAffine> {
         let scalar = scalar.k_field()[scalar.k_field().len() - 1]
             .map(|k| k * h.pow(&[(Self::NUM_WINDOWS - 1) as u64, 0, 0, 0]) - offset_acc);
 
-        let mul_b = scalar.map(|scalar| base.value() * scalar);
+        let mul_b = scalar.map(|scalar| base.generator() * scalar);
         self.witness_point_config().assign_region(
             mul_b.map(|point| point.to_affine()),
             offset + Self::NUM_WINDOWS - 1,

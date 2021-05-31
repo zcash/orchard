@@ -1,109 +1,114 @@
 use std::convert::TryInto;
 
-use super::EccChip;
-use crate::circuit::gadget::ecc::{EccInstructions, FixedPoint, FixedPointShort};
-use crate::constants::{self, FixedBase, H, NUM_WINDOWS, NUM_WINDOWS_SHORT};
-use halo2::{
-    arithmetic::{CurveAffine, FieldExt},
-    plonk::Error,
-};
+use crate::constants::{self, compute_lagrange_coeffs, H, NUM_WINDOWS, NUM_WINDOWS_SHORT};
+use halo2::arithmetic::{CurveAffine, FieldExt};
+use std::marker::PhantomData;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OrchardFixedBases<C: CurveAffine> {
-    CommitIvkR(constants::CommitIvkR<C>),
-    NoteCommitR(constants::NoteCommitR<C>),
-    NullifierK(constants::NullifierK<C>),
-    ValueCommitR(constants::ValueCommitR<C>),
+    CommitIvkR(PhantomData<C>),
+    NoteCommitR(PhantomData<C>),
+    NullifierK(PhantomData<C>),
+    ValueCommitR(PhantomData<C>),
+    ValueCommitV(PhantomData<C>),
 }
 
 impl<C: CurveAffine> OrchardFixedBases<C> {
-    pub fn into_fixed_point(self, chip: EccChip<C>) -> Result<FixedPoint<C, EccChip<C>>, Error> {
-        let base = chip.get_fixed(self)?;
-        Ok(FixedPoint::<C, EccChip<C>>::from_inner(chip, base))
+    pub fn generator(&self) -> C {
+        match self {
+            Self::ValueCommitV(_) => {
+                let base: OrchardFixedBaseShort<C> = (*self).into();
+                base.generator
+            }
+            _ => {
+                let base: OrchardFixedBase<C> = (*self).into();
+                base.generator
+            }
+        }
     }
-}
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct OrchardFixedBasesShort<C: CurveAffine>(pub constants::ValueCommitV<C>);
-
-impl<C: CurveAffine> OrchardFixedBasesShort<C> {
-    pub fn into_fixed_point_short(
-        self,
-        chip: EccChip<C>,
-    ) -> Result<FixedPointShort<C, EccChip<C>>, Error> {
-        let base = chip.get_fixed_short(self)?;
-        Ok(FixedPointShort::<C, EccChip<C>>::from_inner(chip, base))
+    pub fn u(&self) -> Vec<WindowUs<C::Base>> {
+        match self {
+            Self::ValueCommitV(_) => {
+                let base: OrchardFixedBaseShort<C> = (*self).into();
+                base.u_short.0.as_ref().to_vec()
+            }
+            _ => {
+                let base: OrchardFixedBase<C> = (*self).into();
+                base.u.0.as_ref().to_vec()
+            }
+        }
     }
 }
 
 /// A fixed base to be used in scalar multiplication with a full-width scalar.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrchardFixedBase<C: CurveAffine> {
-    pub base: OrchardFixedBases<C>,
+    pub generator: C,
     pub lagrange_coeffs: LagrangeCoeffs<C::Base>,
     pub z: Z<C::Base>,
     pub u: U<C::Base>,
 }
 
+impl<C: CurveAffine> From<OrchardFixedBases<C>> for OrchardFixedBase<C> {
+    fn from(base: OrchardFixedBases<C>) -> Self {
+        let (generator, z, u) = match base {
+            OrchardFixedBases::CommitIvkR(_) => (
+                super::commit_ivk_r::generator(),
+                super::commit_ivk_r::Z.into(),
+                super::commit_ivk_r::U.into(),
+            ),
+            OrchardFixedBases::NoteCommitR(_) => (
+                super::note_commit_r::generator(),
+                super::note_commit_r::Z.into(),
+                super::note_commit_r::U.into(),
+            ),
+            OrchardFixedBases::NullifierK(_) => (
+                super::nullifier_k::generator(),
+                super::nullifier_k::Z.into(),
+                super::nullifier_k::U.into(),
+            ),
+            OrchardFixedBases::ValueCommitR(_) => (
+                super::value_commit_r::generator(),
+                super::value_commit_r::Z.into(),
+                super::value_commit_r::U.into(),
+            ),
+            _ => unreachable!("ValueCommitV cannot be used with full-width scalar mul."),
+        };
+
+        Self {
+            generator,
+            lagrange_coeffs: compute_lagrange_coeffs(generator, NUM_WINDOWS).into(),
+            z,
+            u,
+        }
+    }
+}
+
 /// A fixed base to be used in scalar multiplication with a short signed exponent.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrchardFixedBaseShort<C: CurveAffine> {
-    pub base: OrchardFixedBasesShort<C>,
+    pub generator: C,
     pub lagrange_coeffs_short: LagrangeCoeffsShort<C::Base>,
     pub z_short: ZShort<C::Base>,
     pub u_short: UShort<C::Base>,
 }
 
-pub(super) fn commit_ivk_r<C: CurveAffine>() -> OrchardFixedBase<C> {
-    let commit_ivk_r = constants::commit_ivk_r::generator();
-    OrchardFixedBase {
-        base: OrchardFixedBases::CommitIvkR(commit_ivk_r),
-        lagrange_coeffs: commit_ivk_r.0.compute_lagrange_coeffs(NUM_WINDOWS).into(),
-        z: constants::commit_ivk_r::Z.into(),
-        u: constants::commit_ivk_r::U.into(),
-    }
-}
-
-pub(super) fn note_commit_r<C: CurveAffine>() -> OrchardFixedBase<C> {
-    let note_commit_r = constants::note_commit_r::generator();
-    OrchardFixedBase {
-        base: OrchardFixedBases::NoteCommitR(note_commit_r),
-        lagrange_coeffs: note_commit_r.0.compute_lagrange_coeffs(NUM_WINDOWS).into(),
-        z: constants::note_commit_r::Z.into(),
-        u: constants::note_commit_r::U.into(),
-    }
-}
-
-pub(super) fn nullifier_k<C: CurveAffine>() -> OrchardFixedBase<C> {
-    let nullifier_k = constants::nullifier_k::generator();
-    OrchardFixedBase {
-        base: OrchardFixedBases::NullifierK(nullifier_k),
-        lagrange_coeffs: nullifier_k.0.compute_lagrange_coeffs(NUM_WINDOWS).into(),
-        z: constants::nullifier_k::Z.into(),
-        u: constants::nullifier_k::U.into(),
-    }
-}
-
-pub(super) fn value_commit_r<C: CurveAffine>() -> OrchardFixedBase<C> {
-    let value_commit_r = constants::value_commit_r::generator();
-    OrchardFixedBase {
-        base: OrchardFixedBases::ValueCommitR(value_commit_r),
-        lagrange_coeffs: value_commit_r.0.compute_lagrange_coeffs(NUM_WINDOWS).into(),
-        z: constants::value_commit_r::Z.into(),
-        u: constants::value_commit_r::U.into(),
-    }
-}
-
-pub(super) fn value_commit_v<C: CurveAffine>() -> OrchardFixedBaseShort<C> {
-    let value_commit_v = constants::value_commit_v::generator();
-    OrchardFixedBaseShort {
-        base: OrchardFixedBasesShort(value_commit_v),
-        lagrange_coeffs_short: value_commit_v
-            .0
-            .compute_lagrange_coeffs(NUM_WINDOWS_SHORT)
-            .into(),
-        z_short: constants::value_commit_v::Z_SHORT.into(),
-        u_short: constants::value_commit_v::U_SHORT.into(),
+impl<C: CurveAffine> From<OrchardFixedBases<C>> for OrchardFixedBaseShort<C> {
+    fn from(base: OrchardFixedBases<C>) -> Self {
+        match base {
+            OrchardFixedBases::ValueCommitV(_) => {
+                let generator = super::value_commit_v::generator();
+                Self {
+                    generator,
+                    lagrange_coeffs_short: compute_lagrange_coeffs(generator, NUM_WINDOWS_SHORT)
+                        .into(),
+                    z_short: super::value_commit_v::Z_SHORT.into(),
+                    u_short: super::value_commit_v::U_SHORT.into(),
+                }
+            }
+            _ => unreachable!("Only ValueCommitV can be used with short signed scalar mul."),
+        }
     }
 }
 

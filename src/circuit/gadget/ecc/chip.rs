@@ -1,22 +1,20 @@
 use super::EccInstructions;
-use crate::constants;
+use crate::constants::{self, load::OrchardFixedBases};
 use ff::Field;
 use halo2::{
     arithmetic::CurveAffine,
     circuit::{Cell, Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
 };
+use std::marker::PhantomData;
 
 pub(super) mod add;
 pub(super) mod add_incomplete;
-pub(super) mod load;
 pub(super) mod mul;
 pub(super) mod mul_fixed;
 pub(super) mod util;
 pub(super) mod witness_point;
 pub(super) mod witness_scalar_fixed;
-
-pub use load::*;
 
 /// A structure containing a cell and its assigned value.
 #[derive(Clone, Debug)]
@@ -58,18 +56,6 @@ impl<C: CurveAffine> EccPoint<C> {
             _ => None,
         }
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-/// For each Orchard fixed base, we precompute:
-/// * coefficients for x-coordinate interpolation polynomials, and
-/// * z-values such that y + z = u^2 some square while -y + z is non-square.
-pub struct EccLoaded<C: CurveAffine> {
-    commit_ivk_r: OrchardFixedBase<C>,
-    note_commit_r: OrchardFixedBase<C>,
-    nullifier_k: OrchardFixedBase<C>,
-    value_commit_r: OrchardFixedBase<C>,
-    value_commit_v: OrchardFixedBaseShort<C>,
 }
 
 /// Configuration for the ECC chip
@@ -114,43 +100,28 @@ pub struct EccConfig {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EccChip<C: CurveAffine> {
     config: EccConfig,
-    loaded: EccLoaded<C>,
-}
-
-impl<C: CurveAffine> EccLoaded<C> {
-    fn get(&self, point: OrchardFixedBases<C>) -> OrchardFixedBase<C> {
-        match point {
-            OrchardFixedBases::CommitIvkR(_) => self.commit_ivk_r.clone(),
-            OrchardFixedBases::NoteCommitR(_) => self.note_commit_r.clone(),
-            OrchardFixedBases::NullifierK(_) => self.nullifier_k.clone(),
-            OrchardFixedBases::ValueCommitR(_) => self.value_commit_r.clone(),
-        }
-    }
-
-    fn get_short(&self, _point: OrchardFixedBasesShort<C>) -> OrchardFixedBaseShort<C> {
-        self.value_commit_v.clone()
-    }
+    _marker: PhantomData<C>,
 }
 
 impl<C: CurveAffine> Chip<C::Base> for EccChip<C> {
     type Config = EccConfig;
-    type Loaded = EccLoaded<C>;
+    type Loaded = ();
 
     fn config(&self) -> &Self::Config {
         &self.config
     }
 
     fn loaded(&self) -> &Self::Loaded {
-        &self.loaded
+        &()
     }
 }
 
 impl<C: CurveAffine> EccChip<C> {
-    pub fn construct(
-        config: <Self as Chip<C::Base>>::Config,
-        loaded: <Self as Chip<C::Base>>::Loaded,
-    ) -> Self {
-        Self { config, loaded }
+    pub fn construct(config: <Self as Chip<C::Base>>::Config) -> Self {
+        Self {
+            config,
+            _marker: PhantomData,
+        }
     }
 
     #[allow(non_snake_case)]
@@ -236,22 +207,6 @@ impl<C: CurveAffine> EccChip<C> {
 
         config
     }
-
-    pub fn load() -> <Self as Chip<C::Base>>::Loaded {
-        let commit_ivk_r = load::commit_ivk_r();
-        let note_commit_r = load::note_commit_r();
-        let nullifier_k = load::nullifier_k();
-        let value_commit_r = load::value_commit_r();
-        let value_commit_v = load::value_commit_v();
-
-        EccLoaded {
-            commit_ivk_r,
-            note_commit_r,
-            nullifier_k,
-            value_commit_r,
-            value_commit_v,
-        }
-    }
 }
 
 /// A full-width scalar used for variable-base scalar multiplication.
@@ -281,10 +236,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     type ScalarVar = CellValue<C::Base>;
     type Point = EccPoint<C>;
     type X = CellValue<C::Base>;
-    type FixedPoint = OrchardFixedBase<C>;
-    type FixedPointShort = OrchardFixedBaseShort<C>;
     type FixedPoints = OrchardFixedBases<C>;
-    type FixedPointsShort = OrchardFixedBasesShort<C>;
 
     fn witness_scalar_var(
         &self,
@@ -345,17 +297,6 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         &point.x
     }
 
-    fn get_fixed(&self, fixed_point: Self::FixedPoints) -> Result<Self::FixedPoint, Error> {
-        Ok(self.loaded().get(fixed_point))
-    }
-
-    fn get_fixed_short(
-        &self,
-        fixed_point: Self::FixedPointsShort,
-    ) -> Result<Self::FixedPointShort, Error> {
-        Ok(self.loaded().get_short(fixed_point))
-    }
-
     fn add_incomplete(
         &self,
         layouter: &mut impl Layouter<C::Base>,
@@ -399,11 +340,17 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         &self,
         layouter: &mut impl Layouter<C::Base>,
         scalar: &Self::ScalarFixed,
-        base: &Self::FixedPoint,
+        base: Self::FixedPoints,
     ) -> Result<Self::Point, Error> {
+        // Full-width fixed-base scalar mul cannot be used with ValueCommitV.
+        match base {
+            OrchardFixedBases::ValueCommitV(_) => return Err(Error::SynthesisError),
+            _ => (),
+        };
+
         let config: mul_fixed::Config = self.config().into();
         layouter.assign_region(
-            || format!("Multiply {:?}", base.base),
+            || format!("Multiply {:?}", base),
             |mut region| config.assign_region_full::<C>(scalar, base, 0, &mut region),
         )
     }
@@ -412,11 +359,17 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         &self,
         layouter: &mut impl Layouter<C::Base>,
         scalar: &Self::ScalarFixedShort,
-        base: &Self::FixedPointShort,
+        base: Self::FixedPoints,
     ) -> Result<Self::Point, Error> {
+        // Short fixed-base scalar mul is only used with ValueCommitV.
+        match base {
+            OrchardFixedBases::ValueCommitV(_) => (),
+            _ => return Err(Error::SynthesisError),
+        };
+
         let config: mul_fixed::Config = self.config().into();
         layouter.assign_region(
-            || format!("Multiply {:?}", base.base),
+            || format!("Multiply {:?}", base),
             |mut region| config.assign_region_short::<C>(scalar, base, 0, &mut region),
         )
     }
