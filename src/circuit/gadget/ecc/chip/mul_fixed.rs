@@ -70,9 +70,9 @@ pub struct Config<C: CurveAffine, const NUM_WINDOWS: usize> {
     lagrange_coeffs: [Column<Fixed>; constants::H],
     // The fixed `z` for each window such that `y + z = u^2`.
     fixed_z: Column<Fixed>,
-    // k-bit decomposition of an `n-1`-bit scalar:
+    // Decomposition of an `n-1`-bit scalar into `k`-bit windows:
     // a = a_0 + 2^k(a_1) + 2^{2k}(a_2) + ... + 2^{(n-1)k}(a_{n-1})
-    k: Column<Advice>,
+    window: Column<Advice>,
     // x-coordinate of the multiple of the fixed base at the current window.
     x_p: Column<Advice>,
     // y-coordinate of the multiple of the fixed base at the current window.
@@ -98,7 +98,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NU
             fixed_z: ecc_config.fixed_z,
             x_p: ecc_config.advices[0],
             y_p: ecc_config.advices[1],
-            k: ecc_config.advices[4],
+            window: ecc_config.advices[4],
             u: ecc_config.advices[5],
             perm: ecc_config.perm.clone(),
             add_config: ecc_config.into(),
@@ -126,7 +126,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NU
             config.y_p, config.add_incomplete_config.y_p,
             "add_incomplete is used internally in mul_fixed."
         );
-        for advice in [config.x_p, config.y_p, config.k, config.u].iter() {
+        for advice in [config.x_p, config.y_p, config.window, config.u].iter() {
             assert_ne!(
                 *advice, config.add_config.x_qr,
                 "Do not overlap with output columns of add."
@@ -158,21 +158,21 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
 
         // Check interpolation of x-coordinate
         meta.create_gate("fixed-base scalar mul (x)", |meta| {
-            let k = meta.query_advice(self.k, Rotation::cur());
+            let window = meta.query_advice(self.window, Rotation::cur());
             let x_p = meta.query_advice(self.x_p, Rotation::cur());
 
-            let k_pow: Vec<Expression<C::Base>> = (0..constants::H)
+            let window_pow: Vec<Expression<C::Base>> = (0..constants::H)
                 .map(|pow| {
                     (0..pow).fold(Expression::Constant(C::Base::one()), |acc, _| {
-                        acc * k.clone()
+                        acc * window.clone()
                     })
                 })
                 .collect();
 
-            let interpolated_x = k_pow.iter().zip(self.lagrange_coeffs.iter()).fold(
+            let interpolated_x = window_pow.iter().zip(self.lagrange_coeffs.iter()).fold(
                 Expression::Constant(C::Base::zero()),
-                |acc, (k_pow, coeff)| {
-                    acc + (k_pow.clone() * meta.query_fixed(*coeff, Rotation::cur()))
+                |acc, (window_pow, coeff)| {
+                    acc + (window_pow.clone() * meta.query_fixed(*coeff, Rotation::cur()))
                 },
             );
 
@@ -277,14 +277,14 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         offset: usize,
         scalar: &ScalarFixed<C>,
     ) -> Result<(), Error> {
-        // Copy the scalar decomposition
-        for (window, k) in scalar.k_bits().iter().enumerate() {
+        // Copy the scalar decomposition (`k`-bit windows)
+        for (window_idx, window) in scalar.windows().iter().enumerate() {
             util::assign_and_constrain(
                 region,
                 || format!("k[{:?}]", window),
-                self.k,
-                window + offset,
-                k,
+                self.window,
+                window_idx + offset,
+                window,
                 &self.perm,
             )?;
         }
@@ -300,7 +300,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         scalar: &ScalarFixed<C>,
     ) -> Result<EccPoint<C>, Error> {
         // Witness `m0` in `x_p`, `y_p` cells on row 0
-        let k0 = scalar.k_field()[0];
+        let k0 = scalar.windows_field()[0];
         let m0 = k0.map(|k0| base.generator() * (k0 + C::Scalar::from_u64(2)));
         let m0 = self.witness_point_config.assign_region(
             m0.map(|point| point.to_affine()),
@@ -310,7 +310,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
 
         // Assign u = (y_p + z_w).sqrt() for `m0`
         {
-            let k0 = scalar.k_usize()[0];
+            let k0 = scalar.windows_usize()[0];
             let u0 = &base.u()[0];
             let u0 = k0.map(|k0| u0.0[k0]);
 
@@ -351,10 +351,10 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
 
         let base_value = base.generator();
         let base_u = base.u();
-        let scalar_k_field = scalar.k_field();
-        let scalar_k_usize = scalar.k_usize();
+        let scalar_windows_field = scalar.windows_field();
+        let scalar_windows_usize = scalar.windows_usize();
 
-        for (w, k) in scalar_k_field[1..(scalar_k_field.len() - 1)]
+        for (w, k) in scalar_windows_field[1..(scalar_windows_field.len() - 1)]
             .iter()
             .enumerate()
         {
@@ -371,7 +371,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
             )?;
 
             // Assign u = (y_p + z_w).sqrt()
-            let u_val = scalar_k_usize[w].map(|k| base_u[w].0[k]);
+            let u_val = scalar_windows_usize[w].map(|k| base_u[w].0[k]);
             region.assign_advice(
                 || "u",
                 self.u,
@@ -399,7 +399,8 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
 
         // Assign u = (y_p + z_w).sqrt() for the most significant window
         {
-            let u_val = scalar.k_usize()[NUM_WINDOWS - 1].map(|k| base.u()[NUM_WINDOWS - 1].0[k]);
+            let u_val =
+                scalar.windows_usize()[NUM_WINDOWS - 1].map(|k| base.u()[NUM_WINDOWS - 1].0[k]);
             region.assign_advice(
                 || "u",
                 self.u,
@@ -419,7 +420,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         });
 
         // `scalar = [k * 8^84 - offset_acc]`, where `offset_acc = \sum_{j = 0}^{83} 2^{FIXED_BASE_WINDOW_SIZE * j + 1}`.
-        let scalar = scalar.k_field()[scalar.k_field().len() - 1]
+        let scalar = scalar.windows_field()[scalar.windows_field().len() - 1]
             .map(|k| k * h.pow(&[(NUM_WINDOWS - 1) as u64, 0, 0, 0]) - offset_acc);
 
         let mul_b = scalar.map(|scalar| base.generator() * scalar);
@@ -449,7 +450,7 @@ impl<C: CurveAffine> From<&EccScalarFixedShort<C>> for ScalarFixed<C> {
 }
 
 impl<C: CurveAffine> ScalarFixed<C> {
-    fn k_bits(&self) -> &[CellValue<C::Base>] {
+    fn windows(&self) -> &[CellValue<C::Base>] {
         match self {
             ScalarFixed::FullWidth(scalar) => &scalar.windows,
             ScalarFixed::Short(scalar) => &scalar.windows,
@@ -458,8 +459,8 @@ impl<C: CurveAffine> ScalarFixed<C> {
 
     // The scalar decomposition was done in the base field. For computation
     // outside the circuit, we now convert them back into the scalar field.
-    fn k_field(&self) -> Vec<Option<C::Scalar>> {
-        self.k_bits()
+    fn windows_field(&self) -> Vec<Option<C::Scalar>> {
+        self.windows()
             .iter()
             .map(|bits| {
                 bits.value
@@ -471,8 +472,8 @@ impl<C: CurveAffine> ScalarFixed<C> {
     // The scalar decomposition is guaranteed to be in three-bit windows,
     // so we also cast the least significant byte in their serialisation
     // into usize for convenient indexing into `u`-values
-    fn k_usize(&self) -> Vec<Option<usize>> {
-        self.k_bits()
+    fn windows_usize(&self) -> Vec<Option<usize>> {
+        self.windows()
             .iter()
             .map(|bits| bits.value.map(|value| value.to_bytes()[0] as usize))
             .collect::<Vec<_>>()

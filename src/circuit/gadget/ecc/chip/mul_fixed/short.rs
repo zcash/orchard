@@ -47,10 +47,10 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
             q_mul_fixed_short.clone() * (y_p.clone() - y_a.clone()) * (y_p.clone() + y_a.clone())
         });
 
-        // Check that s * y_p = y_a
+        // Check that sign * y_p = y_a
         meta.create_gate("check negation", |meta| {
-            let s = meta.query_advice(self.k, Rotation::cur());
-            q_mul_fixed_short * (s * y_p - y_a)
+            let sign = meta.query_advice(self.window, Rotation::cur());
+            q_mul_fixed_short * (sign * y_p - y_a)
         });
     }
 
@@ -72,11 +72,11 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         // Increase offset by 1 after complete addition
         let offset = offset + 1;
 
-        // Assign sign to `bits` column
+        // Assign sign to `window` column
         let sign = util::assign_and_constrain(
             region,
             || "sign",
-            self.k,
+            self.window,
             offset + NUM_WINDOWS,
             &scalar.sign,
             &self.perm,

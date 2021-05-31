@@ -112,7 +112,7 @@ impl<C: CurveAffine> Config<C> {
         let offset = offset + 1;
 
         // Decompose the scalar bitwise (big-endian bit order).
-        let k_bits = decompose_for_scalar_mul::<C>(scalar.value);
+        let bits = decompose_for_scalar_mul::<C>(scalar.value);
 
         // Initialize the running sum for scalar decomposition to zero
         let z_val = C::Base::zero();
@@ -124,20 +124,24 @@ impl<C: CurveAffine> Config<C> {
         let offset = offset + 1;
 
         // Double-and-add (incomplete addition) for the `hi` half of the scalar decomposition
-        let k_incomplete_hi = &k_bits[incomplete_hi_range::<C>()];
+        let bits_incomplete_hi = &bits[incomplete_hi_range::<C>()];
         let (x, y_a, z) = self.hi_config.double_and_add(
             region,
             offset,
             &base,
-            k_incomplete_hi,
+            bits_incomplete_hi,
             (X(acc.x.clone()), Y(acc.y.value), Z(z)),
         )?;
 
         // Double-and-add (incomplete addition) for the `lo` half of the scalar decomposition
-        let k_incomplete_lo = &k_bits[incomplete_lo_range::<C>()];
-        let (x, y_a, z) =
-            self.lo_config
-                .double_and_add(region, offset, &base, k_incomplete_lo, (x, y_a, z))?;
+        let bits_incomplete_lo = &bits[incomplete_lo_range::<C>()];
+        let (x, y_a, z) = self.lo_config.double_and_add(
+            region,
+            offset,
+            &base,
+            bits_incomplete_lo,
+            (x, y_a, z),
+        )?;
 
         // Move from incomplete addition to complete addition
         let offset = offset + incomplete_lo_len::<C>() + 1;
@@ -176,15 +180,15 @@ impl<C: CurveAffine> Config<C> {
             let complete_config: complete::Config<C> = self.into();
             // Bits used in complete addition. k_{3} to k_{1} inclusive
             // The LSB k_{0} is handled separately.
-            let k_complete = &k_bits[complete_range::<C>()];
-            complete_config.assign_region(region, offset, k_complete, base, acc, z.value)?
+            let bits_complete = &bits[complete_range::<C>()];
+            complete_config.assign_region(region, offset, bits_complete, base, acc, z.value)?
         };
 
         let offset = offset + complete_len::<C>() * 2;
 
         // Process the least significant bit
-        let k_0 = k_bits[C::Scalar::NUM_BITS as usize - 1];
-        let result = self.process_lsb(region, offset, scalar, base, acc, k_0, z_val)?;
+        let lsb = bits[C::Scalar::NUM_BITS as usize - 1];
+        let result = self.process_lsb(region, offset, scalar, base, acc, lsb, z_val)?;
 
         #[cfg(test)]
         // Check that the correct multiple is obtained.
@@ -212,13 +216,13 @@ impl<C: CurveAffine> Config<C> {
         scalar: &CellValue<C::Base>,
         base: &EccPoint<C>,
         acc: EccPoint<C>,
-        k_0: Option<bool>,
+        lsb: Option<bool>,
         mut z_val: Option<C::Base>,
     ) -> Result<EccPoint<C>, Error> {
         // Assign the final `z` value.
         z_val = z_val
-            .zip(k_0)
-            .map(|(z_val, k_0)| C::Base::from_u64(2) * z_val + C::Base::from_u64(k_0 as u64));
+            .zip(lsb)
+            .map(|(z_val, lsb)| C::Base::from_u64(2) * z_val + C::Base::from_u64(lsb as u64));
         region.assign_advice(
             || "final z",
             self.z_complete,
@@ -246,9 +250,9 @@ impl<C: CurveAffine> Config<C> {
         )?;
         self.q_mul_decompose_var.enable(region, offset)?;
 
-        // If `k_0` is 0, return `Acc + (-P)`. If `k_0` is 1, simply return `Acc + 0`.
-        let x_p = if let Some(k_0) = k_0 {
-            if !k_0 {
+        // If `lsb` is 0, return `Acc + (-P)`. If `lsb` is 1, simply return `Acc + 0`.
+        let x_p = if let Some(lsb) = lsb {
+            if !lsb {
                 base.x.value
             } else {
                 Some(C::Base::zero())
@@ -256,8 +260,8 @@ impl<C: CurveAffine> Config<C> {
         } else {
             None
         };
-        let y_p = if let Some(k_0) = k_0 {
-            if !k_0 {
+        let y_p = if let Some(lsb) = lsb {
+            if !lsb {
                 base.y.value.map(|y_p| -y_p)
             } else {
                 Some(C::Base::zero())
@@ -343,8 +347,8 @@ fn decompose_for_scalar_mul<C: CurveAffine>(scalar: Option<C::Base>) -> Vec<Opti
         // `k` is decomposed bitwise in-circuit for our double-and-add algorithm.
         let k = scalar + t_q;
 
-        // `k` is decomposed bitwise (big-endian) into `[k_n, ..., k_0]`, where
-        // each `k_i` is a bit and `scalar = k_n * 2^n + ... + k_1 * 2 + k_0`.
+        // `k` is decomposed bitwise (big-endian) into `[k_n, ..., lsb]`, where
+        // each `k_i` is a bit and `scalar = k_n * 2^n + ... + k_1 * 2 + lsb`.
         let mut bits: Vec<bool> = k
             .to_le_bits()
             .into_iter()
