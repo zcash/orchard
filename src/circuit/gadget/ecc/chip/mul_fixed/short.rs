@@ -1,30 +1,37 @@
-use super::super::{util, CellValue, EccPoint, EccScalarFixedShort};
-use crate::constants::{self, ValueCommitV};
+use super::super::{util, CellValue, EccConfig, EccPoint, EccScalarFixedShort};
+use crate::constants::ValueCommitV;
 
 use halo2::{
     arithmetic::{CurveAffine, Field},
     circuit::Region,
-    plonk::{ConstraintSystem, Error},
+    plonk::{ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
-pub struct Config<C: CurveAffine>(super::Config<C>);
+pub struct Config<C: CurveAffine, const NUM_WINDOWS: usize> {
+    // Selector used for fixed-base scalar mul with short signed exponent.
+    q_mul_fixed_short: Selector,
+    mul_fixed_config: super::Config<C>,
+}
 
-impl<C: CurveAffine> From<&super::Config<C>> for Config<C> {
-    fn from(config: &super::Config<C>) -> Self {
-        Self(config.clone())
+impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NUM_WINDOWS> {
+    fn from(config: &EccConfig) -> Self {
+        Self {
+            q_mul_fixed_short: config.q_mul_fixed_short,
+            mul_fixed_config: config.into(),
+        }
     }
 }
 
-impl<C: CurveAffine> std::ops::Deref for Config<C> {
+impl<C: CurveAffine, const NUM_WINDOWS: usize> std::ops::Deref for Config<C, NUM_WINDOWS> {
     type Target = super::Config<C>;
 
     fn deref(&self) -> &super::Config<C> {
-        &self.0
+        &self.mul_fixed_config
     }
 }
 
-impl<C: CurveAffine> Config<C> {
+impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
     // We reuse the constraints in the `mul_fixed` gate so exclude them here.
     // Here, we add some new constraints specific to the short signed case.
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
@@ -47,14 +54,14 @@ impl<C: CurveAffine> Config<C> {
         });
     }
 
-    pub(super) fn assign_region(
+    pub fn assign_region(
         &self,
-        region: &mut Region<'_, C::Base>,
-        offset: usize,
         scalar: &EccScalarFixedShort<C>,
         base: &ValueCommitV<C>,
+        offset: usize,
+        region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) = self.assign_region_inner::<{ constants::NUM_WINDOWS_SHORT }>(
+        let (acc, mul_b) = self.assign_region_inner::<NUM_WINDOWS>(
             region,
             offset,
             &scalar.into(),
@@ -62,12 +69,9 @@ impl<C: CurveAffine> Config<C> {
         )?;
 
         // Add to the cumulative sum to get `[magnitude]B`.
-        let magnitude_mul = self.add_config.assign_region(
-            &mul_b,
-            &acc,
-            offset + constants::NUM_WINDOWS_SHORT,
-            region,
-        )?;
+        let magnitude_mul =
+            self.add_config
+                .assign_region(&mul_b, &acc, offset + NUM_WINDOWS, region)?;
 
         // Increase offset by 1 after complete addition
         let offset = offset + 1;
@@ -77,7 +81,7 @@ impl<C: CurveAffine> Config<C> {
             region,
             || "sign",
             self.k,
-            offset + constants::NUM_WINDOWS_SHORT,
+            offset + NUM_WINDOWS,
             &scalar.sign,
             &self.perm,
         )?;
@@ -95,20 +99,20 @@ impl<C: CurveAffine> Config<C> {
 
         // Enable mul_fixed_short selector on final row
         self.q_mul_fixed_short
-            .enable(region, offset + constants::NUM_WINDOWS_SHORT)?;
+            .enable(region, offset + NUM_WINDOWS)?;
 
         // Assign final `x, y` to `x_p, y_p` columns and return final point
         let x_val = magnitude_mul.x.value;
         let x_var = region.assign_advice(
             || "x_var",
             self.x_p,
-            offset + constants::NUM_WINDOWS_SHORT,
+            offset + NUM_WINDOWS,
             || x_val.ok_or(Error::SynthesisError),
         )?;
         let y_var = region.assign_advice(
             || "y_var",
             self.y_p,
-            offset + constants::NUM_WINDOWS_SHORT,
+            offset + NUM_WINDOWS,
             || y_val.ok_or(Error::SynthesisError),
         )?;
 

@@ -63,10 +63,8 @@ impl<C: CurveAffine> OrchardFixedBases<C> {
 
 #[derive(Clone, Debug)]
 pub struct Config<C: CurveAffine> {
-    // Selector used for full-width fixed-base scalar mul.
+    // Selector used in both short and full-width fixed-base scalar mul.
     q_mul_fixed: Selector,
-    // Selector used for fixed-base scalar mul with short signed exponent.
-    q_mul_fixed_short: Selector,
 
     // The fixed Lagrange interpolation coefficients for `x_p`.
     lagrange_coeffs: [Column<Fixed>; constants::H],
@@ -96,7 +94,6 @@ impl<C: CurveAffine> From<&EccConfig> for Config<C> {
     fn from(ecc_config: &EccConfig) -> Self {
         let config = Self {
             q_mul_fixed: ecc_config.q_mul_fixed,
-            q_mul_fixed_short: ecc_config.q_mul_fixed_short,
             lagrange_coeffs: ecc_config.lagrange_coeffs,
             fixed_z: ecc_config.fixed_z,
             x_p: ecc_config.advices[0],
@@ -156,34 +153,6 @@ impl<C: CurveAffine> From<&EccConfig> for Config<C> {
 
 impl<C: CurveAffine> Config<C> {
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
-        self.create_gate_inner(meta);
-        let short_config: short::Config<C> = self.into();
-        short_config.create_gate(meta);
-    }
-
-    pub(super) fn assign_region_full(
-        &self,
-        scalar: &EccScalarFixed<C>,
-        base: OrchardFixedBasesFull<C>,
-        offset: usize,
-        region: &mut Region<'_, C::Base>,
-    ) -> Result<EccPoint<C>, Error> {
-        let full_width_config: full_width::Config<C> = self.into();
-        full_width_config.assign_region(region, offset, scalar, base)
-    }
-
-    pub(super) fn assign_region_short(
-        &self,
-        scalar: &EccScalarFixedShort<C>,
-        base: &ValueCommitV<C>,
-        offset: usize,
-        region: &mut Region<'_, C::Base>,
-    ) -> Result<EccPoint<C>, Error> {
-        let short_config: short::Config<C> = self.into();
-        short_config.assign_region(region, offset, scalar, base)
-    }
-
-    fn create_gate_inner(&self, meta: &mut ConstraintSystem<C::Base>) {
         let q_mul_fixed = meta.query_selector(self.q_mul_fixed, Rotation::cur());
         let y_p = meta.query_advice(self.y_p, Rotation::cur());
 

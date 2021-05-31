@@ -1,18 +1,16 @@
-use super::super::{EccPoint, EccScalarFixed, OrchardFixedBasesFull};
-
-use crate::constants;
+use super::super::{EccConfig, EccPoint, EccScalarFixed, OrchardFixedBasesFull};
 
 use halo2::{arithmetic::CurveAffine, circuit::Region, plonk::Error};
 
-pub struct Config<C: CurveAffine>(super::Config<C>);
+pub struct Config<C: CurveAffine, const NUM_WINDOWS: usize>(super::Config<C>);
 
-impl<C: CurveAffine> From<&super::Config<C>> for Config<C> {
-    fn from(config: &super::Config<C>) -> Self {
-        Self(config.clone())
+impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NUM_WINDOWS> {
+    fn from(config: &EccConfig) -> Self {
+        Self(config.into())
     }
 }
 
-impl<C: CurveAffine> std::ops::Deref for Config<C> {
+impl<C: CurveAffine, const NUM_WINDOWS: usize> std::ops::Deref for Config<C, NUM_WINDOWS> {
     type Target = super::Config<C>;
 
     fn deref(&self) -> &super::Config<C> {
@@ -20,15 +18,15 @@ impl<C: CurveAffine> std::ops::Deref for Config<C> {
     }
 }
 
-impl<C: CurveAffine> Config<C> {
-    pub(super) fn assign_region(
+impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
+    pub fn assign_region(
         &self,
-        region: &mut Region<'_, C::Base>,
-        offset: usize,
         scalar: &EccScalarFixed<C>,
         base: OrchardFixedBasesFull<C>,
+        offset: usize,
+        region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) = (*self).assign_region_inner::<{ constants::NUM_WINDOWS }>(
+        let (acc, mul_b) = (*self).assign_region_inner::<NUM_WINDOWS>(
             region,
             offset,
             &scalar.into(),
@@ -36,9 +34,9 @@ impl<C: CurveAffine> Config<C> {
         )?;
 
         // Add to the accumulator and return the final result as `[scalar]B`.
-        let result =
-            self.add_config
-                .assign_region(&mul_b, &acc, offset + constants::NUM_WINDOWS, region)?;
+        let result = self
+            .add_config
+            .assign_region(&mul_b, &acc, offset + NUM_WINDOWS, region)?;
 
         #[cfg(test)]
         // Check that the correct multiple is obtained.

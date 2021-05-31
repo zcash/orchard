@@ -193,10 +193,18 @@ impl<C: CurveAffine> EccChip<C> {
             add_config.create_gate(meta);
         }
 
-        // Create fixed-base scalar mul gates
+        // Create fixed-base scalar mul gates that are used in both full-width
+        // and short multiplication.
         {
             let mul_fixed_config: mul_fixed::Config<C> = (&config).into();
             mul_fixed_config.create_gate(meta);
+        }
+
+        // Create gates that are only used in short fixed-base scalar mul.
+        {
+            let short_config: mul_fixed::short::Config<C, { constants::NUM_WINDOWS_SHORT }> =
+                (&config).into();
+            short_config.create_gate(meta);
         }
 
         // Create variable-base scalar mul gates
@@ -343,10 +351,11 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarFixed,
         base: &Self::FixedPoints,
     ) -> Result<Self::Point, Error> {
-        let config: mul_fixed::Config<C> = self.config().into();
+        let config: mul_fixed::full_width::Config<C, { constants::NUM_WINDOWS }> =
+            self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base),
-            |mut region| config.assign_region_full(scalar, *base, 0, &mut region),
+            |mut region| config.assign_region(scalar, *base, 0, &mut region),
         )
     }
 
@@ -356,10 +365,11 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         scalar: &Self::ScalarFixedShort,
         base: &Self::FixedPointsShort,
     ) -> Result<Self::Point, Error> {
-        let config: mul_fixed::Config<C> = self.config().into();
+        let config: mul_fixed::short::Config<C, { constants::NUM_WINDOWS_SHORT }> =
+            self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base),
-            |mut region| config.assign_region_short(scalar, base, 0, &mut region),
+            |mut region| config.assign_region(scalar, base, 0, &mut region),
         )
     }
 }
