@@ -5,40 +5,11 @@ use halo2::arithmetic::{CurveAffine, FieldExt};
 use std::marker::PhantomData;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum OrchardFixedBases<C: CurveAffine> {
+pub enum OrchardFixedBasesFull<C: CurveAffine> {
     CommitIvkR(PhantomData<C>),
     NoteCommitR(PhantomData<C>),
     NullifierK(PhantomData<C>),
     ValueCommitR(PhantomData<C>),
-    ValueCommitV(PhantomData<C>),
-}
-
-impl<C: CurveAffine> OrchardFixedBases<C> {
-    pub fn generator(&self) -> C {
-        match self {
-            Self::ValueCommitV(_) => {
-                let base: OrchardFixedBaseShort<C> = (*self).into();
-                base.generator
-            }
-            _ => {
-                let base: OrchardFixedBase<C> = (*self).into();
-                base.generator
-            }
-        }
-    }
-
-    pub fn u(&self) -> Vec<WindowUs<C::Base>> {
-        match self {
-            Self::ValueCommitV(_) => {
-                let base: OrchardFixedBaseShort<C> = (*self).into();
-                base.u_short.0.as_ref().to_vec()
-            }
-            _ => {
-                let base: OrchardFixedBase<C> = (*self).into();
-                base.u.0.as_ref().to_vec()
-            }
-        }
-    }
 }
 
 /// A fixed base to be used in scalar multiplication with a full-width scalar.
@@ -50,30 +21,29 @@ pub struct OrchardFixedBase<C: CurveAffine> {
     pub u: U<C::Base>,
 }
 
-impl<C: CurveAffine> From<OrchardFixedBases<C>> for OrchardFixedBase<C> {
-    fn from(base: OrchardFixedBases<C>) -> Self {
+impl<C: CurveAffine> From<OrchardFixedBasesFull<C>> for OrchardFixedBase<C> {
+    fn from(base: OrchardFixedBasesFull<C>) -> Self {
         let (generator, z, u) = match base {
-            OrchardFixedBases::CommitIvkR(_) => (
+            OrchardFixedBasesFull::CommitIvkR(_) => (
                 super::commit_ivk_r::generator(),
                 super::commit_ivk_r::Z.into(),
                 super::commit_ivk_r::U.into(),
             ),
-            OrchardFixedBases::NoteCommitR(_) => (
+            OrchardFixedBasesFull::NoteCommitR(_) => (
                 super::note_commit_r::generator(),
                 super::note_commit_r::Z.into(),
                 super::note_commit_r::U.into(),
             ),
-            OrchardFixedBases::NullifierK(_) => (
+            OrchardFixedBasesFull::NullifierK(_) => (
                 super::nullifier_k::generator(),
                 super::nullifier_k::Z.into(),
                 super::nullifier_k::U.into(),
             ),
-            OrchardFixedBases::ValueCommitR(_) => (
+            OrchardFixedBasesFull::ValueCommitR(_) => (
                 super::value_commit_r::generator(),
                 super::value_commit_r::Z.into(),
                 super::value_commit_r::U.into(),
             ),
-            _ => unreachable!("ValueCommitV cannot be used with full-width scalar mul."),
         };
 
         Self {
@@ -87,27 +57,21 @@ impl<C: CurveAffine> From<OrchardFixedBases<C>> for OrchardFixedBase<C> {
 
 /// A fixed base to be used in scalar multiplication with a short signed exponent.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct OrchardFixedBaseShort<C: CurveAffine> {
+pub struct ValueCommitV<C: CurveAffine> {
     pub generator: C,
     pub lagrange_coeffs_short: LagrangeCoeffsShort<C::Base>,
     pub z_short: ZShort<C::Base>,
     pub u_short: UShort<C::Base>,
 }
 
-impl<C: CurveAffine> From<OrchardFixedBases<C>> for OrchardFixedBaseShort<C> {
-    fn from(base: OrchardFixedBases<C>) -> Self {
-        match base {
-            OrchardFixedBases::ValueCommitV(_) => {
-                let generator = super::value_commit_v::generator();
-                Self {
-                    generator,
-                    lagrange_coeffs_short: compute_lagrange_coeffs(generator, NUM_WINDOWS_SHORT)
-                        .into(),
-                    z_short: super::value_commit_v::Z_SHORT.into(),
-                    u_short: super::value_commit_v::U_SHORT.into(),
-                }
-            }
-            _ => unreachable!("Only ValueCommitV can be used with short signed scalar mul."),
+impl<C: CurveAffine> ValueCommitV<C> {
+    pub fn get() -> Self {
+        let generator = super::value_commit_v::generator();
+        Self {
+            generator,
+            lagrange_coeffs_short: compute_lagrange_coeffs(generator, NUM_WINDOWS_SHORT).into(),
+            z_short: super::value_commit_v::Z_SHORT.into(),
+            u_short: super::value_commit_v::U_SHORT.into(),
         }
     }
 }

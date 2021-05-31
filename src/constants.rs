@@ -16,7 +16,7 @@ pub mod value_commit_v;
 pub mod load;
 pub mod util;
 
-pub use load::{OrchardFixedBase, OrchardFixedBaseShort, OrchardFixedBases};
+pub use load::{OrchardFixedBase, OrchardFixedBasesFull, ValueCommitV};
 
 /// $\ell^\mathsf{Orchard}_\mathsf{base}$
 pub(crate) const L_ORCHARD_BASE: usize = 255;

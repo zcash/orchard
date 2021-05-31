@@ -1,5 +1,5 @@
 use super::super::{util, CellValue, EccPoint, EccScalarFixedShort};
-use crate::constants::{self, load::OrchardFixedBases};
+use crate::constants::{self, ValueCommitV};
 
 use halo2::{
     arithmetic::{CurveAffine, Field},
@@ -52,10 +52,14 @@ impl<C: CurveAffine> Config<C> {
         region: &mut Region<'_, C::Base>,
         offset: usize,
         scalar: &EccScalarFixedShort<C>,
-        base: OrchardFixedBases<C>,
+        base: &ValueCommitV<C>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) =
-            self.assign_region_inner::<{constants::NUM_WINDOWS_SHORT}>(region, offset, &scalar.into(), base.into())?;
+        let (acc, mul_b) = self.assign_region_inner::<{ constants::NUM_WINDOWS_SHORT }>(
+            region,
+            offset,
+            &scalar.into(),
+            base.clone().into(),
+        )?;
 
         // Add to the cumulative sum to get `[magnitude]B`.
         let magnitude_mul = self.add_config.assign_region(
@@ -118,6 +122,8 @@ impl<C: CurveAffine> Config<C> {
         {
             use group::Curve;
 
+            let base: super::OrchardFixedBases<C> = base.clone().into();
+
             let scalar = scalar
                 .magnitude
                 .zip(scalar.sign.value)
@@ -151,15 +157,14 @@ pub mod tests {
     };
 
     use crate::circuit::gadget::ecc::{chip::EccChip, FixedPointShort, ScalarFixedShort};
-    use crate::constants::load::OrchardFixedBases;
-    use std::marker::PhantomData;
+    use crate::constants::load::ValueCommitV;
 
     pub fn test_mul_fixed_short<C: CurveAffine>(
         chip: EccChip<C>,
         mut layouter: impl Layouter<C::Base>,
     ) -> Result<(), Error> {
         // value_commit_v
-        let value_commit_v = OrchardFixedBases::ValueCommitV(PhantomData);
+        let value_commit_v = ValueCommitV::<C>::get();
         let value_commit_v = FixedPointShort::from_inner(chip.clone(), value_commit_v);
 
         // [0]B should return (0,0) since it uses complete addition

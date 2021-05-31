@@ -4,7 +4,7 @@ use super::{
 };
 use crate::constants::{
     self,
-    load::{OrchardFixedBase, OrchardFixedBaseShort, OrchardFixedBases},
+    load::{OrchardFixedBase, OrchardFixedBasesFull, ValueCommitV, WindowUs},
 };
 use std::marker::PhantomData;
 
@@ -18,6 +18,48 @@ use halo2::{
 
 pub mod full_width;
 pub mod short;
+
+// A sum type for both full-width and short bases. This enables us to use the
+// shared functionality of full-width and short fixed-base scalar multiplication.
+#[derive(Copy, Clone, Debug)]
+enum OrchardFixedBases<C: CurveAffine> {
+    Full(OrchardFixedBasesFull<C>),
+    ValueCommitV,
+}
+
+impl<C: CurveAffine> From<OrchardFixedBasesFull<C>> for OrchardFixedBases<C> {
+    fn from(full_width_base: OrchardFixedBasesFull<C>) -> Self {
+        Self::Full(full_width_base)
+    }
+}
+
+impl<C: CurveAffine> From<ValueCommitV<C>> for OrchardFixedBases<C> {
+    fn from(_value_commit_v: ValueCommitV<C>) -> Self {
+        Self::ValueCommitV
+    }
+}
+
+impl<C: CurveAffine> OrchardFixedBases<C> {
+    pub fn generator(self) -> C {
+        match self {
+            Self::ValueCommitV => constants::value_commit_v::generator(),
+            Self::Full(base) => {
+                let base: OrchardFixedBase<C> = base.into();
+                base.generator
+            }
+        }
+    }
+
+    pub fn u(self) -> Vec<WindowUs<C::Base>> {
+        match self {
+            Self::ValueCommitV => ValueCommitV::<C>::get().u_short.0.as_ref().to_vec(),
+            Self::Full(base) => {
+                let base: OrchardFixedBase<C> = base.into();
+                base.u.0.as_ref().to_vec()
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Config<C: CurveAffine> {
@@ -122,7 +164,7 @@ impl<C: CurveAffine> Config<C> {
     pub(super) fn assign_region_full(
         &self,
         scalar: &EccScalarFixed<C>,
-        base: OrchardFixedBases<C>,
+        base: OrchardFixedBasesFull<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
@@ -133,7 +175,7 @@ impl<C: CurveAffine> Config<C> {
     pub(super) fn assign_region_short(
         &self,
         scalar: &EccScalarFixedShort<C>,
-        base: OrchardFixedBases<C>,
+        base: &ValueCommitV<C>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
@@ -210,14 +252,14 @@ impl<C: CurveAffine> Config<C> {
         base: OrchardFixedBases<C>,
     ) -> Result<(), Error> {
         let (lagrange_coeffs, z) = match base {
-            OrchardFixedBases::ValueCommitV(_) => {
-                let base: OrchardFixedBaseShort<C> = base.into();
+            OrchardFixedBases::ValueCommitV => {
+                let base = ValueCommitV::<C>::get();
                 (
                     base.lagrange_coeffs_short.0.as_ref().to_vec(),
                     base.z_short.0.as_ref().to_vec(),
                 )
             }
-            _ => {
+            OrchardFixedBases::Full(base) => {
                 let base: OrchardFixedBase<C> = base.into();
                 (
                     base.lagrange_coeffs.0.as_ref().to_vec(),

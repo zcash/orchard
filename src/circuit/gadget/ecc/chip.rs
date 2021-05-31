@@ -1,5 +1,5 @@
 use super::EccInstructions;
-use crate::constants::{self, load::OrchardFixedBases};
+use crate::constants::{self, OrchardFixedBasesFull, ValueCommitV};
 use ff::Field;
 use halo2::{
     arithmetic::CurveAffine,
@@ -236,7 +236,8 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     type ScalarVar = CellValue<C::Base>;
     type Point = EccPoint<C>;
     type X = CellValue<C::Base>;
-    type FixedPoints = OrchardFixedBases<C>;
+    type FixedPoints = OrchardFixedBasesFull<C>;
+    type FixedPointsShort = ValueCommitV<C>;
 
     fn witness_scalar_var(
         &self,
@@ -340,18 +341,12 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         &self,
         layouter: &mut impl Layouter<C::Base>,
         scalar: &Self::ScalarFixed,
-        base: Self::FixedPoints,
+        base: &Self::FixedPoints,
     ) -> Result<Self::Point, Error> {
-        // Full-width fixed-base scalar mul cannot be used with ValueCommitV.
-        match base {
-            OrchardFixedBases::ValueCommitV(_) => return Err(Error::SynthesisError),
-            _ => (),
-        };
-
         let config: mul_fixed::Config<C> = self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base),
-            |mut region| config.assign_region_full(scalar, base, 0, &mut region),
+            |mut region| config.assign_region_full(scalar, *base, 0, &mut region),
         )
     }
 
@@ -359,14 +354,8 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         &self,
         layouter: &mut impl Layouter<C::Base>,
         scalar: &Self::ScalarFixedShort,
-        base: Self::FixedPoints,
+        base: &Self::FixedPointsShort,
     ) -> Result<Self::Point, Error> {
-        // Short fixed-base scalar mul is only used with ValueCommitV.
-        match base {
-            OrchardFixedBases::ValueCommitV(_) => (),
-            _ => return Err(Error::SynthesisError),
-        };
-
         let config: mul_fixed::Config<C> = self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base),

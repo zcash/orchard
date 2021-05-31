@@ -1,4 +1,4 @@
-use super::super::{EccPoint, EccScalarFixed, OrchardFixedBases};
+use super::super::{EccPoint, EccScalarFixed, OrchardFixedBasesFull};
 
 use crate::constants;
 
@@ -26,10 +26,14 @@ impl<C: CurveAffine> Config<C> {
         region: &mut Region<'_, C::Base>,
         offset: usize,
         scalar: &EccScalarFixed<C>,
-        base: OrchardFixedBases<C>,
+        base: OrchardFixedBasesFull<C>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) =
-            (*self).assign_region_inner::<{constants::NUM_WINDOWS}>(region, offset, &scalar.into(), base.into())?;
+        let (acc, mul_b) = (*self).assign_region_inner::<{ constants::NUM_WINDOWS }>(
+            region,
+            offset,
+            &scalar.into(),
+            base.into(),
+        )?;
 
         // Add to the accumulator and return the final result as `[scalar]B`.
         let result =
@@ -42,6 +46,7 @@ impl<C: CurveAffine> Config<C> {
             use group::Curve;
             use halo2::arithmetic::FieldExt;
 
+            let base: super::OrchardFixedBases<C> = base.into();
             let scalar = scalar
                 .value
                 .map(|scalar| C::Scalar::from_bytes(&scalar.to_bytes()).unwrap());
@@ -65,7 +70,7 @@ pub mod tests {
     };
 
     use crate::circuit::gadget::ecc::{
-        chip::{EccChip, OrchardFixedBases},
+        chip::{EccChip, OrchardFixedBasesFull},
         FixedPoint, ScalarFixed,
     };
     use crate::constants;
@@ -76,7 +81,7 @@ pub mod tests {
         mut layouter: impl Layouter<C::Base>,
     ) -> Result<(), Error> {
         // commit_ivk_r
-        let commit_ivk_r = OrchardFixedBases::CommitIvkR(PhantomData);
+        let commit_ivk_r = OrchardFixedBasesFull::CommitIvkR(PhantomData);
         let commit_ivk_r = FixedPoint::from_inner(chip.clone(), commit_ivk_r);
         test_single_base(
             chip.clone(),
@@ -85,7 +90,7 @@ pub mod tests {
         )?;
 
         // note_commit_r
-        let note_commit_r = OrchardFixedBases::NoteCommitR(PhantomData);
+        let note_commit_r = OrchardFixedBasesFull::NoteCommitR(PhantomData);
         let note_commit_r = FixedPoint::from_inner(chip.clone(), note_commit_r);
         test_single_base(
             chip.clone(),
@@ -94,7 +99,7 @@ pub mod tests {
         )?;
 
         // nullifier_k
-        let nullifier_k = OrchardFixedBases::NullifierK(PhantomData);
+        let nullifier_k = OrchardFixedBasesFull::NullifierK(PhantomData);
         let nullifier_k = FixedPoint::from_inner(chip.clone(), nullifier_k);
         test_single_base(
             chip.clone(),
@@ -103,7 +108,7 @@ pub mod tests {
         )?;
 
         // value_commit_r
-        let value_commit_r = OrchardFixedBases::ValueCommitR(PhantomData);
+        let value_commit_r = OrchardFixedBasesFull::ValueCommitR(PhantomData);
         let value_commit_r = FixedPoint::from_inner(chip.clone(), value_commit_r);
         test_single_base(
             chip.clone(),
