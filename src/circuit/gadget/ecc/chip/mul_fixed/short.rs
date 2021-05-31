@@ -1,99 +1,26 @@
-use super::super::{
-    add, add_incomplete, util, witness_point, CellValue, EccPoint, EccScalarFixedShort,
-};
-use super::MulFixed;
+use super::super::{util, CellValue, EccPoint, EccScalarFixedShort};
 use crate::constants::{self, load::OrchardFixedBases};
 
 use halo2::{
     arithmetic::{CurveAffine, Field},
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
+    plonk::{ConstraintSystem, Error},
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
-pub struct Config<C: CurveAffine> {
-    q_mul_fixed: Selector,
-    q_mul_fixed_short: Selector,
-    // The fixed Lagrange interpolation coefficients for `x_p`.
-    lagrange_coeffs: [Column<Fixed>; constants::H],
-    // The fixed `z` for each window such that `y + z = u^2`.
-    fixed_z: Column<Fixed>,
-    // k-bit decomposition of an `n-1`-bit scalar:
-    // a = a_0 + 2^k(a_1) + 2^{2k}(a_2) + ... + 2^{(n-1)k}(a_{n-1})
-    k_s: Column<Advice>,
-    // x-coordinate of the multiple of the fixed base at the current window.
-    x_p: Column<Advice>,
-    // y-coordinate of the multiple of the fixed base at the current window.
-    y_p: Column<Advice>,
-    // An integer `u` for the current window, s.t. `y + z = u^2`.
-    u: Column<Advice>,
-    // Permutation
-    perm: Permutation,
-    // Configuration for `add`
-    add_config: add::Config,
-    // Configuration for `add_incomplete`
-    add_incomplete_config: add_incomplete::Config,
-    // Configuration for `witness_point`
-    witness_point_config: witness_point::Config,
-    _marker: PhantomData<C>,
-}
+pub struct Config<C: CurveAffine>(super::Config<C>);
 
-impl<C: CurveAffine> From<&super::Config> for Config<C> {
-    fn from(config: &super::Config) -> Self {
-        Self {
-            q_mul_fixed: config.q_mul_fixed,
-            q_mul_fixed_short: config.q_mul_fixed_short,
-            lagrange_coeffs: config.lagrange_coeffs,
-            fixed_z: config.fixed_z,
-            k_s: config.k,
-            x_p: config.x_p,
-            y_p: config.y_p,
-            u: config.u,
-            perm: config.perm.clone(),
-            add_config: config.add_config.clone(),
-            add_incomplete_config: config.add_incomplete_config.clone(),
-            witness_point_config: config.witness_point_config.clone(),
-            _marker: PhantomData,
-        }
+impl<C: CurveAffine> From<&super::Config<C>> for Config<C> {
+    fn from(config: &super::Config<C>) -> Self {
+        Self(config.clone())
     }
 }
 
-impl<C: CurveAffine> MulFixed<C> for Config<C> {
-    const NUM_WINDOWS: usize = constants::NUM_WINDOWS_SHORT;
+impl<C: CurveAffine> std::ops::Deref for Config<C> {
+    type Target = super::Config<C>;
 
-    fn q_mul_fixed(&self) -> Selector {
-        self.q_mul_fixed
-    }
-    fn lagrange_coeffs(&self) -> [Column<Fixed>; constants::H] {
-        self.lagrange_coeffs
-    }
-    fn fixed_z(&self) -> Column<Fixed> {
-        self.fixed_z
-    }
-    fn k(&self) -> Column<Advice> {
-        self.k_s
-    }
-    fn x_p(&self) -> Column<Advice> {
-        self.x_p
-    }
-    fn y_p(&self) -> Column<Advice> {
-        self.y_p
-    }
-    fn u(&self) -> Column<Advice> {
-        self.u
-    }
-    fn perm(&self) -> &Permutation {
-        &self.perm
-    }
-    fn witness_point_config(&self) -> &witness_point::Config {
-        &self.witness_point_config
-    }
-    fn add_config(&self) -> &add::Config {
-        &self.add_config
-    }
-    fn add_incomplete_config(&self) -> &add_incomplete::Config {
-        &self.add_incomplete_config
+    fn deref(&self) -> &super::Config<C> {
+        &self.0
     }
 }
 
@@ -103,7 +30,7 @@ impl<C: CurveAffine> Config<C> {
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
         let q_mul_fixed_short = meta.query_selector(self.q_mul_fixed_short, Rotation::cur());
         let y_p = meta.query_advice(self.y_p, Rotation::cur());
-        let y_a = meta.query_advice(self.add_config().y_qr, Rotation::cur());
+        let y_a = meta.query_advice(self.add_config.y_qr, Rotation::cur());
 
         // `(x_a, y_a)` is the result of `[m]B`, where `m` is the magnitude.
         // We conditionally negate this result using `y_p = y_a * s`, where `s` is the sign.
@@ -115,7 +42,7 @@ impl<C: CurveAffine> Config<C> {
 
         // Check that s * y_p = y_a
         meta.create_gate("check negation", |meta| {
-            let s = meta.query_advice(self.k_s, Rotation::cur());
+            let s = meta.query_advice(self.k, Rotation::cur());
             q_mul_fixed_short * (s * y_p - y_a)
         });
     }
@@ -127,7 +54,8 @@ impl<C: CurveAffine> Config<C> {
         scalar: &EccScalarFixedShort<C>,
         base: OrchardFixedBases<C>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) = self.assign_region_inner(region, offset, &scalar.into(), base.into())?;
+        let (acc, mul_b) =
+            self.assign_region_inner::<{constants::NUM_WINDOWS_SHORT}>(region, offset, &scalar.into(), base.into())?;
 
         // Add to the cumulative sum to get `[magnitude]B`.
         let magnitude_mul = self.add_config.assign_region(
@@ -144,7 +72,7 @@ impl<C: CurveAffine> Config<C> {
         let sign = util::assign_and_constrain(
             region,
             || "sign",
-            self.k_s,
+            self.k,
             offset + constants::NUM_WINDOWS_SHORT,
             &scalar.sign,
             &self.perm,

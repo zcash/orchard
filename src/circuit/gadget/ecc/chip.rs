@@ -195,8 +195,8 @@ impl<C: CurveAffine> EccChip<C> {
 
         // Create fixed-base scalar mul gates
         {
-            let mul_fixed_config: mul_fixed::Config = (&config).into();
-            mul_fixed_config.create_gate::<C>(meta);
+            let mul_fixed_config: mul_fixed::Config<C> = (&config).into();
+            mul_fixed_config.create_gate(meta);
         }
 
         // Create variable-base scalar mul gates
@@ -348,10 +348,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
             _ => (),
         };
 
-        let config: mul_fixed::Config = self.config().into();
+        let config: mul_fixed::Config<C> = self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base),
-            |mut region| config.assign_region_full::<C>(scalar, base, 0, &mut region),
+            |mut region| config.assign_region_full(scalar, base, 0, &mut region),
         )
     }
 
@@ -367,10 +367,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
             _ => return Err(Error::SynthesisError),
         };
 
-        let config: mul_fixed::Config = self.config().into();
+        let config: mul_fixed::Config<C> = self.config().into();
         layouter.assign_region(
             || format!("Multiply {:?}", base),
-            |mut region| config.assign_region_short::<C>(scalar, base, 0, &mut region),
+            |mut region| config.assign_region_short(scalar, base, 0, &mut region),
         )
     }
 }
