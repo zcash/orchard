@@ -1,5 +1,6 @@
 use super::EccInstructions;
 use crate::constants::{self, OrchardFixedBasesFull, ValueCommitV};
+use arrayvec::ArrayVec;
 use ff::Field;
 use halo2::{
     arithmetic::CurveAffine,
@@ -175,10 +176,17 @@ impl<C: CurveAffine> EccChip<C> {
             config.create_gate::<C>(meta);
         }
 
-        // Create witness scalar_fixed gates (both full-width and short)
+        // Create witness scalar_fixed gates that apply to both full-width and
+        // short scalars
         {
-            let config: witness_scalar_fixed::Config = (&config).into();
-            config.create_gate::<C>(meta);
+            let config: witness_scalar_fixed::Config<C> = (&config).into();
+            config.create_gate(meta);
+        }
+
+        // Create witness scalar_fixed gates that only apply to short scalars
+        {
+            let config: witness_scalar_fixed::short::Config<C> = (&config).into();
+            config.create_gate(meta);
         }
 
         // Create incomplete point addition gate
@@ -196,7 +204,8 @@ impl<C: CurveAffine> EccChip<C> {
         // Create fixed-base scalar mul gates that are used in both full-width
         // and short multiplication.
         {
-            let mul_fixed_config: mul_fixed::Config<C> = (&config).into();
+            let mul_fixed_config: mul_fixed::Config<C, { constants::NUM_WINDOWS }> =
+                (&config).into();
             mul_fixed_config.create_gate(meta);
         }
 
@@ -217,25 +226,27 @@ impl<C: CurveAffine> EccChip<C> {
     }
 }
 
-/// A full-width scalar used for variable-base scalar multiplication.
+/// A full-width scalar used for fixed-base scalar multiplication.
 /// This is decomposed in chunks of `window_width` bits in little-endian order.
 /// For example, if `window_width` = 3, we will have [k_0, k_1, ..., k_n]
-/// where `scalar = k_0 + k_1 * (2^3) + ... + k_n * (2^3)^n`.
+/// where `scalar = k_0 + k_1 * (2^3) + ... + k_n * (2^3)^n` and each `k_i` is
+/// in the range [0..2^3).
 #[derive(Clone, Debug)]
 pub struct EccScalarFixed<C: CurveAffine> {
     value: Option<C::Scalar>,
-    k_bits: Vec<CellValue<C::Base>>,
+    windows: ArrayVec<CellValue<C::Base>, { constants::NUM_WINDOWS }>,
 }
 
-/// A signed short scalar used for variable-base scalar multiplication.
+/// A signed short scalar used for fixed-base scalar multiplication.
 /// This is decomposed in chunks of `window_width` bits in little-endian order.
 /// For example, if `window_width` = 3, we will have [k_0, k_1, ..., k_n]
-/// where `scalar = k_0 + k_1 * (2^3) + ... + k_n * (2^3)^n`.
+/// where `scalar = k_0 + k_1 * (2^3) + ... + k_n * (2^3)^n` and each `k_i` is
+/// in the range [0..2^3).
 #[derive(Clone, Debug)]
 pub struct EccScalarFixedShort<C: CurveAffine> {
     magnitude: Option<C::Scalar>,
     sign: CellValue<C::Base>,
-    k_bits: Vec<CellValue<C::Base>>,
+    windows: ArrayVec<CellValue<C::Base>, { constants::NUM_WINDOWS_SHORT }>,
 }
 
 impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
@@ -271,10 +282,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<C::Base>,
         value: Option<C::Scalar>,
     ) -> Result<Self::ScalarFixed, Error> {
-        let config: witness_scalar_fixed::Config = self.config().into();
+        let config: witness_scalar_fixed::full_width::Config<C> = self.config().into();
         layouter.assign_region(
             || "witness scalar for fixed-base mul",
-            |mut region| config.assign_region_full(value, 0, &mut region),
+            |mut region| config.assign_region(value, 0, &mut region),
         )
     }
 
@@ -283,10 +294,10 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         layouter: &mut impl Layouter<C::Base>,
         value: Option<C::Scalar>,
     ) -> Result<Self::ScalarFixedShort, Error> {
-        let config: witness_scalar_fixed::Config = self.config().into();
+        let config: witness_scalar_fixed::short::Config<C> = self.config().into();
         layouter.assign_region(
             || "witness scalar for fixed-base mul",
-            |mut region| config.assign_region_short(value, 0, &mut region),
+            |mut region| config.assign_region(value, 0, &mut region),
         )
     }
 

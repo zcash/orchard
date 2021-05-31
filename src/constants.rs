@@ -21,6 +21,9 @@ pub use load::{OrchardFixedBase, OrchardFixedBasesFull, ValueCommitV};
 /// $\ell^\mathsf{Orchard}_\mathsf{base}$
 pub(crate) const L_ORCHARD_BASE: usize = 255;
 
+/// $\ell^\mathsf{Orchard}_\mathsf{scalar}$
+pub(crate) const L_ORCHARD_SCALAR: usize = 255;
+
 /// $\ell_\mathsf{value}$
 pub(crate) const L_VALUE: usize = 64;
 

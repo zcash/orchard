@@ -152,12 +152,18 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> ScalarVar
 
 /// A full-width element of the given elliptic curve's scalar field, to be used for fixed-base scalar mul.
 #[derive(Debug)]
-pub struct ScalarFixed<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> {
+pub struct ScalarFixed<C: CurveAffine, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
+{
     chip: EccChip,
     inner: EccChip::ScalarFixed,
 }
 
-impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> ScalarFixed<C, EccChip> {
+impl<C: CurveAffine, EccChip> ScalarFixed<C, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
+{
     /// Constructs a new ScalarFixed with the given value.
     pub fn new(
         chip: EccChip,
@@ -171,13 +177,17 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> ScalarFix
 
 /// A signed short element of the given elliptic curve's scalar field, to be used for fixed-base scalar mul.
 #[derive(Debug)]
-pub struct ScalarFixedShort<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> {
+pub struct ScalarFixedShort<C: CurveAffine, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
+{
     chip: EccChip,
     inner: EccChip::ScalarFixedShort,
 }
 
-impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq>
-    ScalarFixedShort<C, EccChip>
+impl<C: CurveAffine, EccChip> ScalarFixedShort<C, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
 {
     /// Constructs a new ScalarFixedShort with the given value.
     ///
@@ -296,12 +306,18 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> X<C, EccC
 /// A constant elliptic curve point over the given curve, for which window tables have
 /// been provided to make scalar multiplication more efficient.
 #[derive(Clone, Debug)]
-pub struct FixedPoint<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> {
+pub struct FixedPoint<C: CurveAffine, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
+{
     chip: EccChip,
     inner: EccChip::FixedPoints,
 }
 
-impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> FixedPoint<C, EccChip> {
+impl<C: CurveAffine, EccChip> FixedPoint<C, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
+{
     /// Returns `[by] self`.
     pub fn mul(
         &self,
@@ -326,12 +342,18 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> FixedPoin
 /// A constant elliptic curve point over the given curve, used in scalar multiplication
 /// with a short signed exponent
 #[derive(Clone, Debug)]
-pub struct FixedPointShort<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> {
+pub struct FixedPointShort<C: CurveAffine, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
+{
     chip: EccChip,
     inner: EccChip::FixedPointsShort,
 }
 
-impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> FixedPointShort<C, EccChip> {
+impl<C: CurveAffine, EccChip> FixedPointShort<C, EccChip>
+where
+    EccChip: EccInstructions<C> + Clone + Debug + Eq,
+{
     /// Returns `[by] self`.
     pub fn mul(
         &self,

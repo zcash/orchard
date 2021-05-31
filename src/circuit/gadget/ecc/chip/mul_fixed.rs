@@ -62,7 +62,7 @@ impl<C: CurveAffine> OrchardFixedBases<C> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Config<C: CurveAffine> {
+pub struct Config<C: CurveAffine, const NUM_WINDOWS: usize> {
     // Selector used in both short and full-width fixed-base scalar mul.
     q_mul_fixed: Selector,
 
@@ -90,7 +90,7 @@ pub struct Config<C: CurveAffine> {
     _marker: PhantomData<C>,
 }
 
-impl<C: CurveAffine> From<&EccConfig> for Config<C> {
+impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NUM_WINDOWS> {
     fn from(ecc_config: &EccConfig) -> Self {
         let config = Self {
             q_mul_fixed: ecc_config.q_mul_fixed,
@@ -151,7 +151,7 @@ impl<C: CurveAffine> From<&EccConfig> for Config<C> {
     }
 }
 
-impl<C: CurveAffine> Config<C> {
+impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
         let q_mul_fixed = meta.query_selector(self.q_mul_fixed, Rotation::cur());
         let y_p = meta.query_advice(self.y_p, Rotation::cur());
@@ -189,7 +189,7 @@ impl<C: CurveAffine> Config<C> {
     }
 
     #[allow(clippy::type_complexity)]
-    fn assign_region_inner<const NUM_WINDOWS: usize>(
+    fn assign_region_inner(
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
@@ -197,7 +197,7 @@ impl<C: CurveAffine> Config<C> {
         base: OrchardFixedBases<C>,
     ) -> Result<(EccPoint<C>, EccPoint<C>), Error> {
         // Assign fixed columns for given fixed base
-        self.assign_fixed_constants::<NUM_WINDOWS>(region, offset, base)?;
+        self.assign_fixed_constants(region, offset, base)?;
 
         // Copy the scalar decomposition
         self.copy_scalar(region, offset, scalar)?;
@@ -209,12 +209,12 @@ impl<C: CurveAffine> Config<C> {
         let acc = self.add_incomplete(region, offset, acc, base, scalar)?;
 
         // Process most significant window using complete addition
-        let mul_b = self.process_msb::<NUM_WINDOWS>(region, offset, base, scalar)?;
+        let mul_b = self.process_msb(region, offset, base, scalar)?;
 
         Ok((acc, mul_b))
     }
 
-    fn assign_fixed_constants<const NUM_WINDOWS: usize>(
+    fn assign_fixed_constants(
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
@@ -222,6 +222,7 @@ impl<C: CurveAffine> Config<C> {
     ) -> Result<(), Error> {
         let (lagrange_coeffs, z) = match base {
             OrchardFixedBases::ValueCommitV => {
+                assert_eq!(NUM_WINDOWS, constants::NUM_WINDOWS_SHORT);
                 let base = ValueCommitV::<C>::get();
                 (
                     base.lagrange_coeffs_short.0.as_ref().to_vec(),
@@ -229,6 +230,7 @@ impl<C: CurveAffine> Config<C> {
                 )
             }
             OrchardFixedBases::Full(base) => {
+                assert_eq!(NUM_WINDOWS, constants::NUM_WINDOWS);
                 let base: OrchardFixedBase<C> = base.into();
                 (
                     base.lagrange_coeffs.0.as_ref().to_vec(),
@@ -385,7 +387,7 @@ impl<C: CurveAffine> Config<C> {
         Ok(acc)
     }
 
-    fn process_msb<const NUM_WINDOWS: usize>(
+    fn process_msb(
         &self,
         region: &mut Region<'_, C::Base>,
         offset: usize,
@@ -449,8 +451,8 @@ impl<C: CurveAffine> From<&EccScalarFixedShort<C>> for ScalarFixed<C> {
 impl<C: CurveAffine> ScalarFixed<C> {
     fn k_bits(&self) -> &[CellValue<C::Base>] {
         match self {
-            ScalarFixed::FullWidth(scalar) => &scalar.k_bits,
-            ScalarFixed::Short(scalar) => &scalar.k_bits,
+            ScalarFixed::FullWidth(scalar) => &scalar.windows,
+            ScalarFixed::Short(scalar) => &scalar.windows,
         }
     }
 

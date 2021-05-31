@@ -2,7 +2,7 @@ use super::super::{EccConfig, EccPoint, EccScalarFixed, OrchardFixedBasesFull};
 
 use halo2::{arithmetic::CurveAffine, circuit::Region, plonk::Error};
 
-pub struct Config<C: CurveAffine, const NUM_WINDOWS: usize>(super::Config<C>);
+pub struct Config<C: CurveAffine, const NUM_WINDOWS: usize>(super::Config<C, NUM_WINDOWS>);
 
 impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NUM_WINDOWS> {
     fn from(config: &EccConfig) -> Self {
@@ -11,9 +11,9 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NU
 }
 
 impl<C: CurveAffine, const NUM_WINDOWS: usize> std::ops::Deref for Config<C, NUM_WINDOWS> {
-    type Target = super::Config<C>;
+    type Target = super::Config<C, NUM_WINDOWS>;
 
-    fn deref(&self) -> &super::Config<C> {
+    fn deref(&self) -> &super::Config<C, NUM_WINDOWS> {
         &self.0
     }
 }
@@ -26,12 +26,8 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) = (*self).assign_region_inner::<NUM_WINDOWS>(
-            region,
-            offset,
-            &scalar.into(),
-            base.into(),
-        )?;
+        let (acc, mul_b) =
+            (*self).assign_region_inner(region, offset, &scalar.into(), base.into())?;
 
         // Add to the accumulator and return the final result as `[scalar]B`.
         let result = self

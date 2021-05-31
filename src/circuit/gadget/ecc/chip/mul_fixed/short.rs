@@ -11,7 +11,7 @@ use halo2::{
 pub struct Config<C: CurveAffine, const NUM_WINDOWS: usize> {
     // Selector used for fixed-base scalar mul with short signed exponent.
     q_mul_fixed_short: Selector,
-    mul_fixed_config: super::Config<C>,
+    mul_fixed_config: super::Config<C, NUM_WINDOWS>,
 }
 
 impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NUM_WINDOWS> {
@@ -24,9 +24,9 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NU
 }
 
 impl<C: CurveAffine, const NUM_WINDOWS: usize> std::ops::Deref for Config<C, NUM_WINDOWS> {
-    type Target = super::Config<C>;
+    type Target = super::Config<C, NUM_WINDOWS>;
 
-    fn deref(&self) -> &super::Config<C> {
+    fn deref(&self) -> &super::Config<C, NUM_WINDOWS> {
         &self.mul_fixed_config
     }
 }
@@ -61,12 +61,8 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccPoint<C>, Error> {
-        let (acc, mul_b) = self.assign_region_inner::<NUM_WINDOWS>(
-            region,
-            offset,
-            &scalar.into(),
-            base.clone().into(),
-        )?;
+        let (acc, mul_b) =
+            self.assign_region_inner(region, offset, &scalar.into(), base.clone().into())?;
 
         // Add to the cumulative sum to get `[magnitude]B`.
         let magnitude_mul =

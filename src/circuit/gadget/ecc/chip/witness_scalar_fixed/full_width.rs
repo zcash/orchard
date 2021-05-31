@@ -1,49 +1,33 @@
-use super::super::EccScalarFixed;
-use ff::PrimeField;
-use halo2::{
-    arithmetic::CurveAffine,
-    circuit::Region,
-    plonk::{Advice, Column, Error, Selector},
-};
-use std::marker::PhantomData;
+use super::super::{EccConfig, EccScalarFixed};
+use crate::constants::{L_ORCHARD_SCALAR, NUM_WINDOWS};
+use halo2::{arithmetic::CurveAffine, circuit::Region, plonk::Error};
 
-pub(super) struct Config<C: CurveAffine> {
-    pub q_scalar_fixed: Selector,
-    // k-bit decomposition of scalar
-    pub k: Column<Advice>,
-    _marker: PhantomData<C>,
-}
+pub struct Config<C: CurveAffine>(super::Config<C>);
 
-impl<C: CurveAffine> From<&super::Config> for Config<C> {
-    fn from(config: &super::Config) -> Self {
-        Self {
-            q_scalar_fixed: config.q_scalar_fixed,
-            k: config.k_s,
-            _marker: PhantomData,
-        }
+impl<C: CurveAffine> From<&EccConfig> for Config<C> {
+    fn from(ecc_config: &EccConfig) -> Self {
+        Self(ecc_config.into())
     }
 }
 
-impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
-    const SCALAR_NUM_BITS: usize = C::Scalar::NUM_BITS as usize;
-    const NUM_WINDOWS: usize = crate::constants::NUM_WINDOWS as usize;
-    type Scalar = EccScalarFixed<C>;
+impl<C: CurveAffine> std::ops::Deref for Config<C> {
+    type Target = super::Config<C>;
 
-    fn q_scalar_fixed(&self) -> Selector {
-        self.q_scalar_fixed
+    fn deref(&self) -> &super::Config<C> {
+        &self.0
     }
-    fn k(&self) -> Column<Advice> {
-        self.k
-    }
+}
 
-    fn assign_region(
+impl<C: CurveAffine> Config<C> {
+    pub fn assign_region(
         &self,
         value: Option<C::Scalar>,
         offset: usize,
         region: &mut Region<'_, C::Base>,
     ) -> Result<EccScalarFixed<C>, Error> {
-        let k_bits = self.decompose_scalar_fixed(value, offset, region)?;
+        let windows =
+            self.decompose_scalar_fixed::<NUM_WINDOWS, L_ORCHARD_SCALAR>(value, offset, region)?;
 
-        Ok(EccScalarFixed { value, k_bits })
+        Ok(EccScalarFixed { value, windows })
     }
 }

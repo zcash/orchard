@@ -1,61 +1,51 @@
-use super::super::{CellValue, EccScalarFixedShort};
-use crate::constants;
+use super::super::{CellValue, EccConfig, EccScalarFixedShort};
+use crate::constants::{L_VALUE, NUM_WINDOWS_SHORT};
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
-use std::marker::PhantomData;
 
-pub(super) struct Config<C: CurveAffine> {
-    q_scalar_fixed: Selector,
+pub struct Config<C: CurveAffine> {
     q_scalar_fixed_short: Selector,
-    // k-bit decomposition of scalar. Also used to witness the sign `s`
-    // in the last row.
-    k_s: Column<Advice>,
-    _marker: PhantomData<C>,
+    witness_scalar_fixed_config: super::Config<C>,
 }
 
-impl<C: CurveAffine> From<&super::Config> for Config<C> {
-    fn from(config: &super::Config) -> Self {
+impl<C: CurveAffine> From<&EccConfig> for Config<C> {
+    fn from(ecc_config: &EccConfig) -> Self {
         Self {
-            q_scalar_fixed: config.q_scalar_fixed,
-            q_scalar_fixed_short: config.q_scalar_fixed_short,
-            k_s: config.k_s,
-            _marker: PhantomData,
+            q_scalar_fixed_short: ecc_config.q_scalar_fixed_short,
+            witness_scalar_fixed_config: ecc_config.into(),
         }
     }
 }
 
+impl<C: CurveAffine> std::ops::Deref for Config<C> {
+    type Target = super::Config<C>;
+
+    fn deref(&self) -> &super::Config<C> {
+        &self.witness_scalar_fixed_config
+    }
+}
+
 impl<C: CurveAffine> Config<C> {
-    pub(super) fn sign_check_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
-        // Check that sign s \in {1, -1}
+    pub fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
+        // Check that sign is either 1 or -1.
         meta.create_gate("check sign", |meta| {
             let q_scalar_fixed_short =
                 meta.query_selector(self.q_scalar_fixed_short, Rotation::cur());
-            let s = meta.query_advice(self.k_s, Rotation::cur());
+            let sign = meta.query_advice(self.window, Rotation::cur());
 
             q_scalar_fixed_short
-                * (s.clone() + Expression::Constant(C::Base::one()))
-                * (s - Expression::Constant(C::Base::one()))
+                * (sign.clone() + Expression::Constant(C::Base::one()))
+                * (sign - Expression::Constant(C::Base::one()))
         });
     }
 }
 
-impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
-    const SCALAR_NUM_BITS: usize = constants::L_VALUE as usize;
-    const NUM_WINDOWS: usize = crate::constants::NUM_WINDOWS_SHORT as usize;
-    type Scalar = EccScalarFixedShort<C>;
-
-    fn q_scalar_fixed(&self) -> Selector {
-        self.q_scalar_fixed
-    }
-    fn k(&self) -> Column<Advice> {
-        self.k_s
-    }
-
-    fn assign_region(
+impl<C: CurveAffine> Config<C> {
+    pub fn assign_region(
         &self,
         value: Option<C::Scalar>,
         offset: usize,
@@ -63,7 +53,7 @@ impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
     ) -> Result<EccScalarFixedShort<C>, Error> {
         // Enable `q_scalar_fixed_short`
         self.q_scalar_fixed_short
-            .enable(region, offset + Self::NUM_WINDOWS)?;
+            .enable(region, offset + NUM_WINDOWS_SHORT)?;
 
         // Compute the scalar's sign and magnitude
         let sign = value.map(|value| {
@@ -78,8 +68,11 @@ impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
 
         let magnitude = sign.zip(value).map(|(sign, value)| sign * value);
 
+        println!("before decompose");
         // Decompose magnitude into `k`-bit windows
-        let k_bits = self.decompose_scalar_fixed(magnitude, offset, region)?;
+        let windows =
+            self.decompose_scalar_fixed::<NUM_WINDOWS_SHORT, L_VALUE>(magnitude, offset, region)?;
+        println!("after decompose");
 
         // Assign the sign and enable `q_scalar_fixed_short`
         let sign = sign.map(|sign| {
@@ -92,15 +85,15 @@ impl<C: CurveAffine> super::WitnessScalarFixed<C> for Config<C> {
         });
         let sign_cell = region.assign_advice(
             || "sign",
-            self.k_s,
-            offset + k_bits.len(),
+            self.window,
+            NUM_WINDOWS_SHORT,
             || sign.ok_or(Error::SynthesisError),
         )?;
 
         Ok(EccScalarFixedShort {
             magnitude,
             sign: CellValue::<C::Base>::new(sign_cell, sign),
-            k_bits,
+            windows,
         })
     }
 }
