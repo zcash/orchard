@@ -68,86 +68,77 @@ impl<C: CurveAffine> Config<C> {
 
     // Gate for incomplete addition part of variable-base scalar multiplication.
     pub(super) fn create_gate<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) {
-        let q_mul = meta.query_selector(self.q_mul, Rotation::cur());
-        let z_cur = meta.query_advice(self.z, Rotation::cur());
-        let z_prev = meta.query_advice(self.z, Rotation::prev());
-        let x_a_cur = meta.query_advice(self.x_a, Rotation::cur());
-        let x_a_next = meta.query_advice(self.x_a, Rotation::next());
-        let x_p_cur = meta.query_advice(self.x_p, Rotation::cur());
-        let x_p_next = meta.query_advice(self.x_p, Rotation::next());
-        let y_p_cur = meta.query_advice(self.y_p, Rotation::cur());
-        let y_p_next = meta.query_advice(self.y_p, Rotation::next());
-        let lambda1_cur = meta.query_advice(self.lambda1, Rotation::cur());
-        let lambda2_cur = meta.query_advice(self.lambda2, Rotation::cur());
-        let lambda1_next = meta.query_advice(self.lambda1, Rotation::next());
-        let lambda2_next = meta.query_advice(self.lambda2, Rotation::next());
-
-        // The current bit in the scalar decomposition, k_i = z_i - 2⋅z_{i+1}.
-        // Recall that we assigned the cumulative variable `z_i` in descending order,
-        // i from n down to 0. So z_{i+1} corresponds to the `z_prev` query.
-        let k = z_cur - Expression::Constant(F::from_u64(2)) * z_prev;
-
         // (k_i) ⋅ (k_i - 1) = 0
-        meta.create_gate("Scalar boolean decomposition", |_| {
+        meta.create_gate("Scalar boolean decomposition", |meta| {
+            let q_mul = meta.query_selector(self.q_mul, Rotation::cur());
+            let z_cur = meta.query_advice(self.z, Rotation::cur());
+            let z_prev = meta.query_advice(self.z, Rotation::prev());
+            let x_a_cur = meta.query_advice(self.x_a, Rotation::cur());
+            let x_a_next = meta.query_advice(self.x_a, Rotation::next());
+            let x_p_cur = meta.query_advice(self.x_p, Rotation::cur());
+            let x_p_next = meta.query_advice(self.x_p, Rotation::next());
+            let y_p_cur = meta.query_advice(self.y_p, Rotation::cur());
+            let y_p_next = meta.query_advice(self.y_p, Rotation::next());
+            let lambda1_cur = meta.query_advice(self.lambda1, Rotation::cur());
+            let lambda2_cur = meta.query_advice(self.lambda2, Rotation::cur());
+            let lambda1_next = meta.query_advice(self.lambda1, Rotation::next());
+            let lambda2_next = meta.query_advice(self.lambda2, Rotation::next());
+
+            // The current bit in the scalar decomposition, k_i = z_i - 2⋅z_{i+1}.
+            // Recall that we assigned the cumulative variable `z_i` in descending order,
+            // i from n down to 0. So z_{i+1} corresponds to the `z_prev` query.
+            let k = z_cur - Expression::Constant(F::from_u64(2)) * z_prev;
+
+            // y_{A,i} = (λ_{1,i} + λ_{2,i})
+            //           * (x_{A,i} - (λ_{1,i}^2 - x_{A,i} - x_{P,i})) / 2
+            let y_a_cur = (lambda1_cur.clone() + lambda2_cur.clone())
+                * (x_a_cur.clone()
+                    - (lambda1_cur.clone() * lambda1_cur.clone()
+                        - x_a_cur.clone()
+                        - x_p_cur.clone()))
+                * F::TWO_INV;
+
+            // y_{A,i+1} = (λ_{1,i+1} + λ_{2,i+1})
+            //           * (x_{A,i+1} - (λ_{1,i+1}^2 - x_{A,i+1} - x_{P,i+1})) / 2
+            let y_a_next = (lambda1_next.clone() + lambda2_next)
+                * (x_a_next.clone()
+                    - (lambda1_next.clone() * lambda1_next - x_a_next.clone() - x_p_next.clone()))
+                * F::TWO_INV;
+
+            // Check booleanity of decomposition.
             let bool_check = k.clone() * (k.clone() + Expression::Constant(-F::one()));
-            q_mul.clone() * bool_check
-        });
 
-        // The base used in double-and-add remains constant. We check that its
-        // x- and y- coordinates are the same throughout.
-        meta.create_gate("x_p equality", |_| {
-            q_mul.clone() * (x_p_cur.clone() - x_p_next.clone())
-        });
-        meta.create_gate("y_p equality", |_| {
-            q_mul.clone() * (y_p_cur.clone() - y_p_next.clone())
-        });
+            // The base used in double-and-add remains constant. We check that its
+            // x- and y- coordinates are the same throughout.
+            let x_p_check = x_p_cur.clone() - x_p_next;
+            let y_p_check = y_p_cur.clone() - y_p_next;
 
-        // y_{A,i} = (λ_{1,i} + λ_{2,i})
-        //           * (x_{A,i} - (λ_{1,i}^2 - x_{A,i} - x_{P,i})) / 2
-        let y_a_cur = (lambda1_cur.clone() + lambda2_cur.clone())
-            * (x_a_cur.clone()
-                - (lambda1_cur.clone() * lambda1_cur.clone() - x_a_cur.clone() - x_p_cur.clone()))
-            * F::TWO_INV;
+            // λ_{1,i}⋅(x_{A,i} − x_{P,i}) − y_{A,i} + (2k_i - 1) y_{P,i} = 0
+            let poly1 = lambda1_cur.clone() * (x_a_cur.clone() - x_p_cur.clone()) - y_a_cur.clone()
+                + (k * F::from_u64(2) + Expression::Constant(-F::one())) * y_p_cur;
 
-        // y_{A,i+1} = (λ_{1,i+1} + λ_{2,i+1})
-        //           * (x_{A,i+1} - (λ_{1,i+1}^2 - x_{A,i+1} - x_{P,i+1})) / 2
-        let y_a_next = (lambda1_next.clone() + lambda2_next)
-            * (x_a_next.clone()
-                - (lambda1_next.clone() * lambda1_next - x_a_next.clone() - x_p_next))
-            * F::TWO_INV;
+            // (λ_{1,i} + λ_{2,i})⋅(x_{A,i} − (λ_{1,i}^2 − x_{A,i} − x_{P,i})) − 2y_{A,i}) = 0
+            let poly2 = {
+                let lambda_neg = lambda1_cur.clone() + lambda2_cur.clone();
+                let lambda1_expr =
+                    lambda1_cur.clone() * lambda1_cur.clone() - x_a_cur.clone() - x_p_cur.clone();
+                lambda_neg * (x_a_cur.clone() - lambda1_expr)
+                    - Expression::Constant(F::from_u64(2)) * y_a_cur.clone()
+            };
 
-        // λ_{1,i}⋅(x_{A,i} − x_{P,i}) − y_{A,i} + (2k_i - 1) y_{P,i} = 0
-        meta.create_gate("Double-and-add lambda1", |_| {
-            let expr = lambda1_cur.clone() * (x_a_cur.clone() - x_p_cur.clone()) - y_a_cur.clone()
-                + (k * F::from_u64(2) + Expression::Constant(-F::one())) * y_p_cur.clone();
-            q_mul.clone() * expr
-        });
-
-        // (λ_{1,i} + λ_{2,i})⋅(x_{A,i} − (λ_{1,i}^2 − x_{A,i} − x_{P,i})) − 2y_{A,i}) = 0
-        meta.create_gate("Double-and-add expr0", |_| {
-            let lambda_neg = lambda1_cur.clone() + lambda2_cur.clone();
-            let lambda1_expr =
-                lambda1_cur.clone() * lambda1_cur.clone() - x_a_cur.clone() - x_p_cur.clone();
-            let expr = lambda_neg * (x_a_cur.clone() - lambda1_expr)
-                - Expression::Constant(F::from_u64(2)) * y_a_cur.clone();
-            q_mul.clone() * expr
-        });
-
-        // λ_{2,i}^2 − x_{A,i+1} −(λ_{1,i}^2 − x_{A,i} − x_{P,i}) − x_{A,i} = 0
-        meta.create_gate("Double-and-add expr1", |_| {
-            let expr1 = lambda2_cur.clone() * lambda2_cur.clone()
+            // λ_{2,i}^2 − x_{A,i+1} −(λ_{1,i}^2 − x_{A,i} − x_{P,i}) − x_{A,i} = 0
+            let poly3 = lambda2_cur.clone() * lambda2_cur.clone()
                 - x_a_next.clone()
                 - (lambda1_cur.clone() * lambda1_cur)
                 + x_p_cur;
 
-            q_mul.clone() * expr1
-        });
+            // λ_{2,i}⋅(x_{A,i} − x_{A,i+1}) − y_{A,i} − y_{A,i+1} = 0
+            let poly4 = lambda2_cur * (x_a_cur - x_a_next) - y_a_cur - y_a_next;
 
-        // λ_{2,i}⋅(x_{A,i} − x_{A,i+1}) − y_{A,i} − y_{A,i+1} = 0
-        meta.create_gate("Double-and-add expr2", |_| {
-            let expr2 = lambda2_cur * (x_a_cur - x_a_next) - y_a_cur - y_a_next;
-
-            q_mul.clone() * expr2
+            [bool_check, x_p_check, y_p_check, poly1, poly2, poly3, poly4]
+                .iter()
+                .map(|poly| q_mul.clone() * poly.clone())
+                .collect()
         });
     }
 
@@ -223,7 +214,7 @@ impl<C: CurveAffine> Config<C> {
         let mut y_a = *acc.1;
 
         // Incomplete addition
-        for (row, k) in bits.into_iter().enumerate() {
+        for (row, k) in bits.iter().enumerate() {
             // z_{i} = 2 * z_{i+1} + k_i
             let z_val = z
                 .value

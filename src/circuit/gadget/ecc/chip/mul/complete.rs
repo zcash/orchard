@@ -1,5 +1,5 @@
 use super::super::{add, util, CellValue, EccPoint};
-use super::{complete_len, complete_range};
+use super::complete_len;
 use ff::Field;
 
 use halo2::{
@@ -40,18 +40,21 @@ impl<C: CurveAffine> Config<C> {
     /// addition gate (controlled by `q_mul`) already checks scalar decomposition for
     /// the other bits.
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
-        let q_mul_complete = meta.query_selector(self.q_mul_complete, Rotation::cur());
-        let z_cur = meta.query_advice(self.z_complete, Rotation::cur());
-        let z_prev = meta.query_advice(self.z_complete, Rotation::prev());
+        meta.create_gate(
+            "Decompose scalar for complete bits of variable-base mul",
+            |meta| {
+                let q_mul_complete = meta.query_selector(self.q_mul_complete, Rotation::cur());
+                let z_cur = meta.query_advice(self.z_complete, Rotation::cur());
+                let z_prev = meta.query_advice(self.z_complete, Rotation::prev());
 
-        meta.create_gate("Decompose scalar ", |_| {
-            // k_{i} = z_{i} - 2⋅z_{i+1}
-            let k = z_cur.clone() - Expression::Constant(C::Base::from_u64(2)) * z_prev;
-            // (k_i) ⋅ (k_i - 1) = 0
-            let bool_check = k.clone() * (k + Expression::Constant(-C::Base::one()));
+                // k_{i} = z_{i} - 2⋅z_{i+1}
+                let k = z_cur - Expression::Constant(C::Base::from_u64(2)) * z_prev;
+                // (k_i) ⋅ (k_i - 1) = 0
+                let bool_check = k.clone() * (k + Expression::Constant(-C::Base::one()));
 
-            q_mul_complete.clone() * bool_check
-        });
+                vec![q_mul_complete * bool_check]
+            },
+        );
     }
 
     #[allow(clippy::type_complexity)]
@@ -69,12 +72,15 @@ impl<C: CurveAffine> Config<C> {
         assert_eq!(bits.len(), complete_len::<C>());
 
         // Enable selectors for complete range
-        for row in complete_range::<C>() {
+        for row in 0..complete_len::<C>() {
+            // Each iteration uses 2 rows (two complete additions)
+            let row = 2 * row;
+
             self.q_mul_complete.enable(region, row + offset)?;
         }
 
         // Complete addition
-        for (iter, k) in bits.into_iter().enumerate() {
+        for (iter, k) in bits.iter().enumerate() {
             // Each iteration uses 2 rows (two complete additions)
             let row = 2 * iter;
 

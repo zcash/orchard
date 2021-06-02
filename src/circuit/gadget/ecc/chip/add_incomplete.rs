@@ -38,29 +38,30 @@ impl From<&EccConfig> for Config {
 
 impl Config {
     pub(super) fn create_gate<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) {
-        let q_add_incomplete = meta.query_selector(self.q_add_incomplete, Rotation::cur());
-        let x_p = meta.query_advice(self.x_p, Rotation::cur());
-        let y_p = meta.query_advice(self.y_p, Rotation::cur());
-        let x_q = meta.query_advice(self.x_qr, Rotation::cur());
-        let y_q = meta.query_advice(self.y_qr, Rotation::cur());
-        let x_r = meta.query_advice(self.x_qr, Rotation::next());
-        let y_r = meta.query_advice(self.y_qr, Rotation::next());
+        meta.create_gate("incomplete addition gates", |meta| {
+            let q_add_incomplete = meta.query_selector(self.q_add_incomplete, Rotation::cur());
+            let x_p = meta.query_advice(self.x_p, Rotation::cur());
+            let y_p = meta.query_advice(self.y_p, Rotation::cur());
+            let x_q = meta.query_advice(self.x_qr, Rotation::cur());
+            let y_q = meta.query_advice(self.y_qr, Rotation::cur());
+            let x_r = meta.query_advice(self.x_qr, Rotation::next());
+            let y_r = meta.query_advice(self.y_qr, Rotation::next());
 
-        // (x_r + x_q + x_p)⋅(x_p − x_q)^2 − (y_p − y_q)^2 = 0
-        meta.create_gate("point addition expr1", |_| {
-            let expr1 = (x_r.clone() + x_q.clone() + x_p.clone())
-                * (x_p.clone() - x_q.clone())
-                * (x_p.clone() - x_q.clone())
-                - (y_p.clone() - y_q.clone()) * (y_p.clone() - y_q.clone());
+            // (x_r + x_q + x_p)⋅(x_p − x_q)^2 − (y_p − y_q)^2 = 0
+            let poly1 = {
+                (x_r.clone() + x_q.clone() + x_p.clone())
+                    * (x_p.clone() - x_q.clone())
+                    * (x_p.clone() - x_q.clone())
+                    - (y_p.clone() - y_q.clone()) * (y_p.clone() - y_q.clone())
+            };
 
-            q_add_incomplete.clone() * expr1
-        });
+            // (y_r + y_q)(x_p − x_q) − (y_p − y_q)(x_q − x_r) = 0
+            let poly2 = (y_r + y_q.clone()) * (x_p - x_q.clone()) - (y_p - y_q) * (x_q - x_r);
 
-        // (y_r + y_q)(x_p − x_q) − (y_p − y_q)(x_q − x_r) = 0
-        meta.create_gate("point addition expr2", |_| {
-            let expr2 = (y_r + y_q.clone()) * (x_p - x_q.clone()) - (y_p - y_q) * (x_q - x_r);
-
-            q_add_incomplete * expr2
+            [poly1, poly2]
+                .iter()
+                .map(|poly| q_add_incomplete.clone() * poly.clone())
+                .collect()
         });
     }
 

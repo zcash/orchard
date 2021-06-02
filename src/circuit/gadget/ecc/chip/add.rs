@@ -68,141 +68,131 @@ impl Config {
     }
 
     pub(crate) fn create_gate<F: FieldExt>(&self, meta: &mut ConstraintSystem<F>) {
-        let q_add = meta.query_selector(self.q_add, Rotation::cur());
-        let x_p = meta.query_advice(self.x_p, Rotation::cur());
-        let y_p = meta.query_advice(self.y_p, Rotation::cur());
-        let x_q = meta.query_advice(self.x_qr, Rotation::cur());
-        let y_q = meta.query_advice(self.y_qr, Rotation::cur());
-        let x_r = meta.query_advice(self.x_qr, Rotation::next());
-        let y_r = meta.query_advice(self.y_qr, Rotation::next());
-        let lambda = meta.query_advice(self.lambda, Rotation::cur());
+        meta.create_gate("complete addition gates", |meta| {
+            let q_add = meta.query_selector(self.q_add, Rotation::cur());
+            let x_p = meta.query_advice(self.x_p, Rotation::cur());
+            let y_p = meta.query_advice(self.y_p, Rotation::cur());
+            let x_q = meta.query_advice(self.x_qr, Rotation::cur());
+            let y_q = meta.query_advice(self.y_qr, Rotation::cur());
+            let x_r = meta.query_advice(self.x_qr, Rotation::next());
+            let y_r = meta.query_advice(self.y_qr, Rotation::next());
+            let lambda = meta.query_advice(self.lambda, Rotation::cur());
 
-        // α = inv0(x_q - x_p)
-        let alpha = meta.query_advice(self.alpha, Rotation::cur());
-        // β = inv0(x_p)
-        let beta = meta.query_advice(self.beta, Rotation::cur());
-        // γ = inv0(x_q)
-        let gamma = meta.query_advice(self.gamma, Rotation::cur());
-        // δ = inv0(y_p + y_q) if x_q = x_p, 0 otherwise
-        let delta = meta.query_advice(self.delta, Rotation::cur());
+            // α = inv0(x_q - x_p)
+            let alpha = meta.query_advice(self.alpha, Rotation::cur());
+            // β = inv0(x_p)
+            let beta = meta.query_advice(self.beta, Rotation::cur());
+            // γ = inv0(x_q)
+            let gamma = meta.query_advice(self.gamma, Rotation::cur());
+            // δ = inv0(y_p + y_q) if x_q = x_p, 0 otherwise
+            let delta = meta.query_advice(self.delta, Rotation::cur());
 
-        // Useful composite expressions
-        // α ⋅(x_q - x_p)
-        let if_alpha = (x_q.clone() - x_p.clone()) * alpha;
-        // β ⋅ x_p
-        let if_beta = x_p.clone() * beta;
-        // γ ⋅ x_q
-        let if_gamma = x_q.clone() * gamma;
-        // δ ⋅(y_p + y_q)
-        let if_delta = (y_q.clone() + y_p.clone()) * delta;
+            // Useful composite expressions
+            // α ⋅(x_q - x_p)
+            let if_alpha = (x_q.clone() - x_p.clone()) * alpha;
+            // β ⋅ x_p
+            let if_beta = x_p.clone() * beta;
+            // γ ⋅ x_q
+            let if_gamma = x_q.clone() * gamma;
+            // δ ⋅(y_p + y_q)
+            let if_delta = (y_q.clone() + y_p.clone()) * delta;
 
-        // Useful constants
-        let one = Expression::Constant(F::one());
-        let two = Expression::Constant(F::from_u64(2));
-        let three = Expression::Constant(F::from_u64(3));
+            // Useful constants
+            let one = Expression::Constant(F::one());
+            let two = Expression::Constant(F::from_u64(2));
+            let three = Expression::Constant(F::from_u64(3));
 
-        // Handle cases in incomplete addition
-        {
-            meta.create_gate(
-                "(x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p))=0",
-                |_| {
-                    let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q − x_p)
+            // (x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p)) = 0
+            let poly1 = {
+                let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q − x_p)
 
-                    let y_q_minus_y_p = y_q.clone() - y_p.clone(); // (y_q − y_p)
-                    let incomplete = x_q_minus_x_p.clone() * lambda.clone() - y_q_minus_y_p; // (x_q − x_p)⋅λ − (y_q−y_p)
+                let y_q_minus_y_p = y_q.clone() - y_p.clone(); // (y_q − y_p)
+                let incomplete = x_q_minus_x_p.clone() * lambda.clone() - y_q_minus_y_p; // (x_q − x_p)⋅λ − (y_q−y_p)
 
-                    // q_add ⋅(x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p))
-                    q_add.clone() * x_q_minus_x_p * incomplete
-                },
-            );
+                // q_add ⋅(x_q − x_p)⋅((x_q − x_p)⋅λ − (y_q−y_p))
+                x_q_minus_x_p * incomplete
+            };
 
-            meta.create_gate("(1 - (x_q - x_p)⋅α)⋅(2y_p ⋅λ - 3x_p^2) = 0", |_| {
+            // (1 - (x_q - x_p)⋅α)⋅(2y_p ⋅λ - 3x_p^2) = 0
+            let poly2 = {
                 let three_x_p_sq = three * x_p.clone() * x_p.clone(); // 3x_p^2
-                let two_y_p = two.clone() * y_p.clone(); // 2y_p
+                let two_y_p = two * y_p.clone(); // 2y_p
                 let tangent_line = two_y_p * lambda.clone() - three_x_p_sq; // (2y_p ⋅λ - 3x_p^2)
 
                 // q_add ⋅(1 - (x_q - x_p)⋅α)⋅(2y_p ⋅λ - 3x_p^2)
-                q_add.clone() * (one.clone() - if_alpha.clone()) * tangent_line
-            });
+                (one.clone() - if_alpha.clone()) * tangent_line
+            };
 
-            meta.create_gate(
-                "x_p⋅x_q⋅(x_q - x_p)⋅(λ^2 - x_p - x_q - x_r) = 0",
-                |_| {
-                    let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q - x_p)
-                    let secant_line =
-                        lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone(); // (λ^2 - x_p - x_q - x_r)
+            // x_p⋅x_q⋅(x_q - x_p)⋅(λ^2 - x_p - x_q - x_r) = 0
+            let poly3 = {
+                let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q - x_p)
+                let secant_line =
+                    lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone(); // (λ^2 - x_p - x_q - x_r)
 
-                    // q_add ⋅ x_p⋅x_q⋅(x_q - x_p)⋅(λ^2 - x_p - x_q - x_r)
-                    q_add.clone() * x_p.clone() * x_q.clone() * x_q_minus_x_p * secant_line
-                },
-            );
+                // x_p⋅x_q⋅(x_q - x_p)⋅(λ^2 - x_p - x_q - x_r)
+                x_p.clone() * x_q.clone() * x_q_minus_x_p * secant_line
+            };
 
-            meta.create_gate(
-                "x_p⋅x_q⋅(x_q - x_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0",
-                |_| {
-                    let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q - x_p)
-                    let x_p_minus_x_r = x_p.clone() - x_r.clone(); // (x_p - x_r)
+            // x_p⋅x_q⋅(x_q - x_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0
+            let poly4 = {
+                let x_q_minus_x_p = x_q.clone() - x_p.clone(); // (x_q - x_p)
+                let x_p_minus_x_r = x_p.clone() - x_r.clone(); // (x_p - x_r)
 
-                    // q_add ⋅ x_p⋅x_q⋅(x_q - x_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r)
-                    q_add.clone()
-                        * x_p.clone()
-                        * x_q.clone()
-                        * x_q_minus_x_p
-                        * (lambda.clone() * x_p_minus_x_r - y_p.clone() - y_r.clone())
-                },
-            );
+                // x_p⋅x_q⋅(x_q - x_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r)
+                x_p.clone()
+                    * x_q.clone()
+                    * x_q_minus_x_p
+                    * (lambda.clone() * x_p_minus_x_r - y_p.clone() - y_r.clone())
+            };
 
-            meta.create_gate(
-                "x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r) = 0",
-                |_| {
-                    let y_q_plus_y_p = y_q.clone() + y_p.clone(); // (y_q + y_p)
-                    let incomplete =
-                        lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone(); // (λ^2 - x_p - x_q - x_r)
+            // x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r) = 0
+            let poly5 = {
+                let y_q_plus_y_p = y_q.clone() + y_p.clone(); // (y_q + y_p)
+                let incomplete =
+                    lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone(); // (λ^2 - x_p - x_q - x_r)
 
-                    // q_add ⋅ x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r)
-                    q_add.clone() * x_p.clone() * x_q.clone() * y_q_plus_y_p * incomplete
-                },
-            );
+                // x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r)
+                x_p.clone() * x_q.clone() * y_q_plus_y_p * incomplete
+            };
 
-            meta.create_gate(
-                "x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0",
-                |_| {
-                    let y_q_plus_y_p = y_q.clone() + y_p.clone(); // (y_q + y_p)
-                    let x_p_minus_x_r = x_p.clone() - x_r.clone(); // (x_p - x_r)
+            // x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0
+            let poly6 = {
+                let y_q_plus_y_p = y_q.clone() + y_p.clone(); // (y_q + y_p)
+                let x_p_minus_x_r = x_p.clone() - x_r.clone(); // (x_p - x_r)
 
-                    // q_add ⋅ x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r)
-                    q_add.clone()
-                        * x_p.clone()
-                        * x_q.clone()
-                        * y_q_plus_y_p
-                        * (lambda.clone() * x_p_minus_x_r - y_p.clone() - y_r.clone())
-                },
-            );
+                // x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r)
+                x_p.clone()
+                    * x_q.clone()
+                    * y_q_plus_y_p
+                    * (lambda * x_p_minus_x_r - y_p.clone() - y_r.clone())
+            };
 
-            meta.create_gate("(1 - x_p * β) * (x_r - x_q) = 0", |_| {
-                q_add.clone() * (one.clone() - if_beta.clone()) * (x_r.clone() - x_q.clone())
-            });
+            // (1 - x_p * β) * (x_r - x_q) = 0
+            let poly7 = (one.clone() - if_beta.clone()) * (x_r.clone() - x_q);
 
-            meta.create_gate("(1 - x_p * β) * (y_r - y_q) = 0", |_| {
-                q_add.clone() * (one.clone() - if_beta) * (y_r.clone() - y_q.clone())
-            });
+            // (1 - x_p * β) * (y_r - y_q) = 0
+            let poly8 = (one.clone() - if_beta) * (y_r.clone() - y_q);
 
-            meta.create_gate("(1 - x_q * γ) * (x_r - x_p) = 0", |_| {
-                q_add.clone() * (one.clone() - if_gamma.clone()) * (x_r.clone() - x_p.clone())
-            });
+            // (1 - x_q * γ) * (x_r - x_p) = 0
+            let poly9 = (one.clone() - if_gamma.clone()) * (x_r.clone() - x_p);
 
-            meta.create_gate("(1 - x_q * γ) * (y_r - y_p) = 0", |_| {
-                q_add.clone() * (one.clone() - if_gamma) * (y_r.clone() - y_p.clone())
-            });
+            // (1 - x_q * γ) * (y_r - y_p) = 0
+            let poly10 = (one.clone() - if_gamma) * (y_r.clone() - y_p);
 
-            meta.create_gate("((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * x_r", |_| {
-                q_add.clone() * (one.clone() - if_alpha.clone() - if_delta.clone()) * x_r.clone()
-            });
+            // ((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * x_r
+            let poly11 = (one.clone() - if_alpha.clone() - if_delta.clone()) * x_r;
 
-            meta.create_gate("((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * y_r", |_| {
-                q_add * (one - if_alpha - if_delta) * y_r
-            });
-        }
+            // ((1 - (x_q - x_p) * α - (y_q + y_p) * δ)) * y_r
+            let poly12 = (one - if_alpha - if_delta) * y_r;
+
+            [
+                poly1, poly2, poly3, poly4, poly5, poly6, poly7, poly8, poly9, poly10, poly11,
+                poly12,
+            ]
+            .iter()
+            .map(|poly| q_add.clone() * poly.clone())
+            .collect()
+        });
     }
 
     pub(super) fn assign_region<C: CurveAffine>(
@@ -406,6 +396,7 @@ pub mod tests {
 
     use crate::circuit::gadget::ecc::{EccInstructions, Point};
 
+    #[allow(clippy::too_many_arguments)]
     pub fn test_add<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Eq + std::fmt::Debug>(
         chip: EccChip,
         mut layouter: impl Layouter<C::Base>,
@@ -467,7 +458,7 @@ pub mod tests {
         // (x, y) + ((ζ^2)x, -y)
         let endo_2_p_neg = (-p_val).to_curve().endo().endo();
         let endo_2_p_neg = Point::new(
-            chip.clone(),
+            chip,
             layouter.namespace(|| "point"),
             Some(endo_2_p_neg.to_affine()),
         )?;

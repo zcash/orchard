@@ -105,7 +105,7 @@ pub mod tests {
         let value_commit_r = OrchardFixedBasesFull::ValueCommitR(PhantomData);
         let value_commit_r = FixedPoint::from_inner(chip.clone(), value_commit_r);
         test_single_base(
-            chip.clone(),
+            chip,
             layouter.namespace(|| "value_commit_r"),
             value_commit_r,
         )?;
@@ -157,7 +157,7 @@ pub mod tests {
         {
             let scalar_fixed = C::Scalar::zero();
             let scalar_fixed = ScalarFixed::new(
-                chip.clone(),
+                chip,
                 layouter.namespace(|| "ScalarFixed"),
                 Some(scalar_fixed),
             )?;

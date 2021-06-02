@@ -37,9 +37,11 @@ impl<C: CurveAffine> Config<C> {
                 meta.query_selector(self.q_scalar_fixed_short, Rotation::cur());
             let sign = meta.query_advice(self.window, Rotation::cur());
 
-            q_scalar_fixed_short
-                * (sign.clone() + Expression::Constant(C::Base::one()))
-                * (sign - Expression::Constant(C::Base::one()))
+            vec![
+                q_scalar_fixed_short
+                    * (sign.clone() + Expression::Constant(C::Base::one()))
+                    * (sign - Expression::Constant(C::Base::one())),
+            ]
         });
     }
 }
@@ -68,11 +70,9 @@ impl<C: CurveAffine> Config<C> {
 
         let magnitude = sign.zip(value).map(|(sign, value)| sign * value);
 
-        println!("before decompose");
         // Decompose magnitude into `k`-bit windows
         let windows =
             self.decompose_scalar_fixed::<NUM_WINDOWS_SHORT, L_VALUE>(magnitude, offset, region)?;
-        println!("after decompose");
 
         // Assign the sign and enable `q_scalar_fixed_short`
         let sign = sign.map(|sign| {

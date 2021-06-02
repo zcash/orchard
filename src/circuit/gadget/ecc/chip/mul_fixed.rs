@@ -153,13 +153,15 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> From<&EccConfig> for Config<C, NU
 
 impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
-        let q_mul_fixed = meta.query_selector(self.q_mul_fixed, Rotation::cur());
-        let y_p = meta.query_advice(self.y_p, Rotation::cur());
+        meta.create_gate("Fixed-base scalar mul gate", |meta| {
+            let q_mul_fixed = meta.query_selector(self.q_mul_fixed, Rotation::cur());
+            let y_p = meta.query_advice(self.y_p, Rotation::cur());
 
-        // Check interpolation of x-coordinate
-        meta.create_gate("fixed-base scalar mul (x)", |meta| {
             let window = meta.query_advice(self.window, Rotation::cur());
             let x_p = meta.query_advice(self.x_p, Rotation::cur());
+
+            let z = meta.query_fixed(self.fixed_z, Rotation::cur());
+            let u = meta.query_advice(self.u, Rotation::cur());
 
             let window_pow: Vec<Expression<C::Base>> = (0..constants::H)
                 .map(|pow| {
@@ -176,15 +178,15 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
                 },
             );
 
-            q_mul_fixed.clone() * (interpolated_x - x_p)
-        });
+            // Check interpolation of x-coordinate
+            let x_check = interpolated_x - x_p;
+            // Check that `y + z = u^2`, where `z` is fixed and `u`, `y` are witnessed
+            let y_check = u.clone() * u - y_p - z;
 
-        // Check that `y + z = u^2`, where `z` is fixed and `u`, `y` are witnessed
-        meta.create_gate("fixed-base scalar mul (y)", |meta| {
-            let z = meta.query_fixed(self.fixed_z, Rotation::cur());
-            let u = meta.query_advice(self.u, Rotation::cur());
-
-            q_mul_fixed * (u.clone() * u - y_p - z)
+            [x_check, y_check]
+                .iter()
+                .map(|poly| q_mul_fixed.clone() * poly.clone())
+                .collect()
         });
     }
 

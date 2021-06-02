@@ -42,7 +42,7 @@ impl<C: CurveAffine> Config<C> {
                 .fold(Expression::Constant(C::Base::one()), |acc, i| {
                     acc * (window.clone() - Expression::Constant(C::Base::from_u64(i as u64)))
                 });
-            q_scalar_fixed * range_check
+            vec![q_scalar_fixed * range_check]
         });
     }
 
@@ -70,7 +70,6 @@ impl<C: CurveAffine> Config<C> {
         let mut windows: ArrayVec<CellValue<C::Base>, NUM_WINDOWS> = ArrayVec::new();
 
         let scalar_windows: Vec<Option<C::Base>> = if let Some(windows) = scalar_windows {
-            println!("windows: {:?}", windows);
             assert_eq!(windows.len(), NUM_WINDOWS);
             windows
                 .into_iter()

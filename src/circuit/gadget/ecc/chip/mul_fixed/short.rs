@@ -35,22 +35,27 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
     // We reuse the constraints in the `mul_fixed` gate so exclude them here.
     // Here, we add some new constraints specific to the short signed case.
     pub(super) fn create_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
-        let q_mul_fixed_short = meta.query_selector(self.q_mul_fixed_short, Rotation::cur());
-        let y_p = meta.query_advice(self.y_p, Rotation::cur());
-        let y_a = meta.query_advice(self.add_config.y_qr, Rotation::cur());
-
-        // `(x_a, y_a)` is the result of `[m]B`, where `m` is the magnitude.
-        // We conditionally negate this result using `y_p = y_a * s`, where `s` is the sign.
-
-        // Check that the final `y_p = y_a` or `y_p = -y_a`
-        meta.create_gate("check y", |_| {
-            q_mul_fixed_short.clone() * (y_p.clone() - y_a.clone()) * (y_p.clone() + y_a.clone())
-        });
-
-        // Check that sign * y_p = y_a
-        meta.create_gate("check negation", |meta| {
+        meta.create_gate("Short fixed-base mul gate", |meta| {
+            let q_mul_fixed_short = meta.query_selector(self.q_mul_fixed_short, Rotation::cur());
+            let y_p = meta.query_advice(self.y_p, Rotation::cur());
+            let y_a = meta.query_advice(self.add_config.y_qr, Rotation::cur());
             let sign = meta.query_advice(self.window, Rotation::cur());
-            q_mul_fixed_short * (sign * y_p - y_a)
+
+            // `(x_a, y_a)` is the result of `[m]B`, where `m` is the magnitude.
+            // We conditionally negate this result using `y_p = y_a * s`, where `s` is the sign.
+
+            // Check that the final `y_p = y_a` or `y_p = -y_a`
+            let y_check = q_mul_fixed_short.clone()
+                * (y_p.clone() - y_a.clone())
+                * (y_p.clone() + y_a.clone());
+
+            // Check that the correct sign is witnessed s.t. sign * y_p = y_a
+            let negation_check = sign * y_p - y_a;
+
+            [y_check, negation_check]
+                .iter()
+                .map(|poly| q_mul_fixed_short.clone() * poly.clone())
+                .collect()
         });
     }
 
@@ -227,7 +232,7 @@ pub mod tests {
             let scalar_fixed_short = C::Scalar::from_u64(0xB6DB_6DB6_DB6D_B6DCu64);
 
             let scalar_fixed_short = ScalarFixedShort::new(
-                chip.clone(),
+                chip,
                 layouter.namespace(|| "ScalarFixedShort"),
                 Some(scalar_fixed_short),
             )?;

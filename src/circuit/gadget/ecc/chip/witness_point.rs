@@ -34,7 +34,10 @@ impl Config {
             let y = meta.query_advice(self.y, Rotation::cur());
 
             // Check that y^2 = x^3 + b, where b = 5 in the Pallas equation
-            q_point * (y.clone() * y - (x.clone() * x.clone() * x) - Expression::Constant(C::b()))
+            vec![
+                q_point
+                    * (y.clone() * y - (x.clone() * x.clone() * x) - Expression::Constant(C::b())),
+            ]
         });
     }
 

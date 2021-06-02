@@ -484,7 +484,7 @@ mod tests {
             // Test signed short fixed-base scalar multiplication
             {
                 super::chip::mul_fixed::short::tests::test_mul_fixed_short(
-                    chip.clone(),
+                    chip,
                     layouter.namespace(|| "signed short fixed-base scalar mul"),
                 )?;
             }

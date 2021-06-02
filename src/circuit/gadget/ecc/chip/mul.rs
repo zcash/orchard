@@ -81,18 +81,19 @@ impl<C: CurveAffine> Config<C> {
 
     /// Gate used to check final scalar is recovered.
     fn create_final_scalar_gate(&self, meta: &mut ConstraintSystem<C::Base>) {
-        let q_mul_decompose_var = meta.query_selector(self.q_mul_decompose_var, Rotation::cur());
-        let scalar = meta.query_advice(self.scalar, Rotation::cur());
-        let z_cur = meta.query_advice(self.z_complete, Rotation::cur());
+        meta.create_gate("Decompose scalar for variable-base mul", |meta| {
+            let q_mul_decompose_var =
+                meta.query_selector(self.q_mul_decompose_var, Rotation::cur());
+            let scalar = meta.query_advice(self.scalar, Rotation::cur());
+            let z_cur = meta.query_advice(self.z_complete, Rotation::cur());
 
-        meta.create_gate("Decompose scalar", |_| {
             // The scalar field `F_q = 2^254 + t_q`.
             // -((2^127)^2) = -(2^254) = t_q (mod q)
             let t_q = -(C::Scalar::from_u128(1u128 << 127).square());
             let t_q = C::Base::from_bytes(&t_q.to_bytes()).unwrap();
 
             // Check that `k = scalar + t_q`
-            q_mul_decompose_var * (scalar + Expression::Constant(t_q) - z_cur)
+            vec![q_mul_decompose_var * (scalar + Expression::Constant(t_q) - z_cur)]
         });
     }
 
