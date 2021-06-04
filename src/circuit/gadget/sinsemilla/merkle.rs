@@ -3,12 +3,17 @@ use halo2::{
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Permutation},
     poly::Rotation,
 };
-use pasta_curves::arithmetic::{CurveAffine, FieldExt};
+use pasta_curves::{
+    arithmetic::{CurveAffine, FieldExt},
+    pallas,
+};
 
 use crate::spec::i2lebsp;
 
 use super::{
-    message::MessagePiece, HashDomains, SinsemillaChip, SinsemillaConfig, SinsemillaInstructions,
+    chip::{SinsemillaChip, SinsemillaConfig},
+    message::MessagePiece,
+    HashDomains, SinsemillaInstructions,
 };
 
 use crate::circuit::gadget::utilities::{
@@ -51,4 +56,34 @@ pub trait MerkleInstructions<
         left: <Self as UtilitiesInstructions<C::Base>>::Var,
         right: <Self as UtilitiesInstructions<C::Base>>::Var,
     ) -> Result<<Self as UtilitiesInstructions<C::Base>>::Var, Error>;
+}
+
+#[derive(Clone, Debug)]
+pub struct MerkleConfig {
+    a: Column<Advice>,
+    b: Column<Advice>,
+    c: Column<Advice>,
+    left: Column<Advice>,
+    right: Column<Advice>,
+    l_star: Column<Fixed>,
+    perm: Permutation,
+    cond_swap_config: CondSwapConfig,
+    sinsemilla_config: SinsemillaConfig,
+}
+
+pub struct MerkleChip {
+    config: MerkleConfig,
+}
+
+impl Chip<pallas::Base> for MerkleChip {
+    type Config = MerkleConfig;
+    type Loaded = ();
+
+    fn config(&self) -> &Self::Config {
+        &self.config
+    }
+
+    fn loaded(&self) -> &Self::Loaded {
+        &()
+    }
 }
