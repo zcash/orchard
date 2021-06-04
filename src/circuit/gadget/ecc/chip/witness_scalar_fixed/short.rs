@@ -1,4 +1,4 @@
-use super::super::{CellValue, EccConfig, EccScalarFixedShort};
+use super::super::{CellValue, EccConfig, EccScalarFixedShort, Var};
 use crate::constants::{L_VALUE, NUM_WINDOWS_SHORT};
 use halo2::{
     arithmetic::{CurveAffine, Field, FieldExt},

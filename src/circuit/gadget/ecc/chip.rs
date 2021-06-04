@@ -1,10 +1,11 @@
 use super::EccInstructions;
+use crate::circuit::gadget::utilities::{copy, CellValue, Var};
 use crate::constants::{self, OrchardFixedBasesFull, ValueCommitV};
 use arrayvec::ArrayVec;
 use ff::Field;
 use halo2::{
     arithmetic::CurveAffine,
-    circuit::{Cell, Chip, Layouter},
+    circuit::{Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
 };
 use std::marker::PhantomData;
@@ -13,25 +14,8 @@ pub(super) mod add;
 pub(super) mod add_incomplete;
 pub(super) mod mul;
 pub(super) mod mul_fixed;
-pub(super) mod util;
 pub(super) mod witness_point;
 pub(super) mod witness_scalar_fixed;
-
-/// A structure containing a cell and its assigned value.
-#[derive(Clone, Debug)]
-pub struct CellValue<T> {
-    /// The cell of this `CellValue`
-    pub cell: Cell,
-    /// The value assigned to this `CellValue`
-    pub value: Option<T>,
-}
-
-impl<T> CellValue<T> {
-    /// Construct a `CellValue`.
-    pub fn new(cell: Cell, value: Option<T>) -> Self {
-        CellValue { cell, value }
-    }
-}
 
 /// A curve point represented in affine (x, y) coordinates. Each coordinate is
 /// assigned to a cell.
@@ -46,7 +30,7 @@ pub struct EccPoint<C: CurveAffine> {
 impl<C: CurveAffine> EccPoint<C> {
     /// Returns the value of this curve point, if known.
     pub fn point(&self) -> Option<C> {
-        match (self.x.value, self.y.value) {
+        match (self.x.value(), self.y.value()) {
             (Some(x), Some(y)) => {
                 if x == C::Base::zero() && y == C::Base::zero() {
                     Some(C::identity())

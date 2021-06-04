@@ -1,4 +1,4 @@
-use super::{util, CellValue, EccConfig, EccPoint};
+use super::{copy, CellValue, EccConfig, EccPoint, Var};
 use ff::Field;
 use group::Curve;
 use halo2::{
@@ -76,8 +76,8 @@ impl Config {
         self.q_add_incomplete.enable(region, offset)?;
 
         // Handle exceptional cases
-        let (x_p, y_p) = (p.x.value, p.y.value);
-        let (x_q, y_q) = (q.x.value, q.y.value);
+        let (x_p, y_p) = (p.x.value(), p.y.value());
+        let (x_q, y_q) = (q.x.value(), q.y.value());
         x_p.zip(y_p)
             .zip(x_q)
             .zip(y_q)
@@ -97,12 +97,12 @@ impl Config {
             .transpose()?;
 
         // Copy point `p` into `x_p`, `y_p` columns
-        util::assign_and_constrain(region, || "x_p", self.x_p, offset, &p.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_p", self.y_p, offset, &p.y, &self.perm)?;
+        copy(region, || "x_p", self.x_p, offset, &p.x, &self.perm)?;
+        copy(region, || "y_p", self.y_p, offset, &p.y, &self.perm)?;
 
         // Copy point `q` into `x_qr`, `y_qr` columns
-        util::assign_and_constrain(region, || "x_q", self.x_qr, offset, &q.x, &self.perm)?;
-        util::assign_and_constrain(region, || "y_q", self.y_qr, offset, &q.y, &self.perm)?;
+        copy(region, || "x_q", self.x_qr, offset, &q.x, &self.perm)?;
+        copy(region, || "y_q", self.y_qr, offset, &q.y, &self.perm)?;
 
         // Compute the sum `P + Q = R`
         let r = {

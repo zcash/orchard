@@ -1,4 +1,4 @@
-use super::{add, util, CellValue, EccConfig, EccPoint};
+use super::{add, copy, CellValue, EccConfig, EccPoint, Var};
 use crate::constants::NUM_COMPLETE_BITS;
 use std::ops::{Deref, Range};
 
@@ -113,7 +113,7 @@ impl<C: CurveAffine> Config<C> {
         let offset = offset + 1;
 
         // Decompose the scalar bitwise (big-endian bit order).
-        let bits = decompose_for_scalar_mul::<C>(scalar.value);
+        let bits = decompose_for_scalar_mul::<C>(scalar.value());
 
         // Initialize the running sum for scalar decomposition to zero
         let z_val = C::Base::zero();
@@ -131,7 +131,7 @@ impl<C: CurveAffine> Config<C> {
             offset,
             &base,
             bits_incomplete_hi,
-            (X(acc.x.clone()), Y(acc.y.value), Z(z)),
+            (X(acc.x.clone()), Y(acc.y.value()), Z(z)),
         )?;
 
         // Double-and-add (incomplete addition) for the `lo` half of the scalar decomposition
@@ -164,7 +164,7 @@ impl<C: CurveAffine> Config<C> {
         };
 
         // Initialize `z` running sum for complete addition
-        util::assign_and_constrain(
+        copy(
             region,
             || "Initialize `z` running sum for complete addition",
             self.z_complete,
@@ -182,7 +182,7 @@ impl<C: CurveAffine> Config<C> {
             // Bits used in complete addition. k_{3} to k_{1} inclusive
             // The LSB k_{0} is handled separately.
             let bits_complete = &bits[complete_range::<C>()];
-            complete_config.assign_region(region, offset, bits_complete, base, acc, z.value)?
+            complete_config.assign_region(region, offset, bits_complete, base, acc, z.value())?
         };
 
         let offset = offset + complete_len::<C>() * 2;
@@ -198,7 +198,7 @@ impl<C: CurveAffine> Config<C> {
 
             let base = base.point();
             let scalar = scalar
-                .value
+                .value()
                 .map(|scalar| C::Scalar::from_bytes(&scalar.to_bytes()).unwrap());
             let real_mul = base.zip(scalar).map(|(base, scalar)| base * scalar);
             let result = result.point();
@@ -241,7 +241,7 @@ impl<C: CurveAffine> Config<C> {
         // is in deriving diversified addresses `[ivk] g_d`,  and `ivk` is guaranteed
         // to be in the base field of the curve. (See non-normative notes in
         // https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents.)
-        util::assign_and_constrain(
+        copy(
             region,
             || "original scalar",
             self.scalar,
@@ -254,7 +254,7 @@ impl<C: CurveAffine> Config<C> {
         // If `lsb` is 0, return `Acc + (-P)`. If `lsb` is 1, simply return `Acc + 0`.
         let x_p = if let Some(lsb) = lsb {
             if !lsb {
-                base.x.value
+                base.x.value()
             } else {
                 Some(C::Base::zero())
             }
@@ -263,7 +263,7 @@ impl<C: CurveAffine> Config<C> {
         };
         let y_p = if let Some(lsb) = lsb {
             if !lsb {
-                base.y.value.map(|y_p| -y_p)
+                base.y.value().map(|y_p| -y_p)
             } else {
                 Some(C::Base::zero())
             }

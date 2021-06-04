@@ -1,4 +1,4 @@
-use super::super::{add, util, CellValue, EccPoint};
+use super::super::{add, copy, CellValue, EccPoint, Var};
 use super::complete_len;
 use ff::Field;
 
@@ -102,7 +102,7 @@ impl<C: CurveAffine> Config<C> {
             )?;
 
             // Assign `x_p` for complete addition
-            let x_p = base.x.value;
+            let x_p = base.x.value();
             let x_p_cell = region.assign_advice(
                 || "x_p",
                 self.add_config.x_p,
@@ -112,7 +112,7 @@ impl<C: CurveAffine> Config<C> {
 
             // Assign `y_p` for complete addition.
             // If the bit is set, use `y`; if the bit is not set, use `-y`
-            let y_p = base.y.value;
+            let y_p = base.y.value();
             let y_p = y_p
                 .zip(k.as_ref())
                 .map(|(y_p, k)| if !k { -y_p } else { y_p });
@@ -134,7 +134,7 @@ impl<C: CurveAffine> Config<C> {
                 .assign_region(&p, &acc, row + offset, region)?;
 
             // Copy acc from `x_a`, `y_a` over to `x_p`, `y_p` on the next row
-            let acc_x = util::assign_and_constrain(
+            let acc_x = copy(
                 region,
                 || "copy acc x_a",
                 self.add_config.x_p,
@@ -142,7 +142,7 @@ impl<C: CurveAffine> Config<C> {
                 &acc.x,
                 &self.perm,
             )?;
-            let acc_y = util::assign_and_constrain(
+            let acc_y = copy(
                 region,
                 || "copy acc y_a",
                 self.add_config.y_p,

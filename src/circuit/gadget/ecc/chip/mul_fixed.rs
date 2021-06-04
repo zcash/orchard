@@ -1,6 +1,6 @@
 use super::{
-    add, add_incomplete, util, witness_point, CellValue, EccConfig, EccPoint, EccScalarFixed,
-    EccScalarFixedShort,
+    add, add_incomplete, copy, witness_point, CellValue, EccConfig, EccPoint, EccScalarFixed,
+    EccScalarFixedShort, Var,
 };
 use crate::constants::{
     self,
@@ -281,7 +281,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
     ) -> Result<(), Error> {
         // Copy the scalar decomposition (`k`-bit windows)
         for (window_idx, window) in scalar.windows().iter().enumerate() {
-            util::assign_and_constrain(
+            copy(
                 region,
                 || format!("k[{:?}]", window),
                 self.window,
@@ -320,7 +320,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         }
 
         // Copy `m0` into `x_qr`, `y_qr` cells on row 1
-        let x = util::assign_and_constrain(
+        let x = copy(
             region,
             || "initialize acc x",
             self.add_incomplete_config.x_qr,
@@ -328,7 +328,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
             &m0.x,
             &self.perm,
         )?;
-        let y = util::assign_and_constrain(
+        let y = copy(
             region,
             || "initialize acc y",
             self.add_incomplete_config.y_qr,
@@ -465,7 +465,7 @@ impl<C: CurveAffine> ScalarFixed<C> {
         self.windows()
             .iter()
             .map(|bits| {
-                bits.value
+                bits.value()
                     .map(|value| C::Scalar::from_bytes(&value.to_bytes()).unwrap())
             })
             .collect::<Vec<_>>()
@@ -477,7 +477,7 @@ impl<C: CurveAffine> ScalarFixed<C> {
     fn windows_usize(&self) -> Vec<Option<usize>> {
         self.windows()
             .iter()
-            .map(|bits| bits.value.map(|value| value.to_bytes()[0] as usize))
+            .map(|bits| bits.value().map(|value| value.to_bytes()[0] as usize))
             .collect::<Vec<_>>()
     }
 }

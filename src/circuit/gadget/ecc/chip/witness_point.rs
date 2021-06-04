@@ -1,4 +1,4 @@
-use super::{CellValue, EccConfig, EccPoint};
+use super::{CellValue, EccConfig, EccPoint, Var};
 
 use halo2::{
     arithmetic::CurveAffine,

@@ -1,4 +1,4 @@
-use super::super::{util, CellValue, EccConfig, EccPoint, EccScalarFixedShort};
+use super::super::{copy, CellValue, EccConfig, EccPoint, EccScalarFixedShort, Var};
 use crate::constants::ValueCommitV;
 
 use halo2::{
@@ -78,7 +78,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         let offset = offset + 1;
 
         // Assign sign to `window` column
-        let sign = util::assign_and_constrain(
+        let sign = copy(
             region,
             || "sign",
             self.window,
@@ -88,11 +88,11 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
         )?;
 
         // Conditionally negate `y`-coordinate
-        let y_val = if let Some(sign) = sign.value {
+        let y_val = if let Some(sign) = sign.value() {
             if sign == -C::Base::one() {
-                magnitude_mul.y.value.map(|y: C::Base| -y)
+                magnitude_mul.y.value().map(|y: C::Base| -y)
             } else {
-                magnitude_mul.y.value
+                magnitude_mul.y.value()
             }
         } else {
             None
@@ -103,7 +103,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
             .enable(region, offset + NUM_WINDOWS)?;
 
         // Assign final `x, y` to `x_p, y_p` columns and return final point
-        let x_val = magnitude_mul.x.value;
+        let x_val = magnitude_mul.x.value();
         let x_var = region.assign_advice(
             || "x_var",
             self.x_p,
@@ -131,7 +131,7 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
 
             let scalar = scalar
                 .magnitude
-                .zip(scalar.sign.value)
+                .zip(scalar.sign.value())
                 .map(|(magnitude, sign)| {
                     let sign = if sign == C::Base::one() {
                         C::Scalar::one()

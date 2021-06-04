@@ -1,4 +1,4 @@
-use super::{CellValue, EccConfig};
+use super::{CellValue, EccConfig, Var};
 use crate::constants::{self, util};
 use arrayvec::ArrayVec;
 use ff::Field;

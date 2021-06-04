@@ -1,4 +1,4 @@
-use super::super::{util, CellValue, EccConfig, EccPoint};
+use super::super::{copy, CellValue, EccConfig, EccPoint, Var};
 use super::{incomplete_hi_len, incomplete_lo_len, X, Y, Z};
 use ff::Field;
 use halo2::{
@@ -161,8 +161,8 @@ impl<C: CurveAffine> Config<C> {
         assert_eq!(bits.len(), self.num_bits);
 
         // Handle exceptional cases
-        let (x_p, y_p) = (base.x.value, base.y.value);
-        let (x_a, y_a) = (acc.0.value, acc.1 .0);
+        let (x_p, y_p) = (base.x.value(), base.y.value());
+        let (x_a, y_a) = (acc.0.value(), acc.1 .0);
         x_p.zip(y_p)
             .zip(x_a)
             .zip(y_a)
@@ -186,24 +186,17 @@ impl<C: CurveAffine> Config<C> {
         }
 
         // Initialise the running `z` sum for the scalar bits.
-        let mut z = util::assign_and_constrain(
-            region,
-            || "starting z",
-            self.z,
-            offset,
-            &acc.2,
-            &self.perm,
-        )?;
+        let mut z = copy(region, || "starting z", self.z, offset, &acc.2, &self.perm)?;
 
         // Increase offset by 1; we used row 0 for initializing `z`.
         let offset = offset + 1;
 
         // Define `x_p`, `y_p`
-        let x_p = base.x.value;
-        let y_p = base.y.value;
+        let x_p = base.x.value();
+        let y_p = base.y.value();
 
         // Initialise acc
-        let mut x_a = util::assign_and_constrain(
+        let mut x_a = copy(
             region,
             || "starting x_a",
             self.x_a,
@@ -217,7 +210,7 @@ impl<C: CurveAffine> Config<C> {
         for (row, k) in bits.iter().enumerate() {
             // z_{i} = 2 * z_{i+1} + k_i
             let z_val = z
-                .value
+                .value()
                 .zip(k.as_ref())
                 .map(|(z_val, k)| C::Base::from_u64(2) * z_val + C::Base::from_u64(*k as u64));
             let z_cell = region.assign_advice(
@@ -250,7 +243,7 @@ impl<C: CurveAffine> Config<C> {
             // Compute and assign λ1⋅(x_A − x_P) = y_A − y_P
             let lambda1 = y_a
                 .zip(y_p)
-                .zip(x_a.value)
+                .zip(x_a.value())
                 .zip(x_p)
                 .map(|(((y_a, y_p), x_a), x_p)| (y_a - y_p) * (x_a - x_p).invert().unwrap());
             region.assign_advice(
@@ -262,7 +255,7 @@ impl<C: CurveAffine> Config<C> {
 
             // x_R = λ1^2 - x_A - x_P
             let x_r = lambda1
-                .zip(x_a.value)
+                .zip(x_a.value())
                 .zip(x_p)
                 .map(|((lambda1, x_a), x_p)| lambda1 * lambda1 - x_a - x_p);
 
@@ -270,7 +263,7 @@ impl<C: CurveAffine> Config<C> {
             let lambda2 =
                 lambda1
                     .zip(y_a)
-                    .zip(x_a.value)
+                    .zip(x_a.value())
                     .zip(x_r)
                     .map(|(((lambda1, y_a), x_a), x_r)| {
                         C::Base::from_u64(2) * y_a * (x_a - x_r).invert().unwrap() - lambda1
@@ -284,11 +277,11 @@ impl<C: CurveAffine> Config<C> {
 
             // Compute and assign `x_a` for the next row
             let x_a_new = lambda2
-                .zip(x_a.value)
+                .zip(x_a.value())
                 .zip(x_r)
                 .map(|((lambda2, x_a), x_r)| lambda2 * lambda2 - x_a - x_r);
             y_a = lambda2
-                .zip(x_a.value)
+                .zip(x_a.value())
                 .zip(x_a_new)
                 .zip(y_a)
                 .map(|(((lambda2, x_a), x_a_new), y_a)| lambda2 * (x_a - x_a_new) - y_a);
