@@ -1,3 +1,5 @@
+use std::array;
+
 use halo2::{
     circuit::{Chip, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Permutation},
@@ -22,7 +24,7 @@ use crate::{
     primitives::sinsemilla,
     spec::i2lebsp,
 };
-use ff::{Field, PrimeField, PrimeFieldBits};
+use ff::{PrimeField, PrimeFieldBits};
 use std::convert::TryInto;
 
 /// Instructions to check the validity of a Merkle path of a given `PATH_LENGTH`.
@@ -63,14 +65,14 @@ pub trait MerkleInstructions<
 
 #[derive(Clone, Debug)]
 pub struct MerkleConfig {
-    a: Column<Advice>,
-    b: Column<Advice>,
-    c: Column<Advice>,
-    left: Column<Advice>,
+    a_a0: Column<Advice>,
+    b_a1: Column<Advice>,
+    c_b0: Column<Advice>,
+    left_b1: Column<Advice>,
     right: Column<Advice>,
-    l_star: Column<Fixed>,
+    l_star_plus1: Column<Fixed>,
     perm: Permutation,
-    cond_swap_config: CondSwapConfig,
+    pub cond_swap_config: CondSwapConfig,
     sinsemilla_config: SinsemillaConfig,
 }
 
@@ -88,6 +90,88 @@ impl Chip<pallas::Base> for MerkleChip {
 
     fn loaded(&self) -> &Self::Loaded {
         &()
+    }
+}
+
+impl MerkleChip {
+    pub fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        sinsemilla_config: SinsemillaConfig,
+    ) -> MerkleConfig {
+        let advices = sinsemilla_config.advices();
+        let cond_swap_config = CondSwapChip::configure(
+            meta,
+            advices[..5].try_into().unwrap(),
+            sinsemilla_config.perm.clone(),
+        );
+
+        let a_a0 = advices[0];
+        let b_a1 = advices[1];
+        let c_b0 = advices[2];
+        let left_b1 = advices[3];
+        let right = advices[4];
+
+        let l_star_plus1 = meta.fixed_column();
+
+        // Check that pieces have been decomposed correctly for Sinsemilla hash.
+        // <https://zips.z.cash/protocol/nu5.pdf#orchardmerklecrh>
+        //
+        // `a = a_0||a_1` = `l_star` || (bits 0..=239 of `left`)
+        // `b = b_0||b_1` = (bits 240..=254 of `left`) || (bits 0..=234 of `right`)
+        // `c = bits 235..=254 of `right`
+        meta.create_gate("Merkle path validity check", |meta| {
+            let a_whole = meta.query_advice(a_a0, Rotation::cur());
+            let b_whole = meta.query_advice(b_a1, Rotation::cur());
+            let c_whole = meta.query_advice(c_b0, Rotation::cur());
+            let left_node = meta.query_advice(left_b1, Rotation::cur());
+            let right_node = meta.query_advice(right, Rotation::cur());
+
+            let a_0 = meta.query_advice(a_a0, Rotation::next());
+            let a_1 = meta.query_advice(b_a1, Rotation::next());
+            let b_0 = meta.query_advice(c_b0, Rotation::next());
+            let b_1 = meta.query_advice(left_b1, Rotation::next());
+
+            let l_star_plus1 = meta.query_fixed(l_star_plus1, Rotation::cur());
+
+            // a = a_0||a_1` = `l_star` (10 bits) || (bits 0..=239 of `left`)
+            // Check that a = a_0 || a_1
+            let a_check = a_0.clone() + a_1.clone() * pallas::Base::from_u64(1 << 10) - a_whole;
+
+            // Check that a_0 = l_star
+            let l_star_check =
+                a_0 - (l_star_plus1.clone() - Expression::Constant(pallas::Base::one()));
+
+            // `b = b_0||b_1` = (bits 240..=254 of `left`) || (bits 0..=234 of `right`)
+            // Check that b = b_0 (15 bits) || b_1 (235 bits)
+            let b_check = b_0.clone() + b_1.clone() * pallas::Base::from_u64(1 << 15) - b_whole;
+
+            // Check that left = a_1 (240 bits) || b_0 (15 bits)
+            let two_pow_240 = pallas::Base::from_u128(1 << 120).square();
+            let left_check = a_1 + b_0 * two_pow_240 - left_node;
+
+            // Check that right = b_1 (235 bits) || c (20 bits)
+            let two_pow_235 = pallas::Base::from_u64(1 << 47).pow(&[5, 0, 0, 0]);
+            let right_check = b_1 + c_whole * two_pow_235 - right_node;
+
+            array::IntoIter::new([a_check, l_star_check, b_check, left_check, right_check])
+                .map(move |poly| l_star_plus1.clone() * poly)
+        });
+
+        MerkleConfig {
+            a_a0,
+            b_a1,
+            c_b0,
+            left_b1,
+            right,
+            l_star_plus1,
+            perm: sinsemilla_config.perm.clone(),
+            cond_swap_config,
+            sinsemilla_config,
+        }
+    }
+
+    pub fn construct(config: MerkleConfig) -> Self {
+        MerkleChip { config }
     }
 }
 

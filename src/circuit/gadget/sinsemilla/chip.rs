@@ -66,7 +66,7 @@ pub struct SinsemillaConfig {
 }
 
 impl SinsemillaConfig {
-    fn advices(&self) -> [Column<Advice>; 5] {
+    pub fn advices(&self) -> [Column<Advice>; 5] {
         [self.bits, self.x_a, self.x_p, self.lambda_1, self.lambda_2]
     }
 }
