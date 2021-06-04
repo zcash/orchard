@@ -7,6 +7,7 @@ use halo2::{arithmetic::CurveAffine, circuit::Layouter, plonk::Error};
 use std::fmt::Debug;
 
 pub mod chip;
+pub mod merkle;
 mod message;
 
 /// The set of circuit instructions required to use the [`Sinsemilla`](https://zcash.github.io/halo2/design/gadgets/sinsemilla.html) gadget.
