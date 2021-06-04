@@ -8,19 +8,21 @@ use pasta_curves::{
     pallas,
 };
 
-use crate::spec::i2lebsp;
-
 use super::{
     chip::{SinsemillaChip, SinsemillaConfig},
     message::MessagePiece,
     HashDomains, SinsemillaInstructions,
 };
 
-use crate::circuit::gadget::utilities::{
-    cond_swap::{CondSwapChip, CondSwapConfig, CondSwapInstructions},
-    copy, CellValue, UtilitiesInstructions, Var,
+use crate::{
+    circuit::gadget::utilities::{
+        cond_swap::{CondSwapChip, CondSwapConfig, CondSwapInstructions},
+        copy, CellValue, UtilitiesInstructions, Var,
+    },
+    primitives::sinsemilla,
+    spec::i2lebsp,
 };
-use ff::{Field, PrimeField};
+use ff::{Field, PrimeField, PrimeFieldBits};
 use std::convert::TryInto;
 
 /// Instructions to check the validity of a Merkle path of a given `PATH_LENGTH`.
@@ -32,7 +34,8 @@ pub trait MerkleInstructions<
     const K: usize,
     const MAX_WORDS: usize,
 >:
-    SinsemillaInstructions<C, K, MAX_WORDS> + CondSwapInstructions<C::Base, Var = CellValue<C::Base>>
+    SinsemillaInstructions<pallas::Affine, K, MAX_WORDS>
+    + CondSwapInstructions<C::Base, Var = CellValue<C::Base>>
 {
     /// Check the validity of a Merkle path from a given node to a claimed root.
     /// The node may not be the leaf (height 0); we can start from a higher height.
@@ -85,5 +88,121 @@ impl Chip<pallas::Base> for MerkleChip {
 
     fn loaded(&self) -> &Self::Loaded {
         &()
+    }
+}
+
+impl UtilitiesInstructions<pallas::Base> for MerkleChip {
+    type Var = CellValue<pallas::Base>;
+}
+
+impl CondSwapInstructions<pallas::Base> for MerkleChip {
+    #[allow(clippy::type_complexity)]
+    fn swap(
+        &self,
+        layouter: impl Layouter<pallas::Base>,
+        pair: (Self::Var, Self::Var),
+        swap: Option<bool>,
+    ) -> Result<(Self::Var, Self::Var), Error> {
+        let config = self.config().cond_swap_config.clone();
+        let chip = CondSwapChip::<pallas::Base>::construct(config);
+        chip.swap(layouter, pair, swap)
+    }
+}
+
+impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }> for MerkleChip {
+    type CellValue = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::CellValue;
+
+    type Message = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::Message;
+    type MessagePiece = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::MessagePiece;
+    type MessageSubPiece = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::MessageSubPiece;
+
+    type X = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::X;
+    type Point = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::Point;
+
+    type HashDomains = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::HashDomains;
+
+    fn witness_message(
+        &self,
+        layouter: impl Layouter<pallas::Base>,
+        message: Vec<Option<bool>>,
+    ) -> Result<Self::Message, Error> {
+        let config = self.config().sinsemilla_config.clone();
+        let chip = SinsemillaChip::construct(config);
+        chip.witness_message(layouter, message)
+    }
+
+    fn witness_message_piece_bitstring(
+        &self,
+        layouter: impl Layouter<pallas::Base>,
+        message: &[Option<bool>],
+    ) -> Result<Self::MessagePiece, Error> {
+        let config = self.config().sinsemilla_config.clone();
+        let chip = SinsemillaChip::construct(config);
+        chip.witness_message_piece_bitstring(layouter, message)
+    }
+
+    fn witness_message_piece_field(
+        &self,
+        layouter: impl Layouter<pallas::Base>,
+        value: Option<pallas::Base>,
+        num_words: usize,
+    ) -> Result<Self::MessagePiece, Error> {
+        let config = self.config().sinsemilla_config.clone();
+        let chip = SinsemillaChip::construct(config);
+        chip.witness_message_piece_field(layouter, value, num_words)
+    }
+
+    fn witness_message_piece_subpieces(
+        &self,
+        layouter: impl Layouter<pallas::Base>,
+        subpieces: &[Self::MessageSubPiece],
+    ) -> Result<Self::MessagePiece, Error> {
+        let config = self.config().sinsemilla_config.clone();
+        let chip = SinsemillaChip::construct(config);
+        chip.witness_message_piece_subpieces(layouter, subpieces)
+    }
+
+    #[allow(non_snake_case)]
+    fn hash_to_point(
+        &self,
+        layouter: impl Layouter<pallas::Base>,
+        Q: pallas::Affine,
+        message: Self::Message,
+    ) -> Result<(Self::Point, Vec<Vec<Self::CellValue>>), Error> {
+        let config = self.config().sinsemilla_config.clone();
+        let chip = SinsemillaChip::construct(config);
+        chip.hash_to_point(layouter, Q, message)
+    }
+
+    fn extract(point: &Self::Point) -> Self::X {
+        SinsemillaChip::extract(point)
     }
 }
