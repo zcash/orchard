@@ -113,6 +113,7 @@ impl<C: CurveAffine> EccChip<C> {
     pub fn configure(
         meta: &mut ConstraintSystem<C::Base>,
         advices: [Column<Advice>; 10],
+        perm: Permutation,
     ) -> <Self as Chip<C::Base>>::Config {
         let config = EccConfig {
             advices,
@@ -138,20 +139,7 @@ impl<C: CurveAffine> EccChip<C> {
             q_point: meta.selector(),
             q_scalar_fixed: meta.selector(),
             q_scalar_fixed_short: meta.selector(),
-            perm: Permutation::new(
-                meta,
-                &[
-                    advices[0].into(),
-                    advices[1].into(),
-                    advices[2].into(),
-                    advices[3].into(),
-                    advices[4].into(),
-                    advices[6].into(),
-                    advices[7].into(),
-                    advices[8].into(),
-                    advices[9].into(),
-                ],
-            ),
+            perm,
         };
 
         // Create witness point gate
@@ -248,7 +236,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         value: Option<C::Base>,
     ) -> Result<Self::ScalarVar, Error> {
         layouter.assign_region(
-            || "Witness scalar var",
+            || "Witness scalar for variable-base mul",
             |mut region| {
                 let cell = region.assign_advice(
                     || "Scalar var",
@@ -280,7 +268,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::ScalarFixedShort, Error> {
         let config: witness_scalar_fixed::short::Config<C> = self.config().into();
         layouter.assign_region(
-            || "witness scalar for fixed-base mul",
+            || "witness short scalar for fixed-base mul",
             |mut region| config.assign_region(value, 0, &mut region),
         )
     }
@@ -309,7 +297,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::Point, Error> {
         let config: add_incomplete::Config = self.config().into();
         layouter.assign_region(
-            || "point addition",
+            || "incomplete point addition",
             |mut region| config.assign_region(a, b, 0, &mut region),
         )
     }
@@ -322,7 +310,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
     ) -> Result<Self::Point, Error> {
         let config: add::Config = self.config().into();
         layouter.assign_region(
-            || "point addition",
+            || "complete point addition",
             |mut region| config.assign_region(a, b, 0, &mut region),
         )
     }
@@ -349,7 +337,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         let config: mul_fixed::full_width::Config<C, { constants::NUM_WINDOWS }> =
             self.config().into();
         layouter.assign_region(
-            || format!("Multiply {:?}", base),
+            || format!("fixed-base mul of {:?}", base),
             |mut region| config.assign_region(scalar, *base, 0, &mut region),
         )
     }
@@ -363,7 +351,7 @@ impl<C: CurveAffine> EccInstructions<C> for EccChip<C> {
         let config: mul_fixed::short::Config<C, { constants::NUM_WINDOWS_SHORT }> =
             self.config().into();
         layouter.assign_region(
-            || format!("Multiply {:?}", base),
+            || format!("short fixed-base mul of {:?}", base),
             |mut region| config.assign_region(scalar, base, 0, &mut region),
         )
     }

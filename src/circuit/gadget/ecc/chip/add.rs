@@ -148,11 +148,11 @@ impl Config {
             // x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r) = 0
             let poly5 = {
                 let y_q_plus_y_p = y_q.clone() + y_p.clone(); // (y_q + y_p)
-                let incomplete =
+                let output_line_x =
                     lambda.clone() * lambda.clone() - x_p.clone() - x_q.clone() - x_r.clone(); // (λ^2 - x_p - x_q - x_r)
 
                 // x_p⋅x_q⋅(y_q + y_p)⋅(λ^2 - x_p - x_q - x_r)
-                x_p.clone() * x_q.clone() * y_q_plus_y_p * incomplete
+                x_p.clone() * x_q.clone() * y_q_plus_y_p * output_line_x
             };
 
             // x_p⋅x_q⋅(y_q + y_p)⋅(λ ⋅(x_p - x_r) - y_p - y_r) = 0
@@ -216,17 +216,13 @@ impl Config {
         let (x_p, y_p) = (p.x.value(), p.y.value());
         let (x_q, y_q) = (q.x.value(), q.y.value());
 
-        // inv0(x) evaluates to 0 if x = 0, and 1/x otherwise.
-
         // Assign α = inv0(x_q - x_p)
+        let alpha = x_p.zip(x_q).map(|(x_p, x_q)| inv0(x_q - x_p));
         region.assign_advice(
             || "α",
             self.alpha,
             offset,
-            || {
-                let alpha = x_p.zip(x_q).map(|(x_p, x_q)| inv0(x_q - x_p));
-                alpha.ok_or(Error::SynthesisError)
-            },
+            || alpha.ok_or(Error::SynthesisError),
         )?;
 
         // Assign β = inv0(x_p)
@@ -280,7 +276,9 @@ impl Config {
             .map(|(((x_p, y_p), x_q), y_q)| {
                 if x_q != x_p {
                     // λ = (y_q - y_p)/(x_q - x_p)
-                    (y_q - y_p) * (x_q - x_p).invert().unwrap()
+                    // Here, alpha = inv0(x_q - x_p), which suffices since we
+                    // know that x_q != x_p in this branch.
+                    (y_q - y_p) * alpha.unwrap()
                 } else {
                     if y_p != C::Base::zero() {
                         // 3(x_p)^2

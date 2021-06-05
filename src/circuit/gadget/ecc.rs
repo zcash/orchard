@@ -410,7 +410,14 @@ mod tests {
                 meta.advice_column(),
             ];
 
-            EccChip::<C>::configure(meta, advices)
+            let perm = meta.permutation(
+                &advices
+                    .iter()
+                    .map(|advice| (*advice).into())
+                    .collect::<Vec<_>>(),
+            );
+
+            EccChip::<C>::configure(meta, advices, perm)
         }
 
         fn synthesize(

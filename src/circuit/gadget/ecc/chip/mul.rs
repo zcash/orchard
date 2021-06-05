@@ -131,7 +131,7 @@ impl<C: CurveAffine> Config<C> {
             offset,
             &base,
             bits_incomplete_hi,
-            (X(acc.x.clone()), Y(acc.y.value()), Z(z)),
+            (X(acc.x), Y(acc.y.value()), Z(z)),
         )?;
 
         // Double-and-add (incomplete addition) for the `lo` half of the scalar decomposition
