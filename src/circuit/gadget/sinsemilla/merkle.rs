@@ -11,8 +11,8 @@ use pasta_curves::{
 };
 
 use super::{
-    chip::{SinsemillaChip, SinsemillaConfig},
-    message::MessagePiece,
+    chip::{SinsemillaChip, SinsemillaConfig, SinsemillaHashDomains},
+    message::MessageSubPiece,
     HashDomains, SinsemillaInstructions,
 };
 
@@ -21,10 +21,11 @@ use crate::{
         cond_swap::{CondSwapChip, CondSwapConfig, CondSwapInstructions},
         copy, CellValue, UtilitiesInstructions, Var,
     },
+    constants::MERKLE_DEPTH_ORCHARD,
     primitives::sinsemilla,
     spec::i2lebsp,
 };
-use ff::{PrimeField, PrimeFieldBits};
+use ff::PrimeField;
 use std::convert::TryInto;
 
 /// Instructions to check the validity of a Merkle path of a given `PATH_LENGTH`.
@@ -175,6 +176,289 @@ impl MerkleChip {
     }
 }
 
+impl
+    MerkleInstructions<
+        pallas::Affine,
+        { MERKLE_DEPTH_ORCHARD / 2 },
+        { sinsemilla::K },
+        { sinsemilla::C },
+    > for MerkleChip
+{
+    /// Hash a Merkle path from a given leaf and output the root.
+    #[allow(non_snake_case)]
+    fn hash_path(
+        &self,
+        mut layouter: impl Layouter<pallas::Base>,
+        start_height: usize,
+        node: (
+            <Self as UtilitiesInstructions<pallas::Base>>::Var,
+            Option<u32>,
+        ),
+        merkle_path: Vec<Option<pallas::Base>>,
+    ) -> Result<<Self as UtilitiesInstructions<pallas::Base>>::Var, Error> {
+        let domain = SinsemillaHashDomains::MerkleCrh;
+
+        assert_eq!(merkle_path.len(), MERKLE_DEPTH_ORCHARD / 2);
+
+        let config = self.config().clone();
+
+        // Get position as a 32-bit bitstring (little-endian bit order).
+        let pos = node.1;
+        let pos: Option<[bool; MERKLE_DEPTH_ORCHARD / 2]> = pos.map(|pos| i2lebsp(pos as u64));
+        let pos: [Option<bool>; MERKLE_DEPTH_ORCHARD / 2] = if let Some(pos) = pos {
+            pos.iter()
+                .map(|pos| Some(*pos))
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap()
+        } else {
+            [None; MERKLE_DEPTH_ORCHARD / 2]
+        };
+
+        let Q = domain.Q();
+
+        let mut node = node.0;
+        for (l_star, (sibling, pos)) in merkle_path.iter().zip(pos.iter()).enumerate() {
+            // `l_star` = MERKLE_DEPTH_ORCHARD - layer - 1, which is the index obtained from
+            // enumerating this Merkle path (going from node to root).
+            // For example, when `layer = 31` (the first sibling on the Merkle path),
+            // we have `l_star` = 32 - 31 - 1 = 0.
+            // On the other hand, when `layer = 0` (the final sibling on the Merkle path),
+            // we have `l_star` = 32 - 0 - 1 = 31.
+            let l_star = l_star + start_height;
+
+            let pair = {
+                // Load sibling into circuit
+                let sibling = self.load_private(
+                    layouter.namespace(|| ""),
+                    config.cond_swap_config.a,
+                    *sibling,
+                )?;
+                let pair = (node, sibling);
+
+                // Swap node and sibling if needed
+                self.swap(layouter.namespace(|| ""), pair, *pos)?
+            };
+
+            // Each `hash_layer` consists of 52 Sinsemilla words:
+            //  - l_star (10 bits) = 1 word
+            //  - left (255 bits) || right (255 bits) = 51 words (510 bits)
+            node = self.hash_layer(
+                layouter.namespace(|| format!("hash l_star {}", l_star)),
+                Q,
+                l_star,
+                pair.0,
+                pair.1,
+            )?;
+        }
+
+        Ok(node)
+    }
+
+    #[allow(non_snake_case)]
+    fn hash_layer(
+        &self,
+        mut layouter: impl Layouter<pallas::Base>,
+        Q: pallas::Affine,
+        l_star: usize,
+        left: <Self as UtilitiesInstructions<pallas::Base>>::Var,
+        right: <Self as UtilitiesInstructions<pallas::Base>>::Var,
+    ) -> Result<<Self as UtilitiesInstructions<pallas::Base>>::Var, Error> {
+        // <https://zips.z.cash/protocol/nu5.pdf#orchardmerklecrh>
+        // We need to hash `l_star || left || right`, where `l_star` is a 10-bit value.
+        // We allow `left` and `right` to be non-canonical 255-bit encodings.
+        //
+        // `a = a_0||a_1` = `l_star` || (bits 0..=239 of `left`)
+        // `b = b_0||b_1` = (bits 240..=254 of `left`) || (bits 0..=234 of `right`)
+        // `c = bits 235..=254 of `right`
+
+        // `a = a_0||a_1` = `l` || (bits 0..=239 of `left`)
+        let a = {
+            // a_0 = l_star
+            let a_0: MessageSubPiece<pallas::Base, { sinsemilla::K }> =
+                (Some(pallas::Base::from_u64(l_star as u64)), 0..10).into();
+
+            // a_1 = (bits 0..=239 of `left`)
+            let a_1: MessageSubPiece<pallas::Base, { sinsemilla::K }> =
+                (left.value(), 0..240).into();
+
+            self.witness_message_piece_subpieces(
+                layouter.namespace(|| "Witness a = a_0 || a_1"),
+                &[a_0, a_1],
+            )?
+        };
+
+        // `b = b_0||b_1` = (bits 240..=254 of `left`) || (bits 0..=234 of `right`)
+        let b = {
+            // b_0 = (bits 240..=254 of `left`)
+            let b_0: MessageSubPiece<pallas::Base, { sinsemilla::K }> =
+                (left.value(), 240..(pallas::Base::NUM_BITS as usize)).into();
+
+            // b_1 = (bits 0..=234 of `right`)
+            let b_1: MessageSubPiece<pallas::Base, { sinsemilla::K }> =
+                (right.value(), 0..235).into();
+
+            self.witness_message_piece_subpieces(
+                layouter.namespace(|| "Witness b = b_0 || b_1"),
+                &[b_0, b_1],
+            )?
+        };
+
+        let c = {
+            // `c = bits 235..=254 of `right`
+            let c: MessageSubPiece<pallas::Base, { sinsemilla::K }> =
+                (right.value(), 235..(pallas::Base::NUM_BITS as usize)).into();
+
+            self.witness_message_piece_field(layouter.namespace(|| "c"), c.field_elem_subset(), 2)?
+        };
+
+        let config = self.config().clone();
+        // Check that the pieces have been decomposed properly.
+        {
+            layouter.assign_region(
+                || "Check piece decomposition",
+                |mut region| {
+                    // Set the fixed column `l_star_plus1` to the current l_star + 1.
+                    let l_star_plus1 = (l_star as u64) + 1;
+                    region.assign_fixed(
+                        || format!("l_star_plus1 {}", l_star_plus1),
+                        config.l_star_plus1,
+                        0,
+                        || Ok(pallas::Base::from_u64(l_star_plus1)),
+                    )?;
+
+                    // Copy and assign `a` at the correct position.
+                    copy(
+                        &mut region,
+                        || "copy a",
+                        config.a_a0,
+                        0,
+                        &a.cell_value(),
+                        &config.perm,
+                    )?;
+                    // Copy and assign `b` at the correct position.
+                    copy(
+                        &mut region,
+                        || "copy b",
+                        config.b_a1,
+                        0,
+                        &b.cell_value(),
+                        &config.perm,
+                    )?;
+                    // Copy and assign `c` at the correct position.
+                    copy(
+                        &mut region,
+                        || "copy c",
+                        config.c_b0,
+                        0,
+                        &c.cell_value(),
+                        &config.perm,
+                    )?;
+                    // Copy and assign the left node at the correct position.
+                    copy(
+                        &mut region,
+                        || "left",
+                        config.left_b1,
+                        0,
+                        &left,
+                        &config.perm,
+                    )?;
+                    // Copy and assign the right node at the correct position.
+                    copy(
+                        &mut region,
+                        || "right",
+                        config.right,
+                        0,
+                        &right,
+                        &config.perm,
+                    )?;
+
+                    // Copy and assign the subpiece `a_0` at the correct position.
+                    copy(
+                        &mut region,
+                        || "a_0",
+                        config.a_a0,
+                        1,
+                        &a.subpieces()[0].cell_value(),
+                        &config.perm,
+                    )?;
+                    // Copy and assign the subpiece `a_1` at the correct position.
+                    copy(
+                        &mut region,
+                        || "a_1",
+                        config.b_a1,
+                        1,
+                        &a.subpieces()[1].cell_value(),
+                        &config.perm,
+                    )?;
+                    // Copy and assign the subpiece `b_0` at the correct position.
+                    copy(
+                        &mut region,
+                        || "b_0",
+                        config.c_b0,
+                        1,
+                        &b.subpieces()[0].cell_value(),
+                        &config.perm,
+                    )?;
+                    // Copy and assign the subpiece `b_1` at the correct position.
+                    copy(
+                        &mut region,
+                        || "b_1",
+                        config.left_b1,
+                        1,
+                        &b.subpieces()[1].cell_value(),
+                        &config.perm,
+                    )?;
+
+                    Ok(())
+                },
+            )?;
+        }
+
+        let (point, _) = self.hash_to_point(
+            layouter.namespace(|| format!("l_star {}", l_star)),
+            Q,
+            vec![a, b, c].into(),
+        )?;
+        let result = Self::extract(&point);
+
+        // Check layer hash output against Sinsemilla primitives hash
+        #[cfg(test)]
+        {
+            use crate::constants::{L_ORCHARD_BASE, MERKLE_CRH_PERSONALIZATION};
+            use crate::primitives::sinsemilla::HashDomain;
+            use ff::PrimeFieldBits;
+
+            if let (Some(left), Some(right)) = (left.value(), right.value()) {
+                let l_star = i2lebsp::<10>(l_star as u64);
+                let left: Vec<_> = left
+                    .to_le_bits()
+                    .iter()
+                    .by_val()
+                    .take(L_ORCHARD_BASE)
+                    .collect();
+                let right: Vec<_> = right
+                    .to_le_bits()
+                    .iter()
+                    .by_val()
+                    .take(L_ORCHARD_BASE)
+                    .collect();
+                let merkle_crh = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
+
+                let mut message = l_star.to_vec();
+                message.extend_from_slice(&left);
+                message.extend_from_slice(&right);
+
+                let expected = merkle_crh.hash(message.into_iter()).unwrap();
+
+                assert_eq!(expected.to_bytes(), result.value().unwrap().to_bytes());
+            }
+        }
+
+        Ok(result)
+    }
+}
+
 impl UtilitiesInstructions<pallas::Base> for MerkleChip {
     type Var = CellValue<pallas::Base>;
 }
@@ -275,6 +559,7 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
     }
 
     #[allow(non_snake_case)]
+    #[allow(clippy::type_complexity)]
     fn hash_to_point(
         &self,
         layouter: impl Layouter<pallas::Base>,
