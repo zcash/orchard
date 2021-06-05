@@ -328,26 +328,26 @@ mod tests {
     use halo2::{
         circuit::{layouter::SingleChipLayouter, Layouter},
         dev::MockProver,
-        pasta::pallas,
         plonk::{Assignment, Circuit, ConstraintSystem, Error},
     };
 
     use super::{
-        chip::SinsemillaHashDomains,
         chip::{SinsemillaChip, SinsemillaConfig},
-        HashDomain, Message, SinsemillaInstructions,
+        chip::{SinsemillaCommitDomains, SinsemillaHashDomains},
+        CommitDomain, HashDomain, Message, SinsemillaInstructions,
     };
 
     use crate::{
         circuit::gadget::ecc::{
             chip::{EccChip, EccConfig},
-            Point,
+            Point, ScalarFixed,
         },
         constants::MERKLE_CRH_PERSONALIZATION,
         primitives::sinsemilla::{self, K},
     };
 
     use group::Curve;
+    use pasta_curves::{arithmetic::FieldExt, pallas};
 
     use std::convert::TryInto;
 
@@ -380,9 +380,9 @@ mod tests {
                     .collect::<Vec<_>>(),
             );
 
-            let lookup_table = meta.fixed_column();
+            let lookup_table_idx = meta.fixed_column();
             let ecc_config =
-                EccChip::configure(meta, advices, lookup_table, constants, perm.clone());
+                EccChip::configure(meta, advices, lookup_table_idx, constants, perm.clone());
 
             // Fixed columns for the Sinsemilla generator lookup table
             let lookup = (lookup_table_idx, meta.fixed_column(), meta.fixed_column());
@@ -470,7 +470,7 @@ mod tests {
                     };
 
                     Point::new(
-                        ecc_chip,
+                        ecc_chip.clone(),
                         layouter.namespace(|| "Witness expected parent"),
                         expected_parent,
                     )?
@@ -486,6 +486,29 @@ mod tests {
                     layouter.namespace(|| "parent == expected parent"),
                     &expected_parent,
                 )?;
+            }
+
+            {
+                let chip2 = SinsemillaChip::construct(config.2);
+
+                let commit_ivk = CommitDomain::new(
+                    chip2.clone(),
+                    ecc_chip.clone(),
+                    &SinsemillaCommitDomains::CommitIvk,
+                );
+                let r = ScalarFixed::<pallas::Affine, EccChip>::new(
+                    ecc_chip,
+                    layouter.namespace(|| "r"),
+                    Some(pallas::Scalar::rand()),
+                )?;
+                let message: Vec<Option<bool>> =
+                    (0..500).map(|_| Some(rand::random::<bool>())).collect();
+                let message = Message::from_bitstring(
+                    chip2,
+                    layouter.namespace(|| "witness message"),
+                    message,
+                )?;
+                commit_ivk.commit(layouter.namespace(|| "commit"), message, r)?;
             }
 
             Ok(())
