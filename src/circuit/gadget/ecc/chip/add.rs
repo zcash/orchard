@@ -369,7 +369,9 @@ impl Config {
             let real_sum = p.zip(q).map(|(p, q)| p + q);
             let result = result.point();
 
-            assert_eq!(real_sum.unwrap().to_affine(), result.unwrap());
+            if let (Some(real_sum), Some(result)) = (real_sum, result) {
+                assert_eq!(real_sum.to_affine(), result);
+            }
         }
 
         Ok(result)

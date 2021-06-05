@@ -47,7 +47,9 @@ impl<C: CurveAffine, const NUM_WINDOWS: usize> Config<C, NUM_WINDOWS> {
             let real_mul = scalar.map(|scalar| base.generator() * scalar);
             let result = result.point();
 
-            assert_eq!(real_mul.unwrap().to_affine(), result.unwrap());
+            if let (Some(real_mul), Some(result)) = (real_mul, result) {
+                assert_eq!(real_mul.to_affine(), result);
+            }
         }
 
         Ok(result)
