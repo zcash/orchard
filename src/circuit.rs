@@ -1,5 +1,6 @@
 use group::Curve;
 use halo2::{
+    circuit::layouter::SingleChipLayouter,
     plonk::{self, Advice, Column, Fixed, Instance as InstanceColumn, Permutation, Selector},
     poly::{EvaluationDomain, LagrangeCoeff, Polynomial, Rotation},
     transcript::{Blake2bRead, Blake2bWrite},
@@ -207,9 +208,15 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
     fn synthesize(
         &self,
-        _cs: &mut impl plonk::Assignment<pallas::Base>,
-        _config: Self::Config,
+        cs: &mut impl plonk::Assignment<pallas::Base>,
+        config: Self::Config,
     ) -> Result<(), plonk::Error> {
+        // Initialize a layouter.
+        let mut layouter = SingleChipLayouter::new(cs)?;
+
+        // Load the Sinsemilla generator lookup table used by the whole circuit.
+        SinsemillaChip::load(config.sinsemilla_config_1, &mut layouter)?;
+
         Ok(())
     }
 }
