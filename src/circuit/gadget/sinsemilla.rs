@@ -7,6 +7,7 @@ use halo2::{arithmetic::CurveAffine, circuit::Layouter, plonk::Error};
 use std::fmt::Debug;
 
 pub mod chip;
+pub mod commit_ivk;
 pub mod merkle;
 mod message;
 

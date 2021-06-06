@@ -57,7 +57,7 @@ pub struct SinsemillaConfig {
     lambda_2: Column<Advice>,
     // The lookup table where (idx, x_p, y_p) are loaded for the 2^K generators
     // of the Sinsemilla hash.
-    generator_table: GeneratorTableConfig,
+    pub generator_table: GeneratorTableConfig,
     // Fixed column shared by the whole circuit. This is used to load the
     // x-coordinate of the domain Q, which is then constrained to equal the
     // initial x_a.
