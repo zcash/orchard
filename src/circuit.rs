@@ -21,7 +21,7 @@ use crate::{
         ExtractedNoteCommitment,
     },
     primitives::{
-        poseidon,
+        poseidon::{self, ConstantLength},
         redpallas::{SpendAuth, VerificationKey},
     },
     spec::NonIdentityPallasPoint,
@@ -33,7 +33,10 @@ use gadget::{
         chip::{EccChip, EccConfig},
         FixedPoint, FixedPointShort, Point, ScalarFixed, ScalarFixedShort,
     },
-    poseidon::{Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig},
+    poseidon::{
+        Hash as PoseidonHash, Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig,
+        StateWord, Word,
+    },
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{MerkleChip, MerkleConfig, MerkleInstructions},
@@ -362,6 +365,93 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
             // [v_net] ValueCommitV + [rcv] ValueCommitR
             commitment.add(layouter.namespace(|| "cv_net"), &blind)?
+        };
+
+        // Nullifier integrity
+        // TODO: constrain to equal public input nf_old
+        let _nf_old = {
+            // nk_rho_old = poseidon_hash(nk, rho_old)
+            let nk_rho_old = {
+                let message = [nk, rho_old];
+
+                let poseidon_message = layouter.assign_region(
+                    || "load message",
+                    |mut region| {
+                        let mut message_word = |i: usize| {
+                            let value = message[i].value();
+                            let var = region.assign_advice(
+                                || format!("load message_{}", i),
+                                config.poseidon_config.state[i],
+                                0,
+                                || value.ok_or(plonk::Error::SynthesisError),
+                            )?;
+                            region.constrain_equal(&config.perm, var, message[i].cell())?;
+                            Ok(Word::<_, _, poseidon::OrchardNullifier, 3, 2> {
+                                inner: StateWord::new(var, value),
+                            })
+                        };
+
+                        Ok([message_word(0)?, message_word(1)?])
+                    },
+                )?;
+
+                let poseidon_hasher = PoseidonHash::init(
+                    config.poseidon_chip(),
+                    layouter.namespace(|| "Poseidon init"),
+                    ConstantLength::<2>,
+                )?;
+                let poseidon_output = poseidon_hasher.hash(
+                    layouter.namespace(|| "Poseidon hash (nk, rho_old)"),
+                    poseidon_message,
+                )?;
+                let poseidon_output: CellValue<pallas::Base> = poseidon_output.inner.into();
+                poseidon_output
+            };
+
+            // Add hash output to psi using standard PLONK
+            // `scalar` = poseidon_hash(nk, rho_old) + psi_old.
+            //
+            let scalar = {
+                let scalar_val = nk_rho_old
+                    .value()
+                    .zip(psi_old.value())
+                    .map(|(nk_rho_old, psi_old)| nk_rho_old + psi_old);
+                let scalar = self.load_private(
+                    layouter.namespace(|| "poseidon_hash(nk, rho_old) + psi_old"),
+                    config.advices[0],
+                    scalar_val,
+                )?;
+
+                config.plonk_chip().add(
+                    layouter.namespace(|| "poseidon_hash(nk, rho_old) + psi_old"),
+                    nk_rho_old,
+                    psi_old,
+                    scalar,
+                    Some(pallas::Base::one()),
+                    Some(pallas::Base::one()),
+                    Some(pallas::Base::one()),
+                )?;
+
+                scalar
+            };
+
+            // Multiply scalar by NullifierK
+            // `product` = [poseidon_hash(nk, rho_old) + psi_old] NullifierK.
+            //
+            let product = {
+                let nullifier_k = OrchardFixedBasesFull::NullifierK;
+                let nullifier_k = FixedPoint::from_inner(ecc_chip.clone(), nullifier_k);
+                nullifier_k.mul_base_field_elem(
+                    layouter.namespace(|| "[poseidon_output + psi_old] NullifierK"),
+                    scalar,
+                )?
+            };
+
+            // Add cm_old to multiplied fixed base to get nf_old
+            // cm_old + [poseidon_output + psi_old] NullifierK
+            cm_old
+                .add(layouter.namespace(|| "nf_old"), &product)?
+                .extract_p()
         };
 
         Ok(())
