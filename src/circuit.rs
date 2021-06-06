@@ -8,7 +8,10 @@ use halo2::{
 use pasta_curves::{arithmetic::FieldExt, pallas, vesta};
 
 use crate::{
-    constants::MERKLE_DEPTH_ORCHARD,
+    constants::{
+        load::{OrchardFixedBasesFull, ValueCommitV},
+        MERKLE_DEPTH_ORCHARD,
+    },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
     },
@@ -28,7 +31,7 @@ use crate::{
 use gadget::{
     ecc::{
         chip::{EccChip, EccConfig},
-        Point,
+        FixedPoint, FixedPointShort, Point, ScalarFixed, ScalarFixedShort,
     },
     poseidon::{Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig},
     sinsemilla::{
@@ -37,8 +40,8 @@ use gadget::{
     },
     utilities::{
         enable_flag::{EnableFlagChip, EnableFlagConfig},
-        plonk::{PLONKChip, PLONKConfig},
-        CellValue, UtilitiesInstructions,
+        plonk::{PLONKChip, PLONKConfig, PLONKInstructions},
+        CellValue, UtilitiesInstructions, Var,
     },
 };
 
@@ -319,6 +322,46 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             };
 
             root
+        };
+
+        // Value commitment integrity.
+        // TODO: constrain to equal public input cv_net
+        let _cv_net = {
+            // v_net = v_old - v_new
+            let v_net = {
+                let v_net_val = self.v_old.zip(self.v_new).map(|(v_old, v_new)| {
+                    // Do the subtraction in the scalar field.
+                    let v_old = pallas::Scalar::from_u64(v_old.inner());
+                    let v_new = pallas::Scalar::from_u64(v_new.inner());
+                    v_old - v_new
+                });
+
+                ScalarFixedShort::new(ecc_chip.clone(), layouter.namespace(|| "v_net"), v_net_val)?
+            };
+
+            // commitment = [v_net] ValueCommitV
+            let commitment = {
+                let value_commit_v = ValueCommitV::get();
+                let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
+                value_commit_v.mul(layouter.namespace(|| "[v_net] ValueCommitV"), &v_net)?
+            };
+
+            // blind = [rcv] ValueCommitR
+            let blind = {
+                let rcv = ScalarFixed::new(
+                    ecc_chip.clone(),
+                    layouter.namespace(|| "rcv"),
+                    self.rcv.as_ref().map(|rcv| **rcv),
+                )?;
+                let value_commit_r = OrchardFixedBasesFull::ValueCommitR;
+                let value_commit_r = FixedPoint::from_inner(ecc_chip.clone(), value_commit_r);
+
+                // [rcv] ValueCommitR
+                value_commit_r.mul(layouter.namespace(|| "[rcv] ValueCommitR"), &rcv)?
+            };
+
+            // [v_net] ValueCommitV + [rcv] ValueCommitR
+            commitment.add(layouter.namespace(|| "cv_net"), &blind)?
         };
 
         Ok(())
