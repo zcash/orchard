@@ -31,15 +31,17 @@ use crate::{
 use gadget::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, FixedPointShort, Point, ScalarFixed, ScalarFixedShort,
+        FixedPoint, FixedPointShort, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
     },
     poseidon::{
         Hash as PoseidonHash, Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig,
         StateWord, Word,
     },
     sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig},
+        chip::{SinsemillaChip, SinsemillaCommitDomains, SinsemillaConfig},
+        commit_ivk::CommitIvkConfig,
         merkle::{MerkleChip, MerkleConfig, MerkleInstructions},
+        CommitDomain,
     },
     utilities::{
         enable_flag::{EnableFlagChip, EnableFlagConfig},
@@ -69,6 +71,7 @@ pub struct Config {
     merkle_config_2: MerkleConfig,
     sinsemilla_config_1: SinsemillaConfig,
     sinsemilla_config_2: SinsemillaConfig,
+    commit_ivk_config: CommitIvkConfig,
     constants: Column<Fixed>,
     perm: Permutation,
 }
@@ -190,6 +193,10 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             (sinsemilla_config_2, merkle_config_2)
         };
 
+        // Configuration to handle decomposition and canonicity checking
+        // for CommitIvk.
+        let commit_ivk_config = CommitIvkConfig::configure(meta, sinsemilla_config_1.clone());
+
         // TODO: Infrastructure to handle public inputs.
         let q_primary = meta.selector();
         let primary = meta.instance_column();
@@ -215,6 +222,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             merkle_config_2,
             sinsemilla_config_1,
             sinsemilla_config_2,
+            commit_ivk_config,
             constants,
             perm,
         }
@@ -470,6 +478,47 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
             // [alpha] SpendAuthG + ak
             alpha_commitment.add(layouter.namespace(|| "rk"), &ak)?
+        };
+
+        // Diversified address integrity.
+        let _pk_d_old = {
+            let commit_ivk_config = config.commit_ivk_config.clone();
+
+            let ivk = {
+                // ak || nk
+                let (ak_nk, subpieces) = commit_ivk_config.decompose(
+                    config.sinsemilla_chip_1(),
+                    layouter.namespace(|| "ak || nk"),
+                    *ak.extract_p().inner(),
+                    nk,
+                )?;
+
+                let domain = CommitDomain::new(
+                    config.sinsemilla_chip_1(),
+                    ecc_chip.clone(),
+                    &SinsemillaCommitDomains::CommitIvk,
+                );
+
+                let rivk = ScalarFixed::new(
+                    ecc_chip.clone(),
+                    layouter.namespace(|| "rivk"),
+                    self.rivk.map(|rivk| *rivk),
+                )?;
+
+                let (ivk, zs) =
+                    domain.short_commit(layouter.namespace(|| "CommitIvk"), ak_nk, rivk)?;
+
+                commit_ivk_config.check_canonicity(
+                    layouter.namespace(|| "Check canonicity of CommitIvk inputs"),
+                    subpieces,
+                    zs,
+                )?;
+
+                ScalarVar::from_inner(ecc_chip.clone(), (*ivk.inner()).into())
+            };
+
+            // [ivk] g_d_old
+            g_d_old.mul(layouter.namespace(|| "[ivk] g_d_old"), &ivk)?
         };
 
         Ok(())

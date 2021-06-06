@@ -169,6 +169,11 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> ScalarVar
         chip.witness_scalar_var(&mut layouter, value)
             .map(|inner| ScalarVar { chip, inner })
     }
+
+    /// Wraps the given scalar (obtained directly from an instruction) in a gadget.
+    pub fn from_inner(chip: EccChip, inner: EccChip::ScalarVar) -> Self {
+        ScalarVar { chip, inner }
+    }
 }
 
 /// A full-width element of the given elliptic curve's scalar field, to be used for fixed-base scalar mul.

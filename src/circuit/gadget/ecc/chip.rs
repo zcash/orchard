@@ -261,6 +261,12 @@ impl std::ops::Deref for EccScalarVar {
     }
 }
 
+impl From<CellValue<pallas::Base>> for EccScalarVar {
+    fn from(cell_value: CellValue<pallas::Base>) -> Self {
+        Self(cell_value)
+    }
+}
+
 /// A full-width scalar used for fixed-base scalar multiplication.
 /// This is decomposed into 85 3-bit windows in little-endian order,
 /// i.e. `windows` = [k_0, k_1, ..., k_84] (for a 255-bit scalar)
