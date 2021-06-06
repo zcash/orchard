@@ -351,7 +351,7 @@ mod tests {
                 rho,
                 // We don't need a valid rk for this test.
                 redpallas::VerificationKey::dummy(),
-                cmx.clone(),
+                cmx,
                 TransmittedNoteCiphertext {
                     epk_bytes: ephemeral_key.0,
                     enc_ciphertext: tv.c_enc,

@@ -6,6 +6,7 @@ use halo2::{
 };
 
 use super::{PoseidonDuplexInstructions, PoseidonInstructions};
+use crate::circuit::gadget::utilities::{CellValue, Var};
 use crate::primitives::poseidon::{Domain, Mds, Spec, SpongeState, State};
 
 const WIDTH: usize = 3;
@@ -13,7 +14,7 @@ const WIDTH: usize = 3;
 /// Configuration for an [`Pow5T3Chip`].
 #[derive(Clone, Debug)]
 pub struct Pow5T3Config<F: FieldExt> {
-    state: [Column<Advice>; WIDTH],
+    pub state: [Column<Advice>; WIDTH],
     state_permutation: Permutation,
     partial_sbox: Column<Advice>,
     rc_a: [Column<Fixed>; WIDTH],
@@ -211,7 +212,7 @@ impl<F: FieldExt> Pow5T3Chip<F> {
         }
     }
 
-    fn construct(config: Pow5T3Config<F>) -> Self {
+    pub fn construct(config: Pow5T3Config<F>) -> Self {
         Pow5T3Chip { config }
     }
 }
@@ -415,6 +416,18 @@ impl<F: FieldExt, S: Spec<F, WIDTH, 2>> PoseidonDuplexInstructions<F, S, WIDTH, 
 pub struct StateWord<F: FieldExt> {
     var: Cell,
     value: Option<F>,
+}
+
+impl<F: FieldExt> StateWord<F> {
+    pub fn new(var: Cell, value: Option<F>) -> Self {
+        Self { var, value }
+    }
+}
+
+impl<F: FieldExt> From<StateWord<F>> for CellValue<F> {
+    fn from(state_word: StateWord<F>) -> CellValue<F> {
+        CellValue::new(state_word.var, state_word.value)
+    }
 }
 
 #[derive(Debug)]
