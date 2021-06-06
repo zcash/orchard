@@ -33,7 +33,7 @@ use gadget::{
     poseidon::{Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig},
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
-        merkle::{MerkleChip, MerkleConfig},
+        merkle::{MerkleChip, MerkleConfig, MerkleInstructions},
     },
     utilities::{
         enable_flag::{EnableFlagChip, EnableFlagConfig},
@@ -274,6 +274,51 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             )?;
 
             (rho_old, psi_old, cm_old, g_d_old, ak, nk)
+        };
+
+        // Merkle path validity check.
+        // TODO: constrain output to equal public input
+        let _anchor = {
+            // Cast path from Option<[pallas::Base]> to [Option<pallas::Base>]
+            let path: [Option<pallas::Base>; MERKLE_DEPTH_ORCHARD] = if let Some(path) = self.path {
+                path.iter()
+                    .map(|node| Some(*node))
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap()
+            } else {
+                [None; MERKLE_DEPTH_ORCHARD]
+            };
+
+            let half_merkle_depth = MERKLE_DEPTH_ORCHARD / 2;
+            // Process lo half of the Merkle path from leaf to intermediate root.
+            let intermediate_root = {
+                let leaf = *cm_old.extract_p().inner();
+
+                let lo_bitmask = (1 << (half_merkle_depth)) - 1;
+                let pos_lo = self.pos.map(|pos| pos & lo_bitmask);
+
+                config.merkle_chip_1().hash_path(
+                    layouter.namespace(|| ""),
+                    0,
+                    (leaf, pos_lo),
+                    path[0..(half_merkle_depth)].to_vec(),
+                )?
+            };
+
+            // Process hi half of the Merkle path from intermediate root to root.
+            let root = {
+                let pos_hi = self.pos.map(|pos| pos >> (half_merkle_depth));
+
+                config.merkle_chip_2().hash_path(
+                    layouter.namespace(|| ""),
+                    half_merkle_depth,
+                    (intermediate_root, pos_hi),
+                    path[(half_merkle_depth)..].to_vec(),
+                )?
+            };
+
+            root
         };
 
         Ok(())
