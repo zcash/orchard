@@ -41,6 +41,7 @@ use gadget::{
         chip::{SinsemillaChip, SinsemillaCommitDomains, SinsemillaConfig},
         commit_ivk::CommitIvkConfig,
         merkle::{MerkleChip, MerkleConfig, MerkleInstructions},
+        note_commit::NoteCommitConfig,
         CommitDomain,
     },
     utilities::{
@@ -55,7 +56,8 @@ use std::convert::TryInto;
 pub(crate) mod gadget;
 
 /// Size of the Orchard circuit.
-const K: u32 = 11;
+// FIXME: This circuit should fit within 2^11 rows.
+const K: u32 = 12;
 
 /// Configuration needed to use the Orchard Action circuit.
 #[derive(Clone, Debug)]
@@ -72,6 +74,7 @@ pub struct Config {
     sinsemilla_config_1: SinsemillaConfig,
     sinsemilla_config_2: SinsemillaConfig,
     commit_ivk_config: CommitIvkConfig,
+    old_note_commit_config: NoteCommitConfig,
     constants: Column<Fixed>,
     perm: Permutation,
 }
@@ -197,6 +200,10 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         // for CommitIvk.
         let commit_ivk_config = CommitIvkConfig::configure(meta, sinsemilla_config_1.clone());
 
+        // Configuration to handle decomposition and canonicity checking
+        // for NoteCommit_old.
+        let old_note_commit_config = NoteCommitConfig::configure(meta, sinsemilla_config_2.clone());
+
         // TODO: Infrastructure to handle public inputs.
         let q_primary = meta.selector();
         let primary = meta.instance_column();
@@ -223,6 +230,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             sinsemilla_config_1,
             sinsemilla_config_2,
             commit_ivk_config,
+            old_note_commit_config,
             constants,
             perm,
         }
@@ -481,7 +489,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         };
 
         // Diversified address integrity.
-        let _pk_d_old = {
+        let pk_d_old = {
             let commit_ivk_config = config.commit_ivk_config.clone();
 
             let ivk = {
@@ -519,6 +527,59 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
             // [ivk] g_d_old
             g_d_old.mul(layouter.namespace(|| "[ivk] g_d_old"), &ivk)?
+        };
+
+        // Old note commitment integrity.
+        let _cm_old = {
+            let old_note_commit_config = config.old_note_commit_config.clone();
+
+            let v_old = {
+                // Witness v_old.
+                let v_old_val = self
+                    .v_old
+                    .map(|value| pallas::Base::from_u64(value.inner()));
+                self.load_private(
+                    layouter.namespace(|| "witness v_old"),
+                    config.advices[0],
+                    v_old_val,
+                )?
+            };
+
+            // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
+            let (message, subpieces) = old_note_commit_config.decompose(
+                config.sinsemilla_chip_2(),
+                layouter.namespace(|| {
+                    "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
+                }),
+                g_d_old.inner(),
+                pk_d_old.inner(),
+                v_old,
+                rho_old,
+                psi_old,
+            )?;
+
+            let domain = CommitDomain::new(
+                config.sinsemilla_chip_2(),
+                ecc_chip.clone(),
+                &SinsemillaCommitDomains::NoteCommit,
+            );
+
+            let rcm_old = ScalarFixed::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "rcm_old"),
+                self.rcm_old.as_ref().map(|rcm_old| **rcm_old),
+            )?;
+
+            let (commitment, zs) =
+                domain.commit(layouter.namespace(|| "NoteCommit_old"), message, rcm_old)?;
+
+            old_note_commit_config.check_canonicity(
+                layouter.namespace(|| "Check canonicity of NoteCommit_old inputs"),
+                subpieces,
+                zs,
+            )?;
+
+            commitment
         };
 
         Ok(())
