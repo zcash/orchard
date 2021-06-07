@@ -47,6 +47,7 @@ impl<F: FieldExt> Pow5T3Chip<F> {
         meta: &mut ConstraintSystem<F>,
         spec: S,
         state: [Column<Advice>; WIDTH],
+        partial_sbox: Column<Advice>,
     ) -> Pow5T3Config<F> {
         // Generate constants for the Poseidon permutation.
         // This gadget requires R_F and R_P to be even.
@@ -55,8 +56,6 @@ impl<F: FieldExt> Pow5T3Chip<F> {
         let half_full_rounds = S::full_rounds() / 2;
         let half_partial_rounds = S::partial_rounds() / 2;
         let (round_constants, m_reg, m_inv) = spec.constants();
-
-        let partial_sbox = meta.advice_column();
 
         let rc_a = [
             meta.fixed_column(),
@@ -640,8 +639,9 @@ mod tests {
                 meta.advice_column(),
                 meta.advice_column(),
             ];
+            let partial_sbox = meta.advice_column();
 
-            Pow5T3Chip::configure(meta, OrchardNullifier, state)
+            Pow5T3Chip::configure(meta, OrchardNullifier, state, partial_sbox)
         }
 
         fn synthesize(
@@ -731,8 +731,9 @@ mod tests {
                 meta.advice_column(),
                 meta.advice_column(),
             ];
+            let partial_sbox = meta.advice_column();
 
-            Pow5T3Chip::configure(meta, OrchardNullifier, state)
+            Pow5T3Chip::configure(meta, OrchardNullifier, state, partial_sbox)
         }
 
         fn synthesize(
