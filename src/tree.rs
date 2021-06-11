@@ -154,7 +154,7 @@ pub mod testing {
     // The uncommitted leaf is defined as pallas::Base(2).
     // <https://zips.z.cash/protocol/protocol.pdf#thmuncommittedorchard>
     lazy_static! {
-        static ref EMPTY_ROOTS: Vec<pallas::Base> = {
+        pub static ref EMPTY_ROOTS: Vec<pallas::Base> = {
             iter::empty()
                 .chain(Some(pallas::Base::from_u64(2)))
                 .chain((0..MERKLE_DEPTH_ORCHARD).scan(
