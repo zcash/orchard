@@ -13,10 +13,10 @@ use ff::PrimeFieldBits;
 
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct LookupRangeCheckConfig<F: FieldExt + PrimeFieldBits, const K: usize> {
-    q_lookup: Column<Fixed>,
-    running_sum: Column<Advice>,
+    pub q_lookup: Column<Fixed>,
+    pub running_sum: Column<Advice>,
     table_idx: Column<Fixed>,
     perm: Permutation,
     _marker: PhantomData<F>,
@@ -67,7 +67,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
     // Loads the values [0..2^K) into `table_idx`. This is only used in testing
     // for now, since the Sinsemilla chip provides a pre-loaded table in the
     // Orchard context.
-    fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
+    pub fn load(&self, layouter: &mut impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "table_idx",
             |mut gate| {

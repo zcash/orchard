@@ -4,10 +4,10 @@ use halo2::{
 };
 use pasta_curves::arithmetic::FieldExt;
 
-mod cond_swap;
-mod enable_flag;
-mod lookup_range_check;
-mod plonk;
+pub mod cond_swap;
+pub mod enable_flag;
+pub mod lookup_range_check;
+pub mod plonk;
 
 /// A variable representing a number.
 #[derive(Copy, Clone, Debug)]
