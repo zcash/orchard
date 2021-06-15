@@ -502,6 +502,11 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
         { sinsemilla::K },
         { sinsemilla::C },
     >>::MessageSubPiece;
+    type RunningSum = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::RunningSum;
 
     type X = <SinsemillaChip as SinsemillaInstructions<
         pallas::Affine,
@@ -578,7 +583,7 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
         layouter: impl Layouter<pallas::Base>,
         Q: pallas::Affine,
         message: Self::Message,
-    ) -> Result<(Self::Point, Vec<Vec<Self::CellValue>>), Error> {
+    ) -> Result<(Self::Point, Vec<Self::RunningSum>), Error> {
         let config = self.config().sinsemilla_config.clone();
         let chip = SinsemillaChip::construct(config);
         chip.hash_to_point(layouter, Q, message)
