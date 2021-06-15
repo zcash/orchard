@@ -3,8 +3,8 @@
 
 use crate::spec::lebs2ip;
 use halo2::{
-    circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation},
+    circuit::Layouter,
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
     poly::Rotation,
 };
 use std::{convert::TryInto, marker::PhantomData};
@@ -15,7 +15,7 @@ use super::*;
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct LookupRangeCheckConfig<F: FieldExt + PrimeFieldBits, const K: usize> {
-    pub q_lookup: Column<Fixed>,
+    pub q_lookup: Selector,
     pub running_sum: Column<Advice>,
     table_idx: Column<Fixed>,
     perm: Permutation,
@@ -35,11 +35,11 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
     /// can be loaded outside this helper.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
-        q_lookup: Column<Fixed>,
         running_sum: Column<Advice>,
         table_idx: Column<Fixed>,
         perm: Permutation,
     ) -> Self {
+        let q_lookup = meta.selector();
         let config = LookupRangeCheckConfig {
             q_lookup,
             running_sum,
@@ -49,7 +49,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
         };
 
         meta.lookup(|meta| {
-            let q_lookup = meta.query_fixed(config.q_lookup, Rotation::cur());
+            let q_lookup = meta.query_selector(config.q_lookup);
             let z_cur = meta.query_advice(config.running_sum, Rotation::cur());
             let z_next = meta.query_advice(config.running_sum, Rotation::next());
             //    z_i = 2^{K}⋅z_{i + 1} + a_i
@@ -94,8 +94,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
     /// `num_words * K` range.
     pub fn lookup_range_check(
         &self,
-        region: &mut Region<'_, F>,
-        offset: usize,
+        mut layouter: impl Layouter<F>,
         element: CellValue<F>,
         num_words: usize,
     ) -> Result<Vec<CellValue<F>>, Error> {
@@ -103,71 +102,79 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
         assert!(num_words * K <= F::CAPACITY as usize);
         let num_bits = num_words * K;
 
-        // Chunk the first num_bits bits into K-bit words.
-        let words = {
-            // Take first num_bits bits of `element`.
-            let bits = element.value().map(|element| {
-                element
-                    .to_le_bits()
-                    .into_iter()
-                    .take(num_bits)
-                    .collect::<Vec<_>>()
-            });
+        layouter.assign_region(
+            || format!("Lookup {:?} words", num_words),
+            |mut region| {
+                // Chunk the first num_bits bits into K-bit words.
+                let words = {
+                    // Take first num_bits bits of `element`.
+                    let bits = element.value().map(|element| {
+                        element
+                            .to_le_bits()
+                            .into_iter()
+                            .take(num_bits)
+                            .collect::<Vec<_>>()
+                    });
 
-            let words: Option<Vec<F>> = bits.map(|bits| {
-                bits.chunks_exact(K)
-                    .map(|word| F::from_u64(lebs2ip::<K>(&(word.try_into().unwrap()))))
-                    .collect::<Vec<_>>()
-            });
-            if let Some(words) = words {
-                words.into_iter().map(Some).collect()
-            } else {
-                vec![None; num_words]
-            }
-        };
+                    let words: Option<Vec<F>> = bits.map(|bits| {
+                        bits.chunks_exact(K)
+                            .map(|word| F::from_u64(lebs2ip::<K>(&(word.try_into().unwrap()))))
+                            .collect::<Vec<_>>()
+                    });
+                    if let Some(words) = words {
+                        words.into_iter().map(Some).collect()
+                    } else {
+                        vec![None; num_words]
+                    }
+                };
 
-        // Copy `element` and initialize running sum `z_0 = element` to decompose it.
-        let z_0 = copy(
-            region,
-            || "z_0",
-            self.running_sum,
-            offset,
-            &element,
-            &self.perm,
-        )?;
-
-        let mut zs = vec![z_0];
-
-        // Assign cumulative sum such that
-        //          z_i = 2^{K}⋅z_{i + 1} + a_i
-        // => z_{i + 1} = (z_i - a_i) / (2^K)
-        //
-        // For `element` = a_0 + 2^10 a_1 + ... + 2^{120} a_{12}}, initialize z_0 = `element`.
-        // If `element` fits in 130 bits, we end up with z_{13} = 0.
-        let mut z = z_0;
-        let inv_two_pow_k = F::from_u64(1u64 << K).invert().unwrap();
-        for (idx, word) in words.into_iter().enumerate() {
-            // z_next = (z_cur - m_cur) / 2^K
-            z = {
-                let z_val = z
-                    .value()
-                    .zip(word)
-                    .map(|(z, word)| (z - word) * inv_two_pow_k);
-
-                // Assign z_next
-                let z_cell = region.assign_advice(
-                    || format!("z_{:?}", idx + 1),
+                // Copy `element` and initialize running sum `z_0 = element` to decompose it.
+                let z_0 = copy(
+                    &mut region,
+                    || "z_0",
                     self.running_sum,
-                    offset + idx + 1,
-                    || z_val.ok_or(Error::SynthesisError),
+                    0,
+                    &element,
+                    &self.perm,
                 )?;
 
-                CellValue::new(z_cell, z_val)
-            };
-            zs.push(z);
-        }
+                let mut zs = vec![z_0];
 
-        Ok(zs)
+                // Assign cumulative sum such that
+                //          z_i = 2^{K}⋅z_{i + 1} + a_i
+                // => z_{i + 1} = (z_i - a_i) / (2^K)
+                //
+                // For `element` = a_0 + 2^10 a_1 + ... + 2^{120} a_{12}}, initialize z_0 = `element`.
+                // If `element` fits in 130 bits, we end up with z_{13} = 0.
+                let mut z = z_0;
+                let inv_two_pow_k = F::from_u64(1u64 << K).invert().unwrap();
+                for (idx, word) in words.into_iter().enumerate() {
+                    // Enable lookup on this row
+                    self.q_lookup.enable(&mut region, idx)?;
+
+                    // z_next = (z_cur - m_cur) / 2^K
+                    z = {
+                        let z_val = z
+                            .value()
+                            .zip(word)
+                            .map(|(z, word)| (z - word) * inv_two_pow_k);
+
+                        // Assign z_next
+                        let z_cell = region.assign_advice(
+                            || format!("z_{:?}", idx + 1),
+                            self.running_sum,
+                            idx + 1,
+                            || z_val.ok_or(Error::SynthesisError),
+                        )?;
+
+                        CellValue::new(z_cell, z_val)
+                    };
+                    zs.push(z);
+                }
+
+                Ok(zs)
+            },
+        )
     }
 }
 
@@ -204,17 +211,9 @@ mod tests {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let running_sum = meta.advice_column();
                 let table_idx = meta.fixed_column();
-                let q_lookup = meta.fixed_column();
-
                 let perm = meta.permutation(&[running_sum.into()]);
 
-                LookupRangeCheckConfig::<F, K>::configure(
-                    meta,
-                    q_lookup,
-                    running_sum,
-                    table_idx,
-                    perm,
-                )
+                LookupRangeCheckConfig::<F, K>::configure(meta, running_sum, table_idx, perm)
             }
 
             fn synthesize(
@@ -243,29 +242,10 @@ mod tests {
                         Some(*element),
                     )?;
 
-                    // Although this fixed column assignment can be done
-                    // within the `lookup_range_check` method, in practice
-                    // the information needed to toggle the lookup depends
-                    // on some external business logic (e.g. whether the
-                    // top bit of `element` is set).
-                    //
-                    // Leaving the toggle assignment to the caller gives
-                    // them the freedom to define this business logic.
-                    let zs = layouter.assign_region(
-                        || "word within range",
-                        |mut region| {
-                            for idx in 0..num_words {
-                                // Assign fixed column to activate lookup.
-                                region.assign_fixed(
-                                    || format!("lookup on row {}", idx),
-                                    config.q_lookup,
-                                    idx,
-                                    || Ok(F::one()),
-                                )?;
-                            }
-
-                            config.lookup_range_check(&mut region, 0, element, num_words)
-                        },
+                    let zs = config.lookup_range_check(
+                        layouter.namespace(|| format!("Lookup {:?}", num_words)),
+                        element,
+                        num_words,
                     )?;
 
                     assert_eq!(*expected_zs.last().unwrap(), *expected_final_z);

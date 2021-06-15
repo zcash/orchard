@@ -275,30 +275,20 @@ impl Config {
         // 1 /(2^3) = 1 / 8
         let eight_inv = pallas::Base::from_u64(1 << 3).invert().unwrap();
 
+        // Decompose the low 120 bits of `s` using twelve 10-bit lookups.
+        let s_minus_lo_120 = {
+            let zs = self.lookup_config.lookup_range_check(
+                layouter.namespace(|| "Decompose low 120 bits of s"),
+                s,
+                num_words,
+            )?;
+            zs[zs.len() - 1]
+        };
+
         layouter.assign_region(
             || "decompose s = alpha + k_{254} ⋅ 2^{127}",
             |mut region| {
                 let offset = 0;
-
-                // Decompose the low 120 bits of `s` using twelve 10-bit lookups.
-                let s_minus_lo_120 = {
-                    for idx in 0..num_words {
-                        // Assign fixed column to activate lookup.
-                        region.assign_fixed(
-                            || format!("lookup on row {}", idx),
-                            self.lookup_config.q_lookup,
-                            idx + offset,
-                            || Ok(pallas::Base::one()),
-                        )?;
-                    }
-
-                    let zs =
-                        self.lookup_config
-                            .lookup_range_check(&mut region, offset, s, num_words)?;
-                    zs[zs.len() - 1]
-                };
-                let offset = offset + num_words + 1;
-
                 // Decompose bits 120..=126 of `s` using:
                 // - a 3-bit range check for s_{120..=122},
                 // - a 3-bit range check for s_{122..=125},

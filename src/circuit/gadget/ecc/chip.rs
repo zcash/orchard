@@ -143,15 +143,8 @@ impl EccChip {
         lookup_table: Column<Fixed>,
         perm: Permutation,
     ) -> <Self as Chip<pallas::Base>>::Config {
-        let decompose_s_lookup = meta.fixed_column();
-
-        let lookup_config = LookupRangeCheckConfig::configure(
-            meta,
-            decompose_s_lookup,
-            advices[9],
-            lookup_table,
-            perm.clone(),
-        );
+        let lookup_config =
+            LookupRangeCheckConfig::configure(meta, advices[9], lookup_table, perm.clone());
 
         let config = EccConfig {
             advices,
