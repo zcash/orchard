@@ -455,6 +455,11 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
         { sinsemilla::K },
         { sinsemilla::C },
     >>::MessagePiece;
+    type RunningSum = <SinsemillaChip as SinsemillaInstructions<
+        pallas::Affine,
+        { sinsemilla::K },
+        { sinsemilla::C },
+    >>::RunningSum;
 
     type X = <SinsemillaChip as SinsemillaInstructions<
         pallas::Affine,
