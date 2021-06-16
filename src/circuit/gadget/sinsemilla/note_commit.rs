@@ -1383,3 +1383,259 @@ fn point_repr(point: Option<pallas::Affine>) -> (Option<pallas::Base>, Option<pa
 
     (x, y)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::NoteCommitConfig;
+    use crate::{
+        circuit::gadget::{
+            ecc::{
+                chip::{EccChip, EccConfig},
+                Point, ScalarFixed,
+            },
+            sinsemilla::{
+                chip::{SinsemillaChip, SinsemillaCommitDomains},
+                CommitDomain,
+            },
+            utilities::{CellValue, UtilitiesInstructions},
+        },
+        constants::T_Q,
+    };
+
+    use ff::Field;
+    use halo2::{
+        circuit::{layouter::SingleChipLayouter, Layouter},
+        dev::MockProver,
+        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+    };
+    use pasta_curves::{
+        arithmetic::{CurveAffine, FieldExt},
+        pallas,
+    };
+
+    use rand::{rngs::OsRng, RngCore};
+    use std::convert::TryInto;
+
+    #[test]
+    fn note_commit_canonicity_check() {
+        struct MyCircuit {
+            gd_x: Option<pallas::Base>,
+            pkd_x: Option<pallas::Base>,
+            rho: Option<pallas::Base>,
+            psi: Option<pallas::Base>,
+        }
+
+        impl UtilitiesInstructions<pallas::Base> for MyCircuit {
+            type Var = CellValue<pallas::Base>;
+        }
+
+        impl Circuit<pallas::Base> for MyCircuit {
+            type Config = (NoteCommitConfig, EccConfig);
+
+            fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
+                let advices = [
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                ];
+
+                // Shared fixed column used to load constants
+                let constants = meta.fixed_column();
+
+                // Permutation over all advice columns
+                let perm = meta.permutation(
+                    &advices
+                        .iter()
+                        .map(|advice| (*advice).into())
+                        .chain(Some(constants.into()))
+                        .collect::<Vec<_>>(),
+                );
+                let table_idx = meta.fixed_column();
+                let lookup = (table_idx, meta.fixed_column(), meta.fixed_column());
+                let sinsemilla_config = SinsemillaChip::configure(
+                    meta,
+                    advices[..5].try_into().unwrap(),
+                    lookup,
+                    constants,
+                    perm.clone(),
+                );
+                let note_commit_config = NoteCommitConfig::configure(meta, sinsemilla_config);
+
+                let ecc_config = EccChip::configure(meta, advices, table_idx, constants, perm);
+
+                (note_commit_config, ecc_config)
+            }
+
+            fn synthesize(
+                &self,
+                cs: &mut impl Assignment<pallas::Base>,
+                config: Self::Config,
+            ) -> Result<(), Error> {
+                let (note_commit_config, ecc_config) = config;
+
+                // Initialize a layouter.
+                let mut layouter = SingleChipLayouter::new(cs)?;
+
+                // Load the Sinsemilla generator lookup table used by the whole circuit.
+                SinsemillaChip::load(note_commit_config.sinsemilla_config.clone(), &mut layouter)?;
+
+                // Construct a Sinsemilla chip
+                let sinsemilla_chip =
+                    SinsemillaChip::construct(note_commit_config.sinsemilla_config.clone());
+
+                // Construct an ECC chip
+                let ecc_chip = EccChip::construct(ecc_config);
+
+                // Witness g_d
+                let g_d = {
+                    let g_d = self.gd_x.map(|x| {
+                        // Calculate y = (x^3 + 5).sqrt()
+                        let y = (x.square() * x + pallas::Affine::b()).sqrt().unwrap();
+                        pallas::Affine::from_xy(x, y).unwrap()
+                    });
+
+                    Point::new(ecc_chip.clone(), layouter.namespace(|| "witness g_d"), g_d)?
+                };
+
+                // Witness pk_d
+                let pk_d = {
+                    let pk_d = self.pkd_x.map(|x| {
+                        // Calculate y = (x^3 + 5).sqrt()
+                        let y = (x.square() * x + pallas::Affine::b()).sqrt().unwrap();
+                        pallas::Affine::from_xy(x, y).unwrap()
+                    });
+
+                    Point::new(
+                        ecc_chip.clone(),
+                        layouter.namespace(|| "witness pk_d"),
+                        pk_d,
+                    )?
+                };
+
+                // Witness a random non-negative u64 note value
+                // A note value cannot be negative.
+                let value = {
+                    let mut rng = OsRng;
+                    let value = pallas::Base::from_u64(rng.next_u64());
+                    self.load_private(
+                        layouter.namespace(|| "witness value"),
+                        note_commit_config.advices[0],
+                        Some(value),
+                    )?
+                };
+
+                // Witness rho
+                let rho = self.load_private(
+                    layouter.namespace(|| "witness rho"),
+                    note_commit_config.advices[0],
+                    self.rho,
+                )?;
+
+                // Witness psi
+                let psi = self.load_private(
+                    layouter.namespace(|| "witness psi"),
+                    note_commit_config.advices[0],
+                    self.psi,
+                )?;
+
+                let (message, subpieces) = note_commit_config.decompose(
+                    sinsemilla_chip.clone(),
+                    layouter.namespace(|| "decompose NoteCommit pieces"),
+                    g_d.inner(),
+                    pk_d.inner(),
+                    value,
+                    rho,
+                    psi,
+                )?;
+
+                let domain = CommitDomain::new(
+                    sinsemilla_chip,
+                    ecc_chip.clone(),
+                    &SinsemillaCommitDomains::NoteCommit,
+                );
+
+                let rcm = ScalarFixed::new(
+                    ecc_chip,
+                    layouter.namespace(|| "rcm"),
+                    Some(pallas::Scalar::rand()),
+                )?;
+
+                let (_commitment, zs) =
+                    domain.commit(layouter.namespace(|| "NoteCommit"), message, rcm)?;
+
+                note_commit_config.check_canonicity(
+                    layouter.namespace(|| "Check canonicity of NoteCommit inputs"),
+                    subpieces,
+                    zs,
+                )
+            }
+        }
+
+        let two_pow_254 = pallas::Base::from_u128(1 << 127).square();
+        // Test different values of `ak`, `nk`
+        let circuits = [
+            // `gd_x` = -1, `pkd_x` = -1 (these have to be x-coordinates of curve points)
+            // `rho` = 0, `psi` = 0
+            MyCircuit {
+                gd_x: Some(-pallas::Base::one()),
+                pkd_x: Some(-pallas::Base::one()),
+                rho: Some(pallas::Base::zero()),
+                psi: Some(pallas::Base::zero()),
+            },
+            // `rho` = T_Q - 1, `psi` = T_Q - 1
+            MyCircuit {
+                gd_x: Some(-pallas::Base::one()),
+                pkd_x: Some(-pallas::Base::one()),
+                rho: Some(pallas::Base::from_u128(T_Q - 1)),
+                psi: Some(pallas::Base::from_u128(T_Q - 1)),
+            },
+            // `rho` = T_Q, `psi` = T_Q
+            MyCircuit {
+                gd_x: Some(-pallas::Base::one()),
+                pkd_x: Some(-pallas::Base::one()),
+                rho: Some(pallas::Base::from_u128(T_Q)),
+                psi: Some(pallas::Base::from_u128(T_Q)),
+            },
+            // `rho` = 2^127 - 1, `psi` = 2^127 - 1
+            MyCircuit {
+                gd_x: Some(-pallas::Base::one()),
+                pkd_x: Some(-pallas::Base::one()),
+                rho: Some(pallas::Base::from_u128((1 << 127) - 1)),
+                psi: Some(pallas::Base::from_u128((1 << 127) - 1)),
+            },
+            // `rho` = 2^127, `psi` = 2^127
+            MyCircuit {
+                gd_x: Some(-pallas::Base::one()),
+                pkd_x: Some(-pallas::Base::one()),
+                rho: Some(pallas::Base::from_u128(1 << 127)),
+                psi: Some(pallas::Base::from_u128(1 << 127)),
+            },
+            // `rho` = 2^254 - 1, `psi` = 2^254 - 1
+            MyCircuit {
+                gd_x: Some(-pallas::Base::one()),
+                pkd_x: Some(-pallas::Base::one()),
+                rho: Some(two_pow_254 - pallas::Base::one()),
+                psi: Some(two_pow_254 - pallas::Base::one()),
+            },
+            // `rho` = 2^254, `psi` = 2^254
+            MyCircuit {
+                gd_x: Some(-pallas::Base::one()),
+                pkd_x: Some(-pallas::Base::one()),
+                rho: Some(two_pow_254),
+                psi: Some(two_pow_254),
+            },
+        ];
+
+        for circuit in circuits.iter() {
+            let prover = MockProver::<pallas::Base>::run(11, circuit, vec![]).unwrap();
+            assert_eq!(prover.verify(), Ok(()));
+        }
+    }
+}
