@@ -1,3 +1,5 @@
+//! TODO
+
 use group::{Curve, GroupEncoding};
 use halo2::{
     circuit::{layouter::SingleChipLayouter, Layouter},
@@ -83,25 +85,44 @@ pub struct Config {
 /// The Orchard Action circuit.
 #[derive(Debug, Default)]
 pub struct Circuit {
-    pub(crate) path: Option<[pallas::Base; MERKLE_DEPTH_ORCHARD]>,
-    pub(crate) pos: Option<u32>,
-    pub(crate) g_d_old: Option<NonIdentityPallasPoint>,
-    pub(crate) pk_d_old: Option<DiversifiedTransmissionKey>,
-    pub(crate) v_old: Option<NoteValue>,
-    pub(crate) rho_old: Option<Nullifier>,
-    pub(crate) psi_old: Option<pallas::Base>,
-    pub(crate) rcm_old: Option<NoteCommitTrapdoor>,
-    pub(crate) cm_old: Option<NoteCommitment>,
-    pub(crate) alpha: Option<pallas::Scalar>,
-    pub(crate) ak: Option<SpendValidatingKey>,
-    pub(crate) nk: Option<NullifierDerivingKey>,
-    pub(crate) rivk: Option<CommitIvkRandomness>,
-    pub(crate) g_d_new_star: Option<[u8; 32]>,
-    pub(crate) pk_d_new_star: Option<[u8; 32]>,
-    pub(crate) v_new: Option<NoteValue>,
-    pub(crate) psi_new: Option<pallas::Base>,
-    pub(crate) rcm_new: Option<NoteCommitTrapdoor>,
-    pub(crate) rcv: Option<ValueCommitTrapdoor>,
+    /// TEST
+    pub path: Option<[pallas::Base; MERKLE_DEPTH_ORCHARD]>,
+    /// TEST
+    pub pos: Option<u32>,
+    /// TEST
+    pub g_d_old: Option<NonIdentityPallasPoint>,
+    /// TEST
+    pub pk_d_old: Option<DiversifiedTransmissionKey>,
+    /// TEST
+    pub v_old: Option<NoteValue>,
+    /// TEST
+    pub rho_old: Option<Nullifier>,
+    /// TEST
+    pub psi_old: Option<pallas::Base>,
+    /// TEST
+    pub rcm_old: Option<NoteCommitTrapdoor>,
+    /// TEST
+    pub cm_old: Option<NoteCommitment>,
+    /// TEST
+    pub alpha: Option<pallas::Scalar>,
+    /// TEST
+    pub ak: Option<SpendValidatingKey>,
+    /// TEST
+    pub nk: Option<NullifierDerivingKey>,
+    /// TEST
+    pub rivk: Option<CommitIvkRandomness>,
+    /// TEST
+    pub g_d_new_star: Option<[u8; 32]>,
+    /// TEST
+    pub pk_d_new_star: Option<[u8; 32]>,
+    /// TEST
+    pub v_new: Option<NoteValue>,
+    /// TEST
+    pub psi_new: Option<pallas::Base>,
+    /// TEST
+    pub rcm_new: Option<NoteCommitTrapdoor>,
+    /// TEST
+    pub rcv: Option<ValueCommitTrapdoor>,
 }
 
 impl UtilitiesInstructions<pallas::Base> for Circuit {
@@ -680,7 +701,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 #[derive(Debug)]
 pub struct VerifyingKey {
     params: halo2::poly::commitment::Params<vesta::Affine>,
-    vk: plonk::VerifyingKey<vesta::Affine>,
+    /// TEST
+    pub vk: plonk::VerifyingKey<vesta::Affine>,
 }
 
 impl VerifyingKey {
@@ -718,17 +740,25 @@ impl ProvingKey {
 /// Public inputs to the Orchard Action circuit.
 #[derive(Debug)]
 pub struct Instance {
-    pub(crate) anchor: Anchor,
-    pub(crate) cv_net: ValueCommitment,
-    pub(crate) nf_old: Nullifier,
-    pub(crate) rk: VerificationKey<SpendAuth>,
-    pub(crate) cmx: ExtractedNoteCommitment,
-    pub(crate) enable_spend: bool,
-    pub(crate) enable_output: bool,
+    /// TEST
+    pub anchor: Anchor,
+    /// TEST
+    pub cv_net: ValueCommitment,
+    /// TEST
+    pub nf_old: Nullifier,
+    /// TEST
+    pub rk: VerificationKey<SpendAuth>,
+    /// TEST
+    pub cmx: ExtractedNoteCommitment,
+    /// TEST
+    pub enable_spend: bool,
+    /// TEST
+    pub enable_output: bool,
 }
 
 impl Instance {
-    fn to_halo2_instance(
+    /// TEST
+    pub fn to_halo2_instance(
         &self,
         domain: &EvaluationDomain<vesta::Scalar>,
     ) -> [Polynomial<vesta::Scalar, LagrangeCoeff>; 1] {

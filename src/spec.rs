@@ -20,7 +20,7 @@ pub(crate) use prf_expand::PrfExpand;
 
 /// A Pallas point that is guaranteed to not be the identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct NonIdentityPallasPoint(pallas::Point);
+pub struct NonIdentityPallasPoint(pallas::Point);
 
 impl Default for NonIdentityPallasPoint {
     fn default() -> Self {

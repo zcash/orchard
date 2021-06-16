@@ -1,3 +1,5 @@
+//! TEST
+
 use crate::{
     constants::{
         util::gen_const_array, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION, MERKLE_DEPTH_ORCHARD,
@@ -33,6 +35,7 @@ impl Anchor {
     }
 }
 
+/// TEST
 #[derive(Debug)]
 pub struct MerklePath {
     position: u32,
@@ -41,7 +44,7 @@ pub struct MerklePath {
 
 impl MerklePath {
     /// Generates a dummy Merkle path for use in dummy spent notes.
-    pub(crate) fn dummy(mut rng: &mut impl RngCore) -> Self {
+    pub fn dummy(mut rng: &mut impl RngCore) -> Self {
         MerklePath {
             position: rng.next_u32(),
             auth_path: gen_const_array(|_| pallas::Base::random(&mut rng)),

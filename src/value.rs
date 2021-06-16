@@ -188,7 +188,7 @@ impl ValueCommitTrapdoor {
     }
 
     /// Returns the zero trapdoor, which provides no blinding.
-    pub(crate) fn zero() -> Self {
+    pub fn zero() -> Self {
         ValueCommitTrapdoor(pallas::Scalar::zero())
     }
 
@@ -241,7 +241,7 @@ impl ValueCommitment {
     ///
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
-    pub(crate) fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
+    pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
         let hasher = pallas::Point::hash_to_curve("z.cash:Orchard-cv");
         let V = hasher(b"v");
         let R = hasher(b"r");

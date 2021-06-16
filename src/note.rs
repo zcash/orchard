@@ -19,7 +19,7 @@ pub use self::nullifier::Nullifier;
 
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct RandomSeed([u8; 32]);
+pub struct RandomSeed([u8; 32]);
 
 impl RandomSeed {
     pub(crate) fn random(rng: &mut impl RngCore, rho: &Nullifier) -> Self {
@@ -46,7 +46,7 @@ impl RandomSeed {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    pub(crate) fn psi(&self, rho: &Nullifier) -> pallas::Base {
+    pub fn psi(&self, rho: &Nullifier) -> pallas::Base {
         to_base(PrfExpand::Psi.with_ad(&self.0, &rho.to_bytes()[..]))
     }
 
@@ -70,7 +70,7 @@ impl RandomSeed {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    pub(crate) fn rcm(&self, rho: &Nullifier) -> commitment::NoteCommitTrapdoor {
+    pub fn rcm(&self, rho: &Nullifier) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
             PrfExpand::Rcm.with_ad(&self.0, &rho.to_bytes()[..]),
         ))
@@ -149,7 +149,7 @@ impl Note {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    pub(crate) fn dummy(
+    pub fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Nullifier>,
     ) -> (SpendingKey, FullViewingKey, Self) {
@@ -178,7 +178,7 @@ impl Note {
     }
 
     /// Derives the ephemeral secret key for this note.
-    pub(crate) fn rseed(&self) -> &RandomSeed {
+    pub fn rseed(&self) -> &RandomSeed {
         &self.rseed
     }
 

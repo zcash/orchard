@@ -8,7 +8,7 @@ use subtle::{ConstantTimeEq, CtOption};
 use crate::{constants::L_ORCHARD_BASE, primitives::sinsemilla, spec::extract_p, value::NoteValue};
 
 #[derive(Debug)]
-pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
+pub struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
 
 impl std::ops::Deref for NoteCommitTrapdoor {
     type Target = pallas::Scalar;

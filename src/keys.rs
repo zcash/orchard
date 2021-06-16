@@ -148,7 +148,7 @@ impl SpendValidatingKey {
 /// [`Note`]: crate::note::Note
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone)]
-pub(crate) struct NullifierDerivingKey(pallas::Base);
+pub struct NullifierDerivingKey(pallas::Base);
 
 impl std::ops::Deref for NullifierDerivingKey {
     type Target = pallas::Base;
@@ -176,7 +176,7 @@ impl NullifierDerivingKey {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone)]
-pub(crate) struct CommitIvkRandomness(pallas::Scalar);
+pub struct CommitIvkRandomness(pallas::Scalar);
 
 impl From<&SpendingKey> for CommitIvkRandomness {
     fn from(sk: &SpendingKey) -> Self {
@@ -224,11 +224,13 @@ impl From<FullViewingKey> for SpendValidatingKey {
 }
 
 impl FullViewingKey {
-    pub(crate) fn nk(&self) -> &NullifierDerivingKey {
+    /// TEST
+    pub fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
     }
 
-    pub(crate) fn rivk(&self) -> &CommitIvkRandomness {
+    /// TEST
+    pub fn rivk(&self) -> &CommitIvkRandomness {
         &self.rivk
     }
 
@@ -485,7 +487,7 @@ impl DiversifiedTransmissionKey {
     }
 
     /// $repr_P(self)$
-    pub(crate) fn to_bytes(self) -> [u8; 32] {
+    pub fn to_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
 }
