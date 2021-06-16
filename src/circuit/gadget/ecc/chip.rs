@@ -88,10 +88,6 @@ pub struct EccConfig {
     pub q_mul_z: Selector,
     /// Variable-base scalar multiplication (overflow check)
     pub q_mul_overflow: Selector,
-    // Fixed column to constrain s_{120..=125} of s = alpha + k_{254} * 2^127
-    pub q_three_bit: Selector,
-    // Fixed column to constrain s_{126} of s = alpha + k_{254} * 2^127
-    pub q_one_bit: Selector,
 
     /// Fixed-base full-width scalar multiplication
     pub q_mul_fixed: Selector,
@@ -167,8 +163,6 @@ impl EccChip {
             q_init_z: meta.selector(),
             q_mul_z: meta.selector(),
             q_mul_overflow: meta.selector(),
-            q_three_bit: meta.selector(),
-            q_one_bit: meta.selector(),
             q_mul_fixed: meta.selector(),
             q_mul_fixed_short: meta.selector(),
             q_point: meta.selector(),
