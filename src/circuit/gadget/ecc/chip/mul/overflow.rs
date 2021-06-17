@@ -62,7 +62,7 @@ impl Config {
             let k_254 = meta.query_advice(self.advices[1], Rotation::prev());
             let alpha = meta.query_advice(self.advices[1], Rotation::cur());
 
-            // s_minus_lo_130 = s - sum_{i = 0}^{130} 2^i ⋅ s_i
+            // s_minus_lo_130 = s - sum_{i = 0}^{129} 2^i ⋅ s_i
             let s_minus_lo_130 = meta.query_advice(self.advices[1], Rotation::next());
 
             let s = meta.query_advice(self.advices[2], Rotation::cur());
