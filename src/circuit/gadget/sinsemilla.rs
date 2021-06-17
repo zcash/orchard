@@ -29,6 +29,13 @@ pub trait SinsemillaInstructions<C: CurveAffine, const K: usize, const MAX_WORDS
     /// up to `N = 25` words in a single base field element.
     type MessagePiece;
 
+    /// A subpiece of a [`Self::MessagePiece`]. This is often defined as a bitrange subset
+    /// of a field element (e.g. alpha_{12..21}).
+    ///
+    /// An array of [`Self::MessageSubPiece`]s can be witnessed together to form a single
+    /// [`Self::MessagePiece`].
+    type MessageSubPiece;
+
     /// The x-coordinate of a point output of [`Self::hash_to_point`].
     type X;
     /// A point output of [`Self::hash_to_point`].
@@ -80,6 +87,22 @@ pub trait SinsemillaInstructions<C: CurveAffine, const K: usize, const MAX_WORDS
         layouter: impl Layouter<C::Base>,
         value: Option<C::Base>,
         num_words: usize,
+    ) -> Result<Self::MessagePiece, Error>;
+
+    /// Witness an array of [`Self::MessageSubPiece`]s to return a single
+    /// [`Self::MessagePiece`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the total number of bits across the subpieces is not
+    /// a multiple of `K`.
+    ///
+    /// Panics if the total number of bits across the subpieces cannot fit
+    /// into a single field element.
+    fn witness_message_piece_subpieces(
+        &self,
+        layouter: impl Layouter<C::Base>,
+        subpieces: &[Self::MessageSubPiece],
     ) -> Result<Self::MessagePiece, Error>;
 
     /// Hashes a message to an ECC curve point.

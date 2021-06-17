@@ -149,7 +149,7 @@ impl SinsemillaChip {
             use pasta_curves::arithmetic::CurveExt;
 
             let field_elems: Option<Vec<pallas::Base>> =
-                message.iter().map(|piece| piece.field_elem()).collect();
+                message.iter().map(|piece| piece.value()).collect();
 
             if field_elems.is_some() {
                 // Get message as a bitstring.
@@ -157,7 +157,7 @@ impl SinsemillaChip {
                     .iter()
                     .map(|piece: &MessagePiece<pallas::Base, K>| {
                         piece
-                            .field_elem()
+                            .value()
                             .unwrap()
                             .to_le_bits()
                             .into_iter()
@@ -233,7 +233,7 @@ impl SinsemillaChip {
         }
 
         // Message piece as K * piece.length bitstring
-        let bitstring: Option<Vec<bool>> = piece.field_elem().map(|value| {
+        let bitstring: Option<Vec<bool>> = piece.value().map(|value| {
             value
                 .to_le_bits()
                 .into_iter()
@@ -281,10 +281,10 @@ impl SinsemillaChip {
                 || "z_0 (copy of message)",
                 config.bits,
                 offset,
-                || piece.field_elem().ok_or(Error::SynthesisError),
+                || piece.value().ok_or(Error::SynthesisError),
             )?;
             region.constrain_equal(&config.perm, piece.cell(), cell)?;
-            zs.push(CellValue::new(cell, piece.field_elem()));
+            zs.push(CellValue::new(cell, piece.value()));
 
             // Assign cumulative sum such that
             //          z_i = 2^K * z_{i + 1} + m_{i + 1}
@@ -292,7 +292,7 @@ impl SinsemillaChip {
             //
             // For a message m = m_1 + 2^K m_2 + ... + 2^{K(n-1)} m_n}, initialize z_0 = m.
             // We end up with z_n = 0.
-            let mut z = piece.field_elem();
+            let mut z = piece.value();
             let inv_2_k = pallas::Base::from_bytes(&INV_TWO_POW_K).unwrap();
 
             // We do not assign the final z_n.
