@@ -1,5 +1,5 @@
 use super::{
-    message::{Message, MessagePiece},
+    message::{Message, MessagePiece, MessageSubPiece},
     CommitDomains, HashDomains, SinsemillaInstructions,
 };
 use crate::{
@@ -63,7 +63,13 @@ pub struct SinsemillaConfig {
     // initial x_a.
     constants: Column<Fixed>,
     // Permutation over all advice columns and the `constants` fixed column.
-    perm: Permutation,
+    pub perm: Permutation,
+}
+
+impl SinsemillaConfig {
+    pub fn advices(&self) -> [Column<Advice>; 5] {
+        [self.bits, self.x_a, self.x_p, self.lambda_1, self.lambda_2]
+    }
 }
 
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -231,6 +237,7 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
 
     type Message = Message<pallas::Base, { sinsemilla::K }, { sinsemilla::C }>;
     type MessagePiece = MessagePiece<pallas::Base, { sinsemilla::K }>;
+    type MessageSubPiece = MessageSubPiece<pallas::Base, { sinsemilla::K }>;
 
     type X = CellValue<pallas::Base>;
     type Point = EccPoint;
@@ -310,19 +317,92 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
         num_words: usize,
     ) -> Result<Self::MessagePiece, Error> {
         let config = self.config().clone();
+        let cell_value = {
+            let cell = layouter.assign_region(
+                || "witness message piece",
+                |mut region| {
+                    region.assign_advice(
+                        || "witness message piece",
+                        config.bits,
+                        0,
+                        || field_elem.ok_or(Error::SynthesisError),
+                    )
+                },
+            )?;
+            CellValue::new(cell, field_elem)
+        };
 
-        let cell = layouter.assign_region(
-            || "witness message piece",
+        Ok(MessagePiece::new(cell_value, num_words, None))
+    }
+
+    fn witness_message_piece_subpieces(
+        &self,
+        mut layouter: impl Layouter<pallas::Base>,
+        subpieces: &[Self::MessageSubPiece],
+    ) -> Result<Self::MessagePiece, Error> {
+        let config = self.config().clone();
+
+        let total_num_bits = subpieces
+            .iter()
+            .map(|subpiece| subpiece.bit_range().len())
+            .sum::<usize>();
+
+        // The subpieces must form a message composed of whole `K`-bit words.
+        assert!(total_num_bits % sinsemilla::K == 0);
+
+        // The message must fit inside a single field element.
+        let num_words = total_num_bits / sinsemilla::K;
+        let piece_max_num_words = pallas::Base::NUM_BITS as usize / sinsemilla::K;
+        assert!(num_words <= piece_max_num_words as usize);
+
+        // Witness subpieces
+        let subpieces = layouter.assign_region(
+            || "Witness subpieces",
             |mut region| {
-                region.assign_advice(
-                    || "witness message piece",
-                    config.bits,
-                    0,
-                    || field_elem.ok_or(Error::SynthesisError),
-                )
+                let advices = config.advices();
+                let subpieces: Result<Vec<Self::MessageSubPiece>, Error> = subpieces
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, subpiece)| -> Result<Self::MessageSubPiece, Error> {
+                        let column = advices[idx % advices.len()];
+                        let offset = idx / advices.len();
+
+                        let value = subpiece.field_elem_subset();
+                        let cell = region.assign_advice(
+                            || format!("subpiece {:?}", idx),
+                            column,
+                            offset,
+                            || value.ok_or(Error::SynthesisError),
+                        )?;
+                        let cell_value = CellValue::new(cell, value);
+                        Ok((cell_value, subpiece.bit_range()).into())
+                    })
+                    .collect();
+
+                subpieces
             },
         )?;
-        Ok(MessagePiece::new(cell, field_elem, num_words))
+
+        let message_piece = {
+            // The field element representing the complete message piece.
+            let value = MessageSubPiece::assemble_field_elem(&subpieces);
+
+            // Witness message piece.
+            let cell = layouter.assign_region(
+                || "witness message piece",
+                |mut region| {
+                    region.assign_advice(
+                        || "witness message piece",
+                        config.bits,
+                        0,
+                        || value.ok_or(Error::SynthesisError),
+                    )
+                },
+            )?;
+            CellValue::new(cell, value)
+        };
+
+        Ok(MessagePiece::new(message_piece, num_words, Some(subpieces)))
     }
 
     #[allow(non_snake_case)]

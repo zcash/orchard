@@ -7,6 +7,7 @@ use halo2::{arithmetic::CurveAffine, circuit::Layouter, plonk::Error};
 use std::fmt::Debug;
 
 pub mod chip;
+pub mod merkle;
 mod message;
 
 /// The set of circuit instructions required to use the [`Sinsemilla`](https://zcash.github.io/halo2/design/gadgets/sinsemilla.html) gadget.
@@ -28,6 +29,13 @@ pub trait SinsemillaInstructions<C: CurveAffine, const K: usize, const MAX_WORDS
     /// For example, in the case `K = 10`, `NUM_BITS = 255`, we can fit
     /// up to `N = 25` words in a single base field element.
     type MessagePiece;
+
+    /// A subpiece of a [`Self::MessagePiece`]. This is often defined as a bitrange subset
+    /// of a field element (e.g. alpha_{12..21}).
+    ///
+    /// An array of [`Self::MessageSubPiece`]s can be witnessed together to form a single
+    /// [`Self::MessagePiece`].
+    type MessageSubPiece;
 
     /// The x-coordinate of a point output of [`Self::hash_to_point`].
     type X;
@@ -84,6 +92,22 @@ pub trait SinsemillaInstructions<C: CurveAffine, const K: usize, const MAX_WORDS
         layouter: impl Layouter<C::Base>,
         value: Option<C::Base>,
         num_words: usize,
+    ) -> Result<Self::MessagePiece, Error>;
+
+    /// Witness an array of [`Self::MessageSubPiece`]s to return a single
+    /// [`Self::MessagePiece`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the total number of bits across the subpieces is not
+    /// a multiple of `K`.
+    ///
+    /// Panics if the total number of bits across the subpieces cannot fit
+    /// into a single field element.
+    fn witness_message_piece_subpieces(
+        &self,
+        layouter: impl Layouter<C::Base>,
+        subpieces: &[Self::MessageSubPiece],
     ) -> Result<Self::MessagePiece, Error>;
 
     /// Hashes a message to an ECC curve point.
