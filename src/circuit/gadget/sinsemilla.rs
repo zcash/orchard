@@ -287,7 +287,9 @@ mod tests {
                     .collect::<Vec<_>>(),
             );
 
-            let ecc_config = EccChip::configure(meta, advices, perm.clone());
+            let lookup_table = meta.fixed_column();
+            let ecc_config =
+                EccChip::configure(meta, advices, lookup_table, constants, perm.clone());
 
             // Fixed columns for the Sinsemilla generator lookup table
             let lookup = (
