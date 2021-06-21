@@ -187,9 +187,9 @@ mod tests {
     use crate::spec::lebs2ip;
     use ff::PrimeFieldBits;
     use halo2::{
-        circuit::{layouter::SingleChipLayouter, Layouter},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
@@ -197,6 +197,7 @@ mod tests {
 
     #[test]
     fn lookup_range_check() {
+        #[derive(Default)]
         struct MyCircuit<F: FieldExt + PrimeFieldBits> {
             _marker: PhantomData<F>,
         }
@@ -207,6 +208,11 @@ mod tests {
 
         impl<F: FieldExt + PrimeFieldBits> Circuit<F> for MyCircuit<F> {
             type Config = LookupRangeCheckConfig<F, K>;
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let running_sum = meta.advice_column();
@@ -218,11 +224,9 @@ mod tests {
 
             fn synthesize(
                 &self,
-                cs: &mut impl Assignment<F>,
                 config: Self::Config,
+                mut layouter: impl Layouter<F>,
             ) -> Result<(), Error> {
-                let mut layouter = SingleChipLayouter::new(cs)?;
-
                 // Load table_idx
                 config.load(&mut layouter)?;
 

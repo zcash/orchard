@@ -441,9 +441,9 @@ mod tests {
     use group::{prime::PrimeCurveAffine, Curve, Group};
 
     use halo2::{
-        circuit::{layouter::SingleChipLayouter, Layouter},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::pallas;
 
@@ -454,6 +454,11 @@ mod tests {
     #[allow(non_snake_case)]
     impl Circuit<pallas::Base> for MyCircuit {
         type Config = EccConfig;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self {}
+        }
 
         fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
             let advices = [
@@ -484,10 +489,9 @@ mod tests {
 
         fn synthesize(
             &self,
-            cs: &mut impl Assignment<pallas::Base>,
             config: Self::Config,
+            mut layouter: impl Layouter<pallas::Base>,
         ) -> Result<(), Error> {
-            let mut layouter = SingleChipLayouter::new(cs)?;
             let chip = EccChip::construct(config.clone());
 
             // Load 10-bit lookup table. In the Action circuit, this will be

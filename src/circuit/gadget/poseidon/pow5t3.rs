@@ -615,10 +615,10 @@ mod tests {
     use ff::PrimeField;
     use halo2::{
         arithmetic::FieldExt,
-        circuit::{layouter, Layouter},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         pasta::Fp,
-        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::pallas;
 
@@ -632,6 +632,11 @@ mod tests {
 
     impl Circuit<Fp> for PermuteCircuit {
         type Config = Pow5T3Config<Fp>;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self {}
+        }
 
         fn configure(meta: &mut ConstraintSystem<Fp>) -> Pow5T3Config<Fp> {
             let state = [
@@ -646,11 +651,9 @@ mod tests {
 
         fn synthesize(
             &self,
-            cs: &mut impl Assignment<Fp>,
             config: Pow5T3Config<Fp>,
+            mut layouter: impl Layouter<Fp>,
         ) -> Result<(), Error> {
-            let mut layouter = layouter::SingleChipLayouter::new(cs)?;
-
             let initial_state = layouter.assign_region(
                 || "prepare initial state",
                 |mut region| {
@@ -715,6 +718,7 @@ mod tests {
         assert_eq!(prover.verify(), Ok(()))
     }
 
+    #[derive(Default)]
     struct HashCircuit {
         message: Option<[Fp; 2]>,
         // For the purpose of this test, witness the result.
@@ -724,6 +728,11 @@ mod tests {
 
     impl Circuit<Fp> for HashCircuit {
         type Config = Pow5T3Config<Fp>;
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
 
         fn configure(meta: &mut ConstraintSystem<Fp>) -> Pow5T3Config<Fp> {
             let state = [
@@ -738,10 +747,9 @@ mod tests {
 
         fn synthesize(
             &self,
-            cs: &mut impl Assignment<Fp>,
             config: Pow5T3Config<Fp>,
+            mut layouter: impl Layouter<Fp>,
         ) -> Result<(), Error> {
-            let mut layouter = layouter::SingleChipLayouter::<'_, Fp, _>::new(cs)?;
             let chip = Pow5T3Chip::construct(config.clone());
 
             let message = layouter.assign_region(

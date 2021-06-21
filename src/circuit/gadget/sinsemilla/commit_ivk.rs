@@ -624,9 +624,9 @@ mod tests {
         constants::T_Q,
     };
     use halo2::{
-        circuit::{layouter::SingleChipLayouter, Layouter},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
@@ -634,6 +634,7 @@ mod tests {
 
     #[test]
     fn commit_ivk_canonicity_check() {
+        #[derive(Default)]
         struct MyCircuit {
             ak: Option<pallas::Base>,
             nk: Option<pallas::Base>,
@@ -645,6 +646,11 @@ mod tests {
 
         impl Circuit<pallas::Base> for MyCircuit {
             type Config = (CommitIvkConfig, EccConfig);
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
 
             fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
                 let advices = [
@@ -690,13 +696,10 @@ mod tests {
 
             fn synthesize(
                 &self,
-                cs: &mut impl Assignment<pallas::Base>,
                 config: Self::Config,
+                mut layouter: impl Layouter<pallas::Base>,
             ) -> Result<(), Error> {
                 let (commit_ivk_config, ecc_config) = config;
-
-                // Initialize a layouter.
-                let mut layouter = SingleChipLayouter::new(cs)?;
 
                 // Load the Sinsemilla generator lookup table used by the whole circuit.
                 SinsemillaChip::load(commit_ivk_config.sinsemilla_config.clone(), &mut layouter)?;

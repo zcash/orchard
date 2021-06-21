@@ -611,10 +611,10 @@ pub mod tests {
     use ff::PrimeFieldBits;
     use halo2::{
         arithmetic::FieldExt,
-        circuit::{layouter::SingleChipLayouter, Layouter},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         pasta::pallas,
-        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
 
     use rand::random;
@@ -627,6 +627,11 @@ pub mod tests {
 
     impl Circuit<pallas::Base> for MyCircuit {
         type Config = (MerkleConfig, MerkleConfig);
+        type FloorPlanner = SimpleFloorPlanner;
+
+        fn without_witnesses(&self) -> Self {
+            Self::default()
+        }
 
         fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
             let advices = [
@@ -682,11 +687,9 @@ pub mod tests {
 
         fn synthesize(
             &self,
-            cs: &mut impl Assignment<pallas::Base>,
             config: Self::Config,
+            mut layouter: impl Layouter<pallas::Base>,
         ) -> Result<(), Error> {
-            let mut layouter = SingleChipLayouter::new(cs)?;
-
             // Load generator table (shared across both configs)
             SinsemillaChip::load(config.0.sinsemilla_config.clone(), &mut layouter)?;
 

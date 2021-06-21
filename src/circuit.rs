@@ -2,7 +2,7 @@
 
 use group::{Curve, GroupEncoding};
 use halo2::{
-    circuit::{layouter::SingleChipLayouter, Layouter},
+    circuit::{floor_planner, Layouter},
     plonk::{self, Advice, Column, Fixed, Instance as InstanceColumn, Permutation, Selector},
     poly::{EvaluationDomain, LagrangeCoeff, Polynomial, Rotation},
     transcript::{Blake2bRead, Blake2bWrite},
@@ -131,6 +131,11 @@ impl UtilitiesInstructions<pallas::Base> for Circuit {
 
 impl plonk::Circuit<pallas::Base> for Circuit {
     type Config = Config;
+    type FloorPlanner = floor_planner::V1;
+
+    fn without_witnesses(&self) -> Self {
+        Self::default()
+    }
 
     fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> Self::Config {
         // Advice columns used in the Orchard circuit.
@@ -265,12 +270,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
     fn synthesize(
         &self,
-        cs: &mut impl plonk::Assignment<pallas::Base>,
         config: Self::Config,
+        mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
-        // Initialize a layouter.
-        let mut layouter = SingleChipLayouter::new(cs)?;
-
         // Load the Sinsemilla generator lookup table used by the whole circuit.
         SinsemillaChip::load(config.sinsemilla_config_1.clone(), &mut layouter)?;
 

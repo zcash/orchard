@@ -1404,9 +1404,9 @@ mod tests {
 
     use ff::Field;
     use halo2::{
-        circuit::{layouter::SingleChipLayouter, Layouter},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        plonk::{Assignment, Circuit, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{
         arithmetic::{CurveAffine, FieldExt},
@@ -1418,6 +1418,7 @@ mod tests {
 
     #[test]
     fn note_commit_canonicity_check() {
+        #[derive(Default)]
         struct MyCircuit {
             gd_x: Option<pallas::Base>,
             pkd_x: Option<pallas::Base>,
@@ -1431,6 +1432,11 @@ mod tests {
 
         impl Circuit<pallas::Base> for MyCircuit {
             type Config = (NoteCommitConfig, EccConfig);
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
 
             fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
                 let advices = [
@@ -1475,13 +1481,10 @@ mod tests {
 
             fn synthesize(
                 &self,
-                cs: &mut impl Assignment<pallas::Base>,
                 config: Self::Config,
+                mut layouter: impl Layouter<pallas::Base>,
             ) -> Result<(), Error> {
                 let (note_commit_config, ecc_config) = config;
-
-                // Initialize a layouter.
-                let mut layouter = SingleChipLayouter::new(cs)?;
 
                 // Load the Sinsemilla generator lookup table used by the whole circuit.
                 SinsemillaChip::load(note_commit_config.sinsemilla_config.clone(), &mut layouter)?;
