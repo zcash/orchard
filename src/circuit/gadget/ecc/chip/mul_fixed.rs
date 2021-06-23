@@ -54,7 +54,7 @@ impl OrchardFixedBases {
 
     pub fn u(self) -> Vec<WindowUs> {
         match self {
-            Self::ValueCommitV => ValueCommitV::get().u_short.0.as_ref().to_vec(),
+            Self::ValueCommitV => ValueCommitV::u_short().0.as_ref().to_vec(),
             Self::Full(base) => base.u().0.as_ref().to_vec(),
         }
     }

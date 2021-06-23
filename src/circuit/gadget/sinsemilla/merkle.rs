@@ -620,6 +620,7 @@ pub mod tests {
     use rand::random;
     use std::convert::TryInto;
 
+    #[derive(Default)]
     struct MyCircuit {
         leaf: (Option<pallas::Base>, Option<u32>),
         merkle_path: Vec<Option<pallas::Base>>,

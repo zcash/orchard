@@ -92,6 +92,10 @@ pub struct ValueCommitV {
 }
 
 impl ValueCommitV {
+    pub(crate) fn u_short() -> UShort {
+        super::value_commit_v::U_SHORT.into()
+    }
+
     pub fn get() -> Self {
         let generator = super::value_commit_v::generator();
         Self {

@@ -59,7 +59,7 @@ pub(crate) mod gadget;
 
 /// Size of the Orchard circuit.
 // FIXME: This circuit should fit within 2^11 rows.
-const K: u32 = 12;
+const K: u32 = 11;
 
 /// Configuration needed to use the Orchard Action circuit.
 #[derive(Clone, Debug)]
@@ -158,6 +158,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Shared fixed column used to load constants.
         let constants = meta.fixed_column();
+        let constants2 = meta.fixed_column();
 
         // Permutation over all advice columns
         let perm = meta.permutation(
@@ -165,6 +166,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 .iter()
                 .map(|advice| (*advice).into())
                 .chain(Some(constants.into()))
+                .chain(Some(constants2.into()))
                 .collect::<Vec<_>>(),
         );
 
@@ -215,7 +217,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 meta,
                 advices[5..].try_into().unwrap(),
                 lookup,
-                constants,
+                constants2,
                 perm.clone(),
             );
             let merkle_config_2 = MerkleChip::configure(meta, sinsemilla_config_2.clone());
@@ -819,7 +821,7 @@ impl Proof {
         let msm = vk.params.empty_msm();
         let mut transcript = Blake2bRead::init(&self.0[..]);
         let guard = plonk::verify_proof(&vk.params, &vk.vk, msm, &instances, &mut transcript)?;
-        let msm = guard.clone().use_challenges();
+        let msm = guard.use_challenges();
         if msm.eval() {
             Ok(())
         } else {
@@ -931,5 +933,44 @@ mod tests {
         let pk = ProvingKey::build();
         let proof = Proof::create(&pk, &circuits, &instances).unwrap();
         assert!(proof.verify(&vk, &instances).is_ok());
+    }
+
+    #[cfg(feature = "dev-graph")]
+    #[test]
+    fn print_action_circuit() {
+        use plotters::prelude::*;
+
+        let root = BitMapBackend::new("action-circuit-layout.png", (1024, 768)).into_drawing_area();
+        root.fill(&WHITE).unwrap();
+        let root = root
+            .titled("Orchard Action Circuit", ("sans-serif", 60))
+            .unwrap();
+
+        let circuit = Circuit {
+            path: None,
+            pos: None,
+            g_d_old: None,
+            pk_d_old: None,
+            v_old: None,
+            rho_old: None,
+            psi_old: None,
+            rcm_old: None,
+            cm_old: None,
+            alpha: None,
+            ak: None,
+            nk: None,
+            rivk: None,
+            g_d_new_star: None,
+            pk_d_new_star: None,
+            v_new: None,
+            psi_new: None,
+            rcm_new: None,
+            rcv: None,
+        };
+        halo2::dev::CircuitLayout::default()
+            .show_labels(false)
+            .view_height(0..(1 << 11))
+            .render(&circuit, &root)
+            .unwrap();
     }
 }

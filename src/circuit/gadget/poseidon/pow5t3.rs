@@ -839,6 +839,8 @@ mod tests {
             message: None,
             output: None,
         };
-        halo2::dev::circuit_layout(&circuit, &root).unwrap();
+        halo2::dev::CircuitLayout::default()
+            .render(&circuit, &root)
+            .unwrap();
     }
 }
