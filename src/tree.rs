@@ -34,8 +34,7 @@ lazy_static! {
                             left: *state,
                             right: *state,
                         },
-                    )
-                    .unwrap();
+                    );
                     Some(*state)
                 }),
             )
@@ -90,15 +89,15 @@ impl MerklePath {
     ///      - when hashing two leaves, we produce a node on the layer above the leaves, i.e.
     ///        layer = 31, l = 0
     ///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
-    pub fn root(&self, cmx: ExtractedNoteCommitment) -> CtOption<Anchor> {
+    pub fn root(&self, cmx: ExtractedNoteCommitment) -> Anchor {
         self.auth_path
             .iter()
             .enumerate()
-            .fold(CtOption::new(*cmx, 1.into()), |node, (l, sibling)| {
+            .fold(*cmx, |node, (l, sibling)| {
                 let swap = self.position & (1 << l) != 0;
-                node.and_then(|n| hash_with_l(l, cond_swap(swap, n, *sibling)))
+                hash_with_l(l, cond_swap(swap, node, *sibling))
             })
-            .map(Anchor)
+            .into()
     }
 
     /// Returns the position of the leaf using this Merkle path.
@@ -136,48 +135,49 @@ fn cond_swap(swap: bool, node: pallas::Base, sibling: pallas::Base) -> Pair {
 ///      - leaves are at layer MERKLE_DEPTH_ORCHARD = 32;
 ///      - the root is at layer 0.
 /// `l` is MERKLE_DEPTH_ORCHARD - layer - 1.
-///      - when hashing two leaves, we produce a node on the layer above the leaves, i.e.
-///        layer = 31, l = 0
-///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
-fn hash_with_l(l: usize, pair: Pair) -> CtOption<pallas::Base> {
+///      - when hashing two leaves, we produce a node on the layer above the
+///        leaves, i.e. layer = 31, l = 0
+///      - when hashing to the final root, we produce the anchor with
+///        layer = 0, l = 31.
+///
+/// The Sinsemilla `hash` can return ⊥ (bottom). `hash_with_l` maps `hash` = ⊥
+/// to pallas::Base::zero().
+fn hash_with_l(l: usize, pair: Pair) -> pallas::Base {
     // MerkleCRH Sinsemilla hash domain.
     let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
 
-    domain.hash(
-        iter::empty()
-            .chain(i2lebsp_k(l).iter().copied())
-            .chain(
-                pair.left
-                    .to_le_bits()
-                    .iter()
-                    .by_val()
-                    .take(L_ORCHARD_MERKLE),
-            )
-            .chain(
-                pair.right
-                    .to_le_bits()
-                    .iter()
-                    .by_val()
-                    .take(L_ORCHARD_MERKLE),
-            ),
-    )
+    domain
+        .hash(
+            iter::empty()
+                .chain(i2lebsp_k(l).iter().copied())
+                .chain(
+                    pair.left
+                        .to_le_bits()
+                        .iter()
+                        .by_val()
+                        .take(L_ORCHARD_MERKLE),
+                )
+                .chain(
+                    pair.right
+                        .to_le_bits()
+                        .iter()
+                        .by_val()
+                        .take(L_ORCHARD_MERKLE),
+                ),
+        )
+        .unwrap_or(pallas::Base::zero())
 }
 
 /// A newtype wrapper for leaves and internal nodes in the Orchard
 /// incremental note commitment tree.
-///
-/// This wraps a CtOption<pallas::Base> because Sinsemilla hashes
-/// can produce a bottom value which needs to be accounted for in
-/// the production of a Merkle root. Leaf nodes are always wrapped
-/// with the `Some` constructor.
 #[derive(Clone, Debug)]
-pub struct OrchardIncrementalTreeDigest(CtOption<pallas::Base>);
+pub struct OrchardIncrementalTreeDigest(pallas::Base);
 
 impl OrchardIncrementalTreeDigest {
     /// Creates an incremental tree leaf digest from the specified
     /// Orchard extracted note commitment.
     pub fn from_cmx(value: &ExtractedNoteCommitment) -> Self {
-        OrchardIncrementalTreeDigest(CtOption::new(**value, 1.into()))
+        OrchardIncrementalTreeDigest(**value)
     }
 
     /// Convert this digest to its canonical byte representation.
@@ -191,8 +191,7 @@ impl OrchardIncrementalTreeDigest {
     /// Returns the empty `CtOption` if the provided bytes represent
     /// a non-canonical encoding.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        pallas::Base::from_bytes(bytes)
-            .map(|b| OrchardIncrementalTreeDigest(CtOption::new(b, 1.into())))
+        pallas::Base::from_bytes(bytes).map(OrchardIncrementalTreeDigest)
     }
 }
 
@@ -217,22 +216,21 @@ impl std::hash::Hash for OrchardIncrementalTreeDigest {
 
 impl Hashable for OrchardIncrementalTreeDigest {
     fn empty_leaf() -> Self {
-        OrchardIncrementalTreeDigest(CtOption::new(*UNCOMMITTED_ORCHARD, 1.into()))
+        OrchardIncrementalTreeDigest(*UNCOMMITTED_ORCHARD)
     }
 
-    fn combine(altitude: Altitude, left_opt: &Self, right_opt: &Self) -> Self {
-        OrchardIncrementalTreeDigest(left_opt.0.and_then(|left| {
-            right_opt
-                .0
-                .and_then(|right| hash_with_l(altitude.into(), Pair { left, right }))
-        }))
+    fn combine(altitude: Altitude, left: &Self, right: &Self) -> Self {
+        OrchardIncrementalTreeDigest(hash_with_l(
+            altitude.into(),
+            Pair {
+                left: left.0,
+                right: right.0,
+            },
+        ))
     }
 
     fn empty_root(altitude: Altitude) -> Self {
-        OrchardIncrementalTreeDigest(CtOption::new(
-            EMPTY_ROOTS[<usize>::from(altitude)],
-            1.into(),
-        ))
+        OrchardIncrementalTreeDigest(EMPTY_ROOTS[<usize>::from(altitude)])
     }
 }
 
@@ -261,12 +259,8 @@ pub mod testing {
         bridgetree::Frontier as BridgeFrontier, Altitude, Frontier, Hashable,
     };
 
-    use std::convert::TryInto;
-    #[cfg(test)]
-    use subtle::CtOption;
-
     use crate::{
-        constants::MERKLE_DEPTH_ORCHARD,
+        constants::{util::gen_const_array, MERKLE_DEPTH_ORCHARD},
         note::{commitment::ExtractedNoteCommitment, testing::arb_note, Note},
         value::{testing::arb_positive_note_value, MAX_NOTE_VALUE},
     };
@@ -342,10 +336,10 @@ pub mod testing {
                             (None, None) => None,
                             (Some(left), None) => {
                                 let right = EMPTY_ROOTS[l];
-                                Some(hash_with_l(l, Pair {left, right}).unwrap())
+                                Some(hash_with_l(l, Pair {left, right}))
                             },
                             (Some(left), Some(right)) => {
-                                Some(hash_with_l(l, Pair {left, right}).unwrap())
+                                Some(hash_with_l(l, Pair {left, right}))
                             },
                             (None, Some(_)) => {
                                 unreachable!("The perfect subtree is left-packed.")
@@ -363,7 +357,7 @@ pub mod testing {
                 for (pos, _) in commitments.iter().enumerate() {
 
                     // Initialize the authentication path to the path for an empty tree.
-                    let mut auth_path: [pallas::Base; MERKLE_DEPTH_ORCHARD] = (0..MERKLE_DEPTH_ORCHARD).map(|idx| EMPTY_ROOTS[idx]).collect::<Vec<_>>().try_into().unwrap();
+                    let mut auth_path: [pallas::Base; MERKLE_DEPTH_ORCHARD] = gen_const_array(|idx: usize| EMPTY_ROOTS[idx]);
 
                     let mut layer_pos = pos;
                     for height in 0..perfect_subtree_depth {
@@ -388,7 +382,7 @@ pub mod testing {
             };
 
             // Compute anchor for this tree
-            let anchor = auth_paths[0].root(notes[0].commitment().into()).unwrap();
+            let anchor = auth_paths[0].root(notes[0].commitment().into());
 
             (
                 notes.into_iter().zip(auth_paths.into_iter()).map(|(note, auth_path)| (note, auth_path)).collect(),
@@ -405,7 +399,7 @@ pub mod testing {
             (notes_and_auth_paths, anchor) in (1usize..4).prop_flat_map(|n_notes| arb_tree(n_notes))
         ) {
             for (note, auth_path) in notes_and_auth_paths.iter() {
-                let computed_anchor = auth_path.root(note.commitment().into()).unwrap();
+                let computed_anchor = auth_path.root(note.commitment().into());
                 assert_eq!(anchor, computed_anchor);
             }
         }
@@ -419,7 +413,6 @@ pub mod testing {
             assert_eq!(
                 OrchardIncrementalTreeDigest::empty_root(Altitude::from(altitude as u8))
                     .0
-                    .unwrap()
                     .to_bytes(),
                 *tv_root,
                 "Empty root mismatch at altitude {}",
@@ -471,14 +464,11 @@ pub mod testing {
 
         let mut frontier = BridgeFrontier::<OrchardIncrementalTreeDigest, 32>::new();
         for commitment in commitments.iter() {
-            let cmx = OrchardIncrementalTreeDigest(CtOption::new(
-                pallas::Base::from_bytes(commitment).unwrap(),
-                1.into(),
-            ));
+            let cmx = OrchardIncrementalTreeDigest(pallas::Base::from_bytes(commitment).unwrap());
             frontier.append(&cmx);
         }
         assert_eq!(
-            frontier.root().0.unwrap(),
+            frontier.root().0,
             pallas::Base::from_bytes(&anchor).unwrap()
         );
     }
