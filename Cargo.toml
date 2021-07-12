@@ -27,7 +27,8 @@ blake2b_simd = "0.5"
 ff = "0.10"
 fpe = "0.4"
 group = "0.10"
-halo2 = "0.0"
+halo2 = { version = "0.0", features = [] }
+#halo2 = { version = "0.0", features = ["no-threadpool"] }
 lazy_static = "1"
 pasta_curves = "0.1"
 proptest = { version = "1.0.0", optional = true }
@@ -67,9 +68,6 @@ harness = false
 [profile.release]
 debug = true
 
-[profile.bench]
-debug = true
-
 [patch.crates-io]
-halo2 = { git = "https://github.com/zcash/halo2.git", rev = "b88435712face992a5fedc098c32c8427a1e3133" }
+halo2 = { path = "../halo2" }
 zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "cc533a9da4f6a7209a7be05f82b12a03969152c9" }
