@@ -11,7 +11,7 @@ use arrayvec::ArrayVec;
 use group::prime::PrimeCurveAffine;
 use halo2::{
     circuit::{Chip, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
 };
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
@@ -113,12 +113,10 @@ pub struct EccConfig {
     /// Witness signed short scalar for full-width fixed-base scalar mul
     pub q_scalar_fixed_short: Selector,
 
-    /// Shared fixed column used for loading constants. This is included in
-    /// the permutation so that cells in advice columns can be constrained to
-    /// equal cells in this fixed column.
+    /// Shared fixed column used for loading constants. This is enabled for
+    /// equality constraints so that cells in advice columns can be constrained
+    /// to equal cells in this fixed column.
     pub constants: Column<Fixed>,
-    /// Permutation over all advice columns and the `constants` fixed column.
-    pub perm: Permutation,
     /// 10-bit lookup table
     pub lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
 }
@@ -153,10 +151,8 @@ impl EccChip {
         advices: [Column<Advice>; 10],
         lookup_table: Column<Fixed>,
         constants: Column<Fixed>,
-        perm: Permutation,
     ) -> <Self as Chip<pallas::Base>>::Config {
-        let lookup_config =
-            LookupRangeCheckConfig::configure(meta, advices[9], lookup_table, perm.clone());
+        let lookup_config = LookupRangeCheckConfig::configure(meta, advices[9], lookup_table);
 
         let config = EccConfig {
             advices,
@@ -185,7 +181,6 @@ impl EccChip {
             q_scalar_fixed: meta.selector(),
             q_scalar_fixed_short: meta.selector(),
             constants,
-            perm,
             lookup_config,
         };
 
@@ -328,14 +323,13 @@ impl EccInstructions<pallas::Affine> for EccChip {
         a: &Self::Point,
         b: &Self::Point,
     ) -> Result<(), Error> {
-        let config = self.config().clone();
         layouter.assign_region(
             || "constrain equal",
             |mut region| {
                 // Constrain x-coordinates
-                region.constrain_equal(&config.perm, a.x().cell(), b.x().cell())?;
+                region.constrain_equal(a.x().cell(), b.x().cell())?;
                 // Constrain x-coordinates
-                region.constrain_equal(&config.perm, a.y().cell(), b.y().cell())
+                region.constrain_equal(a.y().cell(), b.y().cell())
             },
         )
     }

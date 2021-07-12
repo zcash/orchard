@@ -2,7 +2,7 @@ use std::array;
 
 use halo2::{
     circuit::{Chip, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Permutation},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed},
     poly::Rotation,
 };
 use pasta_curves::{
@@ -75,7 +75,6 @@ pub struct MerkleConfig {
     left_b1: Column<Advice>,
     right: Column<Advice>,
     l_star_plus1: Column<Fixed>,
-    perm: Permutation,
     pub cond_swap_config: CondSwapConfig,
     sinsemilla_config: SinsemillaConfig,
 }
@@ -103,11 +102,7 @@ impl MerkleChip {
         sinsemilla_config: SinsemillaConfig,
     ) -> MerkleConfig {
         let advices = sinsemilla_config.advices();
-        let cond_swap_config = CondSwapChip::configure(
-            meta,
-            advices[..5].try_into().unwrap(),
-            sinsemilla_config.perm.clone(),
-        );
+        let cond_swap_config = CondSwapChip::configure(meta, advices[..5].try_into().unwrap());
 
         let a_a0 = advices[0];
         let b_a1 = advices[1];
@@ -168,7 +163,6 @@ impl MerkleChip {
             left_b1,
             right,
             l_star_plus1,
-            perm: sinsemilla_config.perm.clone(),
             cond_swap_config,
             sinsemilla_config,
         }
@@ -331,50 +325,15 @@ impl
                     )?;
 
                     // Copy and assign `a` at the correct position.
-                    copy(
-                        &mut region,
-                        || "copy a",
-                        config.a_a0,
-                        0,
-                        &a.cell_value(),
-                        &config.perm,
-                    )?;
+                    copy(&mut region, || "copy a", config.a_a0, 0, &a.cell_value())?;
                     // Copy and assign `b` at the correct position.
-                    copy(
-                        &mut region,
-                        || "copy b",
-                        config.b_a1,
-                        0,
-                        &b.cell_value(),
-                        &config.perm,
-                    )?;
+                    copy(&mut region, || "copy b", config.b_a1, 0, &b.cell_value())?;
                     // Copy and assign `c` at the correct position.
-                    copy(
-                        &mut region,
-                        || "copy c",
-                        config.c_b0,
-                        0,
-                        &c.cell_value(),
-                        &config.perm,
-                    )?;
+                    copy(&mut region, || "copy c", config.c_b0, 0, &c.cell_value())?;
                     // Copy and assign the left node at the correct position.
-                    copy(
-                        &mut region,
-                        || "left",
-                        config.left_b1,
-                        0,
-                        &left,
-                        &config.perm,
-                    )?;
+                    copy(&mut region, || "left", config.left_b1, 0, &left)?;
                     // Copy and assign the right node at the correct position.
-                    copy(
-                        &mut region,
-                        || "right",
-                        config.right,
-                        0,
-                        &right,
-                        &config.perm,
-                    )?;
+                    copy(&mut region, || "right", config.right, 0, &right)?;
 
                     // Copy and assign the subpiece `a_0` at the correct position.
                     copy(
@@ -383,7 +342,6 @@ impl
                         config.a_a0,
                         1,
                         &a.subpieces()[0].cell_value(),
-                        &config.perm,
                     )?;
                     // Copy and assign the subpiece `a_1` at the correct position.
                     copy(
@@ -392,7 +350,6 @@ impl
                         config.b_a1,
                         1,
                         &a.subpieces()[1].cell_value(),
-                        &config.perm,
                     )?;
                     // Copy and assign the subpiece `b_0` at the correct position.
                     copy(
@@ -401,7 +358,6 @@ impl
                         config.c_b0,
                         1,
                         &b.subpieces()[0].cell_value(),
-                        &config.perm,
                     )?;
                     // Copy and assign the subpiece `b_1` at the correct position.
                     copy(
@@ -410,7 +366,6 @@ impl
                         config.left_b1,
                         1,
                         &b.subpieces()[1].cell_value(),
-                        &config.perm,
                     )?;
 
                     Ok(())
@@ -650,13 +605,11 @@ pub mod tests {
 
             // Shared fixed column for loading constants
             let constants = meta.fixed_column();
-            let perm = meta.permutation(
-                &advices
-                    .iter()
-                    .map(|advice| (*advice).into())
-                    .chain(Some(constants.into()))
-                    .collect::<Vec<_>>(),
-            );
+
+            for col in &advices {
+                meta.enable_equality((*col).into());
+            }
+            meta.enable_equality(constants.into());
 
             // Fixed columns for the Sinsemilla generator lookup table
             let lookup = (
@@ -670,7 +623,6 @@ pub mod tests {
                 advices[5..].try_into().unwrap(),
                 lookup,
                 constants,
-                perm.clone(),
             );
             let config1 = MerkleChip::configure(meta, sinsemilla_config_1);
 
@@ -679,7 +631,6 @@ pub mod tests {
                 advices[..5].try_into().unwrap(),
                 lookup,
                 constants,
-                perm,
             );
             let config2 = MerkleChip::configure(meta, sinsemilla_config_2);
 

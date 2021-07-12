@@ -2,7 +2,7 @@ use std::array;
 
 use halo2::{
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
@@ -47,7 +47,6 @@ pub struct CommitIvkConfig {
     b0_b1: Column<Advice>,
     b2_c: Column<Advice>,
     c0_c1: Column<Advice>,
-    perm: Permutation,
     sinsemilla_config: SinsemillaConfig,
     ak_lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
     nk_lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
@@ -59,7 +58,6 @@ impl CommitIvkConfig {
         sinsemilla_config: SinsemillaConfig,
     ) -> Self {
         let advices = sinsemilla_config.advices();
-        let perm = sinsemilla_config.perm.clone();
 
         let ak_nk = advices[0];
         let a_b = advices[1];
@@ -72,10 +70,8 @@ impl CommitIvkConfig {
         let q_nk_canon = meta.selector();
 
         let lookup_table = sinsemilla_config.generator_table.table_idx;
-        let ak_lookup_config =
-            LookupRangeCheckConfig::configure(meta, advices[0], lookup_table, perm.clone());
-        let nk_lookup_config =
-            LookupRangeCheckConfig::configure(meta, advices[1], lookup_table, perm.clone());
+        let ak_lookup_config = LookupRangeCheckConfig::configure(meta, advices[0], lookup_table);
+        let nk_lookup_config = LookupRangeCheckConfig::configure(meta, advices[1], lookup_table);
 
         let config = Self {
             q_decompose,
@@ -86,7 +82,6 @@ impl CommitIvkConfig {
             b0_b1,
             b2_c,
             c0_c1,
-            perm,
             sinsemilla_config,
             ak_lookup_config,
             nk_lookup_config,
@@ -261,40 +256,19 @@ impl CommitIvkConfig {
                     self.q_decompose.enable(&mut region, 0)?;
 
                     // Copy `ak` at the correct position.
-                    copy(&mut region, || "Copy ak", self.ak_nk, 0, &ak, &self.perm)?;
+                    copy(&mut region, || "Copy ak", self.ak_nk, 0, &ak)?;
 
                     // Copy `nk` at the correct position.
-                    copy(&mut region, || "Copy nk", self.ak_nk, 1, &nk, &self.perm)?;
+                    copy(&mut region, || "Copy nk", self.ak_nk, 1, &nk)?;
 
                     // Copy and assign `a`.
-                    let a_subpieces = copy(
-                        &mut region,
-                        || "copy a",
-                        self.a_b,
-                        0,
-                        &a.cell_value(),
-                        &self.perm,
-                    )?;
+                    let a_subpieces = copy(&mut region, || "copy a", self.a_b, 0, &a.cell_value())?;
 
                     // Copy and assign `b`.
-                    copy(
-                        &mut region,
-                        || "copy b",
-                        self.a_b,
-                        1,
-                        &b.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy b", self.a_b, 1, &b.cell_value())?;
 
                     // Copy and assign `c`.
-                    copy(
-                        &mut region,
-                        || "copy c",
-                        self.b2_c,
-                        1,
-                        &c.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy c", self.b2_c, 1, &c.cell_value())?;
 
                     let b_subpieces = {
                         // Copy and assign `b_0`.
@@ -304,7 +278,6 @@ impl CommitIvkConfig {
                             self.b0_b1,
                             0,
                             &b.subpieces()[0].cell_value(),
-                            &self.perm,
                         )?;
 
                         // Copy and assign `b_1`.
@@ -314,7 +287,6 @@ impl CommitIvkConfig {
                             self.b0_b1,
                             1,
                             &b.subpieces()[1].cell_value(),
-                            &self.perm,
                         )?;
 
                         // Copy and assign `b_2`.
@@ -324,7 +296,6 @@ impl CommitIvkConfig {
                             self.b2_c,
                             0,
                             &b.subpieces()[2].cell_value(),
-                            &self.perm,
                         )?;
 
                         B(b_0, b_1, b_2)
@@ -338,7 +309,6 @@ impl CommitIvkConfig {
                             self.c0_c1,
                             0,
                             &c.subpieces()[0].cell_value(),
-                            &self.perm,
                         )?;
 
                         // Copy and assign `c_1`.
@@ -348,7 +318,6 @@ impl CommitIvkConfig {
                             self.c0_c1,
                             1,
                             &c.subpieces()[1].cell_value(),
-                            &self.perm,
                         )?;
 
                         C(c_0, c_1)
@@ -462,31 +431,17 @@ impl CommitIvkConfig {
 
                 // Enforce b_1 = 1 => b_0 = 0 by copying b_0, b_1 to the correct
                 // offsets for use in the gate.
-                copy(&mut region, || "copy b_0", self.b0_b1, 0, &b_0, &self.perm)?;
-                copy(&mut region, || "copy b_1", self.b0_b1, 1, &b_1, &self.perm)?;
+                copy(&mut region, || "copy b_0", self.b0_b1, 0, &b_0)?;
+                copy(&mut region, || "copy b_1", self.b0_b1, 1, &b_1)?;
 
                 // Enforce b_1 = 0 => z_13 of SinsemillaHash(a) == 0 by copying
                 // z_13 to the correct offset for use in the gate.
-                copy(
-                    &mut region,
-                    || "copy z_13",
-                    self.ak_nk,
-                    0,
-                    &z_13,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy z_13", self.ak_nk, 0, &z_13)?;
 
                 // Check that a_prime = a + 2^130 - t_P was correctly derived
                 // from a.
-                copy(&mut region, || "copy a", self.a_b, 0, &a, &self.perm)?;
-                copy(
-                    &mut region,
-                    || "copy a_prime",
-                    self.b2_c,
-                    0,
-                    &a_prime,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy a", self.a_b, 0, &a)?;
+                copy(&mut region, || "copy a_prime", self.b2_c, 0, &a_prime)?;
 
                 // Enforce b_1 = 0 => (0 ≤ a_prime < 2^130).
                 // This is equivalent to enforcing that the running sum returned by the
@@ -497,7 +452,6 @@ impl CommitIvkConfig {
                     self.c0_c1,
                     0,
                     &a_prime_decomposition,
-                    &self.perm,
                 )?;
                 Ok(())
             },
@@ -563,31 +517,17 @@ impl CommitIvkConfig {
 
                 // Enforce c_1 = 1 => c_0 = 0 by copying c_0, c_1 to the correct
                 // offsets for use in the gate.
-                copy(&mut region, || "copy c_0", self.c0_c1, 0, &c_0, &self.perm)?;
-                copy(&mut region, || "copy c_1", self.c0_c1, 1, &c_1, &self.perm)?;
+                copy(&mut region, || "copy c_0", self.c0_c1, 0, &c_0)?;
+                copy(&mut region, || "copy c_1", self.c0_c1, 1, &c_1)?;
 
                 // Enforce c_1 = 0 => z_14 of SinsemillaHash(b) == 0 by copying
                 // z_14 to the correct offset for use in the gate.
-                copy(
-                    &mut region,
-                    || "copy z_14",
-                    self.ak_nk,
-                    0,
-                    &z_14,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy z_14", self.ak_nk, 0, &z_14)?;
 
                 // Check that b2_prime = a + 2^130 - t_P was correctly derived
                 // from b_2
-                copy(&mut region, || "copy b_2", self.b2_c, 0, &b_2, &self.perm)?;
-                copy(
-                    &mut region,
-                    || "copy b2_prime",
-                    self.b2_c,
-                    1,
-                    &b2_prime,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy b_2", self.b2_c, 0, &b_2)?;
+                copy(&mut region, || "copy b2_prime", self.b2_c, 1, &b2_prime)?;
 
                 // Enforce c_1 = 0 => (0 ≤ b2_prime < 2^140).
                 // This is equivalent to enforcing that the running sum returned by the
@@ -598,7 +538,6 @@ impl CommitIvkConfig {
                     self.b0_b1,
                     0,
                     &b2_prime_decomposition,
-                    &self.perm,
                 )?;
                 Ok(())
             },
@@ -669,14 +608,11 @@ mod tests {
                 // Shared fixed column for loading constants
                 let constants = meta.fixed_column();
 
-                // Permutation over all advice columns
-                let perm = meta.permutation(
-                    &advices
-                        .iter()
-                        .map(|advice| (*advice).into())
-                        .chain(Some(constants.into()))
-                        .collect::<Vec<_>>(),
-                );
+                for col in &advices {
+                    meta.enable_equality((*col).into());
+                }
+                meta.enable_equality(constants.into());
+
                 let table_idx = meta.fixed_column();
                 let lookup = (table_idx, meta.fixed_column(), meta.fixed_column());
 
@@ -685,11 +621,10 @@ mod tests {
                     advices[..5].try_into().unwrap(),
                     lookup,
                     constants,
-                    perm.clone(),
                 );
                 let commit_ivk_config = CommitIvkConfig::configure(meta, sinsemilla_config);
 
-                let ecc_config = EccChip::configure(meta, advices, table_idx, constants, perm);
+                let ecc_config = EccChip::configure(meta, advices, table_idx, constants);
 
                 (commit_ivk_config, ecc_config)
             }
@@ -797,7 +732,7 @@ mod tests {
         ];
 
         for circuit in circuits.iter() {
-            let prover = MockProver::<pallas::Base>::run(11, circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run(12, circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
     }

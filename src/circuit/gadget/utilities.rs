@@ -1,6 +1,6 @@
 use halo2::{
     circuit::{Cell, Layouter, Region},
-    plonk::{Advice, Column, Error, Permutation},
+    plonk::{Advice, Column, Error},
 };
 use pasta_curves::arithmetic::FieldExt;
 
@@ -63,14 +63,14 @@ pub trait UtilitiesInstructions<F: FieldExt> {
 /// Assigns a cell at a specific offset within the given region, constraining it
 /// to the same value as another cell (which may be in any region).
 ///
-/// Returns an error if either `column` or `copy` is not within `perm`.
+/// Returns an error if either `column`, or the column containing `copy`, is not
+/// enabled for equality constraints.
 pub fn copy<A, AR, F: FieldExt>(
     region: &mut Region<'_, F>,
     annotation: A,
     column: Column<Advice>,
     offset: usize,
     copy: &CellValue<F>,
-    perm: &Permutation,
 ) -> Result<CellValue<F>, Error>
 where
     A: Fn() -> AR,
@@ -80,7 +80,7 @@ where
         copy.value.ok_or(Error::SynthesisError)
     })?;
 
-    region.constrain_equal(perm, cell, copy.cell)?;
+    region.constrain_equal(cell, copy.cell)?;
 
     Ok(CellValue::new(cell, copy.value))
 }

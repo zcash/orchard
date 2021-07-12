@@ -3,7 +3,7 @@ use std::array;
 use group::GroupEncoding;
 use halo2::{
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::{
@@ -85,7 +85,6 @@ pub struct NoteCommitConfig {
     q_rho_canon: Selector,
     q_psi_canon: Selector,
     advices: [Column<Advice>; 5],
-    perm: Permutation,
     sinsemilla_config: SinsemillaConfig,
     gd_lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
     pkd_lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
@@ -101,7 +100,6 @@ impl NoteCommitConfig {
         sinsemilla_config: SinsemillaConfig,
     ) -> Self {
         let advices = sinsemilla_config.advices();
-        let perm = sinsemilla_config.perm.clone();
 
         let q_decompose_1 = meta.selector();
         let q_decompose_2 = meta.selector();
@@ -112,14 +110,10 @@ impl NoteCommitConfig {
         let q_psi_canon = meta.selector();
 
         let lookup_table = sinsemilla_config.generator_table.table_idx;
-        let gd_lookup_config =
-            LookupRangeCheckConfig::configure(meta, advices[0], lookup_table, perm.clone());
-        let pkd_lookup_config =
-            LookupRangeCheckConfig::configure(meta, advices[1], lookup_table, perm.clone());
-        let rho_lookup_config =
-            LookupRangeCheckConfig::configure(meta, advices[2], lookup_table, perm.clone());
-        let psi_lookup_config =
-            LookupRangeCheckConfig::configure(meta, advices[3], lookup_table, perm.clone());
+        let gd_lookup_config = LookupRangeCheckConfig::configure(meta, advices[0], lookup_table);
+        let pkd_lookup_config = LookupRangeCheckConfig::configure(meta, advices[1], lookup_table);
+        let rho_lookup_config = LookupRangeCheckConfig::configure(meta, advices[2], lookup_table);
+        let psi_lookup_config = LookupRangeCheckConfig::configure(meta, advices[3], lookup_table);
 
         let config = Self {
             q_decompose_1,
@@ -129,7 +123,6 @@ impl NoteCommitConfig {
             q_rho_canon,
             q_psi_canon,
             advices,
-            perm,
             sinsemilla_config,
             gd_lookup_config,
             pkd_lookup_config,
@@ -552,34 +545,13 @@ impl NoteCommitConfig {
                     let column = self.advices[0];
 
                     // Offset 0
-                    copy(
-                        &mut region,
-                        || "copy a",
-                        column,
-                        0,
-                        &a.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy a", column, 0, &a.cell_value())?;
 
                     // Offset 1
-                    copy(
-                        &mut region,
-                        || "copy b",
-                        column,
-                        1,
-                        &b.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy b", column, 1, &b.cell_value())?;
 
                     // Offset 2
-                    copy(
-                        &mut region,
-                        || "copy d",
-                        column,
-                        2,
-                        &d.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy d", column, 2, &d.cell_value())?;
 
                     // Offset 3
                     let e_0 = copy(
@@ -588,7 +560,6 @@ impl NoteCommitConfig {
                         column,
                         3,
                         &e.subpieces()[0].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 4
@@ -598,7 +569,6 @@ impl NoteCommitConfig {
                         column,
                         4,
                         &g.subpieces()[1].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 5
@@ -608,7 +578,6 @@ impl NoteCommitConfig {
                         column,
                         5,
                         &i.subpieces()[2].cell_value(),
-                        &self.perm,
                     )?;
 
                     (e_0, g_1, i_2)
@@ -624,21 +593,13 @@ impl NoteCommitConfig {
                         column,
                         0,
                         &b.subpieces()[0].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 1
-                    copy(
-                        &mut region,
-                        || "copy c",
-                        column,
-                        1,
-                        &c.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy c", column, 1, &c.cell_value())?;
 
                     // Offset 2
-                    copy(&mut region, || "copy e_0", column, 2, &e_0, &self.perm)?;
+                    copy(&mut region, || "copy e_0", column, 2, &e_0)?;
 
                     // Offset 3
                     let e_1 = copy(
@@ -647,28 +608,13 @@ impl NoteCommitConfig {
                         column,
                         3,
                         &e.subpieces()[1].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 4
-                    copy(
-                        &mut region,
-                        || "copy g",
-                        column,
-                        4,
-                        &g.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy g", column, 4, &g.cell_value())?;
 
                     // Offset 5
-                    copy(
-                        &mut region,
-                        || "copy i",
-                        column,
-                        5,
-                        &i.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy i", column, 5, &i.cell_value())?;
 
                     (b_0, e_1)
                 };
@@ -683,7 +629,6 @@ impl NoteCommitConfig {
                         column,
                         0,
                         &b.subpieces()[1].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 1
@@ -693,31 +638,16 @@ impl NoteCommitConfig {
                         column,
                         1,
                         &d.subpieces()[0].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 2
-                    copy(&mut region, || "copy value", column, 2, &value, &self.perm)?;
+                    copy(&mut region, || "copy value", column, 2, &value)?;
 
                     // Offset 3
-                    copy(
-                        &mut region,
-                        || "copy e",
-                        column,
-                        3,
-                        &e.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy e", column, 3, &e.cell_value())?;
 
                     // Offset 4
-                    copy(
-                        &mut region,
-                        || "copy h",
-                        column,
-                        4,
-                        &h.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy h", column, 4, &h.cell_value())?;
 
                     // Offset 5 is blank for advices[2]
 
@@ -734,7 +664,6 @@ impl NoteCommitConfig {
                         column,
                         0,
                         &b.subpieces()[2].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 1
@@ -744,28 +673,13 @@ impl NoteCommitConfig {
                         column,
                         1,
                         &d.subpieces()[1].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 2
-                    copy(
-                        &mut region,
-                        || "copy pkd_x",
-                        column,
-                        2,
-                        &pk_d.x(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy pkd_x", column, 2, &pk_d.x())?;
 
                     // Offset 3
-                    copy(
-                        &mut region,
-                        || "copy f",
-                        column,
-                        3,
-                        &f.cell_value(),
-                        &self.perm,
-                    )?;
+                    copy(&mut region, || "copy f", column, 3, &f.cell_value())?;
 
                     // Offset 4
                     let i_0 = copy(
@@ -774,11 +688,10 @@ impl NoteCommitConfig {
                         column,
                         4,
                         &i.subpieces()[0].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 5
-                    copy(&mut region, || "copy rho", column, 5, &rho, &self.perm)?;
+                    copy(&mut region, || "copy rho", column, 5, &rho)?;
 
                     (b_2, d_1, i_0)
                 };
@@ -793,7 +706,6 @@ impl NoteCommitConfig {
                         column,
                         0,
                         &b.subpieces()[3].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 1
@@ -803,11 +715,10 @@ impl NoteCommitConfig {
                         column,
                         1,
                         &d.subpieces()[2].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 2
-                    copy(&mut region, || "copy gd_x", column, 2, &g_d.x(), &self.perm)?;
+                    copy(&mut region, || "copy gd_x", column, 2, &g_d.x())?;
 
                     // Offset 3
                     let g_0 = copy(
@@ -816,7 +727,6 @@ impl NoteCommitConfig {
                         column,
                         3,
                         &g.subpieces()[0].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 4
@@ -826,11 +736,10 @@ impl NoteCommitConfig {
                         column,
                         4,
                         &i.subpieces()[1].cell_value(),
-                        &self.perm,
                     )?;
 
                     // Offset 5
-                    copy(&mut region, || "copy psi", column, 5, &psi, &self.perm)?;
+                    copy(&mut region, || "copy psi", column, 5, &psi)?;
 
                     (b_3, d_2, g_0, i_1)
                 };
@@ -953,22 +862,8 @@ impl NoteCommitConfig {
 
                 // Enforce b_1 = 1 => b_0 = 0 by copying b_0, b_1 to the correct
                 // offsets for use in the gate.
-                copy(
-                    &mut region,
-                    || "copy b_0",
-                    self.advices[0],
-                    0,
-                    &b_0,
-                    &self.perm,
-                )?;
-                copy(
-                    &mut region,
-                    || "copy b_1",
-                    self.advices[0],
-                    1,
-                    &b_1,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy b_0", self.advices[0], 0, &b_0)?;
+                copy(&mut region, || "copy b_1", self.advices[0], 1, &b_1)?;
 
                 // Enforce b_1 = 0 => z_13 of SinsemillaHash(a) == 0 by copying
                 // z_13 to the correct offset for use in the gate.
@@ -978,20 +873,12 @@ impl NoteCommitConfig {
                     self.advices[1],
                     0,
                     &z_13a,
-                    &self.perm,
                 )?;
 
                 // Check that a_prime = a + 2^130 - t_P was correctly derived
                 // from a.
-                copy(&mut region, || "copy a", self.advices[2], 0, &a, &self.perm)?;
-                copy(
-                    &mut region,
-                    || "copy a_prime",
-                    self.advices[3],
-                    0,
-                    &a_prime,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy a", self.advices[2], 0, &a)?;
+                copy(&mut region, || "copy a_prime", self.advices[3], 0, &a_prime)?;
 
                 // Enforce b_1 = 0 => (0 ≤ a_prime < 2^130).
                 // This is equivalent to enforcing that the running sum returned by the
@@ -1002,7 +889,6 @@ impl NoteCommitConfig {
                     self.advices[4],
                     0,
                     &a_prime_decomposition,
-                    &self.perm,
                 )?;
                 Ok(())
             },
@@ -1069,14 +955,7 @@ impl NoteCommitConfig {
 
                 // Copy d_0. The constraints here are enforced if and only if
                 // d_0 = 1.
-                copy(
-                    &mut region,
-                    || "copy d_0",
-                    self.advices[0],
-                    0,
-                    &d_0,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy d_0", self.advices[0], 0, &d_0)?;
 
                 // Enforce d_0 = 1 => (0 ≤ lookup_element < 2^130).
                 // This is equivalent to enforcing that the running sum returned by the
@@ -1087,7 +966,6 @@ impl NoteCommitConfig {
                     self.advices[0],
                     1,
                     &lookup_decomposition,
-                    &self.perm,
                 )?;
 
                 // Enforce d_0 = 1 => z_13 of SinsemillaHash(c) == 0 by copying
@@ -1098,27 +976,18 @@ impl NoteCommitConfig {
                     self.advices[1],
                     0,
                     &z_13c,
-                    &self.perm,
                 )?;
 
                 // Check `lookup_element` = b_3 + 2^4 c + 2^140 - t_P was correctly
                 // derived from b_3, c.
-                copy(
-                    &mut region,
-                    || "copy b_3",
-                    self.advices[2],
-                    0,
-                    &b_3,
-                    &self.perm,
-                )?;
-                copy(&mut region, || "copy c", self.advices[3], 0, &c, &self.perm)?;
+                copy(&mut region, || "copy b_3", self.advices[2], 0, &b_3)?;
+                copy(&mut region, || "copy c", self.advices[3], 0, &c)?;
                 copy(
                     &mut region,
                     || "copy lookup_element",
                     self.advices[4],
                     0,
                     &lookup_element,
-                    &self.perm,
                 )?;
 
                 Ok(())
@@ -1186,14 +1055,7 @@ impl NoteCommitConfig {
 
                 // Copy g_0. The constraints here are enforced if and only if
                 // g_0 = 1.
-                copy(
-                    &mut region,
-                    || "copy g_0",
-                    self.advices[0],
-                    0,
-                    &g_0,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy g_0", self.advices[0], 0, &g_0)?;
 
                 // Enforce g_0 = 1 => (0 ≤ lookup_element < 2^130).
                 // This is equivalent to enforcing that the running sum returned by the
@@ -1204,7 +1066,6 @@ impl NoteCommitConfig {
                     self.advices[1],
                     0,
                     &lookup_decomposition,
-                    &self.perm,
                 )?;
 
                 // Enforce g_0 = 1 => z_13 of SinsemillaHash(f) == 0 by copying
@@ -1215,27 +1076,18 @@ impl NoteCommitConfig {
                     self.advices[1],
                     1,
                     &z_13f,
-                    &self.perm,
                 )?;
 
                 // Check `lookup_element` = e_1 + 2^4 f + 2^140 - t_P was correctly
                 // derived from e_1, f.
-                copy(
-                    &mut region,
-                    || "copy e_1",
-                    self.advices[2],
-                    0,
-                    &e_1,
-                    &self.perm,
-                )?;
-                copy(&mut region, || "copy f", self.advices[3], 0, &f, &self.perm)?;
+                copy(&mut region, || "copy e_1", self.advices[2], 0, &e_1)?;
+                copy(&mut region, || "copy f", self.advices[3], 0, &f)?;
                 copy(
                     &mut region,
                     || "copy lookup_element",
                     self.advices[4],
                     0,
                     &lookup_element,
-                    &self.perm,
                 )?;
 
                 Ok(())
@@ -1305,14 +1157,7 @@ impl NoteCommitConfig {
 
                 // Copy i_1. The constraints here are enforced if and only if
                 // i_1 = 1.
-                copy(
-                    &mut region,
-                    || "copy i_1",
-                    self.advices[0],
-                    0,
-                    &i_1,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy i_1", self.advices[0], 0, &i_1)?;
 
                 // Enforce h_1 = 1 => (0 ≤ lookup_element < 2^130).
                 // This is equivalent to enforcing that the running sum returned by the
@@ -1323,7 +1168,6 @@ impl NoteCommitConfig {
                     self.advices[0],
                     1,
                     &lookup_decomposition,
-                    &self.perm,
                 )?;
 
                 // Enforce h_1 = 1 => z_13 of SinsemillaHash(h) == 0 by copying
@@ -1334,38 +1178,22 @@ impl NoteCommitConfig {
                     self.advices[1],
                     0,
                     &z_13h,
-                    &self.perm,
                 )?;
 
                 // Check `lookup_element` = g_1 + 2^9 h + 2^140 - t_P was correctly
                 // derived from g_1, h.
-                copy(
-                    &mut region,
-                    || "copy g_1",
-                    self.advices[2],
-                    0,
-                    &g_1,
-                    &self.perm,
-                )?;
-                copy(&mut region, || "copy h", self.advices[3], 0, &h, &self.perm)?;
+                copy(&mut region, || "copy g_1", self.advices[2], 0, &g_1)?;
+                copy(&mut region, || "copy h", self.advices[3], 0, &h)?;
                 copy(
                     &mut region,
                     || "copy lookup_element",
                     self.advices[4],
                     0,
                     &lookup_element,
-                    &self.perm,
                 )?;
 
                 // Enforce i_1 = 1 => i_0 = 0
-                copy(
-                    &mut region,
-                    || "copy i_0",
-                    self.advices[4],
-                    1,
-                    &i_0,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy i_0", self.advices[4], 1, &i_0)?;
 
                 Ok(())
             },
@@ -1455,14 +1283,11 @@ mod tests {
                 // Shared fixed column used to load constants
                 let constants = meta.fixed_column();
 
-                // Permutation over all advice columns
-                let perm = meta.permutation(
-                    &advices
-                        .iter()
-                        .map(|advice| (*advice).into())
-                        .chain(Some(constants.into()))
-                        .collect::<Vec<_>>(),
-                );
+                for col in &advices {
+                    meta.enable_equality((*col).into());
+                }
+                meta.enable_equality(constants.into());
+
                 let table_idx = meta.fixed_column();
                 let lookup = (table_idx, meta.fixed_column(), meta.fixed_column());
                 let sinsemilla_config = SinsemillaChip::configure(
@@ -1470,11 +1295,10 @@ mod tests {
                     advices[..5].try_into().unwrap(),
                     lookup,
                     constants,
-                    perm.clone(),
                 );
                 let note_commit_config = NoteCommitConfig::configure(meta, sinsemilla_config);
 
-                let ecc_config = EccChip::configure(meta, advices, table_idx, constants, perm);
+                let ecc_config = EccChip::configure(meta, advices, table_idx, constants);
 
                 (note_commit_config, ecc_config)
             }

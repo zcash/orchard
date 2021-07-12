@@ -475,16 +475,14 @@ mod tests {
             ];
 
             let constants = meta.fixed_column();
-            let perm = meta.permutation(
-                &advices
-                    .iter()
-                    .map(|advice| (*advice).into())
-                    .chain(Some(constants.into()))
-                    .collect::<Vec<_>>(),
-            );
+
+            for col in &advices {
+                meta.enable_equality((*col).into());
+            }
+            meta.enable_equality(constants.into());
 
             let lookup_table = meta.fixed_column();
-            EccChip::configure(meta, advices, lookup_table, constants, perm)
+            EccChip::configure(meta, advices, lookup_table, constants)
         }
 
         fn synthesize(

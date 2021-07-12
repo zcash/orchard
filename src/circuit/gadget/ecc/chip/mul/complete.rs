@@ -3,7 +3,7 @@ use super::{COMPLETE_RANGE, X, Y, Z};
 
 use halo2::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 
@@ -14,8 +14,6 @@ pub struct Config {
     q_mul_decompose_var: Selector,
     // Advice column used to decompose scalar in complete addition.
     pub z_complete: Column<Advice>,
-    // Permutation
-    perm: Permutation,
     // Configuration used in complete addition
     add_config: add::Config,
 }
@@ -25,7 +23,6 @@ impl From<&EccConfig> for Config {
         let config = Self {
             q_mul_decompose_var: ecc_config.q_mul_decompose_var,
             z_complete: ecc_config.advices[9],
-            perm: ecc_config.perm.clone(),
             add_config: ecc_config.into(),
         };
 
@@ -98,7 +95,6 @@ impl Config {
                 self.add_config.x_qr,
                 offset,
                 &x_a.0,
-                &self.perm,
             )?;
 
             // Assign final `y_a` output from incomplete addition
@@ -123,7 +119,6 @@ impl Config {
                 self.z_complete,
                 offset,
                 &z,
-                &self.perm,
             )?;
             Z(z)
         };
@@ -143,7 +138,6 @@ impl Config {
                 self.z_complete,
                 row + offset,
                 &z,
-                &self.perm,
             )?;
 
             // Update `z`.
@@ -208,7 +202,6 @@ impl Config {
                     self.add_config.x_p,
                     row + offset + 1,
                     &acc.x,
-                    &self.perm,
                 )?;
                 let acc_y = copy(
                     region,
@@ -216,7 +209,6 @@ impl Config {
                     self.add_config.y_p,
                     row + offset + 1,
                     &acc.y,
-                    &self.perm,
                 )?;
 
                 EccPoint { x: acc_x, y: acc_y }
