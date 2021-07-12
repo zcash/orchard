@@ -10,9 +10,7 @@ use crate::constants::{
 use group::Curve;
 use halo2::{
     circuit::Region,
-    plonk::{
-        Advice, Column, ConstraintSystem, Error, Expression, Fixed, Permutation, VirtualCells,
-    },
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, VirtualCells},
     poly::Rotation,
 };
 use pasta_curves::{
@@ -76,8 +74,6 @@ pub struct Config<const NUM_WINDOWS: usize> {
     y_p: Column<Advice>,
     // y-coordinate of accumulator (only used in the final row).
     u: Column<Advice>,
-    // Permutation
-    perm: Permutation,
     // Configuration for `add`
     add_config: add::Config,
     // Configuration for `add_incomplete`
@@ -94,7 +90,6 @@ impl<const NUM_WINDOWS: usize> From<&EccConfig> for Config<NUM_WINDOWS> {
             y_p: ecc_config.advices[1],
             window: ecc_config.advices[4],
             u: ecc_config.advices[5],
-            perm: ecc_config.perm.clone(),
             add_config: ecc_config.into(),
             add_incomplete_config: ecc_config.into(),
         };
@@ -291,7 +286,6 @@ impl<const NUM_WINDOWS: usize> Config<NUM_WINDOWS> {
                 self.window,
                 window_idx + offset,
                 window,
-                &self.perm,
             )?;
         }
 
@@ -350,7 +344,6 @@ impl<const NUM_WINDOWS: usize> Config<NUM_WINDOWS> {
             self.add_incomplete_config.x_qr,
             offset + 1,
             &m0.x,
-            &self.perm,
         )?;
         let y = copy(
             region,
@@ -358,7 +351,6 @@ impl<const NUM_WINDOWS: usize> Config<NUM_WINDOWS> {
             self.add_incomplete_config.y_qr,
             offset + 1,
             &m0.y,
-            &self.perm,
         )?;
 
         Ok(EccPoint { x, y })

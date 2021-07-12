@@ -1,7 +1,7 @@
 use super::{copy, CellValue, UtilitiesInstructions};
 use halo2::{
     circuit::{Chip, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
@@ -47,7 +47,6 @@ pub struct CondSwapConfig {
     pub a_swapped: Column<Advice>,
     pub b_swapped: Column<Advice>,
     pub swap: Column<Advice>,
-    pub perm: Permutation,
 }
 
 impl<F: FieldExt> UtilitiesInstructions<F> for CondSwapChip<F> {
@@ -71,10 +70,10 @@ impl<F: FieldExt> CondSwapInstructions<F> for CondSwapChip<F> {
                 config.q_swap.enable(&mut region, 0)?;
 
                 // Copy in `a` value
-                let a = copy(&mut region, || "copy a", config.a, 0, &pair.0, &config.perm)?;
+                let a = copy(&mut region, || "copy a", config.a, 0, &pair.0)?;
 
                 // Copy in `b` value
-                let b = copy(&mut region, || "copy b", config.b, 0, &pair.1, &config.perm)?;
+                let b = copy(&mut region, || "copy b", config.b, 0, &pair.1)?;
 
                 // Witness `swap` value
                 let swap_val = swap.map(|swap| F::from_u64(swap as u64));
@@ -132,13 +131,9 @@ impl<F: FieldExt> CondSwapInstructions<F> for CondSwapChip<F> {
 
 impl<F: FieldExt> CondSwapChip<F> {
     /// Configures this chip for use in a circuit.
-    ///
-    /// `perm` must cover `advices[0..2]`, as well as any columns that will
-    /// be passed to this chip.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; 5],
-        perm: Permutation,
     ) -> CondSwapConfig {
         let q_swap = meta.selector();
 
@@ -149,7 +144,6 @@ impl<F: FieldExt> CondSwapChip<F> {
             a_swapped: advices[2],
             b_swapped: advices[3],
             swap: advices[4],
-            perm,
         };
 
         // TODO: optimise shape of gate for Merkle path validation
@@ -201,7 +195,7 @@ mod tests {
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
-        plonk::{Any, Circuit, Column, ConstraintSystem, Error},
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{arithmetic::FieldExt, pallas::Base};
 
@@ -230,15 +224,11 @@ mod tests {
                     meta.advice_column(),
                     meta.advice_column(),
                 ];
+                for col in &advices {
+                    meta.enable_equality((*col).into());
+                }
 
-                let perm = meta.permutation(
-                    &advices
-                        .iter()
-                        .map(|advice| (*advice).into())
-                        .collect::<Vec<Column<Any>>>(),
-                );
-
-                CondSwapChip::<F>::configure(meta, advices, perm)
+                CondSwapChip::<F>::configure(meta, advices)
             }
 
             fn synthesize(

@@ -185,7 +185,6 @@ impl Config {
             self.super_config.window,
             offset,
             &base_field_elem,
-            &self.super_config.perm,
         )?;
 
         for idx in 0..words.len() {

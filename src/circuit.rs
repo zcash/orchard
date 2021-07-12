@@ -3,7 +3,7 @@
 use group::{Curve, GroupEncoding};
 use halo2::{
     circuit::{floor_planner, Layouter},
-    plonk::{self, Advice, Column, Fixed, Instance as InstanceColumn, Permutation, Selector},
+    plonk::{self, Advice, Column, Fixed, Instance as InstanceColumn, Selector},
     poly::{EvaluationDomain, LagrangeCoeff, Polynomial, Rotation},
     transcript::{Blake2bRead, Blake2bWrite},
 };
@@ -79,7 +79,6 @@ pub struct Config {
     old_note_commit_config: NoteCommitConfig,
     new_note_commit_config: NoteCommitConfig,
     constants: Column<Fixed>,
-    perm: Permutation,
 }
 
 /// The Orchard Action circuit.
@@ -160,24 +159,19 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let constants = meta.fixed_column();
         let constants2 = meta.fixed_column();
 
-        // Permutation over all advice columns
-        let perm = meta.permutation(
-            &advices
-                .iter()
-                .map(|advice| (*advice).into())
-                .chain(Some(constants.into()))
-                .chain(Some(constants2.into()))
-                .collect::<Vec<_>>(),
-        );
+        for col in &advices {
+            meta.enable_equality((*col).into());
+        }
+        meta.enable_equality(constants.into());
+        meta.enable_equality(constants2.into());
 
         // Configuration for `enable_spends` and `enable_outputs` flags logic
         // TODO: this may change with public inputs API.
-        let enable_flag_config =
-            EnableFlagChip::configure(meta, [advices[0], advices[1]], perm.clone());
+        let enable_flag_config = EnableFlagChip::configure(meta, [advices[0], advices[1]]);
 
         // Configuration for curve point operations.
         // This uses 10 advice columns and spans the whole circuit.
-        let ecc_config = EccChip::configure(meta, advices, table_idx, constants, perm.clone());
+        let ecc_config = EccChip::configure(meta, advices, table_idx, constants);
 
         // Configuration for the Poseidon hash.
         let poseidon_config = PoseidonChip::configure(
@@ -188,8 +182,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         );
 
         // Configuration for standard PLONK (addition and multiplication).
-        let plonk_config =
-            PLONKChip::configure(meta, [advices[0], advices[1], advices[2]], perm.clone());
+        let plonk_config = PLONKChip::configure(meta, [advices[0], advices[1], advices[2]]);
 
         // Configuration for a Sinsemilla hash instantiation and a
         // Merkle hash instantiation using this Sinsemilla instance.
@@ -201,7 +194,6 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 advices[..5].try_into().unwrap(),
                 lookup,
                 constants,
-                perm.clone(),
             );
             let merkle_config_1 = MerkleChip::configure(meta, sinsemilla_config_1.clone());
 
@@ -218,7 +210,6 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 advices[5..].try_into().unwrap(),
                 lookup,
                 constants2,
-                perm.clone(),
             );
             let merkle_config_2 = MerkleChip::configure(meta, sinsemilla_config_2.clone());
 
@@ -266,7 +257,6 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             old_note_commit_config,
             new_note_commit_config,
             constants,
-            perm,
         }
     }
 
@@ -432,7 +422,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                                 0,
                                 || value.ok_or(plonk::Error::SynthesisError),
                             )?;
-                            region.constrain_equal(&config.perm, var, message[i].cell())?;
+                            region.constrain_equal(var, message[i].cell())?;
                             Ok(Word::<_, _, poseidon::OrchardNullifier, 3, 2> {
                                 inner: StateWord::new(var, value),
                             })
@@ -762,7 +752,12 @@ pub struct Instance {
 
 impl Instance {
     /// TEST
-    pub fn to_halo2_instance(
+    pub fn to_halo2_instance(&self) -> [[vesta::Scalar; 0]; 1] {
+        // TODO
+        [[]]
+    }
+
+    fn to_halo2_instance_old(
         &self,
         domain: &EvaluationDomain<vesta::Scalar>,
     ) -> [Polynomial<vesta::Scalar, LagrangeCoeff>; 1] {
@@ -773,7 +768,7 @@ impl Instance {
     fn to_halo2_instance_commitments(&self, vk: &VerifyingKey) -> [vesta::Affine; 1] {
         [vk.params
             .commit_lagrange(
-                &self.to_halo2_instance(vk.vk.get_domain())[0],
+                &self.to_halo2_instance_old(vk.vk.get_domain())[0],
                 Default::default(),
             )
             .to_affine()]
@@ -799,14 +794,21 @@ impl Proof {
         circuits: &[Circuit],
         instances: &[Instance],
     ) -> Result<Self, plonk::Error> {
-        let instances: Vec<_> = instances
+        let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
+        let instances: Vec<Vec<_>> = instances
             .iter()
-            .map(|i| i.to_halo2_instance(pk.pk.get_vk().get_domain()))
+            .map(|i| i.iter().map(|c| &c[..]).collect())
             .collect();
         let instances: Vec<_> = instances.iter().map(|i| &i[..]).collect();
 
         let mut transcript = Blake2bWrite::<_, vesta::Affine, _>::init(vec![]);
-        plonk::create_proof(&pk.params, &pk.pk, circuits, &instances, &mut transcript)?;
+        plonk::create_proof(
+            &pk.params,
+            &pk.pk,
+            circuits,
+            &instances[..],
+            &mut transcript,
+        )?;
         Ok(Proof(transcript.finalize()))
     }
 
@@ -919,7 +921,7 @@ mod tests {
                     K,
                     circuit,
                     instance
-                        .to_halo2_instance(vk.vk.get_domain())
+                        .to_halo2_instance()
                         .iter()
                         .map(|p| p.iter().cloned().collect())
                         .collect()

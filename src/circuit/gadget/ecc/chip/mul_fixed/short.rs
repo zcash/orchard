@@ -88,7 +88,6 @@ impl<const NUM_WINDOWS: usize> Config<NUM_WINDOWS> {
             self.super_config.window,
             offset + NUM_WINDOWS,
             &scalar.sign,
-            &self.super_config.perm,
         )?;
 
         // Conditionally negate `y`-coordinate

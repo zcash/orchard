@@ -4,7 +4,7 @@
 use crate::spec::lebs2ip;
 use halo2::{
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Fixed, Selector},
     poly::Rotation,
 };
 use std::{convert::TryInto, marker::PhantomData};
@@ -18,7 +18,6 @@ pub struct LookupRangeCheckConfig<F: FieldExt + PrimeFieldBits, const K: usize> 
     pub q_lookup: Selector,
     pub running_sum: Column<Advice>,
     table_idx: Column<Fixed>,
-    perm: Permutation,
     _marker: PhantomData<F>,
 }
 
@@ -37,14 +36,12 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
         meta: &mut ConstraintSystem<F>,
         running_sum: Column<Advice>,
         table_idx: Column<Fixed>,
-        perm: Permutation,
     ) -> Self {
         let q_lookup = meta.selector();
         let config = LookupRangeCheckConfig {
             q_lookup,
             running_sum,
             table_idx,
-            perm,
             _marker: PhantomData,
         };
 
@@ -129,14 +126,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
                 };
 
                 // Copy `element` and initialize running sum `z_0 = element` to decompose it.
-                let z_0 = copy(
-                    &mut region,
-                    || "z_0",
-                    self.running_sum,
-                    0,
-                    &element,
-                    &self.perm,
-                )?;
+                let z_0 = copy(&mut region, || "z_0", self.running_sum, 0, &element)?;
 
                 let mut zs = vec![z_0];
 
@@ -217,9 +207,8 @@ mod tests {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let running_sum = meta.advice_column();
                 let table_idx = meta.fixed_column();
-                let perm = meta.permutation(&[running_sum.into()]);
 
-                LookupRangeCheckConfig::<F, K>::configure(meta, running_sum, table_idx, perm)
+                LookupRangeCheckConfig::<F, K>::configure(meta, running_sum, table_idx)
             }
 
             fn synthesize(
@@ -269,7 +258,7 @@ mod tests {
             let circuit: MyCircuit<pallas::Base> = MyCircuit {
                 _marker: PhantomData,
             };
-            let prover = MockProver::<pallas::Base>::run(11, &circuit, vec![]).unwrap();
+            let prover = MockProver::<pallas::Base>::run(12, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
     }

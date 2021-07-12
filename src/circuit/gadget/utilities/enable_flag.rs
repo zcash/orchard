@@ -1,7 +1,7 @@
 use super::{copy, CellValue, UtilitiesInstructions};
 use halo2::{
     circuit::{Chip, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::arithmetic::FieldExt;
@@ -22,7 +22,6 @@ pub struct EnableFlagConfig {
     q_enable: Selector,
     value: Column<Advice>,
     enable_flag: Column<Advice>,
-    perm: Permutation,
 }
 
 /// A chip implementing an enable flag.
@@ -73,14 +72,7 @@ impl<F: FieldExt> EnableFlagInstructions<F> for EnableFlagChip<F> {
                 )?;
 
                 // Copy `value`
-                copy(
-                    &mut region,
-                    || "copy value",
-                    config.value,
-                    0,
-                    &value,
-                    &config.perm,
-                )?;
+                copy(&mut region, || "copy value", config.value, 0, &value)?;
 
                 Ok(())
             },
@@ -90,13 +82,9 @@ impl<F: FieldExt> EnableFlagInstructions<F> for EnableFlagChip<F> {
 
 impl<F: FieldExt> EnableFlagChip<F> {
     /// Configures this chip for use in a circuit.
-    ///
-    /// `perm` must cover `advices[0]`, as well as any columns that will be
-    /// passed to this chip.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         advices: [Column<Advice>; 2],
-        perm: Permutation,
     ) -> EnableFlagConfig {
         let q_enable = meta.selector();
 
@@ -104,7 +92,6 @@ impl<F: FieldExt> EnableFlagChip<F> {
             q_enable,
             value: advices[0],
             enable_flag: advices[1],
-            perm,
         };
 
         meta.create_gate("Enable flag", |meta| {
@@ -132,8 +119,8 @@ mod tests {
     use super::{EnableFlagChip, EnableFlagConfig, EnableFlagInstructions};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::{MockProver, VerifyFailure},
-        plonk::{Any, Circuit, Column, ConstraintSystem, Error},
+        dev::MockProver,
+        plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{arithmetic::FieldExt, pallas::Base};
 
@@ -155,15 +142,11 @@ mod tests {
 
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let advices = [meta.advice_column(), meta.advice_column()];
+                for col in &advices {
+                    meta.enable_equality((*col).into());
+                }
 
-                let perm = meta.permutation(
-                    &advices
-                        .iter()
-                        .map(|advice| (*advice).into())
-                        .collect::<Vec<Column<Any>>>(),
-                );
-
-                EnableFlagChip::<F>::configure(meta, advices, perm)
+                EnableFlagChip::<F>::configure(meta, advices)
             }
 
             fn synthesize(
@@ -190,7 +173,7 @@ mod tests {
                 value: Some(Base::one()),
                 enable_flag: Some(true),
             };
-            let prover = MockProver::<Base>::run(1, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(3, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
 
@@ -200,7 +183,7 @@ mod tests {
                 value: Some(Base::zero()),
                 enable_flag: Some(false),
             };
-            let prover = MockProver::<Base>::run(1, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(3, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
 
@@ -210,7 +193,7 @@ mod tests {
                 value: Some(Base::zero()),
                 enable_flag: Some(true),
             };
-            let prover = MockProver::<Base>::run(1, &circuit, vec![]).unwrap();
+            let prover = MockProver::<Base>::run(3, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
 
@@ -220,17 +203,8 @@ mod tests {
                 value: Some(Base::one()),
                 enable_flag: Some(false),
             };
-            let prover = MockProver::<Base>::run(1, &circuit, vec![]).unwrap();
-            assert_eq!(
-                prover.verify(),
-                Err(vec![VerifyFailure::Constraint {
-                    gate_index: 0,
-                    gate_name: "Enable flag",
-                    constraint_index: 0,
-                    constraint_name: "",
-                    row: 1,
-                }])
-            );
+            let prover = MockProver::<Base>::run(3, &circuit, vec![]).unwrap();
+            assert!(prover.verify().is_err());
         }
     }
 }

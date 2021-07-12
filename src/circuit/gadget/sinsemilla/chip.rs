@@ -17,7 +17,7 @@ use ff::PrimeField;
 use halo2::{
     arithmetic::{CurveAffine, FieldExt},
     circuit::{Chip, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 use pasta_curves::pallas;
@@ -62,8 +62,6 @@ pub struct SinsemillaConfig {
     // x-coordinate of the domain Q, which is then constrained to equal the
     // initial x_a.
     constants: Column<Fixed>,
-    // Permutation over all advice columns and the `constants` fixed column.
-    pub perm: Permutation,
 }
 
 impl SinsemillaConfig {
@@ -110,7 +108,6 @@ impl SinsemillaChip {
         advices: [Column<Advice>; 5],
         lookup: (Column<Fixed>, Column<Fixed>, Column<Fixed>),
         constants: Column<Fixed>,
-        perm: Permutation,
     ) -> <Self as Chip<pallas::Base>>::Config {
         let config = SinsemillaConfig {
             q_sinsemilla1: meta.selector(),
@@ -127,7 +124,6 @@ impl SinsemillaChip {
                 table_y: lookup.2,
             },
             constants,
-            perm,
         };
 
         let two = Expression::Constant(pallas::Base::from_u64(2));

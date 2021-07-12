@@ -44,7 +44,7 @@ impl SinsemillaChip {
             let fixed_x_q =
                 region.assign_fixed(|| "fixed x_q", config.constants, offset, || Ok(x_q))?;
             let x_q_cell = region.assign_advice(|| "x_q", config.x_a, offset, || Ok(x_q))?;
-            region.constrain_equal(&config.perm, fixed_x_q, x_q_cell)?;
+            region.constrain_equal(fixed_x_q, x_q_cell)?;
 
             // This cell gets copied into itself by the first call to `hash_piece` below.
             let x_a = CellValue::new(x_q_cell, Some(x_q));
@@ -283,7 +283,7 @@ impl SinsemillaChip {
                 offset,
                 || piece.value().ok_or(Error::SynthesisError),
             )?;
-            region.constrain_equal(&config.perm, piece.cell(), cell)?;
+            region.constrain_equal(piece.cell(), cell)?;
             zs.push(CellValue::new(cell, piece.value()));
 
             // Assign cumulative sum such that
@@ -326,7 +326,6 @@ impl SinsemillaChip {
             config.x_a,
             offset,
             &x_a.0,
-            &config.perm,
         )?
         .into();
 

@@ -1,7 +1,7 @@
 use halo2::{
     arithmetic::FieldExt,
     circuit::{Cell, Chip, Layouter, Region},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Fixed, Selector},
     poly::Rotation,
 };
 
@@ -15,7 +15,6 @@ const WIDTH: usize = 3;
 #[derive(Clone, Debug)]
 pub struct Pow5T3Config<F: FieldExt> {
     pub state: [Column<Advice>; WIDTH],
-    state_permutation: Permutation,
     partial_sbox: Column<Advice>,
     rc_a: [Column<Fixed>; WIDTH],
     rc_b: [Column<Fixed>; WIDTH],
@@ -73,17 +72,12 @@ impl<F: FieldExt> Pow5T3Chip<F> {
         // every permutation round, while rc_b is empty in the initial and final full
         // rounds, so we use rc_b as "scratch space" for fixed values (enabling potential
         // layouter optimisations).
-        let state_permutation = Permutation::new(
-            meta,
-            &[
-                state[0].into(),
-                state[1].into(),
-                state[2].into(),
-                rc_b[0].into(),
-                rc_b[1].into(),
-                rc_b[2].into(),
-            ],
-        );
+        for col in &state {
+            meta.enable_equality((*col).into());
+        }
+        for col in &rc_b {
+            meta.enable_equality((*col).into());
+        }
 
         let s_full = meta.selector();
         let s_partial = meta.selector();
@@ -195,7 +189,6 @@ impl<F: FieldExt> Pow5T3Chip<F> {
 
         Pow5T3Config {
             state,
-            state_permutation,
             partial_sbox,
             rc_a,
             rc_b,
@@ -302,7 +295,7 @@ impl<F: FieldExt, S: Spec<F, WIDTH, 2>> PoseidonDuplexInstructions<F, S, WIDTH, 
                         0,
                         || Ok(value),
                     )?;
-                    region.constrain_equal(&config.state_permutation, var, fixed)?;
+                    region.constrain_equal(var, fixed)?;
                     Ok(StateWord {
                         var,
                         value: Some(value),
@@ -340,7 +333,7 @@ impl<F: FieldExt, S: Spec<F, WIDTH, 2>> PoseidonDuplexInstructions<F, S, WIDTH, 
                         0,
                         || value.ok_or(Error::SynthesisError),
                     )?;
-                    region.constrain_equal(&config.state_permutation, initial_state[i].var, var)?;
+                    region.constrain_equal(initial_state[i].var, var)?;
                     Ok(StateWord { var, value })
                 };
                 let initial_state = [
@@ -372,7 +365,7 @@ impl<F: FieldExt, S: Spec<F, WIDTH, 2>> PoseidonDuplexInstructions<F, S, WIDTH, 
                         1,
                         || value.ok_or(Error::SynthesisError),
                     )?;
-                    region.constrain_equal(&config.state_permutation, constraint_var, var)?;
+                    region.constrain_equal(constraint_var, var)?;
 
                     Ok(StateWord { var, value })
                 };
@@ -553,7 +546,7 @@ impl<F: FieldExt> Pow5T3State<F> {
                 0,
                 || value.ok_or(Error::SynthesisError),
             )?;
-            region.constrain_equal(&config.state_permutation, initial_state[i].var, var)?;
+            region.constrain_equal(initial_state[i].var, var)?;
             Ok(StateWord { var, value })
         };
 
@@ -699,7 +692,7 @@ mod tests {
                             0,
                             || Ok(expected_final_state[i]),
                         )?;
-                        region.constrain_equal(&config.state_permutation, final_state[i].var, var)
+                        region.constrain_equal(final_state[i].var, var)
                     };
 
                     final_state_word(0)?;
@@ -785,7 +778,7 @@ mod tests {
                         || self.output.ok_or(Error::SynthesisError),
                     )?;
                     let word: StateWord<_> = output.inner;
-                    region.constrain_equal(&config.state_permutation, word.var, expected_var)
+                    region.constrain_equal(word.var, expected_var)
                 },
             )
         }

@@ -6,7 +6,7 @@ use crate::{
 };
 use halo2::{
     circuit::Layouter,
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 
@@ -24,8 +24,6 @@ pub struct Config {
     lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
     // Advice columns
     advices: [Column<Advice>; 3],
-    // Permutation
-    perm: Permutation,
 }
 
 impl From<&EccConfig> for Config {
@@ -39,7 +37,6 @@ impl From<&EccConfig> for Config {
                 ecc_config.advices[1],
                 ecc_config.advices[2],
             ],
-            perm: ecc_config.perm.clone(),
         }
     }
 }
@@ -141,14 +138,7 @@ impl Config {
                 self.q_mul_overflow.enable(&mut region, offset + 1)?;
 
                 // Copy `z_0`
-                copy(
-                    &mut region,
-                    || "copy z_0",
-                    self.advices[0],
-                    offset,
-                    &*zs[0],
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy z_0", self.advices[0], offset, &*zs[0])?;
 
                 // Copy `z_130`
                 copy(
@@ -157,7 +147,6 @@ impl Config {
                     self.advices[0],
                     offset + 1,
                     &*zs[130],
-                    &self.perm,
                 )?;
 
                 // Witness η = inv0(z_130), where inv0(x) = 0 if x = 0, 1/x otherwise
@@ -184,7 +173,6 @@ impl Config {
                     self.advices[1],
                     offset,
                     &*zs[254],
-                    &self.perm,
                 )?;
 
                 // Copy original alpha
@@ -194,7 +182,6 @@ impl Config {
                     self.advices[1],
                     offset + 1,
                     &*alpha,
-                    &self.perm,
                 )?;
 
                 // Copy weighted sum of the decomposition of s = alpha + k_254 ⋅ 2^130.
@@ -204,18 +191,10 @@ impl Config {
                     self.advices[1],
                     offset + 2,
                     &s_minus_lo_130,
-                    &self.perm,
                 )?;
 
                 // Copy witnessed s to check that it was properly derived from alpha and k_254.
-                copy(
-                    &mut region,
-                    || "copy s",
-                    self.advices[2],
-                    offset + 1,
-                    &s,
-                    &self.perm,
-                )?;
+                copy(&mut region, || "copy s", self.advices[2], offset + 1, &s)?;
 
                 Ok(())
             },

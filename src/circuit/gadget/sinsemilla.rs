@@ -408,17 +408,15 @@ mod tests {
             ];
 
             let constants = meta.fixed_column();
-            let perm = meta.permutation(
-                &advices
-                    .iter()
-                    .map(|advice| (*advice).into())
-                    .chain(Some(constants.into()))
-                    .collect::<Vec<_>>(),
-            );
+
+            for col in &advices {
+                meta.enable_equality((*col).into());
+            }
+            meta.enable_equality(constants.into());
 
             let lookup_table_idx = meta.fixed_column();
             let ecc_config =
-                EccChip::configure(meta, advices, lookup_table_idx, constants, perm.clone());
+                EccChip::configure(meta, advices, lookup_table_idx, constants);
 
             // Fixed columns for the Sinsemilla generator lookup table
             let lookup = (lookup_table_idx, meta.fixed_column(), meta.fixed_column());
@@ -428,14 +426,12 @@ mod tests {
                 advices[..5].try_into().unwrap(),
                 lookup,
                 constants,
-                perm.clone(),
             );
             let config2 = SinsemillaChip::configure(
                 meta,
                 advices[5..].try_into().unwrap(),
                 lookup,
                 constants,
-                perm,
             );
             (ecc_config, config1, config2)
         }
