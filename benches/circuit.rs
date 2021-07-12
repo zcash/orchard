@@ -83,7 +83,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 12,
                 circuit,
                 instance
-                    .to_halo2_instance(vk.vk.get_domain())
+                    .to_halo2_instance()
                     .iter()
                     .map(|p| p.iter().cloned().collect())
                     .collect()
