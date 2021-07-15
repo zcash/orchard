@@ -22,7 +22,7 @@
 use ff::PrimeFieldBits;
 use halo2::{
     circuit::Region,
-    plonk::{Advice, Column, ConstraintSystem, Error, Permutation, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Error, Selector},
     poly::Rotation,
 };
 
@@ -50,7 +50,6 @@ pub struct RunningSumConfig<
     q_range_check: Selector,
     q_final_z: Selector,
     pub z: Column<Advice>,
-    perm: Permutation,
     _marker: PhantomData<F>,
 }
 
@@ -67,20 +66,24 @@ impl<
     ///
     /// Panics if WINDOW_NUM_BITS > 3.
     /// Panics if there are too many windows for the given word size.
+    ///
+    /// # Side-effects
+    ///
+    /// `z` will be equality-enabled.
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         q_range_check: Selector,
         z: Column<Advice>,
-        perm: Permutation,
     ) -> Self {
         assert!(WINDOW_NUM_BITS <= 3);
         assert!(WINDOW_NUM_BITS * NUM_WINDOWS < WORD_NUM_BITS + WINDOW_NUM_BITS);
+
+        meta.enable_equality(z.into());
 
         let config = Self {
             q_range_check,
             q_final_z: meta.selector(),
             z,
-            perm,
             _marker: PhantomData,
         };
 
@@ -139,7 +142,7 @@ impl<
         alpha: CellValue<F>,
         strict: bool,
     ) -> Result<(CellValue<F>, RunningSum<F>), Error> {
-        let z_0 = copy(region, || "Copy alpha", self.z, offset, &alpha, &self.perm)?;
+        let z_0 = copy(region, || "Copy alpha", self.z, offset, &alpha)?;
         self.decompose(region, offset, z_0, strict)
     }
 
@@ -256,13 +259,11 @@ mod tests {
             fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
                 let z = meta.advice_column();
                 let q_range_check = meta.selector();
-                let perm = meta.permutation(&[z.into()]);
 
                 RunningSumConfig::<F, WORD_NUM_BITS, WINDOW_NUM_BITS, NUM_WINDOWS>::configure(
                     meta,
                     q_range_check,
                     z,
-                    perm,
                 )
             }
 
