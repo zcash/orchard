@@ -1,6 +1,7 @@
 //! Key structures for Orchard.
 
 use std::convert::TryInto;
+use std::io::{self, Write};
 use std::mem;
 
 use aes::Aes256;
@@ -10,8 +11,7 @@ use group::GroupEncoding;
 use halo2::arithmetic::FieldExt;
 use pasta_curves::pallas;
 use rand::RngCore;
-use subtle::ConstantTimeEq;
-use subtle::CtOption;
+use subtle::{ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
 
 use crate::{
@@ -21,16 +21,18 @@ use crate::{
         commit_ivk, diversify_hash, extract_p, ka_orchard, prf_nf, to_base, to_scalar,
         NonIdentityPallasPoint, NonZeroPallasBase, NonZeroPallasScalar, PrfExpand,
     },
+    zip32::ExtendedSpendingKey,
 };
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
+const ZIP32_PURPOSE: u32 = 32;
 
 /// A spending key, from which all key material is derived.
 ///
 /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct SpendingKey([u8; 32]);
 
 impl SpendingKey {
@@ -64,6 +66,17 @@ impl SpendingKey {
         // If ivk = ⊥, discard this key.
         let ivk = KeyAgreementPrivateKey::derive_inner(&(&sk).into());
         CtOption::new(sk, !(ask.ct_is_zero() | ivk.is_none()))
+    }
+
+    /// Derives the Orchard spending key for the given seed, coin type, and account.
+    pub fn from_zip32_seed(seed: &[u8], coin_type: u32, account: u32) -> Self {
+        // Call zip32 logic
+        ExtendedSpendingKey::from_path(&seed, &[ZIP32_PURPOSE, coin_type, account]).sk()
+    }
+
+    /// Returns the byte array contained in this SpendingKey.
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
+        self.0
     }
 }
 
@@ -195,6 +208,12 @@ impl From<&SpendingKey> for FullViewingKey {
     }
 }
 
+impl From<&ExtendedSpendingKey> for FullViewingKey {
+    fn from(extsk: &ExtendedSpendingKey) -> Self {
+        (&extsk.sk()).into()
+    }
+}
+
 impl From<FullViewingKey> for SpendValidatingKey {
     fn from(fvk: FullViewingKey) -> Self {
         fvk.ak
@@ -233,6 +252,24 @@ impl FullViewingKey {
     pub fn address(&self, d: Diversifier) -> Address {
         // Shortcut: we don't need to derive DiversifierKey.
         KeyAgreementPrivateKey::from(self).address(d)
+    }
+
+    /// Raw encoding of this FullViewingKey
+    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        let ak_raw: [u8; 32] = self.ak.0.clone().into();
+        writer.write_all(&ak_raw)?;
+        writer.write_all(&self.nk.0.to_bytes())?;
+        writer.write_all(&self.rivk.0.to_bytes())?;
+
+        Ok(())
+    }
+
+    /// Return the raw encoding of this FullViewingKey.
+    pub fn to_bytes(&self) -> [u8; 96] {
+        let mut result = [0u8; 96];
+        self.write(&mut result[..])
+            .expect("should be able to serialize a FullViewingKey");
+        result
     }
 }
 
