@@ -23,3 +23,4 @@
         - [Variable-base scalar multiplication](design/circuit/gadgets/ecc/var-base-scalar-mul.md)
       - [Sinsemilla](design/circuit/gadgets/sinsemilla.md)
       - [Lookup Range Check](design/circuit/gadgets/lookup_range_check.md)
+      - [Sinsemilla invocations](design/circuit/gadgets/sinsemilla-usage.md)

@@ -1,0 +1,7 @@
+\bconcat:{\mathop{\kern 0.1em||\kern 0.1em}}
+
+\ItoLEBSP:{\mathsf{I2LEBSP}_{#1}}
+\BaseLength:{\ell^\mathsf{#1\vphantom{p}}_{\mathsf{base}}}
+
+\AuthSignPublic:{\mathsf{ak}}
+\NullifierKey:{\mathsf{nk}}
