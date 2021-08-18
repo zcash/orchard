@@ -63,15 +63,20 @@ pub struct SinsemillaConfig {
     witness_pieces: Column<Advice>,
     /// The lookup table where $(\mathsf{idx}, x_p, y_p)$ are loaded for the $2^K$
     /// generators of the Sinsemilla hash.
-    pub(super) generator_table: GeneratorTableConfig,
+    generator_table: GeneratorTableConfig,
     /// An advice column configured to perform lookup range checks.
-    pub(super) lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
+    lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
 }
 
 impl SinsemillaConfig {
     /// Returns an array of all advice columns in this config, in arbitrary order.
-    pub(super) fn advices(&self) -> [Column<Advice>; 5] {
+    pub fn advices(&self) -> [Column<Advice>; 5] {
         [self.x_a, self.x_p, self.bits, self.lambda_1, self.lambda_2]
+    }
+
+    /// Returns the lookup table config of this Sinsemilla config.
+    pub fn lookup_config(&self) -> &LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }> {
+        &self.lookup_config
     }
 }
 

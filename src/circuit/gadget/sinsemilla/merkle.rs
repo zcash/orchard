@@ -4,11 +4,12 @@ use halo2::{
 };
 use pasta_curves::arithmetic::CurveAffine;
 
-use super::{HashDomains, SinsemillaInstructions};
-
 use crate::{
-    circuit::gadget::utilities::{
-        cond_swap::CondSwapInstructions, transpose_option_array, UtilitiesInstructions,
+    circuit::gadget::{
+        sinsemilla::{HashDomains, SinsemillaInstructions},
+        utilities::{
+            cond_swap::CondSwapInstructions, transpose_option_array, UtilitiesInstructions,
+        },
     },
     spec::i2lebsp,
 };

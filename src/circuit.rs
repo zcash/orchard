@@ -46,12 +46,10 @@ use gadget::{
     },
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig, SinsemillaHashDomains},
-        commit_ivk::CommitIvkConfig,
         merkle::{
             chip::{MerkleChip, MerkleConfig},
             MerklePath,
         },
-        note_commit::NoteCommitConfig,
     },
     utilities::{copy, CellValue, UtilitiesInstructions, Var},
 };
@@ -60,7 +58,11 @@ use std::convert::TryInto;
 
 use self::gadget::utilities::lookup_range_check::LookupRangeCheckConfig;
 
+mod commit_ivk;
 pub(crate) mod gadget;
+mod note_commit;
+use commit_ivk::CommitIvkConfig;
+use note_commit::NoteCommitConfig;
 
 /// Size of the Orchard circuit.
 const K: u32 = 11;
