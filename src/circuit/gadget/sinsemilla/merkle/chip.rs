@@ -5,17 +5,19 @@ use halo2::{
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use super::super::{
-    chip::{SinsemillaChip, SinsemillaConfig},
-    SinsemillaInstructions,
-};
 use super::MerkleInstructions;
 
 use crate::{
-    circuit::gadget::utilities::{
-        bitrange_subset,
-        cond_swap::{CondSwapChip, CondSwapConfig, CondSwapInstructions},
-        copy, CellValue, UtilitiesInstructions, Var,
+    circuit::gadget::{
+        sinsemilla::{
+            chip::{SinsemillaChip, SinsemillaConfig},
+            SinsemillaInstructions,
+        },
+        utilities::{
+            bitrange_subset,
+            cond_swap::{CondSwapChip, CondSwapConfig, CondSwapInstructions},
+            copy, CellValue, UtilitiesInstructions, Var,
+        },
     },
     constants::{L_ORCHARD_BASE, MERKLE_DEPTH_ORCHARD},
     primitives::sinsemilla,
@@ -209,11 +211,10 @@ impl MerkleInstructions<pallas::Affine, MERKLE_DEPTH_ORCHARD, { sinsemilla::K },
                     .value()
                     .map(|value| bitrange_subset(value, 250..L_ORCHARD_BASE));
 
-                config.sinsemilla_config.lookup_config.witness_short_check(
-                    layouter.namespace(|| "Constrain b_1 to 5 bits"),
-                    b_1,
-                    5,
-                )?
+                config
+                    .sinsemilla_config
+                    .lookup_config()
+                    .witness_short_check(layouter.namespace(|| "Constrain b_1 to 5 bits"), b_1, 5)?
             };
 
             // b_2 = (bits 0..=4 of `right`)
@@ -221,11 +222,10 @@ impl MerkleInstructions<pallas::Affine, MERKLE_DEPTH_ORCHARD, { sinsemilla::K },
             let b_2 = {
                 let b_2 = right.value().map(|value| bitrange_subset(value, 0..5));
 
-                config.sinsemilla_config.lookup_config.witness_short_check(
-                    layouter.namespace(|| "Constrain b_2 to 5 bits"),
-                    b_2,
-                    5,
-                )?
+                config
+                    .sinsemilla_config
+                    .lookup_config()
+                    .witness_short_check(layouter.namespace(|| "Constrain b_2 to 5 bits"), b_2, 5)?
             };
 
             let b = {
