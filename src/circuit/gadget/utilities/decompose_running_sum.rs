@@ -29,8 +29,7 @@ use halo2::{
     poly::Rotation,
 };
 
-use super::{copy, range_check, CellValue, Var};
-use crate::constants::util::decompose_word;
+use super::{copy, decompose_word, range_check, CellValue, Var};
 use pasta_curves::arithmetic::FieldExt;
 use std::marker::PhantomData;
 
