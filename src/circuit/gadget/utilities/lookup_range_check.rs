@@ -1,7 +1,6 @@
 //! Make use of a K-bit lookup table to decompose a field element into K-bit
 //! words.
 
-use crate::spec::lebs2ip;
 use halo2::{
     circuit::{Layouter, Region},
     plonk::{Advice, Column, ConstraintSystem, Error, Selector, TableColumn},
@@ -12,6 +11,18 @@ use std::{convert::TryInto, marker::PhantomData};
 use ff::PrimeFieldBits;
 
 use super::*;
+
+/// The u64 integer represented by an L-bit little-endian bitstring.
+///
+/// # Panics
+///
+/// Panics if the bitstring is longer than 64 bits.
+pub fn lebs2ip<const L: usize>(bits: &[bool; L]) -> u64 {
+    assert!(L <= 64);
+    bits.iter()
+        .enumerate()
+        .fold(0u64, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+}
 
 /// The running sum $[z_0, ..., z_W]$. If created in strict mode, $z_W = 0$.
 pub struct RunningSum<F: FieldExt + PrimeFieldBits>(Vec<CellValue<F>>);
@@ -370,10 +381,9 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
 #[cfg(test)]
 mod tests {
     use super::super::Var;
-    use super::LookupRangeCheckConfig;
+    use super::{lebs2ip, LookupRangeCheckConfig};
 
     use crate::primitives::sinsemilla::{INV_TWO_POW_K, K};
-    use crate::spec::lebs2ip;
     use ff::{Field, PrimeFieldBits};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
