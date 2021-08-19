@@ -1,13 +1,14 @@
-use super::EccInstructions;
+use super::{EccInstructions, FixedPoints};
 use crate::{
     circuit::gadget::utilities::{
         copy, decompose_running_sum::RunningSumConfig, lookup_range_check::LookupRangeCheckConfig,
         CellValue, UtilitiesInstructions, Var,
     },
-    constants::{self, NullifierK, OrchardFixedBasesFull, ValueCommitV},
+    constants,
     primitives::sinsemilla,
 };
 use arrayvec::ArrayVec;
+use std::marker::PhantomData;
 
 use group::prime::PrimeCurveAffine;
 use halo2::{
@@ -178,11 +179,12 @@ pub struct EccConfig {
 
 /// A chip implementing EccInstructions
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct EccChip {
+pub struct EccChip<Fixed: super::FixedPoints<pallas::Affine>> {
     config: EccConfig,
+    _marker: PhantomData<Fixed>,
 }
 
-impl Chip<pallas::Base> for EccChip {
+impl<Fixed: super::FixedPoints<pallas::Affine>> Chip<pallas::Base> for EccChip<Fixed> {
     type Config = EccConfig;
     type Loaded = ();
 
@@ -195,13 +197,18 @@ impl Chip<pallas::Base> for EccChip {
     }
 }
 
-impl UtilitiesInstructions<pallas::Base> for EccChip {
+impl<Fixed: super::FixedPoints<pallas::Affine>> UtilitiesInstructions<pallas::Base>
+    for EccChip<Fixed>
+{
     type Var = CellValue<pallas::Base>;
 }
 
-impl EccChip {
+impl<FixedPoints: super::FixedPoints<pallas::Affine>> EccChip<FixedPoints> {
     pub fn construct(config: <Self as Chip<pallas::Base>>::Config) -> Self {
-        Self { config }
+        Self {
+            config,
+            _marker: PhantomData,
+        }
     }
 
     /// # Side effects
@@ -298,25 +305,28 @@ impl EccChip {
         // and fixed-base mul using a base field element.
         {
             // The const generic does not matter when creating gates.
-            let mul_fixed_config: mul_fixed::Config<{ constants::NUM_WINDOWS }> = (&config).into();
+            let mul_fixed_config: mul_fixed::Config<FixedPoints, { constants::NUM_WINDOWS }> =
+                (&config).into();
             mul_fixed_config.running_sum_coords_gate(meta);
         }
 
         // Create gate that is only used in full-width fixed-base scalar mul.
         {
-            let mul_fixed_full_config: mul_fixed::full_width::Config = (&config).into();
+            let mul_fixed_full_config: mul_fixed::full_width::Config<FixedPoints> =
+                (&config).into();
             mul_fixed_full_config.create_gate(meta);
         }
 
         // Create gate that is only used in short fixed-base scalar mul.
         {
-            let short_config: mul_fixed::short::Config = (&config).into();
+            let short_config: mul_fixed::short::Config<FixedPoints> = (&config).into();
             short_config.create_gate(meta);
         }
 
         // Create gate that is only used in fixed-base mul using a base field element.
         {
-            let base_field_config: mul_fixed::base_field_elem::Config = (&config).into();
+            let base_field_config: mul_fixed::base_field_elem::Config<FixedPoints> =
+                (&config).into();
             base_field_config.create_gate(meta);
         }
 
@@ -375,16 +385,14 @@ impl EccBaseFieldElemFixed {
     }
 }
 
-impl EccInstructions<pallas::Affine> for EccChip {
+impl<Fixed: super::FixedPoints<pallas::Affine>> EccInstructions<pallas::Affine> for EccChip<Fixed> {
     type ScalarFixed = EccScalarFixed;
     type ScalarFixedShort = EccScalarFixedShort;
     type ScalarVar = CellValue<pallas::Base>;
     type Point = EccPoint;
     type NonIdentityPoint = NonIdentityEccPoint;
     type X = CellValue<pallas::Base>;
-    type FixedPoints = OrchardFixedBasesFull;
-    type FixedPointsBaseField = NullifierK;
-    type FixedPointsShort = ValueCommitV;
+    type FixedPoints = Fixed;
 
     fn constrain_equal(
         &self,
@@ -480,11 +488,11 @@ impl EccInstructions<pallas::Affine> for EccChip {
         scalar: Option<pallas::Scalar>,
         base: &Self::FixedPoints,
     ) -> Result<(Self::Point, Self::ScalarFixed), Error> {
-        let config: mul_fixed::full_width::Config = self.config().into();
+        let config: mul_fixed::full_width::Config<Fixed> = self.config().into();
         config.assign(
             layouter.namespace(|| format!("fixed-base mul of {:?}", base)),
             scalar,
-            *base,
+            base,
         )
     }
 
@@ -492,9 +500,9 @@ impl EccInstructions<pallas::Affine> for EccChip {
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
         magnitude_sign: (CellValue<pallas::Base>, CellValue<pallas::Base>),
-        base: &Self::FixedPointsShort,
+        base: &Self::FixedPoints,
     ) -> Result<(Self::Point, Self::ScalarFixedShort), Error> {
-        let config: mul_fixed::short::Config = self.config().into();
+        let config: mul_fixed::short::Config<Fixed> = self.config().into();
         config.assign(
             layouter.namespace(|| format!("short fixed-base mul of {:?}", base)),
             magnitude_sign,
@@ -506,13 +514,13 @@ impl EccInstructions<pallas::Affine> for EccChip {
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
         base_field_elem: CellValue<pallas::Base>,
-        base: &Self::FixedPointsBaseField,
+        base: &Self::FixedPoints,
     ) -> Result<Self::Point, Error> {
-        let config: mul_fixed::base_field_elem::Config = self.config().into();
+        let config: mul_fixed::base_field_elem::Config<Fixed> = self.config().into();
         config.assign(
             layouter.namespace(|| format!("base-field elem fixed-base mul of {:?}", base)),
             base_field_elem,
-            *base,
+            base,
         )
     }
 }

@@ -1,9 +1,9 @@
 use std::{array, convert::TryInto};
 
-use super::super::{EccConfig, EccPoint, EccScalarFixedShort};
+use super::super::{EccConfig, EccPoint, EccScalarFixedShort, FixedPoints};
 use crate::{
     circuit::gadget::utilities::{copy, decompose_running_sum::RunningSumConfig, CellValue, Var},
-    constants::{ValueCommitV, FIXED_BASE_WINDOW_SIZE, L_VALUE, NUM_WINDOWS_SHORT},
+    constants::{FIXED_BASE_WINDOW_SIZE, L_VALUE, NUM_WINDOWS_SHORT},
 };
 
 use halo2::{
@@ -14,15 +14,15 @@ use halo2::{
 use pasta_curves::pallas;
 
 #[derive(Clone)]
-pub struct Config {
+pub struct Config<Fixed: FixedPoints<pallas::Affine>> {
     // Selector used for fixed-base scalar mul with short signed exponent.
     q_mul_fixed_short: Selector,
     q_mul_fixed_running_sum: Selector,
     running_sum_config: RunningSumConfig<pallas::Base, { FIXED_BASE_WINDOW_SIZE }>,
-    super_config: super::Config<NUM_WINDOWS_SHORT>,
+    super_config: super::Config<Fixed, NUM_WINDOWS_SHORT>,
 }
 
-impl From<&EccConfig> for Config {
+impl<Fixed: FixedPoints<pallas::Affine>> From<&EccConfig> for Config<Fixed> {
     fn from(config: &EccConfig) -> Self {
         Self {
             q_mul_fixed_short: config.q_mul_fixed_short,
@@ -33,7 +33,7 @@ impl From<&EccConfig> for Config {
     }
 }
 
-impl Config {
+impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
     pub(crate) fn create_gate(&self, meta: &mut ConstraintSystem<pallas::Base>) {
         meta.create_gate("Short fixed-base mul gate", |meta| {
             let q_mul_fixed_short = meta.query_selector(self.q_mul_fixed_short);
@@ -98,7 +98,7 @@ impl Config {
         &self,
         mut layouter: impl Layouter<pallas::Base>,
         magnitude_sign: (CellValue<pallas::Base>, CellValue<pallas::Base>),
-        base: &ValueCommitV,
+        base: &Fixed,
     ) -> Result<(EccPoint, EccScalarFixedShort), Error> {
         let (scalar, acc, mul_b) = layouter.assign_region(
             || "Short fixed-base mul (incomplete addition)",
@@ -112,7 +112,7 @@ impl Config {
                     &mut region,
                     offset,
                     &(&scalar).into(),
-                    base.clone().into(),
+                    base,
                     self.q_mul_fixed_running_sum,
                 )?;
 
@@ -201,8 +201,6 @@ impl Config {
                     magnitude <= pallas::Base::from_u64(0xFFFF_FFFF_FFFF_FFFFu64);
                 let sign_is_valid = sign * sign == pallas::Base::one();
                 if magnitude_is_valid && sign_is_valid {
-                    let base: super::OrchardFixedBases = base.clone().into();
-
                     let scalar = scalar.magnitude.value().zip(scalar.sign.value()).map(
                         |(magnitude, sign)| {
                             // Move magnitude from base field into scalar field (which always fits
@@ -244,23 +242,23 @@ pub mod tests {
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
     use crate::circuit::gadget::{
-        ecc::{chip::EccChip, FixedPointShort, NonIdentityPoint, Point},
+        ecc::{chip::EccChip, FixedPoint, FixedPoints, NonIdentityPoint, Point},
         utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions},
     };
-    use crate::constants::load::ValueCommitV;
+    use crate::constants::OrchardFixedBases;
 
     #[allow(clippy::op_ref)]
     pub fn test_mul_fixed_short(
-        chip: EccChip,
+        chip: EccChip<OrchardFixedBases>,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), Error> {
         // value_commit_v
-        let value_commit_v = ValueCommitV::get();
-        let base_val = value_commit_v.generator;
-        let value_commit_v = FixedPointShort::from_inner(chip.clone(), value_commit_v);
+        let value_commit_v = OrchardFixedBases::ValueCommitV;
+        let base_val = value_commit_v.generator();
+        let value_commit_v = FixedPoint::from_inner(chip.clone(), value_commit_v);
 
         fn load_magnitude_sign(
-            chip: EccChip,
+            chip: EccChip<OrchardFixedBases>,
             mut layouter: impl Layouter<pallas::Base>,
             magnitude: pallas::Base,
             sign: pallas::Base,
@@ -274,11 +272,11 @@ pub mod tests {
         }
 
         fn constrain_equal_non_id(
-            chip: EccChip,
+            chip: EccChip<OrchardFixedBases>,
             mut layouter: impl Layouter<pallas::Base>,
             base_val: pallas::Affine,
             scalar_val: pallas::Scalar,
-            result: Point<pallas::Affine, EccChip>,
+            result: Point<pallas::Affine, EccChip<OrchardFixedBases>>,
         ) -> Result<(), Error> {
             let expected = NonIdentityPoint::new(
                 chip,
@@ -333,7 +331,7 @@ pub mod tests {
                     *magnitude,
                     *sign,
                 )?;
-                value_commit_v.mul(layouter.namespace(|| *name), magnitude_sign)?
+                value_commit_v.mul_short(layouter.namespace(|| *name), magnitude_sign)?
             };
             // Move from base field into scalar field
             let scalar = {
@@ -367,7 +365,7 @@ pub mod tests {
                     *magnitude,
                     *sign,
                 )?;
-                value_commit_v.mul(layouter.namespace(|| *name), magnitude_sign)?
+                value_commit_v.mul_short(layouter.namespace(|| *name), magnitude_sign)?
             };
             assert!(result.inner().is_identity().unwrap());
         }
@@ -435,7 +433,7 @@ pub mod tests {
                 meta.enable_constant(constants);
 
                 let range_check = LookupRangeCheckConfig::configure(meta, advices[9], lookup_table);
-                EccChip::configure(meta, advices, lagrange_coeffs, range_check)
+                EccChip::<OrchardFixedBases>::configure(meta, advices, lagrange_coeffs, range_check)
             }
 
             fn synthesize(
@@ -445,7 +443,7 @@ pub mod tests {
             ) -> Result<(), Error> {
                 let column = config.advices[0];
 
-                let short_config: super::Config = (&config).into();
+                let short_config: super::Config<OrchardFixedBases> = (&config).into();
                 let magnitude_sign = {
                     let magnitude = self.load_private(
                         layouter.namespace(|| "load magnitude"),
@@ -457,7 +455,7 @@ pub mod tests {
                     (magnitude, sign)
                 };
 
-                short_config.assign(layouter, magnitude_sign, &ValueCommitV::get())?;
+                short_config.assign(layouter, magnitude_sign, &OrchardFixedBases::ValueCommitV)?;
 
                 Ok(())
             }

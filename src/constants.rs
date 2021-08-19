@@ -1,4 +1,12 @@
 //! Constants used in the Orchard protocol.
+use crate::circuit::gadget::{
+    ecc::FixedPoints,
+    sinsemilla::{CommitDomains, HashDomains},
+};
+use crate::primitives::sinsemilla::{
+    Q_COMMIT_IVK_M_GENERATOR, Q_MERKLE_CRH, Q_NOTE_COMMITMENT_M_GENERATOR,
+};
+
 use arrayvec::ArrayVec;
 use ff::{Field, PrimeField};
 use group::Curve;
@@ -15,10 +23,7 @@ pub mod spend_auth_g;
 pub mod value_commit_r;
 pub mod value_commit_v;
 
-pub mod load;
 pub mod util;
-
-pub use load::{NullifierK, OrchardFixedBase, OrchardFixedBasesFull, ValueCommitV};
 
 /// The Pallas scalar field modulus is $q = 2^{254} + \mathsf{t_q}$.
 /// <https://github.com/zcash/pasta>
@@ -199,6 +204,112 @@ fn find_zs_and_us<C: CurveAffine>(base: C, num_windows: usize) -> Option<Vec<(u6
         .iter()
         .map(|window_points| find_z_and_us(window_points))
         .collect()
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum OrchardFixedBases {
+    CommitIvkR,
+    NoteCommitR,
+    ValueCommitR,
+    SpendAuthG,
+    NullifierK,
+    ValueCommitV,
+}
+
+impl FixedPoints<pallas::Affine> for OrchardFixedBases {
+    fn generator(&self) -> pallas::Affine {
+        match self {
+            OrchardFixedBases::CommitIvkR => commit_ivk_r::generator(),
+            OrchardFixedBases::NoteCommitR => note_commit_r::generator(),
+            OrchardFixedBases::ValueCommitR => value_commit_r::generator(),
+            OrchardFixedBases::SpendAuthG => spend_auth_g::generator(),
+            OrchardFixedBases::NullifierK => nullifier_k::generator(),
+            OrchardFixedBases::ValueCommitV => value_commit_v::generator(),
+        }
+    }
+
+    fn u(&self) -> Vec<[[u8; 32]; H]> {
+        match self {
+            OrchardFixedBases::CommitIvkR => commit_ivk_r::U.to_vec(),
+            OrchardFixedBases::NoteCommitR => note_commit_r::U.to_vec(),
+            OrchardFixedBases::ValueCommitR => value_commit_r::U.to_vec(),
+            OrchardFixedBases::SpendAuthG => spend_auth_g::U.to_vec(),
+            OrchardFixedBases::NullifierK => nullifier_k::U.to_vec(),
+            OrchardFixedBases::ValueCommitV => value_commit_v::U_SHORT.to_vec(),
+        }
+    }
+
+    fn z(&self) -> Vec<u64> {
+        match self {
+            OrchardFixedBases::CommitIvkR => commit_ivk_r::Z.to_vec(),
+            OrchardFixedBases::NoteCommitR => note_commit_r::Z.to_vec(),
+            OrchardFixedBases::ValueCommitR => value_commit_r::Z.to_vec(),
+            OrchardFixedBases::SpendAuthG => spend_auth_g::Z.to_vec(),
+            OrchardFixedBases::NullifierK => nullifier_k::Z.to_vec(),
+            OrchardFixedBases::ValueCommitV => value_commit_v::Z_SHORT.to_vec(),
+        }
+    }
+
+    fn lagrange_coeffs(&self) -> Vec<[pallas::Base; H]> {
+        match self {
+            OrchardFixedBases::ValueCommitV => {
+                compute_lagrange_coeffs(self.generator(), NUM_WINDOWS_SHORT)
+            }
+            _ => compute_lagrange_coeffs(self.generator(), NUM_WINDOWS),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OrchardHashDomains {
+    NoteCommit,
+    CommitIvk,
+    MerkleCrh,
+}
+
+#[allow(non_snake_case)]
+impl HashDomains<pallas::Affine> for OrchardHashDomains {
+    fn Q(&self) -> pallas::Affine {
+        match self {
+            OrchardHashDomains::CommitIvk => pallas::Affine::from_xy(
+                pallas::Base::from_bytes(&Q_COMMIT_IVK_M_GENERATOR.0).unwrap(),
+                pallas::Base::from_bytes(&Q_COMMIT_IVK_M_GENERATOR.1).unwrap(),
+            )
+            .unwrap(),
+            OrchardHashDomains::NoteCommit => pallas::Affine::from_xy(
+                pallas::Base::from_bytes(&Q_NOTE_COMMITMENT_M_GENERATOR.0).unwrap(),
+                pallas::Base::from_bytes(&Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap(),
+            )
+            .unwrap(),
+            OrchardHashDomains::MerkleCrh => pallas::Affine::from_xy(
+                pallas::Base::from_bytes(&Q_MERKLE_CRH.0).unwrap(),
+                pallas::Base::from_bytes(&Q_MERKLE_CRH.1).unwrap(),
+            )
+            .unwrap(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OrchardCommitDomains {
+    NoteCommit,
+    CommitIvk,
+}
+
+impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for OrchardCommitDomains {
+    fn r(&self) -> OrchardFixedBases {
+        match self {
+            Self::NoteCommit => OrchardFixedBases::NoteCommitR,
+            Self::CommitIvk => OrchardFixedBases::CommitIvkR,
+        }
+    }
+
+    fn hash_domain(&self) -> OrchardHashDomains {
+        match self {
+            Self::NoteCommit => OrchardHashDomains::NoteCommit,
+            Self::CommitIvk => OrchardHashDomains::CommitIvk,
+        }
+    }
 }
 
 #[cfg(test)]
