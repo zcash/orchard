@@ -1,4 +1,4 @@
-use super::super::{EccConfig, EccPoint, EccScalarFixed, OrchardFixedBasesFull};
+use super::super::{EccConfig, EccPoint, EccScalarFixed, FixedPoints};
 
 use crate::{
     circuit::gadget::utilities::{range_check, CellValue, Var},
@@ -12,12 +12,12 @@ use halo2::{
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-pub struct Config {
+pub struct Config<Fixed: FixedPoints<pallas::Affine>> {
     q_mul_fixed_full: Selector,
-    super_config: super::Config<NUM_WINDOWS>,
+    super_config: super::Config<Fixed, NUM_WINDOWS>,
 }
 
-impl From<&EccConfig> for Config {
+impl<Fixed: FixedPoints<pallas::Affine>> From<&EccConfig> for Config<Fixed> {
     fn from(config: &EccConfig) -> Self {
         Self {
             q_mul_fixed_full: config.q_mul_fixed_full,
@@ -26,7 +26,7 @@ impl From<&EccConfig> for Config {
     }
 }
 
-impl Config {
+impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
     pub fn create_gate(&self, meta: &mut ConstraintSystem<pallas::Base>) {
         // Check that each window `k` is within 3 bits
         meta.create_gate("Full-width fixed-base scalar mul", |meta| {
@@ -115,7 +115,7 @@ impl Config {
         &self,
         mut layouter: impl Layouter<pallas::Base>,
         scalar: Option<pallas::Scalar>,
-        base: OrchardFixedBasesFull,
+        base: &Fixed,
     ) -> Result<(EccPoint, EccScalarFixed), Error> {
         let (scalar, acc, mul_b) = layouter.assign_region(
             || "Full-width fixed-base mul (incomplete addition)",
@@ -128,7 +128,7 @@ impl Config {
                     &mut region,
                     offset,
                     &(&scalar).into(),
-                    base.into(),
+                    base,
                     self.q_mul_fixed_full,
                 )?;
 
@@ -151,7 +151,6 @@ impl Config {
         {
             use group::Curve;
 
-            let base: super::OrchardFixedBases = base.into();
             let real_mul = scalar.value.map(|scalar| base.generator() * scalar);
             let result = result.point();
 
@@ -170,18 +169,15 @@ pub mod tests {
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::circuit::gadget::ecc::{
-        chip::{EccChip, OrchardFixedBasesFull},
-        FixedPoint, Point,
-    };
-    use crate::constants;
+    use crate::circuit::gadget::ecc::{chip::EccChip, FixedPoint, FixedPoints, Point};
+    use crate::constants::{self, OrchardFixedBases};
 
     pub fn test_mul_fixed(
-        chip: EccChip,
+        chip: EccChip<OrchardFixedBases>,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), Error> {
         // commit_ivk_r
-        let commit_ivk_r = OrchardFixedBasesFull::CommitIvkR;
+        let commit_ivk_r = OrchardFixedBases::CommitIvkR;
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "commit_ivk_r"),
@@ -190,7 +186,7 @@ pub mod tests {
         )?;
 
         // note_commit_r
-        let note_commit_r = OrchardFixedBasesFull::NoteCommitR;
+        let note_commit_r = OrchardFixedBases::NoteCommitR;
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "note_commit_r"),
@@ -199,7 +195,7 @@ pub mod tests {
         )?;
 
         // value_commit_r
-        let value_commit_r = OrchardFixedBasesFull::ValueCommitR;
+        let value_commit_r = OrchardFixedBases::ValueCommitR;
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "value_commit_r"),
@@ -208,7 +204,7 @@ pub mod tests {
         )?;
 
         // spend_auth_g
-        let spend_auth_g = OrchardFixedBasesFull::SpendAuthG;
+        let spend_auth_g = OrchardFixedBases::SpendAuthG;
         test_single_base(
             chip.clone(),
             layouter.namespace(|| "spend_auth_g"),
@@ -221,17 +217,17 @@ pub mod tests {
 
     #[allow(clippy::op_ref)]
     fn test_single_base(
-        chip: EccChip,
+        chip: EccChip<OrchardFixedBases>,
         mut layouter: impl Layouter<pallas::Base>,
-        base: FixedPoint<pallas::Affine, EccChip>,
+        base: FixedPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
         base_val: pallas::Affine,
     ) -> Result<(), Error> {
         fn constrain_equal(
-            chip: EccChip,
+            chip: EccChip<OrchardFixedBases>,
             mut layouter: impl Layouter<pallas::Base>,
             base_val: pallas::Affine,
             scalar_val: pallas::Scalar,
-            result: Point<pallas::Affine, EccChip>,
+            result: Point<pallas::Affine, EccChip<OrchardFixedBases>>,
         ) -> Result<(), Error> {
             let expected = Point::new(
                 chip,

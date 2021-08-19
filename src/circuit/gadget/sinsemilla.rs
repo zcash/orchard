@@ -360,6 +360,7 @@ where
     pub fn new(
         sinsemilla_chip: SinsemillaChip,
         ecc_chip: EccChip,
+        // Instead of using SinsemilllaChip::CommitDomains, just use something that implements a CommitDomains trait
         domain: &SinsemillaChip::CommitDomains,
     ) -> Self {
         CommitDomain {
@@ -410,7 +411,7 @@ mod tests {
     };
 
     use super::{
-        chip::{SinsemillaChip, SinsemillaCommitDomains, SinsemillaConfig, SinsemillaHashDomains},
+        chip::{SinsemillaChip, SinsemillaConfig},
         CommitDomain, HashDomain, Message, MessagePiece,
     };
 
@@ -422,7 +423,10 @@ mod tests {
             },
             utilities::lookup_range_check::LookupRangeCheckConfig,
         },
-        constants::{COMMIT_IVK_PERSONALIZATION, MERKLE_CRH_PERSONALIZATION},
+        constants::{
+            OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains,
+            COMMIT_IVK_PERSONALIZATION, MERKLE_CRH_PERSONALIZATION,
+        },
         primitives::sinsemilla::{self, K},
     };
 
@@ -434,7 +438,11 @@ mod tests {
     struct MyCircuit {}
 
     impl Circuit<pallas::Base> for MyCircuit {
-        type Config = (EccConfig, SinsemillaConfig, SinsemillaConfig);
+        type Config = (
+            EccConfig,
+            SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+            SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+        );
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -481,8 +489,12 @@ mod tests {
 
             let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
 
-            let ecc_config =
-                EccChip::configure(meta, advices, lagrange_coeffs, range_check.clone());
+            let ecc_config = EccChip::<OrchardFixedBases>::configure(
+                meta,
+                advices,
+                lagrange_coeffs,
+                range_check.clone(),
+            );
 
             let config1 = SinsemillaChip::configure(
                 meta,
@@ -511,7 +523,10 @@ mod tests {
             let ecc_chip = EccChip::construct(config.0);
 
             // The two `SinsemillaChip`s share the same lookup table.
-            SinsemillaChip::load(config.1.clone(), &mut layouter)?;
+            SinsemillaChip::<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>::load(
+                config.1.clone(),
+                &mut layouter,
+            )?;
 
             // This MerkleCRH example is purely for illustrative purposes.
             // It is not an implementation of the Orchard protocol spec.
@@ -521,7 +536,7 @@ mod tests {
                 let merkle_crh = HashDomain::new(
                     chip1.clone(),
                     ecc_chip.clone(),
-                    &SinsemillaHashDomains::MerkleCrh,
+                    &OrchardHashDomains::MerkleCrh,
                 );
 
                 // Layer 31, l = MERKLE_DEPTH_ORCHARD - 1 - layer = 0
@@ -597,7 +612,7 @@ mod tests {
                 let commit_ivk = CommitDomain::new(
                     chip2.clone(),
                     ecc_chip.clone(),
-                    &SinsemillaCommitDomains::CommitIvk,
+                    &OrchardCommitDomains::CommitIvk,
                 );
                 let r_val = pallas::Scalar::rand();
                 let message: Vec<Option<bool>> =

@@ -139,10 +139,13 @@ pub mod tests {
 
     use crate::{
         circuit::gadget::{
-            sinsemilla::chip::{SinsemillaChip, SinsemillaHashDomains},
+            sinsemilla::chip::SinsemillaChip,
             utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions, Var},
         },
-        constants::{L_ORCHARD_BASE, MERKLE_CRH_PERSONALIZATION, MERKLE_DEPTH_ORCHARD},
+        constants::{
+            OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, L_ORCHARD_BASE,
+            MERKLE_CRH_PERSONALIZATION, MERKLE_DEPTH_ORCHARD,
+        },
         primitives::sinsemilla::HashDomain,
         spec::i2lebsp,
     };
@@ -167,7 +170,10 @@ pub mod tests {
     }
 
     impl Circuit<pallas::Base> for MyCircuit {
-        type Config = (MerkleConfig, MerkleConfig);
+        type Config = (
+            MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+            MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+        );
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
@@ -235,7 +241,10 @@ pub mod tests {
             mut layouter: impl Layouter<pallas::Base>,
         ) -> Result<(), Error> {
             // Load generator table (shared across both configs)
-            SinsemillaChip::load(config.0.sinsemilla_config.clone(), &mut layouter)?;
+            SinsemillaChip::<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>::load(
+                config.0.sinsemilla_config.clone(),
+                &mut layouter,
+            )?;
 
             // Construct Merkle chips which will be placed side-by-side in the circuit.
             let chip_1 = MerkleChip::construct(config.0.clone());
@@ -250,7 +259,7 @@ pub mod tests {
             let path = MerklePath {
                 chip_1,
                 chip_2,
-                domain: SinsemillaHashDomains::MerkleCrh,
+                domain: OrchardHashDomains::MerkleCrh,
                 leaf_pos: self.leaf_pos,
                 path: self.merkle_path,
             };

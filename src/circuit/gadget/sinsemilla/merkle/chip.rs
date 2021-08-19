@@ -9,9 +9,10 @@ use super::MerkleInstructions;
 
 use crate::{
     circuit::gadget::{
+        ecc::FixedPoints,
         sinsemilla::{
             chip::{SinsemillaChip, SinsemillaConfig},
-            SinsemillaInstructions,
+            CommitDomains, HashDomains, SinsemillaInstructions,
         },
         utilities::{
             bitrange_subset,
@@ -25,20 +26,35 @@ use crate::{
 use std::array;
 
 #[derive(Clone, Debug)]
-pub struct MerkleConfig {
+pub struct MerkleConfig<Hash, Commit, Fixed>
+where
+    Hash: HashDomains<pallas::Affine>,
+    Fixed: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, Fixed, Hash>,
+{
     advices: [Column<Advice>; 5],
     q_decompose: Selector,
     pub(super) cond_swap_config: CondSwapConfig,
-    pub(super) sinsemilla_config: SinsemillaConfig,
+    pub(super) sinsemilla_config: SinsemillaConfig<Hash, Commit, Fixed>,
 }
 
 #[derive(Clone, Debug)]
-pub struct MerkleChip {
-    config: MerkleConfig,
+pub struct MerkleChip<Hash, Commit, Fixed>
+where
+    Hash: HashDomains<pallas::Affine>,
+    Fixed: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, Fixed, Hash>,
+{
+    config: MerkleConfig<Hash, Commit, Fixed>,
 }
 
-impl Chip<pallas::Base> for MerkleChip {
-    type Config = MerkleConfig;
+impl<Hash, Commit, Fixed> Chip<pallas::Base> for MerkleChip<Hash, Commit, Fixed>
+where
+    Hash: HashDomains<pallas::Affine>,
+    Fixed: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, Fixed, Hash>,
+{
+    type Config = MerkleConfig<Hash, Commit, Fixed>;
     type Loaded = ();
 
     fn config(&self) -> &Self::Config {
@@ -50,11 +66,16 @@ impl Chip<pallas::Base> for MerkleChip {
     }
 }
 
-impl MerkleChip {
+impl<Hash, Commit, F> MerkleChip<Hash, Commit, F>
+where
+    Hash: HashDomains<pallas::Affine>,
+    F: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, F, Hash>,
+{
     pub fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
-        sinsemilla_config: SinsemillaConfig,
-    ) -> MerkleConfig {
+        sinsemilla_config: SinsemillaConfig<Hash, Commit, F>,
+    ) -> MerkleConfig<Hash, Commit, F> {
         // All five advice columns are equality-enabled by SinsemillaConfig.
         let advices = sinsemilla_config.advices();
         let cond_swap_config = CondSwapChip::configure(meta, advices);
@@ -154,13 +175,18 @@ impl MerkleChip {
         }
     }
 
-    pub fn construct(config: MerkleConfig) -> Self {
+    pub fn construct(config: MerkleConfig<Hash, Commit, F>) -> Self {
         MerkleChip { config }
     }
 }
 
-impl MerkleInstructions<pallas::Affine, MERKLE_DEPTH_ORCHARD, { sinsemilla::K }, { sinsemilla::C }>
-    for MerkleChip
+impl<Hash, Commit, F>
+    MerkleInstructions<pallas::Affine, MERKLE_DEPTH_ORCHARD, { sinsemilla::K }, { sinsemilla::C }>
+    for MerkleChip<Hash, Commit, F>
+where
+    Hash: HashDomains<pallas::Affine>,
+    F: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, F, Hash>,
 {
     #[allow(non_snake_case)]
     fn hash_layer(
@@ -371,11 +397,21 @@ impl MerkleInstructions<pallas::Affine, MERKLE_DEPTH_ORCHARD, { sinsemilla::K },
     }
 }
 
-impl UtilitiesInstructions<pallas::Base> for MerkleChip {
+impl<Hash, Commit, F> UtilitiesInstructions<pallas::Base> for MerkleChip<Hash, Commit, F>
+where
+    Hash: HashDomains<pallas::Affine>,
+    F: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, F, Hash>,
+{
     type Var = CellValue<pallas::Base>;
 }
 
-impl CondSwapInstructions<pallas::Base> for MerkleChip {
+impl<Hash, Commit, F> CondSwapInstructions<pallas::Base> for MerkleChip<Hash, Commit, F>
+where
+    Hash: HashDomains<pallas::Affine>,
+    F: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, F, Hash>,
+{
     #[allow(clippy::type_complexity)]
     fn swap(
         &self,
@@ -389,51 +425,57 @@ impl CondSwapInstructions<pallas::Base> for MerkleChip {
     }
 }
 
-impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }> for MerkleChip {
-    type CellValue = <SinsemillaChip as SinsemillaInstructions<
+impl<Hash, Commit, F> SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }>
+    for MerkleChip<Hash, Commit, F>
+where
+    Hash: HashDomains<pallas::Affine>,
+    F: FixedPoints<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, F, Hash>,
+{
+    type CellValue = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::CellValue;
 
-    type Message = <SinsemillaChip as SinsemillaInstructions<
+    type Message = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::Message;
-    type MessagePiece = <SinsemillaChip as SinsemillaInstructions<
+    type MessagePiece = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::MessagePiece;
-    type RunningSum = <SinsemillaChip as SinsemillaInstructions<
+    type RunningSum = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::RunningSum;
 
-    type X = <SinsemillaChip as SinsemillaInstructions<
+    type X = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::X;
-    type Point = <SinsemillaChip as SinsemillaInstructions<
+    type Point = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::Point;
-    type FixedPoints = <SinsemillaChip as SinsemillaInstructions<
+    type FixedPoints = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::FixedPoints;
 
-    type HashDomains = <SinsemillaChip as SinsemillaInstructions<
+    type HashDomains = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
     >>::HashDomains;
-    type CommitDomains = <SinsemillaChip as SinsemillaInstructions<
+    type CommitDomains = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
         { sinsemilla::C },
@@ -446,7 +488,7 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
         num_words: usize,
     ) -> Result<Self::MessagePiece, Error> {
         let config = self.config().sinsemilla_config.clone();
-        let chip = SinsemillaChip::construct(config);
+        let chip = SinsemillaChip::<Hash, Commit, F>::construct(config);
         chip.witness_message_piece(layouter, value, num_words)
     }
 
@@ -459,11 +501,11 @@ impl SinsemillaInstructions<pallas::Affine, { sinsemilla::K }, { sinsemilla::C }
         message: Self::Message,
     ) -> Result<(Self::Point, Vec<Vec<Self::CellValue>>), Error> {
         let config = self.config().sinsemilla_config.clone();
-        let chip = SinsemillaChip::construct(config);
+        let chip = SinsemillaChip::<Hash, Commit, F>::construct(config);
         chip.hash_to_point(layouter, Q, message)
     }
 
     fn extract(point: &Self::Point) -> Self::X {
-        SinsemillaChip::extract(point)
+        SinsemillaChip::<Hash, Commit, F>::extract(point)
     }
 }

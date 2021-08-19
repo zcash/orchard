@@ -448,12 +448,13 @@ pub mod tests {
         ecc::{chip::EccChip, EccInstructions, Point},
         utilities::UtilitiesInstructions,
     };
+    use crate::constants::OrchardFixedBases;
 
     pub fn test_mul(
-        chip: EccChip,
+        chip: EccChip<OrchardFixedBases>,
         mut layouter: impl Layouter<pallas::Base>,
-        zero: &Point<pallas::Affine, EccChip>,
-        p: &Point<pallas::Affine, EccChip>,
+        zero: &Point<pallas::Affine, EccChip<OrchardFixedBases>>,
+        p: &Point<pallas::Affine, EccChip<OrchardFixedBases>>,
         p_val: pallas::Affine,
     ) -> Result<(), Error> {
         let column = chip.config().advices[0];

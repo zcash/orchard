@@ -16,8 +16,7 @@ use pasta_curves::{
 
 use crate::{
     constants::{
-        load::{NullifierK, OrchardFixedBasesFull, ValueCommitV},
-        MERKLE_DEPTH_ORCHARD,
+        OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, MERKLE_DEPTH_ORCHARD,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
@@ -38,14 +37,14 @@ use crate::{
 use gadget::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, FixedPointBaseField, FixedPointShort, Point,
+        FixedPoint, Point,
     },
     poseidon::{
         Hash as PoseidonHash, Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig,
         StateWord, Word,
     },
     sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig, SinsemillaHashDomains},
+        chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{
             chip::{MerkleChip, MerkleConfig},
             MerklePath,
@@ -88,10 +87,12 @@ pub struct Config {
     advices: [Column<Advice>; 10],
     ecc_config: EccConfig,
     poseidon_config: PoseidonConfig<pallas::Base>,
-    merkle_config_1: MerkleConfig,
-    merkle_config_2: MerkleConfig,
-    sinsemilla_config_1: SinsemillaConfig,
-    sinsemilla_config_2: SinsemillaConfig,
+    merkle_config_1: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+    merkle_config_2: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+    sinsemilla_config_1:
+        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+    sinsemilla_config_2:
+        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
     commit_ivk_config: CommitIvkConfig,
     old_note_commit_config: NoteCommitConfig,
     new_note_commit_config: NoteCommitConfig,
@@ -241,7 +242,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Configuration for curve point operations.
         // This uses 10 advice columns and spans the whole circuit.
-        let ecc_config = EccChip::configure(meta, advices, lagrange_coeffs, range_check.clone());
+        let ecc_config = EccChip::<OrchardFixedBases>::configure(
+            meta,
+            advices,
+            lagrange_coeffs,
+            range_check.clone(),
+        );
 
         // Configuration for the Poseidon hash.
         let poseidon_config = PoseidonChip::configure(
@@ -403,7 +409,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let merkle_inputs = MerklePath {
                 chip_1: config.merkle_chip_1(),
                 chip_2: config.merkle_chip_2(),
-                domain: SinsemillaHashDomains::MerkleCrh,
+                domain: OrchardHashDomains::MerkleCrh,
                 leaf_pos: self.pos,
                 path: self.path,
             };
@@ -454,15 +460,15 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
             // commitment = [v_net] ValueCommitV
             let (commitment, _) = {
-                let value_commit_v = ValueCommitV::get();
-                let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
-                value_commit_v.mul(layouter.namespace(|| "[v_net] ValueCommitV"), v_net)?
+                let value_commit_v = OrchardFixedBases::ValueCommitV;
+                let value_commit_v = FixedPoint::from_inner(ecc_chip.clone(), value_commit_v);
+                value_commit_v.mul_short(layouter.namespace(|| "[v_net] ValueCommitV"), v_net)?
             };
 
             // blind = [rcv] ValueCommitR
             let (blind, _rcv) = {
                 let rcv = self.rcv.as_ref().map(|rcv| rcv.inner());
-                let value_commit_r = OrchardFixedBasesFull::ValueCommitR;
+                let value_commit_r = OrchardFixedBases::ValueCommitR;
                 let value_commit_r = FixedPoint::from_inner(ecc_chip.clone(), value_commit_r);
 
                 // [rcv] ValueCommitR
@@ -560,8 +566,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             // `product` = [poseidon_hash(nk, rho_old) + psi_old] NullifierK.
             //
             let product = {
-                let nullifier_k = FixedPointBaseField::from_inner(ecc_chip.clone(), NullifierK);
-                nullifier_k.mul(
+                let nullifier_k =
+                    FixedPoint::from_inner(ecc_chip.clone(), OrchardFixedBases::NullifierK);
+                nullifier_k.mul_base_field(
                     layouter.namespace(|| "[poseidon_output + psi_old] NullifierK"),
                     scalar,
                 )?
@@ -583,7 +590,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         {
             // alpha_commitment = [alpha] SpendAuthG
             let (alpha_commitment, _) = {
-                let spend_auth_g = OrchardFixedBasesFull::SpendAuthG;
+                let spend_auth_g = OrchardFixedBases::SpendAuthG;
                 let spend_auth_g = FixedPoint::from_inner(ecc_chip.clone(), spend_auth_g);
                 spend_auth_g.mul(layouter.namespace(|| "[alpha] SpendAuthG"), self.alpha)?
             };
