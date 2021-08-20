@@ -1,22 +1,11 @@
 use super::{
-    message::{Message, MessagePiece},
-<<<<<<< HEAD:src/circuit/gadget/sinsemilla/chip.rs
-    CommitDomains, HashDomains, SinsemillaInstructions,
-};
-use crate::{
-    circuit::gadget::{
-        ecc::{chip::NonIdentityEccPoint, FixedPoints},
-        utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, Var},
-    },
-    primitives::sinsemilla,
-=======
     gadget::{CommitDomains, HashDomains, SinsemillaInstructions},
-    primitive as sinsemilla
->>>>>>> b48c9047... Create halo2-gadgets workspace.:halo2-gadgets/sinsemilla/src/chip.rs
+    message::{Message, MessagePiece},
+    primitive as sinsemilla,
 };
 use ecc::{chip::EccPoint, gadget::FixedPoints};
-use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, Var};
 use std::marker::PhantomData;
+use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, Var};
 
 use halo2::{
     circuit::{Chip, Layouter},

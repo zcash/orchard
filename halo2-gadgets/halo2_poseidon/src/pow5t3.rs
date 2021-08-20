@@ -8,15 +8,15 @@ use halo2::{
 };
 
 use super::gadget::{PoseidonDuplexInstructions, PoseidonInstructions};
-use utilities::{CellValue, Var};
 use super::primitive::{Domain, Mds, Spec, SpongeState, State};
+use utilities::{CellValue, Var};
 
 const WIDTH: usize = 3;
 
 /// Configuration for an [`Pow5T3Chip`].
 #[derive(Clone, Debug)]
 pub struct Pow5T3Config<F: FieldExt> {
-    pub(crate) state: [Column<Advice>; WIDTH],
+    state: [Column<Advice>; WIDTH],
     partial_sbox: Column<Advice>,
     rc_a: [Column<Fixed>; WIDTH],
     rc_b: [Column<Fixed>; WIDTH],
@@ -30,6 +30,12 @@ pub struct Pow5T3Config<F: FieldExt> {
     round_constants: Vec<[F; WIDTH]>,
     m_reg: Mds<F, WIDTH>,
     m_inv: Mds<F, WIDTH>,
+}
+
+impl<F: FieldExt> Pow5T3Config<F> {
+    pub fn state(&self) -> [Column<Advice>; WIDTH] {
+        self.state
+    }
 }
 
 /// A Poseidon chip using an $x^5$ S-Box, with a width of 3, suitable for a 2:1 reduction.
@@ -626,8 +632,8 @@ mod tests {
 
     use super::{PoseidonInstructions, Pow5T3Chip, Pow5T3Config, StateWord, WIDTH};
     use crate::{
-        circuit::gadget::poseidon::{Hash, Word},
-        primitives::poseidon::{self, ConstantLength, P128Pow5T3 as OrchardNullifier, Spec},
+        gadget::{Hash, Word},
+        primitive::{self as poseidon, ConstantLength, P128Pow5T3 as OrchardNullifier, Spec},
     };
 
     struct PermuteCircuit {}
@@ -789,9 +795,9 @@ mod tests {
                             0,
                             || value.ok_or(Error::SynthesisError),
                         )?;
-                        Ok(Word::<_, _, OrchardNullifier, WIDTH, 2> {
-                            inner: StateWord { var, value },
-                        })
+                        Ok(Word::<_, _, OrchardNullifier, WIDTH, 2>::from_inner(
+                            StateWord { var, value },
+                        ))
                     };
 
                     Ok([message_word(0)?, message_word(1)?])
@@ -810,7 +816,7 @@ mod tests {
                         0,
                         || self.output.ok_or(Error::SynthesisError),
                     )?;
-                    let word: StateWord<_> = output.inner;
+                    let word: StateWord<_> = output.inner();
                     region.constrain_equal(word.var, expected_var)
                 },
             )
@@ -833,7 +839,7 @@ mod tests {
 
     #[test]
     fn hash_test_vectors() {
-        for tv in crate::primitives::poseidon::test_vectors::fp::hash() {
+        for tv in crate::primitive::test_vectors::fp::hash() {
             let message = [
                 pallas::Base::from_repr(tv.input[0]).unwrap(),
                 pallas::Base::from_repr(tv.input[1]).unwrap(),

@@ -3,7 +3,6 @@ use super::super::{
     NUM_WINDOWS,
 };
 
-use utilities::{decompose_word, range_check, CellValue, Var};
 use arrayvec::ArrayVec;
 use halo2::{
     circuit::{Layouter, Region},
@@ -11,6 +10,7 @@ use halo2::{
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
+use utilities::{decompose_word, range_check, CellValue, Var};
 
 pub struct Config<Fixed: FixedPoints<pallas::Affine>> {
     q_mul_fixed_full: Selector,
@@ -168,10 +168,11 @@ pub mod tests {
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::circuit::gadget::ecc::{
-        chip::EccChip, FixedPoint, FixedPoints, NonIdentityPoint, Point, H,
+    use crate::{
+        chip::EccChip,
+        gadget::{FixedPoint, FixedPoints, NonIdentityPoint, Point, H},
     };
-    use crate::constants::OrchardFixedBases;
+    use orchard::constants::OrchardFixedBases;
 
     pub fn test_mul_fixed(
         chip: EccChip<OrchardFixedBases>,

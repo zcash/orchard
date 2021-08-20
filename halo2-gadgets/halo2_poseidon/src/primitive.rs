@@ -363,8 +363,7 @@ impl<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize, const 
 
 #[cfg(test)]
 mod tests {
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pasta_curves::{arithmetic::FieldExt, pallas};
 
     use super::{permute, ConstantLength, Hash, P128Pow5T3 as OrchardNullifier, Spec};
 

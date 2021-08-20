@@ -1,3 +1,5 @@
+//! The base used to multiply the value in ValueCommit, and its associated
+//! constants used in fixed-base scalar multiplication.
 use pasta_curves::{
     arithmetic::{CurveAffine, FieldExt},
     pallas,
@@ -774,6 +776,7 @@ pub const U_SHORT: [[[u8; 32]; super::H]; super::NUM_WINDOWS_SHORT] = [
     ],
 ];
 
+/// The base used to multiply the value in ValueCommit
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
         pallas::Base::from_bytes(&GENERATOR.0).unwrap(),

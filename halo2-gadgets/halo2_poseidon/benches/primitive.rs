@@ -2,7 +2,7 @@ use std::array;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use ff::Field;
-use poseidon::primitive::{Hash, ConstantLength, P128Pow5T3};
+use poseidon::primitive::{ConstantLength, Hash, P128Pow5T3};
 
 use pasta_curves::pallas;
 #[cfg(unix)]

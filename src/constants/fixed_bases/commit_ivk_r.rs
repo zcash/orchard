@@ -1,3 +1,5 @@
+//! The random base used in CommitIvk, and its associated constants used
+//! in fixed-base scalar multiplication.
 use pasta_curves::{
     arithmetic::{CurveAffine, FieldExt},
     pallas,
@@ -2920,6 +2922,7 @@ pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     ],
 ];
 
+/// The random base used in CommitIvk.
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
         pallas::Base::from_bytes(&GENERATOR.0).unwrap(),
@@ -2928,12 +2931,10 @@ pub fn generator() -> pallas::Affine {
     .unwrap()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::super::{
-        test_lagrange_coeffs, test_zs_and_us, COMMIT_IVK_PERSONALIZATION, NUM_WINDOWS,
-    };
-    use super::*;
+#[test]
+#[cfg(feature = "test-sinsemilla")]
+fn test_generator() {
+    use super::COMMIT_IVK_PERSONALIZATION;
     use group::Curve;
     use pasta_curves::{
         arithmetic::{CurveAffine, FieldExt},
@@ -2941,15 +2942,18 @@ mod tests {
     };
     use sinsemilla::primitive::CommitDomain;
 
-    #[test]
-    fn generator() {
-        let domain = CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
-        let point = domain.R();
-        let coords = point.to_affine().coordinates().unwrap();
+    let domain = CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
+    let point = domain.R();
+    let coords = point.to_affine().coordinates().unwrap();
 
-        assert_eq!(*coords.x(), pallas::Base::from_bytes(&GENERATOR.0).unwrap());
-        assert_eq!(*coords.y(), pallas::Base::from_bytes(&GENERATOR.1).unwrap());
-    }
+    assert_eq!(*coords.x(), pallas::Base::from_bytes(&GENERATOR.0).unwrap());
+    assert_eq!(*coords.y(), pallas::Base::from_bytes(&GENERATOR.1).unwrap());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{test_lagrange_coeffs, test_zs_and_us, NUM_WINDOWS};
+    use super::*;
 
     #[test]
     fn lagrange_coeffs() {

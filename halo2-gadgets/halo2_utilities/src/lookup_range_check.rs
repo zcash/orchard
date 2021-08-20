@@ -384,7 +384,6 @@ mod tests {
     use super::super::Var;
     use super::{lebs2ip, LookupRangeCheckConfig};
 
-    use crate::primitives::sinsemilla::{INV_TWO_POW_K, K};
     use ff::{Field, PrimeFieldBits};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -392,6 +391,7 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
+    use sinsemilla::primitive::{INV_TWO_POW_K, K};
 
     use std::{convert::TryInto, marker::PhantomData};
 

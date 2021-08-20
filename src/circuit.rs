@@ -406,13 +406,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 // TODO: Replace with array::map once MSRV is 1.55.0.
                 gen_const_array(|i| typed_path[i].inner())
             });
-            let merkle_inputs = MerklePath {
-                chip_1: config.merkle_chip_1(),
-                chip_2: config.merkle_chip_2(),
-                domain: OrchardHashDomains::MerkleCrh,
-                leaf_pos: self.pos,
-                path,
-            };
+            let merkle_inputs = MerklePath::new(
+                config.merkle_chip_1(),
+                config.merkle_chip_2(),
+                OrchardHashDomains::MerkleCrh,
+                self.pos,
+                self.path,
+            );
             let leaf = *cm_old.extract_p().inner();
             merkle_inputs.calculate_root(layouter.namespace(|| "MerkleCRH"), leaf)?
         };
@@ -498,7 +498,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                             let value = message[i].value();
                             let var = region.assign_advice(
                                 || format!("load message_{}", i),
-                                config.poseidon_config.state[i],
+                                config.poseidon_config.state()[i],
                                 0,
                                 || value.ok_or(plonk::Error::SynthesisError),
                             )?;

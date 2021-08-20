@@ -1,6 +1,6 @@
 use super::{add, CellValue, EccConfig, EccPoint, NonIdentityEccPoint, Var, T_Q};
-use utilities::copy;
 use std::ops::{Deref, Range};
+use utilities::copy;
 
 use bigint::U256;
 use ff::PrimeField;
@@ -23,7 +23,6 @@ const NUM_COMPLETE_BITS: usize = 3;
 
 // Bits used in incomplete addition. k_{254} to k_{4} inclusive
 const INCOMPLETE_LEN: usize = pallas::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS;
-const INCOMPLETE_RANGE: Range<usize> = 0..INCOMPLETE_LEN;
 
 // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
 // The `hi` half is k_{254} to k_{130} inclusive (length 125 bits).
@@ -452,14 +451,12 @@ pub mod tests {
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::circuit::gadget::{
-        ecc::{
-            chip::{EccChip, EccPoint},
-            EccInstructions, NonIdentityPoint, Point,
-        },
-        utilities::UtilitiesInstructions,
+    use crate::{
+        chip::EccChip,
+        gadget::{EccInstructions, NonIdentityPoint, Point},
     };
-    use crate::constants::OrchardFixedBases;
+    use orchard::constants::OrchardFixedBases;
+    use utilities::UtilitiesInstructions;
 
     pub fn test_mul(
         chip: EccChip<OrchardFixedBases>,

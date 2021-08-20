@@ -97,11 +97,11 @@ impl<F: FieldExt> CondSwapInstructions<F> for CondSwapChip<F> {
 
                 // Conditionally swap a
                 let a_swapped = {
-                    let a_swapped = a
-                        .value()
-                        .zip(b.value())
-                        .zip(swap)
-                        .map(|((a, b), swap)| if swap { b } else { a });
+                    let a_swapped =
+                        a.value()
+                            .zip(b.value())
+                            .zip(swap)
+                            .map(|((a, b), swap)| if swap { b } else { a });
                     let a_swapped_cell = region.assign_advice(
                         || "a_swapped",
                         config.a_swapped,
@@ -113,11 +113,11 @@ impl<F: FieldExt> CondSwapInstructions<F> for CondSwapChip<F> {
 
                 // Conditionally swap b
                 let b_swapped = {
-                    let b_swapped = a
-                        .value()
-                        .zip(b.value())
-                        .zip(swap)
-                        .map(|((a, b), swap)| if swap { a } else { b });
+                    let b_swapped =
+                        a.value()
+                            .zip(b.value())
+                            .zip(swap)
+                            .map(|((a, b), swap)| if swap { a } else { b });
                     let b_swapped_cell = region.assign_advice(
                         || "b_swapped",
                         config.b_swapped,
@@ -203,7 +203,7 @@ impl<F: FieldExt> CondSwapChip<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::UtilitiesInstructions;
+    use super::super::{UtilitiesInstructions, Var};
     use super::{CondSwapChip, CondSwapConfig, CondSwapInstructions};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -257,12 +257,12 @@ mod tests {
                 if let Some(swap) = self.swap {
                     if swap {
                         // Check that `a` and `b` have been swapped
-                        assert_eq!(swapped_pair.0.value.unwrap(), self.b.unwrap());
-                        assert_eq!(swapped_pair.1.value.unwrap(), a.value.unwrap());
+                        assert_eq!(swapped_pair.0.value().unwrap(), self.b.unwrap());
+                        assert_eq!(swapped_pair.1.value().unwrap(), a.value().unwrap());
                     } else {
                         // Check that `a` and `b` have not been swapped
-                        assert_eq!(swapped_pair.0.value.unwrap(), a.value.unwrap());
-                        assert_eq!(swapped_pair.1.value.unwrap(), self.b.unwrap());
+                        assert_eq!(swapped_pair.0.value().unwrap(), a.value().unwrap());
+                        assert_eq!(swapped_pair.1.value().unwrap(), self.b.unwrap());
                     }
                 }
 

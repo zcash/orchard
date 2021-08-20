@@ -16,6 +16,13 @@ readme = "README.md"
 publish = false
 
 [dependencies]
+bigint = "4"
 ff = "0.10"
 halo2 = "0.0"
 pasta_curves = "0.1.2"
+proptest = { version = "1.0.0", optional = true }
+rand = "0.8"
+
+[dev-dependencies]
+sinsemilla = { version = "0.0", path = "../sinsemilla"}
+proptest = "1.0.0"

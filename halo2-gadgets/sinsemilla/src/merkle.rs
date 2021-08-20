@@ -6,8 +6,7 @@ use pasta_curves::arithmetic::CurveAffine;
 
 use crate::gadget::{HashDomains, SinsemillaInstructions};
 use utilities::{
-    cond_swap::CondSwapInstructions, gen_const_array, transpose_option_array,
-    UtilitiesInstructions,
+    cond_swap::CondSwapInstructions, gen_const_array, transpose_option_array, UtilitiesInstructions,
 };
 
 use std::iter;
@@ -92,8 +91,25 @@ impl<
 where
     MerkleChip: MerkleInstructions<C, PATH_LENGTH, K, MAX_WORDS> + Clone,
 {
+    /// Initializes a new Merkle path.
+    pub fn new(
+        chip_1: MerkleChip,
+        chip_2: MerkleChip,
+        domain: MerkleChip::HashDomains,
+        leaf_pos: Option<u32>,
+        path: Option<[C::Base; PATH_LENGTH]>,
+    ) -> Self {
+        Self {
+            chip_1,
+            chip_2,
+            domain,
+            leaf_pos,
+            path,
+        }
+    }
+
     /// Calculates the root of the tree containing the given leaf at this Merkle path.
-    pub(crate) fn calculate_root(
+    pub fn calculate_root(
         &self,
         mut layouter: impl Layouter<C::Base>,
         leaf: MerkleChip::Var,
@@ -152,25 +168,22 @@ where
 pub mod tests {
     use super::{
         chip::{MerkleChip, MerkleConfig},
-        MerklePath, MERKLE_DEPTH_ORCHARD,
+        i2lebsp, MerklePath, L_ORCHARD_BASE, MERKLE_CRH_PERSONALIZATION, MERKLE_DEPTH_ORCHARD,
     };
 
-    use crate::{
-        circuit::gadget::{
-            sinsemilla::chip::SinsemillaChip,
-            utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions, Var},
-        },
-        constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
-        note::commitment::ExtractedNoteCommitment,
-        tree,
-    };
+    use crate::{chip::SinsemillaChip, primitive::HashDomain};
+    use utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions, Var};
+
+    use orchard::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains};
 
     use halo2::{
         arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
+        note::commitment::ExtractedNoteCommitment,
         pasta::pallas,
         plonk::{Circuit, ConstraintSystem, Error},
+        tree,
     };
 
     use rand::random;

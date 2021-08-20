@@ -87,10 +87,14 @@ pub(crate) fn i2lebsp_k(int: usize) -> [bool; K] {
     i2lebsp(int as u64)
 }
 
+/// The Sinsemilla hash domains used in the Orchard protocol.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrchardHashDomains {
+    /// NoteCommit
     NoteCommit,
+    /// CommitIvk
     CommitIvk,
+    /// MerkleCRH
     MerkleCrh,
 }
 
@@ -118,8 +122,11 @@ impl HashDomains<pallas::Affine> for OrchardHashDomains {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// The Sinsemilla commit domains used in the Orchard protocol.
 pub enum OrchardCommitDomains {
+    /// NoteCommit
     NoteCommit,
+    /// CommitIvk
     CommitIvk,
 }
 
@@ -140,6 +147,7 @@ impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for Or
 }
 
 #[cfg(test)]
+#[cfg(feature = "sinsemilla/test")]
 mod tests {
     use super::*;
     use crate::constants::{
