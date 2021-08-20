@@ -37,6 +37,10 @@ serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
 zcash_note_encryption = "0.0"
 incrementalmerkletree = "0.1"
+ecc = { package = "halo2_ecc", version = "0.0", path = "./halo2-gadgets/halo2_ecc" }
+utilities = { package = "halo2_utilities", version = "0.0", path = "./halo2-gadgets/halo2_utilities" }
+poseidon = { package = "halo2_poseidon", version = "0.0", path = "./halo2-gadgets/halo2_poseidon", features = ["halo2"] }
+sinsemilla = { version = "0.0", path = "./halo2-gadgets/sinsemilla", features = ["halo2"] }
 
 # Developer tooling dependencies
 plotters = { version = "0.3.0", optional = true }
@@ -62,10 +66,6 @@ test-dependencies = ["proptest"]
 
 [[bench]]
 name = "note_decryption"
-harness = false
-
-[[bench]]
-name = "primitives"
 harness = false
 
 [[bench]]

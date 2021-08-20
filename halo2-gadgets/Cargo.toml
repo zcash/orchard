@@ -1,0 +1,12 @@
+[workspace]
+
+members = [
+    "halo2_ecc",
+    "halo2_utilities",
+    "halo2_poseidon",
+    "sinsemilla",
+]
+
+[patch.crates-io]
+halo2 = { git = "https://github.com/zcash/halo2.git", rev = "27c4187673a9c6ade13fbdbd4f20955530c22d7f" }
+orchard = { git = "https://github.com/zcash/orchard.git", rev = "b4a82211cee82ceb02d2e0e99b7566a967804a6c" }

@@ -1,0 +1,29 @@
+[package]
+name = "halo2_ecc"
+version = "0.0.0"
+authors = [
+    "Sean Bowe <sean@electriccoin.co>",
+    "Jack Grigg <jack@electriccoin.co>",
+]
+edition = "2018"
+description = "ECC gadget for halo2"
+license-file = "LICENSE-BOSL"
+repository = "https://github.com/zcash/orchard"
+documentation = "https://docs.rs/orchard"
+readme = "README.md"
+
+# We are not publishing this yet.
+publish = false
+
+[dependencies]
+arrayvec = "0.7.0"
+bigint = "4"
+ff = "0.10"
+group = "0.10"
+halo2 = "0.0"
+lazy_static = "1"
+pasta_curves = "0.1.2"
+utilities = { package = "halo2_utilities", version = "0.0", path = "../halo2_utilities" }
+
+[dev-dependencies]
+orchard = "0.0"

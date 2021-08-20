@@ -1,0 +1,21 @@
+[package]
+name = "halo2_utilities"
+version = "0.0.0"
+authors = [
+    "Sean Bowe <sean@electriccoin.co>",
+    "Jack Grigg <jack@electriccoin.co>",
+]
+edition = "2018"
+description = "Utility gadgets for halo2"
+license-file = "LICENSE-BOSL"
+repository = "https://github.com/zcash/orchard"
+documentation = "https://docs.rs/orchard"
+readme = "README.md"
+
+# We are not publishing this yet.
+publish = false
+
+[dependencies]
+ff = "0.10"
+halo2 = "0.0"
+pasta_curves = "0.1.2"

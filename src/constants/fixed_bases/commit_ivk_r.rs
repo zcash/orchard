@@ -2934,12 +2934,12 @@ mod tests {
         test_lagrange_coeffs, test_zs_and_us, COMMIT_IVK_PERSONALIZATION, NUM_WINDOWS,
     };
     use super::*;
-    use crate::primitives::sinsemilla::CommitDomain;
     use group::Curve;
     use pasta_curves::{
         arithmetic::{CurveAffine, FieldExt},
         pallas,
     };
+    use sinsemilla::primitive::CommitDomain;
 
     #[test]
     fn generator() {

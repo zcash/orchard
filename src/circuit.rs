@@ -26,36 +26,32 @@ use crate::{
         nullifier::Nullifier,
         ExtractedNoteCommitment,
     },
-    primitives::{
-        poseidon::{self, ConstantLength},
-        redpallas::{SpendAuth, VerificationKey},
-    },
+    primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
     tree::Anchor,
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
 };
-use gadget::{
-    ecc::{
-        chip::{EccChip, EccConfig},
-        FixedPoint, Point,
+use ecc::{
+    chip::{EccChip, EccConfig},
+    gadget::{FixedPoint, Point},
+};
+use poseidon::{
+    gadget::{Hash as PoseidonHash, Word},
+    pow5t3::{Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig, StateWord},
+    primitive::{ConstantLength, P128Pow5T3},
+};
+use sinsemilla::{
+    chip::{SinsemillaChip, SinsemillaConfig},
+    merkle::{
+        chip::{MerkleChip, MerkleConfig},
+        MerklePath,
     },
-    poseidon::{
-        Hash as PoseidonHash, Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig,
-        StateWord, Word,
-    },
-    sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig},
-        merkle::{
-            chip::{MerkleChip, MerkleConfig},
-            MerklePath,
-        },
-    },
-    utilities::{copy, CellValue, UtilitiesInstructions, Var},
+};
+use utilities::{
+    copy, lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions, Var,
 };
 
 use std::convert::TryInto;
-
-use self::gadget::utilities::lookup_range_check::LookupRangeCheckConfig;
 
 mod commit_ivk;
 pub(crate) mod gadget;
@@ -252,7 +248,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         // Configuration for the Poseidon hash.
         let poseidon_config = PoseidonChip::configure(
             meta,
-            poseidon::P128Pow5T3,
+            P128Pow5T3,
             // We place the state columns after the partial_sbox column so that the
             // pad-and-add region can be layed out more efficiently.
             advices[6..9].try_into().unwrap(),
@@ -503,9 +499,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                                 || value.ok_or(plonk::Error::SynthesisError),
                             )?;
                             region.constrain_equal(var, message[i].cell())?;
-                            Ok(Word::<_, _, poseidon::P128Pow5T3, 3, 2>::from_inner(
-                                StateWord::new(var, value),
-                            ))
+                            Ok(Word::<_, _, P128Pow5T3, 3, 2>::from_inner(StateWord::new(
+                                var, value,
+                            )))
                         };
 
                         Ok([message_word(0)?, message_word(1)?])
