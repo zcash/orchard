@@ -7,18 +7,18 @@ use halo2::{
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
 use super::{MerkleInstructions, L_ORCHARD_BASE, MERKLE_DEPTH_ORCHARD};
-use ecc::gadget::FixedPoints;
 use crate::{
     chip::{SinsemillaChip, SinsemillaConfig},
     gadget::{CommitDomains, HashDomains, SinsemillaInstructions},
-    primitive as sinsemilla
+    primitive as sinsemilla,
 };
+use ecc::gadget::FixedPoints;
+use std::array;
 use utilities::{
     bitrange_subset,
     cond_swap::{CondSwapChip, CondSwapConfig, CondSwapInstructions},
     copy, CellValue, UtilitiesInstructions, Var,
 };
-use std::array;
 
 #[derive(Clone, Debug)]
 pub struct MerkleConfig<Hash, Commit, Fixed>
@@ -357,7 +357,7 @@ where
         #[cfg(test)]
         {
             use super::MERKLE_CRH_PERSONALIZATION;
-            use crate::{primitives::sinsemilla::HashDomain, spec::i2lebsp};
+            use crate::{merkle::i2lebsp, primitive::HashDomain};
             use ff::PrimeFieldBits;
 
             if let (Some(left), Some(right)) = (left.value(), right.value()) {

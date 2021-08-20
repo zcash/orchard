@@ -4,9 +4,7 @@ use super::super::{
     EccConfig, EccPoint, EccScalarFixedShort, FixedPoints, FIXED_BASE_WINDOW_SIZE, L_VALUE,
     NUM_WINDOWS_SHORT,
 };
-use utilities::{
-    copy, decompose_running_sum::RunningSumConfig, CellValue, Var,
-};
+use utilities::{copy, decompose_running_sum::RunningSumConfig, CellValue, Var};
 
 use halo2::{
     circuit::{Layouter, Region},
@@ -243,11 +241,12 @@ pub mod tests {
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::circuit::gadget::{
-        ecc::{chip::EccChip, FixedPoint, FixedPoints, Point},
-        utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions},
+    use crate::{
+        chip::EccChip,
+        gadget::{FixedPoint, FixedPoints, Point},
     };
-    use crate::constants::OrchardFixedBases;
+    use orchard::constants::OrchardFixedBases;
+    use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions};
 
     #[allow(clippy::op_ref)]
     pub fn test_mul_fixed_short(
@@ -361,15 +360,13 @@ pub mod tests {
 
     #[test]
     fn invalid_magnitude_sign() {
-        use crate::circuit::gadget::{
-            ecc::chip::EccConfig,
-            utilities::{CellValue, UtilitiesInstructions},
-        };
+        use crate::chip::EccConfig;
         use halo2::{
             circuit::{Layouter, SimpleFloorPlanner},
             dev::{MockProver, VerifyFailure},
             plonk::{Circuit, ConstraintSystem, Error},
         };
+        use utilities::{CellValue, UtilitiesInstructions};
 
         #[derive(Default)]
         struct MyCircuit {

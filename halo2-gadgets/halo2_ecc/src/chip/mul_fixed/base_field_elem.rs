@@ -1,6 +1,6 @@
 use super::super::{
-    EccBaseFieldElemFixed, EccConfig, EccPoint, FixedPoints, FIXED_BASE_WINDOW_SIZE,
-    L_ORCHARD_BASE, NUM_WINDOWS, T_P, LOOKUP_K
+    EccBaseFieldElemFixed, EccConfig, EccPoint, FixedPoints, FIXED_BASE_WINDOW_SIZE, LOOKUP_K,
+    L_ORCHARD_BASE, NUM_WINDOWS, T_P,
 };
 use super::H_BASE;
 use utilities::{
@@ -381,11 +381,12 @@ pub mod tests {
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::circuit::gadget::{
-        ecc::{chip::EccChip, FixedPoint, FixedPoints, Point, H},
-        utilities::UtilitiesInstructions,
+    use crate::{
+        chip::EccChip,
+        gadget::{FixedPoint, FixedPoints, Point, H},
     };
-    use crate::constants::OrchardFixedBases;
+    use orchard::constants::OrchardFixedBases;
+    use utilities::UtilitiesInstructions;
 
     pub fn test_mul_fixed_base_field(
         chip: EccChip<OrchardFixedBases>,

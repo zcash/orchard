@@ -23,6 +23,7 @@ group = "0.10"
 halo2 = "0.0"
 lazy_static = "1"
 pasta_curves = "0.1.2"
+rand = "0.8"
 utilities = { package = "halo2_utilities", version = "0.0", path = "../halo2_utilities" }
 
 [dev-dependencies]

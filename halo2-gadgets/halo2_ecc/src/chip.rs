@@ -1,10 +1,10 @@
 use super::gadget::{EccInstructions, FixedPoints, FIXED_BASE_WINDOW_SIZE, H};
+use arrayvec::ArrayVec;
+use std::marker::PhantomData;
 use utilities::{
     copy, decompose_running_sum::RunningSumConfig, lookup_range_check::LookupRangeCheckConfig,
     CellValue, UtilitiesInstructions, Var,
 };
-use arrayvec::ArrayVec;
-use std::marker::PhantomData;
 
 use group::prime::PrimeCurveAffine;
 use halo2::{
@@ -65,7 +65,10 @@ impl EccPoint {
     ///
     /// This is an internal API that we only use where we know we have a valid curve point
     /// (specifically inside Sinsemilla).
-    pub(crate) fn from_coordinates_unchecked(
+    ///
+    /// TODO: Sinsemilla is now in a separate crate. We have to find a way to limit this
+    /// function to just Sinsemilla.
+    pub fn from_coordinates_unchecked(
         x: CellValue<pallas::Base>,
         y: CellValue<pallas::Base>,
     ) -> Self {
@@ -165,9 +168,7 @@ impl<Fixed: FixedPoints<pallas::Affine>> Chip<pallas::Base> for EccChip<Fixed> {
     }
 }
 
-impl<Fixed: FixedPoints<pallas::Affine>> UtilitiesInstructions<pallas::Base>
-    for EccChip<Fixed>
-{
+impl<Fixed: FixedPoints<pallas::Affine>> UtilitiesInstructions<pallas::Base> for EccChip<Fixed> {
     type Var = CellValue<pallas::Base>;
 }
 
@@ -272,15 +273,13 @@ impl<F: FixedPoints<pallas::Affine>> EccChip<F> {
         // and fixed-base mul using a base field element.
         {
             // The const generic does not matter when creating gates.
-            let mul_fixed_config: mul_fixed::Config<F, { NUM_WINDOWS }> =
-                (&config).into();
+            let mul_fixed_config: mul_fixed::Config<F, { NUM_WINDOWS }> = (&config).into();
             mul_fixed_config.running_sum_coords_gate(meta);
         }
 
         // Create gate that is only used in full-width fixed-base scalar mul.
         {
-            let mul_fixed_full_config: mul_fixed::full_width::Config<F> =
-                (&config).into();
+            let mul_fixed_full_config: mul_fixed::full_width::Config<F> = (&config).into();
             mul_fixed_full_config.create_gate(meta);
         }
 
@@ -292,8 +291,7 @@ impl<F: FixedPoints<pallas::Affine>> EccChip<F> {
 
         // Create gate that is only used in fixed-base mul using a base field element.
         {
-            let base_field_config: mul_fixed::base_field_elem::Config<F> =
-                (&config).into();
+            let base_field_config: mul_fixed::base_field_elem::Config<F> = (&config).into();
             base_field_config.create_gate(meta);
         }
 
@@ -347,6 +345,7 @@ struct EccBaseFieldElemFixed {
 }
 
 impl EccBaseFieldElemFixed {
+    #[cfg(test)]
     fn base_field_elem(&self) -> CellValue<pallas::Base> {
         self.base_field_elem
     }

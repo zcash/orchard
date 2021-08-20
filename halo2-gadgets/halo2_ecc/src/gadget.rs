@@ -362,9 +362,9 @@ mod tests {
     };
     use pasta_curves::pallas;
 
-    use super::chip::{EccChip, EccConfig};
-    use crate::circuit::gadget::utilities::lookup_range_check::LookupRangeCheckConfig;
-    use crate::constants::OrchardFixedBases;
+    use crate::chip::{EccChip, EccConfig};
+    use orchard::constants::OrchardFixedBases;
+    use utilities::lookup_range_check::LookupRangeCheckConfig;
 
     struct MyCircuit {}
 
@@ -444,7 +444,7 @@ mod tests {
 
             // Test complete addition
             {
-                super::chip::add::tests::test_add(
+                crate::chip::add::tests::test_add(
                     chip.clone(),
                     layouter.namespace(|| "complete addition"),
                     &zero,
@@ -458,7 +458,7 @@ mod tests {
 
             // Test incomplete addition
             {
-                super::chip::add_incomplete::tests::test_add_incomplete(
+                crate::chip::add_incomplete::tests::test_add_incomplete(
                     chip.clone(),
                     layouter.namespace(|| "incomplete addition"),
                     &zero,
@@ -472,7 +472,7 @@ mod tests {
 
             // Test variable-base scalar multiplication
             {
-                super::chip::mul::tests::test_mul(
+                crate::chip::mul::tests::test_mul(
                     chip.clone(),
                     layouter.namespace(|| "variable-base scalar mul"),
                     &zero,
@@ -483,7 +483,7 @@ mod tests {
 
             // Test full-width fixed-base scalar multiplication
             {
-                super::chip::mul_fixed::full_width::tests::test_mul_fixed(
+                crate::chip::mul_fixed::full_width::tests::test_mul_fixed(
                     chip.clone(),
                     layouter.namespace(|| "full-width fixed-base scalar mul"),
                 )?;
@@ -491,7 +491,7 @@ mod tests {
 
             // Test signed short fixed-base scalar multiplication
             {
-                super::chip::mul_fixed::short::tests::test_mul_fixed_short(
+                crate::chip::mul_fixed::short::tests::test_mul_fixed_short(
                     chip.clone(),
                     layouter.namespace(|| "signed short fixed-base scalar mul"),
                 )?;
@@ -499,7 +499,7 @@ mod tests {
 
             // Test fixed-base scalar multiplication with a base field element
             {
-                super::chip::mul_fixed::base_field_elem::tests::test_mul_fixed_base_field(
+                crate::chip::mul_fixed::base_field_elem::tests::test_mul_fixed_base_field(
                     chip,
                     layouter.namespace(|| "fixed-base scalar mul with base field element"),
                 )?;

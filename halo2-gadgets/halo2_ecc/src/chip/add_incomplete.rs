@@ -148,7 +148,7 @@ pub mod tests {
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::pallas;
 
-    use crate::circuit::gadget::ecc::{EccInstructions, Point};
+    use crate::gadget::{EccInstructions, Point};
 
     #[allow(clippy::too_many_arguments)]
     pub fn test_add_incomplete<

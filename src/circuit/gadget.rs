@@ -2,7 +2,7 @@ use pasta_curves::pallas;
 
 use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains};
 use ecc::chip::EccChip;
-use poseidon::chip::Pow5T3Chip as PoseidonChip;
+use poseidon::pow5t3::Pow5T3Chip as PoseidonChip;
 use sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip};
 
 impl super::Config {

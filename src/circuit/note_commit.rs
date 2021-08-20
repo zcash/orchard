@@ -1457,23 +1457,16 @@ struct GateCells {
 #[cfg(test)]
 mod tests {
     use super::NoteCommitConfig;
-    use crate::{
-        circuit::gadget::{
-            ecc::{
-                chip::{EccChip, EccConfig},
-                Point,
-            },
-            sinsemilla::chip::SinsemillaChip,
-            utilities::{
-                lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions,
-            },
-        },
-        constants::{
-            fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
-            OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
-        },
-        primitives::sinsemilla::CommitDomain,
+    use crate::constants::{
+        fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
+        OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
     };
+    use ecc::{
+        chip::{EccChip, EccConfig},
+        gadget::Point,
+    };
+    use sinsemilla::{chip::SinsemillaChip, primitive::CommitDomain};
+    use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions};
 
     use ff::{Field, PrimeField, PrimeFieldBits};
     use group::Curve;

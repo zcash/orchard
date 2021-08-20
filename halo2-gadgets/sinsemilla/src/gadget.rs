@@ -1,10 +1,10 @@
 //! Gadget and chips for the Sinsemilla hash function.
 use ecc::gadget::{self as Ecc, EccInstructions};
-use utilities::Var;
 use ff::PrimeField;
 use halo2::{circuit::Layouter, plonk::Error};
 use pasta_curves::arithmetic::{CurveAffine, FieldExt};
 use std::{convert::TryInto, fmt::Debug};
+use utilities::Var;
 
 /// The set of circuit instructions required to use the [`Sinsemilla`](https://zcash.github.io/halo2/design/gadgets/sinsemilla.html) gadget.
 /// This trait is bounded on two constant parameters: `K`, the number of bits
@@ -404,25 +404,20 @@ mod tests {
         plonk::{Circuit, ConstraintSystem, Error},
     };
 
-    use super::{
-        chip::{SinsemillaChip, SinsemillaConfig},
-        CommitDomain, HashDomain, Message, MessagePiece,
-    };
-
     use crate::{
-        circuit::gadget::{
-            Ecc::{
-                chip::{EccChip, EccConfig},
-                Point,
-            },
-            utilities::lookup_range_check::LookupRangeCheckConfig,
-        },
-        constants::{
-            fixed_bases::COMMIT_IVK_PERSONALIZATION, sinsemilla::MERKLE_CRH_PERSONALIZATION,
-            OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains,
-        },
-        primitives::sinsemilla::{self, K},
+        chip::{SinsemillaChip, SinsemillaConfig},
+        gadget::{CommitDomain, HashDomain, Message, MessagePiece},
+        primitive::{self as sinsemilla, K},
     };
+    use ecc::{
+        chip::{EccChip, EccConfig},
+        gadget::Point,
+    };
+    use orchard::constants::{
+        fixed_bases::COMMIT_IVK_PERSONALIZATION, sinsemilla::MERKLE_CRH_PERSONALIZATION,
+        OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains,
+    };
+    use utilities::lookup_range_check::LookupRangeCheckConfig;
 
     use group::Curve;
     use pasta_curves::{arithmetic::FieldExt, pallas};

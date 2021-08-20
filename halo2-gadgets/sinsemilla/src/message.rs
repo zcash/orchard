@@ -1,8 +1,8 @@
 //! Gadget and chips for the Sinsemilla hash function.
-use utilities::{CellValue, Var};
 use ff::PrimeFieldBits;
 use halo2::{arithmetic::FieldExt, circuit::Cell};
 use std::fmt::Debug;
+use utilities::{CellValue, Var};
 
 /// A [`Message`] composed of several [`MessagePiece`]s.
 #[derive(Clone, Debug)]

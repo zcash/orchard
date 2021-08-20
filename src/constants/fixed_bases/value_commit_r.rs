@@ -1,3 +1,5 @@
+//! The base used to multiply the trapdoor in ValueCommit, and its associated
+//! constants used in fixed-base scalar multiplication.
 use pasta_curves::{
     arithmetic::{CurveAffine, FieldExt},
     pallas,
@@ -2921,6 +2923,7 @@ pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     ],
 ];
 
+/// The base used to multiply the trapdoor in ValueCommit
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
         pallas::Base::from_bytes(&GENERATOR.0).unwrap(),

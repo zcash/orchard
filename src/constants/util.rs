@@ -1,3 +1,5 @@
+//! Utilities used in the constants module.
+
 use ff::Field;
 use halo2::arithmetic::{CurveAffine, FieldExt};
 

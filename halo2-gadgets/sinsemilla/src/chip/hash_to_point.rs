@@ -1,8 +1,8 @@
-use crate::gadget::{CommitDomains, HashDomains, SinsemillaInstructions};
 use super::{CellValue, EccPoint, SinsemillaChip, Var};
+use crate::gadget::{CommitDomains, HashDomains, SinsemillaInstructions};
 
-use ecc::gadget::FixedPoints;
 use crate::primitive::{self as sinsemilla, lebs2ip_k, INV_TWO_POW_K, SINSEMILLA_S};
+use ecc::gadget::FixedPoints;
 use halo2::{
     circuit::{Chip, Region},
     plonk::Error,
@@ -116,8 +116,8 @@ where
         #[allow(non_snake_case)]
         // Check equivalence to result from primitives::sinsemilla::hash_to_point
         {
-            use crate::circuit::gadget::sinsemilla::message::MessagePiece;
-            use crate::primitives::sinsemilla::{K, S_PERSONALIZATION};
+            use crate::message::MessagePiece;
+            use crate::primitive::{K, S_PERSONALIZATION};
             use group::{prime::PrimeCurveAffine, Curve};
             use pasta_curves::arithmetic::CurveExt;
 

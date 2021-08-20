@@ -47,10 +47,9 @@ mod tests {
     use std::marker::PhantomData;
 
     use ff::PrimeField;
-    use halo2::arithmetic::FieldExt;
-    use pasta_curves::pallas;
+    use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::primitives::poseidon::{permute, ConstantLength, Hash, Spec};
+    use crate::primitive::{permute, ConstantLength, Hash, Spec};
 
     use super::{MDS, MDS_INV, ROUND_CONSTANTS};
 
@@ -167,7 +166,7 @@ mod tests {
     fn permute_test_vectors() {
         let (round_constants, mds, _) = super::P128Pow5T3.constants();
 
-        for tv in crate::primitives::poseidon::test_vectors::permute() {
+        for tv in crate::primitive::test_vectors::permute() {
             let mut state = [
                 pallas::Base::from_repr(tv.initial_state[0]).unwrap(),
                 pallas::Base::from_repr(tv.initial_state[1]).unwrap(),
@@ -184,7 +183,7 @@ mod tests {
 
     #[test]
     fn hash_test_vectors() {
-        for tv in crate::primitives::poseidon::test_vectors::hash() {
+        for tv in crate::primitive::test_vectors::hash() {
             let message = [
                 pallas::Base::from_repr(tv.input[0]).unwrap(),
                 pallas::Base::from_repr(tv.input[1]).unwrap(),

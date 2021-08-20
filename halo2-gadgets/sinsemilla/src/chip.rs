@@ -1,11 +1,11 @@
 use super::{
-    message::{Message, MessagePiece},
     gadget::{CommitDomains, HashDomains, SinsemillaInstructions},
-    primitive as sinsemilla
+    message::{Message, MessagePiece},
+    primitive as sinsemilla,
 };
 use ecc::{chip::EccPoint, gadget::FixedPoints};
-use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, Var};
 use std::marker::PhantomData;
+use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, Var};
 
 use halo2::{
     circuit::{Chip, Layouter},

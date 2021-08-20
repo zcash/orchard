@@ -166,12 +166,25 @@ fn find_zs_and_us<C: CurveAffine>(base: C, num_windows: usize) -> Option<Vec<(u6
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+/// The fixed bases used in the Orchard protocol.
 pub enum OrchardFixedBases {
+    /// The random base used in CommitIvk. This is multiplied by a full-width
+    /// scalar.
     CommitIvkR,
+    /// The random base used in NoteCommit. This is multiplied by a full-width
+    /// scalar.
     NoteCommitR,
+    /// The base used to multiply the trapdoor in ValueCommit. This is multiplied
+    /// by a full-width scalar.
     ValueCommitR,
+    /// The base used in SpendAuthSig. This is multiplied by a full-width
+    /// scalar.
     SpendAuthG,
+    /// The base used in DeriveNullifier. This is multiplied by a base-field
+    /// element.
     NullifierK,
+    /// The base used to multiply the value in ValueCommit. This is multiplied
+    /// by a signed 64-bit integer.
     ValueCommitV,
 }
 

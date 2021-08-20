@@ -75,11 +75,11 @@ impl<
         const RATE: usize,
     > Word<F, PoseidonChip, S, T, RATE>
 {
-    pub(crate) fn inner(&self) -> PoseidonChip::Word {
+    pub fn inner(&self) -> PoseidonChip::Word {
         self.inner
     }
 
-    pub(crate) fn from_inner(inner: PoseidonChip::Word) -> Self {
+    pub fn from_inner(inner: PoseidonChip::Word) -> Self {
         Self { inner }
     }
 }

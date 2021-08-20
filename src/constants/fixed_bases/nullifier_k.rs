@@ -1,8 +1,11 @@
+//! The base used in DeriveNullifier, and its associated constants used
+//! in fixed-base scalar multiplication.
 use pasta_curves::{
     arithmetic::{CurveAffine, FieldExt},
     pallas,
 };
 
+/// The base used in DeriveNullifier
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     [
         117, 202, 71, 228, 167, 106, 111, 211, 155, 219, 181, 204, 146, 177, 126, 94, 207, 201,
@@ -2919,6 +2922,7 @@ pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     ],
 ];
 
+/// The base used in DeriveNullifier.
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
         pallas::Base::from_bytes(&GENERATOR.0).unwrap(),
