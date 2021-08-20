@@ -5,20 +5,17 @@ use halo2::{
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use crate::{
-    circuit::gadget::{
-        ecc::{
-            chip::{EccChip, NonIdentityEccPoint},
-            Point,
-        },
-        sinsemilla::{
-            chip::{SinsemillaChip, SinsemillaConfig},
-            CommitDomain, Message, MessagePiece,
-        },
-        utilities::{bitrange_subset, bool_check, copy, CellValue, Var},
-    },
-    constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
+use ecc::{
+    chip::{EccChip, NonIdentityEccPoint},
+    gadget::Point,
 };
+use sinsemilla::{
+    chip::{SinsemillaChip, SinsemillaConfig},
+    gadget::{CommitDomain, Message, MessagePiece},
+};
+use utilities::{bitrange_subset, bool_check, copy, CellValue, Var};
+
+use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
 
 /*
     <https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit>

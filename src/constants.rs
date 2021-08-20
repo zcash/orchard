@@ -3,8 +3,8 @@ pub mod fixed_bases;
 pub mod sinsemilla;
 pub mod util;
 
+pub use self::sinsemilla::{OrchardCommitDomains, OrchardHashDomains};
 pub use fixed_bases::OrchardFixedBases;
-pub use sinsemilla::{OrchardCommitDomains, OrchardHashDomains};
 pub use util::{evaluate, gen_const_array};
 
 /// $\mathsf{MerkleDepth^{Orchard}}$

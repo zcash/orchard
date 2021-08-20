@@ -1,7 +1,7 @@
 //! Sinsemilla generators
 use super::OrchardFixedBases;
-use crate::circuit::gadget::sinsemilla::{CommitDomains, HashDomains};
 use crate::spec::i2lebsp;
+use sinsemilla::gadget::{CommitDomains, HashDomains};
 
 use pasta_curves::{
     arithmetic::{CurveAffine, FieldExt},
@@ -146,7 +146,7 @@ mod tests {
         fixed_bases::{COMMIT_IVK_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION},
         sinsemilla::MERKLE_CRH_PERSONALIZATION,
     };
-    use crate::primitives::sinsemilla::{CommitDomain, HashDomain};
+    use sinsemilla::primitive::{CommitDomain, HashDomain};
 
     use ff::PrimeField;
     use group::Curve;

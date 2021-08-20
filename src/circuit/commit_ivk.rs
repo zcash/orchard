@@ -5,17 +5,13 @@ use halo2::{
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use crate::{
-    circuit::gadget::{
-        ecc::{chip::EccChip, X},
-        sinsemilla::{
-            chip::{SinsemillaChip, SinsemillaConfig},
-            CommitDomain, Message, MessagePiece,
-        },
-        utilities::{bitrange_subset, bool_check, copy, CellValue, Var},
-    },
-    constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
+use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
+use ecc::{chip::EccChip, gadget::X};
+use sinsemilla::{
+    chip::{SinsemillaChip, SinsemillaConfig},
+    gadget::{CommitDomain, Message, MessagePiece},
 };
+use utilities::{bitrange_subset, bool_check, copy, CellValue, Var};
 
 #[derive(Clone, Debug)]
 pub struct CommitIvkConfig {

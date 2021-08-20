@@ -1,6 +1,6 @@
 //! Orchard fixed bases.
 use super::{L_ORCHARD_SCALAR, L_VALUE};
-use crate::circuit::gadget::ecc::FixedPoints;
+use ecc::gadget::FixedPoints;
 
 use arrayvec::ArrayVec;
 use ff::Field;

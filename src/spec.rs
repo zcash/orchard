@@ -10,13 +10,12 @@ use halo2::arithmetic::{CurveAffine, CurveExt, FieldExt};
 use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};
 
-use crate::{
-    constants::{
-        fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
-        KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
-    },
-    primitives::{poseidon, sinsemilla},
+use crate::constants::{
+    fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
+    KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
 };
+use poseidon::primitive as poseidon;
+use sinsemilla::primitive as sinsemilla;
 
 mod prf_expand;
 pub(crate) use prf_expand::PrfExpand;
