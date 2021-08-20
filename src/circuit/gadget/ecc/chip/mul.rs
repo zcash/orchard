@@ -1,5 +1,5 @@
-use super::{add, CellValue, EccConfig, EccPoint, Var};
-use crate::{circuit::gadget::utilities::copy, constants::T_Q};
+use super::{add, CellValue, EccConfig, EccPoint, Var, T_Q};
+use crate::circuit::gadget::utilities::copy;
 use std::ops::{Deref, Range};
 
 use bigint::U256;

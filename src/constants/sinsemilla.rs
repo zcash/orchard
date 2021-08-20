@@ -1,4 +1,11 @@
 //! Sinsemilla generators
+use super::OrchardFixedBases;
+use crate::circuit::gadget::sinsemilla::{CommitDomains, HashDomains};
+
+use pasta_curves::{
+    arithmetic::{CurveAffine, FieldExt},
+    pallas,
+};
 
 /// Number of bits of each message piece in $\mathsf{SinsemillaHashToPoint}$
 pub const K: usize = 10;
@@ -13,10 +20,21 @@ pub const INV_TWO_POW_K: [u8; 32] = [
 /// of Pallas.
 pub const C: usize = 253;
 
+/// $\ell^\mathsf{Orchard}_\mathsf{Merkle}$
+pub(crate) const L_ORCHARD_MERKLE: usize = 255;
+
+/// SWU hash-to-curve personalization for the Merkle CRH generator
+pub const MERKLE_CRH_PERSONALIZATION: &str = "z.cash:Orchard-MerkleCRH";
+
 // Sinsemilla Q generators
 
 /// SWU hash-to-curve personalization for Sinsemilla $Q$ generators.
 pub const Q_PERSONALIZATION: &str = "z.cash:SinsemillaQ";
+
+// Sinsemilla S generators
+
+/// SWU hash-to-curve personalization for Sinsemilla $S$ generators.
+pub const S_PERSONALIZATION: &str = "z.cash:SinsemillaS";
 
 /// Generator used in SinsemillaHashToPoint for note commitment
 pub const Q_NOTE_COMMITMENT_M_GENERATOR: ([u8; 32], [u8; 32]) = (
@@ -54,41 +72,84 @@ pub const Q_MERKLE_CRH: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-// Sinsemilla S generators
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OrchardHashDomains {
+    NoteCommit,
+    CommitIvk,
+    MerkleCrh,
+}
 
-/// SWU hash-to-curve personalization for Sinsemilla $S$ generators.
-pub const S_PERSONALIZATION: &str = "z.cash:SinsemillaS";
+#[allow(non_snake_case)]
+impl HashDomains<pallas::Affine> for OrchardHashDomains {
+    fn Q(&self) -> pallas::Affine {
+        match self {
+            OrchardHashDomains::CommitIvk => pallas::Affine::from_xy(
+                pallas::Base::from_bytes(&Q_COMMIT_IVK_M_GENERATOR.0).unwrap(),
+                pallas::Base::from_bytes(&Q_COMMIT_IVK_M_GENERATOR.1).unwrap(),
+            )
+            .unwrap(),
+            OrchardHashDomains::NoteCommit => pallas::Affine::from_xy(
+                pallas::Base::from_bytes(&Q_NOTE_COMMITMENT_M_GENERATOR.0).unwrap(),
+                pallas::Base::from_bytes(&Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap(),
+            )
+            .unwrap(),
+            OrchardHashDomains::MerkleCrh => pallas::Affine::from_xy(
+                pallas::Base::from_bytes(&Q_MERKLE_CRH.0).unwrap(),
+                pallas::Base::from_bytes(&Q_MERKLE_CRH.1).unwrap(),
+            )
+            .unwrap(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OrchardCommitDomains {
+    NoteCommit,
+    CommitIvk,
+}
+
+impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for OrchardCommitDomains {
+    fn r(&self) -> OrchardFixedBases {
+        match self {
+            Self::NoteCommit => OrchardFixedBases::NoteCommitR,
+            Self::CommitIvk => OrchardFixedBases::CommitIvkR,
+        }
+    }
+
+    fn hash_domain(&self) -> OrchardHashDomains {
+        match self {
+            Self::NoteCommit => OrchardHashDomains::NoteCommit,
+            Self::CommitIvk => OrchardHashDomains::CommitIvk,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    use super::super::{CommitDomain, HashDomain};
     use super::*;
     use crate::constants::{
-        COMMIT_IVK_PERSONALIZATION, MERKLE_CRH_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION,
+        fixed_bases::{COMMIT_IVK_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION},
+        sinsemilla::MERKLE_CRH_PERSONALIZATION,
     };
+    use crate::primitives::sinsemilla::{CommitDomain, HashDomain};
+
+    use ff::PrimeField;
     use group::Curve;
-    use halo2::arithmetic::{CurveAffine, CurveExt, FieldExt};
-    use halo2::pasta::pallas;
+    use pasta_curves::{
+        arithmetic::{CurveAffine, FieldExt},
+        pallas,
+    };
 
     #[test]
-    fn sinsemilla_s() {
-        use super::super::sinsemilla_s::SINSEMILLA_S;
-        let hasher = pallas::Point::hash_to_curve(S_PERSONALIZATION);
-
-        for j in 0..(1u32 << K) {
-            let computed = {
-                let point = hasher(&j.to_le_bytes()).to_affine().coordinates().unwrap();
-                (*point.x(), *point.y())
-            };
-            let actual = SINSEMILLA_S[j as usize];
-            assert_eq!(computed, actual);
-        }
+    // Nodes in the Merkle tree are Pallas base field elements.
+    fn l_orchard_merkle() {
+        assert_eq!(super::L_ORCHARD_MERKLE, pallas::Base::NUM_BITS as usize);
     }
 
     #[test]
     fn q_note_commitment_m() {
         let domain = CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
-        let point = domain.M.Q;
+        let point = domain.Q();
         let coords = point.to_affine().coordinates().unwrap();
 
         assert_eq!(
@@ -104,7 +165,7 @@ mod tests {
     #[test]
     fn q_commit_ivk_m() {
         let domain = CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
-        let point = domain.M.Q;
+        let point = domain.Q();
         let coords = point.to_affine().coordinates().unwrap();
 
         assert_eq!(
@@ -120,7 +181,7 @@ mod tests {
     #[test]
     fn q_merkle_crh() {
         let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
-        let point = domain.Q;
+        let point = domain.Q();
         let coords = point.to_affine().coordinates().unwrap();
 
         assert_eq!(

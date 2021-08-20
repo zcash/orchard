@@ -220,13 +220,18 @@ impl<F: FieldExt + PrimeFieldBits, const WINDOW_NUM_BITS: usize>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constants::{self, FIXED_BASE_WINDOW_SIZE, L_ORCHARD_BASE, L_VALUE};
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::{MockProver, VerifyFailure},
         plonk::{Any, Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
+
+    const FIXED_BASE_WINDOW_SIZE: usize = 3;
+    const NUM_WINDOWS: usize = 85;
+    const NUM_WINDOWS_SHORT: usize = 22;
+    const L_BASE: usize = 255;
+    const L_SHORT: usize = 64;
 
     #[test]
     fn test_running_sum() {
@@ -307,15 +312,11 @@ mod tests {
             let alpha = pallas::Base::rand();
 
             // Strict full decomposition should pass.
-            let circuit: MyCircuit<
-                pallas::Base,
-                L_ORCHARD_BASE,
-                FIXED_BASE_WINDOW_SIZE,
-                { constants::NUM_WINDOWS },
-            > = MyCircuit {
-                alpha: Some(alpha),
-                strict: true,
-            };
+            let circuit: MyCircuit<pallas::Base, L_BASE, FIXED_BASE_WINDOW_SIZE, { NUM_WINDOWS }> =
+                MyCircuit {
+                    alpha: Some(alpha),
+                    strict: true,
+                };
             let prover = MockProver::<pallas::Base>::run(8, &circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }
@@ -327,9 +328,9 @@ mod tests {
             // Strict full decomposition should pass.
             let circuit: MyCircuit<
                 pallas::Base,
-                L_VALUE,
+                L_SHORT,
                 FIXED_BASE_WINDOW_SIZE,
-                { constants::NUM_WINDOWS_SHORT },
+                { NUM_WINDOWS_SHORT },
             > = MyCircuit {
                 alpha: Some(alpha),
                 strict: true,
@@ -345,9 +346,9 @@ mod tests {
             // Strict partial decomposition should fail.
             let circuit: MyCircuit<
                 pallas::Base,
-                L_VALUE,
+                L_SHORT,
                 FIXED_BASE_WINDOW_SIZE,
-                { constants::NUM_WINDOWS_SHORT },
+                { NUM_WINDOWS_SHORT },
             > = MyCircuit {
                 alpha: Some(alpha),
                 strict: true,
@@ -378,9 +379,9 @@ mod tests {
             // Non-strict partial decomposition should pass.
             let circuit: MyCircuit<
                 pallas::Base,
-                { constants::L_VALUE },
+                { L_SHORT },
                 FIXED_BASE_WINDOW_SIZE,
-                { constants::NUM_WINDOWS_SHORT },
+                { NUM_WINDOWS_SHORT },
             > = MyCircuit {
                 alpha: Some(alpha),
                 strict: false,

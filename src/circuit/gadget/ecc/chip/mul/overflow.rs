@@ -1,8 +1,7 @@
 use super::super::{copy, CellValue, EccConfig, Var};
-use super::Z;
+use super::{T_Q, Z};
 use crate::{
-    circuit::gadget::utilities::lookup_range_check::LookupRangeCheckConfig, constants::T_Q,
-    primitives::sinsemilla,
+    circuit::gadget::utilities::lookup_range_check::LookupRangeCheckConfig, primitives::sinsemilla,
 };
 use halo2::{
     circuit::Layouter,

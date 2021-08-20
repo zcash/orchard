@@ -1,9 +1,11 @@
 use std::{array, convert::TryInto};
 
-use super::super::{EccConfig, EccPoint, EccScalarFixedShort, FixedPoints};
-use crate::{
-    circuit::gadget::utilities::{copy, decompose_running_sum::RunningSumConfig, CellValue, Var},
-    constants::{FIXED_BASE_WINDOW_SIZE, L_VALUE, NUM_WINDOWS_SHORT},
+use super::super::{
+    EccConfig, EccPoint, EccScalarFixedShort, FixedPoints, FIXED_BASE_WINDOW_SIZE, L_VALUE,
+    NUM_WINDOWS_SHORT,
+};
+use crate::circuit::gadget::utilities::{
+    copy, decompose_running_sum::RunningSumConfig, CellValue, Var,
 };
 
 use halo2::{

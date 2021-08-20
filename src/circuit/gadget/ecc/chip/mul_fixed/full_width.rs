@@ -1,9 +1,9 @@
-use super::super::{EccConfig, EccPoint, EccScalarFixed, FixedPoints};
-
-use crate::{
-    circuit::gadget::utilities::{decompose_word, range_check, CellValue, Var},
-    constants::{self, L_ORCHARD_SCALAR, NUM_WINDOWS},
+use super::super::{
+    EccConfig, EccPoint, EccScalarFixed, FixedPoints, FIXED_BASE_WINDOW_SIZE, H, L_ORCHARD_SCALAR,
+    NUM_WINDOWS,
 };
+
+use crate::circuit::gadget::utilities::{decompose_word, range_check, CellValue, Var};
 use arrayvec::ArrayVec;
 use halo2::{
     circuit::{Layouter, Region},
@@ -40,7 +40,7 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
                 // 1 * (window - 0) * (window - 1) * ... * (window - 7)
                 .chain(Some((
                     "window range check",
-                    q_mul_fixed_full * range_check(window, constants::H),
+                    q_mul_fixed_full * range_check(window, H),
                 )))
         });
     }
@@ -78,11 +78,7 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
 
         // Decompose scalar into `k-bit` windows
         let scalar_windows: Option<Vec<u8>> = scalar.map(|scalar| {
-            decompose_word::<pallas::Scalar>(
-                scalar,
-                SCALAR_NUM_BITS,
-                constants::FIXED_BASE_WINDOW_SIZE,
-            )
+            decompose_word::<pallas::Scalar>(scalar, SCALAR_NUM_BITS, FIXED_BASE_WINDOW_SIZE)
         });
 
         // Store the scalar decomposition
@@ -169,8 +165,8 @@ pub mod tests {
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::circuit::gadget::ecc::{chip::EccChip, FixedPoint, FixedPoints, Point};
-    use crate::constants::{self, OrchardFixedBases};
+    use crate::circuit::gadget::ecc::{chip::EccChip, FixedPoint, FixedPoints, Point, H};
+    use crate::constants::OrchardFixedBases;
 
     pub fn test_mul_fixed(
         chip: EccChip<OrchardFixedBases>,
@@ -256,7 +252,7 @@ pub mod tests {
         // (There is another *non-canonical* sequence
         // 5333333333333333333333333333333333333333332711161673731021062440252244051273333333333 in octal.)
         {
-            let h = pallas::Scalar::from_u64(constants::H as u64);
+            let h = pallas::Scalar::from_u64(H as u64);
             let scalar_fixed = "1333333333333333333333333333333333333333333333333333333333333333333333333333333333334"
                         .chars()
                         .fold(pallas::Scalar::zero(), |acc, c| {

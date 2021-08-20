@@ -1,10 +1,9 @@
-use super::{EccInstructions, FixedPoints};
+use super::{EccInstructions, FixedPoints, FIXED_BASE_WINDOW_SIZE, H};
 use crate::{
     circuit::gadget::utilities::{
         copy, decompose_running_sum::RunningSumConfig, lookup_range_check::LookupRangeCheckConfig,
         CellValue, UtilitiesInstructions, Var,
     },
-    constants,
     primitives::sinsemilla,
 };
 use arrayvec::ArrayVec;
@@ -22,6 +21,34 @@ pub(super) mod add_incomplete;
 pub(super) mod mul;
 pub(super) mod mul_fixed;
 pub(super) mod witness_point;
+
+/// Number of windows for a full-width scalar
+pub const NUM_WINDOWS: usize =
+    (L_ORCHARD_SCALAR + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
+
+/// Number of windows for a short signed scalar
+pub const NUM_WINDOWS_SHORT: usize =
+    (L_VALUE + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
+
+/// $\ell_\mathsf{value}$
+/// Number of bits in an unsigned short scalar.
+pub(crate) const L_VALUE: usize = 64;
+
+/// $\ell^\mathsf{Orchard}_\mathsf{base}$
+/// Number of bits in a Pallas base field element.
+pub(crate) const L_ORCHARD_BASE: usize = 255;
+
+/// $\ell^\mathsf{Orchard}_\mathsf{scalar}$
+/// Number of bits in a Pallas scalar field element.
+pub(crate) const L_ORCHARD_SCALAR: usize = 255;
+
+/// The Pallas scalar field modulus is $q = 2^{254} + \mathsf{t_q}$.
+/// <https://github.com/zcash/pasta>
+pub(crate) const T_Q: u128 = 45560315531506369815346746415080538113;
+
+/// The Pallas base field modulus is $p = 2^{254} + \mathsf{t_p}$.
+/// <https://github.com/zcash/pasta>
+pub(crate) const T_P: u128 = 45560315531419706090280762371685220353;
 
 /// A curve point represented in affine (x, y) coordinates. Each coordinate is
 /// assigned to a cell.
@@ -78,7 +105,7 @@ pub struct EccConfig {
     pub advices: [Column<Advice>; 10],
 
     /// Coefficients of interpolation polynomials for x-coordinates (used in fixed-base scalar multiplication)
-    pub lagrange_coeffs: [Column<Fixed>; constants::H],
+    pub lagrange_coeffs: [Column<Fixed>; H],
     /// Fixed z such that y + z = u^2 some square, and -y + z is a non-square. (Used in fixed-base scalar multiplication)
     pub fixed_z: Column<Fixed>,
 
@@ -115,7 +142,7 @@ pub struct EccConfig {
     /// Lookup range check using 10-bit lookup table
     pub lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
     /// Running sum decomposition.
-    pub running_sum_config: RunningSumConfig<pallas::Base, { constants::FIXED_BASE_WINDOW_SIZE }>,
+    pub running_sum_config: RunningSumConfig<pallas::Base, { FIXED_BASE_WINDOW_SIZE }>,
 }
 
 /// A chip implementing EccInstructions
@@ -245,7 +272,7 @@ impl<FixedPoints: super::FixedPoints<pallas::Affine>> EccChip<FixedPoints> {
         // and fixed-base mul using a base field element.
         {
             // The const generic does not matter when creating gates.
-            let mul_fixed_config: mul_fixed::Config<FixedPoints, { constants::NUM_WINDOWS }> =
+            let mul_fixed_config: mul_fixed::Config<FixedPoints, { NUM_WINDOWS }> =
                 (&config).into();
             mul_fixed_config.running_sum_coords_gate(meta);
         }
@@ -282,7 +309,7 @@ impl<FixedPoints: super::FixedPoints<pallas::Affine>> EccChip<FixedPoints> {
 #[derive(Clone, Debug)]
 pub struct EccScalarFixed {
     value: Option<pallas::Scalar>,
-    windows: ArrayVec<CellValue<pallas::Base>, { constants::NUM_WINDOWS }>,
+    windows: ArrayVec<CellValue<pallas::Base>, { NUM_WINDOWS }>,
 }
 
 /// A signed short scalar used for fixed-base scalar multiplication.
@@ -301,7 +328,7 @@ pub struct EccScalarFixed {
 pub struct EccScalarFixedShort {
     magnitude: CellValue<pallas::Base>,
     sign: CellValue<pallas::Base>,
-    running_sum: ArrayVec<CellValue<pallas::Base>, { constants::NUM_WINDOWS_SHORT + 1 }>,
+    running_sum: ArrayVec<CellValue<pallas::Base>, { NUM_WINDOWS_SHORT + 1 }>,
 }
 
 /// A base field element used for fixed-base scalar multiplication.
@@ -316,7 +343,7 @@ pub struct EccScalarFixedShort {
 #[derive(Clone, Debug)]
 struct EccBaseFieldElemFixed {
     base_field_elem: CellValue<pallas::Base>,
-    running_sum: ArrayVec<CellValue<pallas::Base>, { constants::NUM_WINDOWS + 1 }>,
+    running_sum: ArrayVec<CellValue<pallas::Base>, { NUM_WINDOWS + 1 }>,
 }
 
 impl EccBaseFieldElemFixed {

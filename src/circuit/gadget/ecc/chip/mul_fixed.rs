@@ -1,8 +1,7 @@
 use super::{
     add, add_incomplete, CellValue, EccBaseFieldElemFixed, EccConfig, EccPoint, EccScalarFixed,
-    EccScalarFixedShort, FixedPoints, Var,
+    EccScalarFixedShort, FixedPoints, Var, FIXED_BASE_WINDOW_SIZE, H,
 };
-use crate::constants;
 use std::marker::PhantomData;
 
 use group::Curve;
@@ -24,15 +23,15 @@ pub mod short;
 lazy_static! {
     static ref TWO_SCALAR: pallas::Scalar = pallas::Scalar::from_u64(2);
     // H = 2^3 (3-bit window)
-    static ref H_SCALAR: pallas::Scalar = pallas::Scalar::from_u64(constants::H as u64);
-    static ref H_BASE: pallas::Base = pallas::Base::from_u64(constants::H as u64);
+    static ref H_SCALAR: pallas::Scalar = pallas::Scalar::from_u64(H as u64);
+    static ref H_BASE: pallas::Base = pallas::Base::from_u64(H as u64);
 }
 
 #[derive(Clone, Debug)]
 pub struct Config<F: FixedPoints<pallas::Affine>, const NUM_WINDOWS: usize> {
     q_mul_fixed_running_sum: Selector,
     // The fixed Lagrange interpolation coefficients for `x_p`.
-    lagrange_coeffs: [Column<Fixed>; constants::H],
+    lagrange_coeffs: [Column<Fixed>; H],
     // The fixed `z` for each window such that `y + z = u^2`.
     fixed_z: Column<Fixed>,
     // Decomposition of an `n-1`-bit scalar into `k`-bit windows:
@@ -121,7 +120,7 @@ impl<Fixed: FixedPoints<pallas::Affine>, const NUM_WINDOWS: usize> Config<Fixed,
 
             //    z_{i+1} = (z_i - a_i) / 2^3
             // => a_i = z_i - z_{i+1} * 2^3
-            let word = z_cur - z_next * pallas::Base::from_u64(constants::H as u64);
+            let word = z_cur - z_next * pallas::Base::from_u64(H as u64);
 
             self.coords_check(meta, q_mul_fixed_running_sum, word)
         });
@@ -139,7 +138,7 @@ impl<Fixed: FixedPoints<pallas::Affine>, const NUM_WINDOWS: usize> Config<Fixed,
         let z = meta.query_fixed(self.fixed_z, Rotation::cur());
         let u = meta.query_advice(self.u, Rotation::cur());
 
-        let window_pow: Vec<Expression<pallas::Base>> = (0..constants::H)
+        let window_pow: Vec<Expression<pallas::Base>> = (0..H)
             .map(|pow| {
                 (0..pow).fold(Expression::Constant(pallas::Base::one()), |acc, _| {
                     acc * window.clone()
@@ -208,7 +207,7 @@ impl<Fixed: FixedPoints<pallas::Affine>, const NUM_WINDOWS: usize> Config<Fixed,
             coords_check_toggle.enable(region, window + offset)?;
 
             // Assign x-coordinate Lagrange interpolation coefficients
-            for k in 0..(constants::H) {
+            for k in 0..(H) {
                 region.assign_fixed(
                     || {
                         format!(
@@ -351,12 +350,7 @@ impl<Fixed: FixedPoints<pallas::Affine>, const NUM_WINDOWS: usize> Config<Fixed,
 
         // offset_acc = \sum_{j = 0}^{NUM_WINDOWS - 2} 2^{FIXED_BASE_WINDOW_SIZE*j + 1}
         let offset_acc = (0..(NUM_WINDOWS - 1)).fold(pallas::Scalar::zero(), |acc, w| {
-            acc + (*TWO_SCALAR).pow(&[
-                constants::FIXED_BASE_WINDOW_SIZE as u64 * w as u64 + 1,
-                0,
-                0,
-                0,
-            ])
+            acc + (*TWO_SCALAR).pow(&[FIXED_BASE_WINDOW_SIZE as u64 * w as u64 + 1, 0, 0, 0])
         });
 
         // `scalar = [k * 8^84 - offset_acc]`, where `offset_acc = \sum_{j = 0}^{83} 2^{FIXED_BASE_WINDOW_SIZE*j + 1}`.
@@ -455,7 +449,7 @@ impl ScalarFixed {
             .map(|window| {
                 if let Some(window) = window {
                     let window = window.get_lower_32() as usize;
-                    assert!(window < constants::H);
+                    assert!(window < H);
                     Some(window)
                 } else {
                     None

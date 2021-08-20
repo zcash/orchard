@@ -2,7 +2,9 @@
 
 use crate::{
     constants::{
-        util::gen_const_array, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION, MERKLE_DEPTH_ORCHARD,
+        sinsemilla::{L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
+        util::gen_const_array,
+        MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,
     primitives::sinsemilla::{i2lebsp_k, HashDomain},
