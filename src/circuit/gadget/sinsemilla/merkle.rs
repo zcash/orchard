@@ -4,14 +4,12 @@ use halo2::{
 };
 use pasta_curves::arithmetic::CurveAffine;
 
-use crate::{
-    circuit::gadget::{
-        sinsemilla::{HashDomains, SinsemillaInstructions},
-        utilities::{
-            cond_swap::CondSwapInstructions, transpose_option_array, UtilitiesInstructions,
-        },
+use crate::circuit::gadget::{
+    sinsemilla::{HashDomains, SinsemillaInstructions},
+    utilities::{
+        cond_swap::CondSwapInstructions, gen_const_array, transpose_option_array,
+        UtilitiesInstructions,
     },
-    spec::i2lebsp,
 };
 use std::iter;
 
@@ -26,6 +24,17 @@ pub(crate) const MERKLE_DEPTH_ORCHARD: usize = 32;
 /// $\ell^\mathsf{Orchard}_\mathsf{base}$
 /// Number of bits in a Pallas base field element.
 pub(crate) const L_ORCHARD_BASE: usize = 255;
+
+/// The sequence of bits representing a u64 in little-endian order.
+///
+/// # Panics
+///
+/// Panics if the expected length of the sequence `NUM_BITS` exceeds
+/// 64.
+fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
+    assert!(NUM_BITS <= 64);
+    gen_const_array(|mask: usize| (int & (1 << mask)) != 0)
+}
 
 /// Instructions to check the validity of a Merkle path of a given `PATH_LENGTH`.
 /// The hash function used is a Sinsemilla instance with `K`-bit words.
