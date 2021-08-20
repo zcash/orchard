@@ -1,6 +1,7 @@
 //! Sinsemilla generators
 use super::OrchardFixedBases;
 use crate::circuit::gadget::sinsemilla::{CommitDomains, HashDomains};
+use crate::spec::i2lebsp;
 
 use pasta_curves::{
     arithmetic::{CurveAffine, FieldExt},
@@ -72,6 +73,20 @@ pub const Q_MERKLE_CRH: ([u8; 32], [u8; 32]) = (
     ],
 );
 
+pub(crate) fn lebs2ip_k(bits: &[bool]) -> u32 {
+    assert!(bits.len() == K);
+    bits.iter()
+        .enumerate()
+        .fold(0u32, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
+}
+
+/// The sequence of K bits in little-endian order representing an integer
+/// up to `2^K` - 1.
+pub(crate) fn i2lebsp_k(int: usize) -> [bool; K] {
+    assert!(int < (1 << K));
+    i2lebsp(int as u64)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrchardHashDomains {
     NoteCommit,
@@ -139,11 +154,51 @@ mod tests {
         arithmetic::{CurveAffine, FieldExt},
         pallas,
     };
+    use rand::{self, rngs::OsRng, Rng};
 
     #[test]
     // Nodes in the Merkle tree are Pallas base field elements.
     fn l_orchard_merkle() {
         assert_eq!(super::L_ORCHARD_MERKLE, pallas::Base::NUM_BITS as usize);
+    }
+
+    #[test]
+    fn lebs2ip_k_round_trip() {
+        let mut rng = OsRng;
+        {
+            let int = rng.gen_range(0..(1 << K));
+            assert_eq!(lebs2ip_k(&i2lebsp_k(int)) as usize, int);
+        }
+
+        assert_eq!(lebs2ip_k(&i2lebsp_k(0)) as usize, 0);
+        assert_eq!(lebs2ip_k(&i2lebsp_k((1 << K) - 1)) as usize, (1 << K) - 1);
+    }
+
+    #[test]
+    fn i2lebsp_k_round_trip() {
+        {
+            let bitstring = (0..K).map(|_| rand::random()).collect::<Vec<_>>();
+            assert_eq!(
+                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
+                bitstring
+            );
+        }
+
+        {
+            let bitstring = [false; K];
+            assert_eq!(
+                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
+                bitstring
+            );
+        }
+
+        {
+            let bitstring = [true; K];
+            assert_eq!(
+                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
+                bitstring
+            );
+        }
     }
 
     #[test]

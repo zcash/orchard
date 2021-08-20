@@ -1,11 +1,9 @@
 //! The Sinsemilla hash function and commitment scheme.
 
-use group::Wnaf;
+use group::{Curve, Wnaf};
 use halo2::arithmetic::{CurveAffine, CurveExt};
 use pasta_curves::pallas;
 use subtle::CtOption;
-
-use crate::spec::{extract_p_bottom, i2lebsp};
 
 mod addition;
 use self::addition::IncompletePoint;
@@ -42,11 +40,18 @@ pub(crate) fn lebs2ip_k(bits: &[bool]) -> u32 {
         .fold(0u32, |acc, (i, b)| acc + if *b { 1 << i } else { 0 })
 }
 
-/// The sequence of K bits in little-endian order representing an integer
-/// up to `2^K` - 1.
-pub(crate) fn i2lebsp_k(int: usize) -> [bool; K] {
-    assert!(int < (1 << K));
-    i2lebsp(int as u64)
+/// Coordinate extractor for Pallas.
+///
+/// Defined in [Zcash Protocol Spec § 5.4.9.7: Coordinate Extractor for Pallas][concreteextractorpallas].
+///
+/// [concreteextractorpallas]: https://zips.z.cash/protocol/nu5.pdf#concreteextractorpallas
+fn extract_p_bottom(point: CtOption<pallas::Point>) -> CtOption<pallas::Base> {
+    point.map(|p| {
+        p.to_affine()
+            .coordinates()
+            .map(|c| *c.x())
+            .unwrap_or_else(pallas::Base::zero)
+    })
 }
 
 /// Pads the given iterator (which MUST have length $\leq K * C$) with zero-bits to a
@@ -225,9 +230,8 @@ impl CommitDomain {
 
 #[cfg(test)]
 mod tests {
-    use super::{i2lebsp_k, lebs2ip_k, Pad, K};
+    use super::{Pad, K};
     use pasta_curves::{arithmetic::CurveExt, pallas};
-    use rand::{self, rngs::OsRng, Rng};
 
     #[test]
     fn pad() {
@@ -265,45 +269,6 @@ mod tests {
                 false, false, false, false, false, false, false
             ]
         );
-    }
-
-    #[test]
-    fn lebs2ip_k_round_trip() {
-        let mut rng = OsRng;
-        {
-            let int = rng.gen_range(0..(1 << K));
-            assert_eq!(lebs2ip_k(&i2lebsp_k(int)) as usize, int);
-        }
-
-        assert_eq!(lebs2ip_k(&i2lebsp_k(0)) as usize, 0);
-        assert_eq!(lebs2ip_k(&i2lebsp_k((1 << K) - 1)) as usize, (1 << K) - 1);
-    }
-
-    #[test]
-    fn i2lebsp_k_round_trip() {
-        {
-            let bitstring = (0..K).map(|_| rand::random()).collect::<Vec<_>>();
-            assert_eq!(
-                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
-                bitstring
-            );
-        }
-
-        {
-            let bitstring = [false; K];
-            assert_eq!(
-                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
-                bitstring
-            );
-        }
-
-        {
-            let bitstring = [true; K];
-            assert_eq!(
-                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
-                bitstring
-            );
-        }
     }
 
     #[test]
