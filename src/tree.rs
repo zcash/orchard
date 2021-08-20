@@ -2,7 +2,8 @@
 
 use crate::{
     constants::{
-        util::gen_const_array_with_default, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION,
+        sinsemilla::{L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
+        util::gen_const_array_with_default,
         MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,

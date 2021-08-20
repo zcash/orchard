@@ -9,11 +9,31 @@ use crate::spec::{extract_p_bottom, i2lebsp};
 
 mod addition;
 use self::addition::IncompletePoint;
-
-mod constants;
 mod sinsemilla_s;
-pub use constants::*;
-pub(crate) use sinsemilla_s::*;
+pub use sinsemilla_s::SINSEMILLA_S;
+
+/// Number of bits of each message piece in $\mathsf{SinsemillaHashToPoint}$
+pub const K: usize = 10;
+
+/// $\frac{1}{2^K}$
+pub const INV_TWO_POW_K: [u8; 32] = [
+    1, 0, 192, 196, 160, 229, 70, 82, 221, 165, 74, 202, 85, 7, 62, 34, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 240, 63,
+];
+
+/// The largest integer such that $2^c \leq (r_P - 1) / 2$, where $r_P$ is the order
+/// of Pallas.
+pub const C: usize = 253;
+
+// Sinsemilla Q generators
+
+/// SWU hash-to-curve personalization for Sinsemilla $Q$ generators.
+pub const Q_PERSONALIZATION: &str = "z.cash:SinsemillaQ";
+
+// Sinsemilla S generators
+
+/// SWU hash-to-curve personalization for Sinsemilla $S$ generators.
+pub const S_PERSONALIZATION: &str = "z.cash:SinsemillaS";
 
 pub(crate) fn lebs2ip_k(bits: &[bool]) -> u32 {
     assert!(bits.len() == K);
@@ -196,11 +216,19 @@ impl CommitDomain {
     pub(crate) fn R(&self) -> pallas::Point {
         self.R
     }
+
+    /// Returns the Sinsemilla $Q$ constant for this domain.
+    #[cfg(test)]
+    #[allow(non_snake_case)]
+    pub(crate) fn Q(&self) -> pallas::Point {
+        self.M.Q
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{i2lebsp_k, lebs2ip_k, Pad, K};
+    use pasta_curves::{arithmetic::CurveExt, pallas};
     use rand::{self, rngs::OsRng, Rng};
 
     #[test]
@@ -277,6 +305,24 @@ mod tests {
                 i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
                 bitstring
             );
+        }
+    }
+
+    #[test]
+    fn sinsemilla_s() {
+        use super::sinsemilla_s::SINSEMILLA_S;
+        use group::Curve;
+        use pasta_curves::arithmetic::CurveAffine;
+
+        let hasher = pallas::Point::hash_to_curve(super::S_PERSONALIZATION);
+
+        for j in 0..(1u32 << K) {
+            let computed = {
+                let point = hasher(&j.to_le_bytes()).to_affine().coordinates().unwrap();
+                (*point.x(), *point.y())
+            };
+            let actual = SINSEMILLA_S[j as usize];
+            assert_eq!(computed, actual);
         }
     }
 }

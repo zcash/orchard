@@ -9,9 +9,14 @@ use halo2::{
 };
 
 use crate::circuit::gadget::utilities::UtilitiesInstructions;
-use crate::constants;
 
 pub mod chip;
+
+/// Window size for fixed-base scalar multiplication
+pub const FIXED_BASE_WINDOW_SIZE: usize = 3;
+
+/// $2^{`FIXED_BASE_WINDOW_SIZE`}$
+pub const H: usize = 1 << FIXED_BASE_WINDOW_SIZE;
 
 /// The set of circuit instructions required to use the ECC gadgets.
 pub trait EccInstructions<C: CurveAffine>:
@@ -132,9 +137,9 @@ pub trait EccInstructions<C: CurveAffine>:
 /// Returns information about a fixed point.
 pub trait FixedPoints<C: CurveAffine>: Debug + Eq + Clone {
     fn generator(&self) -> C;
-    fn u(&self) -> Vec<[[u8; 32]; constants::H]>;
+    fn u(&self) -> Vec<[[u8; 32]; H]>;
     fn z(&self) -> Vec<u64>;
-    fn lagrange_coeffs(&self) -> Vec<[C::Base; constants::H]>;
+    fn lagrange_coeffs(&self) -> Vec<[C::Base; H]>;
 }
 
 /// An element of the given elliptic curve's base field, that is used as a scalar

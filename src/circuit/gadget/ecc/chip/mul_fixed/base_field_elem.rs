@@ -1,4 +1,7 @@
-use super::super::{EccBaseFieldElemFixed, EccConfig, EccPoint, FixedPoints};
+use super::super::{
+    EccBaseFieldElemFixed, EccConfig, EccPoint, FixedPoints, FIXED_BASE_WINDOW_SIZE,
+    L_ORCHARD_BASE, NUM_WINDOWS, T_P,
+};
 use super::H_BASE;
 
 use crate::{
@@ -6,7 +9,6 @@ use crate::{
         bitrange_subset, copy, decompose_running_sum::RunningSumConfig,
         lookup_range_check::LookupRangeCheckConfig, range_check, CellValue, Var,
     },
-    constants::{self, T_P},
     primitives::sinsemilla,
 };
 use halo2::{
@@ -23,8 +25,8 @@ pub struct Config<Fixed: FixedPoints<pallas::Affine>> {
     q_mul_fixed_base_field: Selector,
     canon_advices: [Column<Advice>; 3],
     lookup_config: LookupRangeCheckConfig<pallas::Base, { sinsemilla::K }>,
-    running_sum_config: RunningSumConfig<pallas::Base, { constants::FIXED_BASE_WINDOW_SIZE }>,
-    super_config: super::Config<Fixed, { constants::NUM_WINDOWS }>,
+    running_sum_config: RunningSumConfig<pallas::Base, { FIXED_BASE_WINDOW_SIZE }>,
+    super_config: super::Config<Fixed, { NUM_WINDOWS }>,
 }
 
 impl<Fixed: FixedPoints<pallas::Affine>> From<&EccConfig> for Config<Fixed> {
@@ -171,8 +173,8 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
                         offset,
                         scalar,
                         true,
-                        constants::L_ORCHARD_BASE,
-                        constants::NUM_WINDOWS,
+                        L_ORCHARD_BASE,
+                        NUM_WINDOWS,
                     )?;
                     EccBaseFieldElemFixed {
                         base_field_elem: running_sum[0],
@@ -386,10 +388,10 @@ pub mod tests {
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
     use crate::circuit::gadget::{
-        ecc::{chip::EccChip, FixedPoint, FixedPoints, NonIdentityPoint, Point},
+        ecc::{chip::EccChip, FixedPoint, FixedPoints, NonIdentityPoint, Point, H},
         utilities::UtilitiesInstructions,
     };
-    use crate::constants::{self, OrchardFixedBases};
+    use crate::constants::OrchardFixedBases;
 
     pub fn test_mul_fixed_base_field(
         chip: EccChip<OrchardFixedBases>,
@@ -456,7 +458,7 @@ pub mod tests {
         // (There is another *non-canonical* sequence
         // 5333333333333333333333333333333333333333332711161673731021062440252244051273333333333 in octal.)
         {
-            let h = pallas::Base::from_u64(constants::H as u64);
+            let h = pallas::Base::from_u64(H as u64);
             let scalar_fixed = "1333333333333333333333333333333333333333333333333333333333333333333333333333333333334"
                         .chars()
                         .fold(pallas::Base::zero(), |acc, c| {
