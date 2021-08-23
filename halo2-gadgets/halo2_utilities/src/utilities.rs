@@ -55,6 +55,22 @@ pub trait UtilitiesInstructions<F: FieldExt> {
             },
         )
     }
+
+    fn load_constant(
+        &self,
+        mut layouter: impl Layouter<F>,
+        column: Column<Advice>,
+        constant: F,
+    ) -> Result<Self::Var, Error> {
+        layouter.assign_region(
+            || "load constant",
+            |mut region| {
+                let cell =
+                    region.assign_advice_from_constant(|| "load constant", column, 0, constant)?;
+                Ok(Var::new(cell, Some(constant)))
+            },
+        )
+    }
 }
 
 /// Assigns a cell at a specific offset within the given region, constraining it
