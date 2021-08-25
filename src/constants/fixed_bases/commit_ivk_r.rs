@@ -2952,8 +2952,9 @@ fn test_generator() {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{test_lagrange_coeffs, test_zs_and_us, NUM_WINDOWS};
+    use super::super::NUM_WINDOWS;
     use super::*;
+    use crate::constants::{test_lagrange_coeffs, test_zs_and_us};
 
     #[test]
     fn lagrange_coeffs() {

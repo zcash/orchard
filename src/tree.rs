@@ -3,11 +3,11 @@
 use crate::{
     constants::{
         sinsemilla::{i2lebsp_k, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
-        util::gen_const_array_with_default,
         MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,
 };
+use halo2_utilities::utilities::gen_const_array_with_default;
 use incrementalmerkletree::{Altitude, Hashable};
 use pasta_curves::{arithmetic::FieldExt, pallas};
 use sinsemilla::primitive::HashDomain;

@@ -11,8 +11,7 @@ use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};
 
 use crate::constants::{
-    fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
-    KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
+    fixed_bases::COMMIT_IVK_PERSONALIZATION, KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
 };
 use poseidon::primitive as poseidon;
 use sinsemilla::primitive as sinsemilla;
@@ -274,6 +273,18 @@ pub fn lebs2ip<const L: usize>(bits: &[bool; L]) -> u64 {
 pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
     assert!(NUM_BITS <= 64);
     gen_const_array(|mask: usize| (int & (1 << mask)) != 0)
+}
+
+/// Takes in an FnMut closure and returns a constant-length array with elements of
+/// type `Output`.
+pub fn gen_const_array<Output: Copy + Default, const LEN: usize>(
+    mut closure: impl FnMut(usize) -> Output,
+) -> [Output; LEN] {
+    let mut ret: [Output; LEN] = [Default::default(); LEN];
+    for (bit, val) in ret.iter_mut().zip((0..LEN).map(|idx| closure(idx))) {
+        *bit = val;
+    }
+    ret
 }
 
 #[cfg(test)]
