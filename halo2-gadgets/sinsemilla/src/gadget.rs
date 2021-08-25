@@ -4,16 +4,15 @@ use ff::PrimeField;
 use halo2::{circuit::Layouter, plonk::Error};
 use pasta_curves::arithmetic::{CurveAffine, FieldExt};
 use std::{convert::TryInto, fmt::Debug};
-use utilities::Var;
+use utilities::{UtilitiesInstructions, Var};
 
 /// The set of circuit instructions required to use the [`Sinsemilla`](https://zcash.github.io/halo2/design/gadgets/sinsemilla.html) gadget.
 /// This trait is bounded on two constant parameters: `K`, the number of bits
 /// in each word accepted by the Sinsemilla hash, and `MAX_WORDS`, the maximum
 /// number of words that a single hash instance can process.
-pub trait SinsemillaInstructions<C: CurveAffine, const K: usize, const MAX_WORDS: usize> {
-    /// A variable in the circuit.
-    type CellValue: Var<C::Base>;
-
+pub trait SinsemillaInstructions<C: CurveAffine, const K: usize, const MAX_WORDS: usize>:
+    UtilitiesInstructions<C::Base>
+{
     /// A message composed of [`Self::MessagePiece`]s.
     type Message: From<Vec<Self::MessagePiece>>;
 
@@ -39,7 +38,7 @@ pub trait SinsemillaInstructions<C: CurveAffine, const K: usize, const MAX_WORDS
     /// The x-coordinate of a point output of [`Self::hash_to_point`].
     type X;
     /// A point output of [`Self::hash_to_point`].
-    type NonIdentityPoint: Clone + Debug;
+    type NonIdentityPoint: Clone + Debug + Point<C, Self::Var>;
     /// A type enumerating the fixed points used in `CommitDomains`.
     type FixedPoints: FixedPoints<C>;
 
@@ -234,6 +233,7 @@ pub struct HashDomain<
             C,
             NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
+            Var = SinsemillaChip::Var,
         > + Clone
         + Debug
         + Eq,
@@ -251,6 +251,7 @@ where
             C,
             NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
+            Var = SinsemillaChip::Var,
         > + Clone
         + Debug
         + Eq,
@@ -275,13 +276,18 @@ where
     /// [concretesinsemillahash]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillahash
     pub fn hash_to_point(
         &self,
-        layouter: impl Layouter<C::Base>,
+        mut layouter: impl Layouter<C::Base>,
         message: Message<C, SinsemillaChip, K, MAX_WORDS>,
     ) -> Result<(Ecc::NonIdentityPoint<C, EccChip>, Vec<SinsemillaChip::RunningSum>), Error> {
         assert_eq!(self.sinsemilla_chip, message.chip);
-        self.sinsemilla_chip
-            .hash_to_point(layouter, self.Q, message.inner)
-            .map(|(point, zs)| (Ecc::NonIdentityPoint::from_inner(self.ecc_chip.clone(), point), zs))
+        let (point, zs) = self.sinsemilla_chip.hash_to_point(
+            layouter.namespace(|| "hash_to_point"),
+            self.Q,
+            message.inner,
+        )?;
+        let point = Ecc::NonIdentityPoint::copy(self.ecc_chip.clone(), layouter, point.x(), point.y())?;
+
+        Ok((point, zs))
     }
 
     /// $\mathsf{SinsemillaHash}$ from [§ 5.4.1.9][concretesinsemillahash].
@@ -297,6 +303,12 @@ where
         let (p, zs) = self.hash_to_point(layouter, message)?;
         Ok((p.extract_p(), zs))
     }
+}
+
+/// Trait defining behaviour of a point output by Sinsemilla hash-to-point.
+pub trait Point<C: CurveAffine, V: Var<C::Base>> {
+    fn x(&self) -> V;
+    fn y(&self) -> V;
 }
 
 /// Trait allowing circuit's Sinsemilla CommitDomains to be enumerated.
@@ -330,6 +342,7 @@ pub struct CommitDomain<
             C,
             NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
+            Var = SinsemillaChip::Var,
         > + Clone
         + Debug
         + Eq,
@@ -346,6 +359,7 @@ where
             C,
             NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
+            Var = SinsemillaChip::Var,
         > + Clone
         + Debug
         + Eq,

@@ -425,12 +425,6 @@ where
     F: FixedPoints<pallas::Affine>,
     Commit: CommitDomains<pallas::Affine, F, Hash>,
 {
-    type CellValue = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
-        pallas::Affine,
-        { sinsemilla::K },
-        { sinsemilla::C },
-    >>::CellValue;
-
     type Message = <SinsemillaChip<Hash, Commit, F> as SinsemillaInstructions<
         pallas::Affine,
         { sinsemilla::K },
@@ -492,7 +486,7 @@ where
         layouter: impl Layouter<pallas::Base>,
         Q: pallas::Affine,
         message: Self::Message,
-    ) -> Result<(Self::NonIdentityPoint, Vec<Vec<Self::CellValue>>), Error> {
+    ) -> Result<(Self::NonIdentityPoint, Vec<Vec<Self::Var>>), Error> {
         let config = self.config().sinsemilla_config.clone();
         let chip = SinsemillaChip::<Hash, Commit, F>::construct(config);
         chip.hash_to_point(layouter, Q, message)

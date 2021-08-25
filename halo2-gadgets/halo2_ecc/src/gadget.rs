@@ -75,6 +75,16 @@ pub trait EccInstructions<C: CurveAffine>:
         value: Option<C>,
     ) -> Result<Self::NonIdentityPoint, Error>;
 
+    /// Copies a point given existing x- and y-coordinate variables,
+    /// checking that the coordinates indeed belong to a valid point.
+    /// This maps the identity to (0, 0) in affine coordinates.
+    fn copy_point(
+        &self,
+        layouter: &mut impl Layouter<C::Base>,
+        x: Self::Var,
+        y: Self::Var,
+    ) -> Result<Self::Point, Error>;
+
     /// Extracts the x-coordinate of a point.
     fn extract_p<Point: Into<Self::Point> + Clone>(point: &Point) -> Self::X;
 
@@ -187,6 +197,17 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> NonIdentityPoint<C, EccChip> {
     ) -> Result<Self, Error> {
         let point = chip.witness_point_non_id(&mut layouter, value);
         point.map(|inner| NonIdentityPoint { chip, inner })
+    }
+
+    /// Constructs a new point by copying in its coordinates as `x`, `y` cells.
+    pub fn copy(
+        chip: EccChip,
+        mut layouter: impl Layouter<C::Base>,
+        x: EccChip::Var,
+        y: EccChip::Var,
+    ) -> Result<Self, Error> {
+        let point = chip.copy_point(&mut layouter, x, y);
+        point.map(|inner| Point { chip, inner })
     }
 
     /// Constrains this point to be equal in value to another point.

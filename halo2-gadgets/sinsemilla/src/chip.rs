@@ -1,11 +1,13 @@
 use super::{
-    gadget::{CommitDomains, HashDomains, SinsemillaInstructions},
+    gadget::{self, CommitDomains, HashDomains, SinsemillaInstructions},
     message::{Message, MessagePiece},
     primitive as sinsemilla,
 };
-use ecc::{chip::EccPoint, gadget::FixedPoints};
+use ecc::gadget::FixedPoints;
 use std::marker::PhantomData;
-use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, Var};
+use utilities::{
+    lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions, Var,
+};
 
 use halo2::{
     circuit::{Chip, Layouter},
@@ -21,6 +23,22 @@ mod generator_table;
 use generator_table::GeneratorTableConfig;
 
 mod hash_to_point;
+
+/// A point output by hash_to_point
+#[derive(Clone, Debug)]
+struct Point {
+    x: CellValue<pallas::Base>,
+    y: CellValue<pallas::Base>,
+}
+
+impl gadget::Point<pallas::Affine, CellValue<pallas::Base>> for Point {
+    fn x(&self) -> CellValue<pallas::Base> {
+        self.x
+    }
+    fn y(&self) -> CellValue<pallas::Base> {
+        self.y
+    }
+}
 
 /// Configuration for the Sinsemilla hash chip
 #[derive(Eq, PartialEq, Clone, Debug)]
@@ -92,6 +110,16 @@ where
     Fixed: FixedPoints<pallas::Affine>,
 {
     config: SinsemillaConfig<Hash, Commit, Fixed>,
+}
+
+impl<Hash, Commit, Fixed> UtilitiesInstructions<pallas::Base>
+    for SinsemillaChip<Hash, Commit, Fixed>
+where
+    Hash: HashDomains<pallas::Affine>,
+    Commit: CommitDomains<pallas::Affine, Fixed, Hash>,
+    Fixed: FixedPoints<pallas::Affine>,
+{
+    type Var = CellValue<pallas::Base>;
 }
 
 impl<Hash, Commit, Fixed> Chip<pallas::Base> for SinsemillaChip<Hash, Commit, Fixed>
@@ -268,15 +296,13 @@ where
     F: FixedPoints<pallas::Affine>,
     Commit: CommitDomains<pallas::Affine, F, Hash>,
 {
-    type CellValue = CellValue<pallas::Base>;
-
     type Message = Message<pallas::Base, { sinsemilla::K }, { sinsemilla::C }>;
     type MessagePiece = MessagePiece<pallas::Base, { sinsemilla::K }>;
 
-    type RunningSum = Vec<Self::CellValue>;
+    type RunningSum = Vec<Self::Var>;
 
-    type X = CellValue<pallas::Base>;
-    type NonIdentityPoint = NonIdentityEccPoint;
+    type X = Self::Var;
+    type NonIdentityPoint = Point;
     type FixedPoints = F;
 
     type HashDomains = Hash;

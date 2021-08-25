@@ -1,4 +1,4 @@
-use super::{CellValue, EccPoint, NonIdentityEccPoint, SinsemillaChip, Var};
+use super::{CellValue, Point, SinsemillaChip, Var};
 use crate::gadget::{CommitDomains, HashDomains, SinsemillaInstructions};
 
 use crate::primitive::{self as sinsemilla, lebs2ip_k, INV_TWO_POW_K, SINSEMILLA_S};
@@ -33,7 +33,7 @@ where
             { sinsemilla::K },
             { sinsemilla::C },
         >>::Message,
-    ) -> Result<(NonIdentityEccPoint, Vec<Vec<CellValue<pallas::Base>>>), Error> {
+    ) -> Result<(Point, Vec<Vec<CellValue<pallas::Base>>>), Error> {
         let config = self.config().clone();
         let mut offset = 0;
 
@@ -161,10 +161,7 @@ where
                 }
             }
         }
-        Ok((
-            NonIdentityEccPoint::from_coordinates_unchecked(x_a.0, y_a),
-            zs_sum,
-        ))
+        Ok((Point { x: x_a.0, y: y_a }, zs_sum))
     }
 
     #[allow(clippy::type_complexity)]

@@ -8,6 +8,7 @@ use halo2::{
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::CurveAffine, pallas};
+use utilities::copy;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -167,5 +168,23 @@ pub mod tests {
             Some(pallas::Affine::identity()),
         )
         .expect_err("witnessing 𝒪 should return an error");
+    }
+
+    pub(super) fn copy_point(
+        &self,
+        x: CellValue<pallas::Base>,
+        y: CellValue<pallas::Base>,
+        offset: usize,
+        region: &mut Region<'_, pallas::Base>,
+    ) -> Result<EccPoint, Error> {
+        // Enable `q_point` selector
+        self.q_point.enable(region, offset)?;
+
+        // Copy `x` value
+        let x = copy(region, || "x", self.x, offset, &x)?;
+        // Copy `y` value
+        let y = copy(region, || "y", self.y, offset, &y)?;
+
+        Ok(EccPoint { x, y })
     }
 }
