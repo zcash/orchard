@@ -358,6 +358,7 @@ where
         {
             use crate::{merkle::i2lebsp, primitive::HashDomain};
             use ff::PrimeFieldBits;
+            use group::prime::PrimeCurveAffine;
 
             if let (Some(left), Some(right)) = (left.value(), right.value()) {
                 let l = i2lebsp::<10>(l as u64);
@@ -373,7 +374,7 @@ where
                     .by_val()
                     .take(L_PALLAS_BASE)
                     .collect();
-                let merkle_crh = HashDomain { Q };
+                let merkle_crh = HashDomain { Q: Q.to_curve() };
 
                 let mut message = l.to_vec();
                 message.extend_from_slice(&left);

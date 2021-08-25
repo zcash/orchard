@@ -1,16 +1,14 @@
-use std::array;
-
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use ff::Field;
-use poseidon::primitive::{ConstantLength, Hash, P128Pow5T3};
+use halo2_poseidon::primitive::{ConstantLength, Hash, P128Pow5T3};
 
 use pasta_curves::pallas;
 #[cfg(unix)]
 use pprof::criterion::{Output, PProfProfiler};
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
 
 fn bench_primitives(c: &mut Criterion) {
-    let mut rng = OsRng;
+    let rng = OsRng;
 
     {
         let mut group = c.benchmark_group("Poseidon");

@@ -9,5 +9,3 @@ members = [
 
 [patch.crates-io]
 halo2 = { git = "https://github.com/zcash/halo2.git", rev = "27c4187673a9c6ade13fbdbd4f20955530c22d7f" }
-zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "13b023387bafdc7b5712c933dc0e16ee94b96a6a" }
-orchard = { path = "../" }

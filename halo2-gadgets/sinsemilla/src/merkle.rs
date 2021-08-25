@@ -445,7 +445,12 @@ pub mod tests {
         root.fill(&WHITE).unwrap();
         let root = root.titled("MerkleCRH Path", ("sans-serif", 60)).unwrap();
 
-        let circuit = super::testing::MyCircuit::<Hash, Commit, FixedBase, Test>::default();
+        let circuit = super::testing::MyCircuit::<Hash, Commit, FixedBase, Test> {
+            leaf: None,
+            leaf_pos: None,
+            merkle_path: None,
+            _marker: std::marker::PhantomData,
+        };
         halo2::dev::CircuitLayout::default()
             .show_labels(false)
             .render(11, &circuit, &root)

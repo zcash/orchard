@@ -709,7 +709,7 @@ mod tests {
         root.fill(&WHITE).unwrap();
         let root = root.titled("Ecc Chip Layout", ("sans-serif", 60)).unwrap();
 
-        let circuit = MyCircuit {};
+        let circuit = super::testing::MyCircuit::<Test, FixedBase>(std::marker::PhantomData);
         halo2::dev::CircuitLayout::default()
             .render(13, &circuit, &root)
             .unwrap();
