@@ -119,7 +119,7 @@ impl<I: Iterator<Item = bool>> Iterator for Pad<I> {
 #[derive(Debug, Clone)]
 #[allow(non_snake_case)]
 pub struct HashDomain {
-    Q: pallas::Point,
+    pub(crate) Q: pallas::Point,
 }
 
 impl HashDomain {
@@ -173,8 +173,8 @@ impl HashDomain {
 #[derive(Debug)]
 #[allow(non_snake_case)]
 pub struct CommitDomain {
-    M: HashDomain,
-    R: pallas::Point,
+    pub(crate) M: HashDomain,
+    pub(crate) R: pallas::Point,
 }
 
 impl CommitDomain {

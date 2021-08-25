@@ -5,8 +5,7 @@ use halo2::{
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use super::{MerkleInstructions, L_ORCHARD_BASE, MERKLE_DEPTH_ORCHARD};
-
+use super::{MerkleInstructions, L_PALLAS_BASE, MERKLE_DEPTH};
 use crate::{
     primitives::sinsemilla,
     {
@@ -180,7 +179,7 @@ where
 }
 
 impl<Hash, Commit, F>
-    MerkleInstructions<pallas::Affine, MERKLE_DEPTH_ORCHARD, { sinsemilla::K }, { sinsemilla::C }>
+    MerkleInstructions<pallas::Affine, MERKLE_DEPTH, { sinsemilla::K }, { sinsemilla::C }>
     for MerkleChip<Hash, Commit, F>
 where
     Hash: HashDomains<pallas::Affine>,
@@ -192,7 +191,7 @@ where
         &self,
         mut layouter: impl Layouter<pallas::Base>,
         Q: pallas::Affine,
-        // l = MERKLE_DEPTH_ORCHARD - layer - 1
+        // l = MERKLE_DEPTH - layer - 1
         l: usize,
         left: Self::Var,
         right: Self::Var,
@@ -234,7 +233,7 @@ where
             let b_1 = {
                 let b_1 = left
                     .value()
-                    .map(|value| bitrange_subset(value, 250..L_ORCHARD_BASE));
+                    .map(|value| bitrange_subset(value, 250..L_PALLAS_BASE));
 
                 config
                     .sinsemilla_config
@@ -275,7 +274,7 @@ where
             // `c = bits 5..=254 of `right`
             let c = right
                 .value()
-                .map(|value| bitrange_subset(value, 5..L_ORCHARD_BASE));
+                .map(|value| bitrange_subset(value, 5..L_PALLAS_BASE));
             self.witness_message_piece(layouter.namespace(|| "Witness c"), c, 25)?
         };
 
@@ -300,7 +299,7 @@ where
                 || "Check piece decomposition",
                 |mut region| {
                     // Set the fixed column `l` to the current l.
-                    // Recall that l = MERKLE_DEPTH_ORCHARD - layer - 1.
+                    // Recall that l = MERKLE_DEPTH - layer - 1.
                     // The layer with 2^n nodes is called "layer n".
                     config.q_decompose.enable(&mut region, 0)?;
                     region.assign_advice_from_constant(
@@ -360,9 +359,9 @@ where
         // Check layer hash output against Sinsemilla primitives hash
         #[cfg(test)]
         {
-            use super::MERKLE_CRH_PERSONALIZATION;
             use crate::{primitives::sinsemilla::HashDomain, sinsemilla::merkle::i2lebsp};
             use ff::PrimeFieldBits;
+            use group::prime::PrimeCurveAffine;
 
             if let (Some(left), Some(right)) = (left.value(), right.value()) {
                 let l = i2lebsp::<10>(l as u64);
@@ -370,15 +369,15 @@ where
                     .to_le_bits()
                     .iter()
                     .by_val()
-                    .take(L_ORCHARD_BASE)
+                    .take(L_PALLAS_BASE)
                     .collect();
                 let right: Vec<_> = right
                     .to_le_bits()
                     .iter()
                     .by_val()
-                    .take(L_ORCHARD_BASE)
+                    .take(L_PALLAS_BASE)
                     .collect();
-                let merkle_crh = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
+                let merkle_crh = HashDomain { Q: Q.to_curve() };
 
                 let mut message = l.to_vec();
                 message.extend_from_slice(&left);
