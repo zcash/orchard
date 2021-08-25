@@ -157,13 +157,13 @@ pub mod tests {
     };
 
     use crate::{
+        constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
+        note::commitment::ExtractedNoteCommitment,
+        tree,
         {
             sinsemilla::chip::SinsemillaChip,
             utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions, Var},
         },
-        constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
-        note::commitment::ExtractedNoteCommitment,
-        tree,
     };
 
     use halo2::{

@@ -8,8 +8,8 @@ use halo2::{
 };
 
 use super::{PoseidonDuplexInstructions, PoseidonInstructions};
-use crate::utilities::{CellValue, Var};
 use crate::primitives::poseidon::{Domain, Mds, Spec, SpongeState, State};
+use crate::utilities::{CellValue, Var};
 
 const WIDTH: usize = 3;
 
@@ -33,7 +33,7 @@ pub struct Pow5T3Config<F: FieldExt> {
 }
 
 impl<F: FieldExt> Pow5T3Config<F> {
-    pub fn state(&self)-> [Column<Advice>; WIDTH] {
+    pub fn state(&self) -> [Column<Advice>; WIDTH] {
         self.state
     }
 }

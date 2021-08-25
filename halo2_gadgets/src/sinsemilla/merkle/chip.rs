@@ -8,6 +8,7 @@ use pasta_curves::{arithmetic::FieldExt, pallas};
 use super::{MerkleInstructions, L_ORCHARD_BASE, MERKLE_DEPTH_ORCHARD};
 
 use crate::{
+    primitives::sinsemilla,
     {
         ecc::FixedPoints,
         sinsemilla::{
@@ -20,7 +21,6 @@ use crate::{
             copy, CellValue, UtilitiesInstructions, Var,
         },
     },
-    primitives::sinsemilla,
 };
 use std::array;
 
@@ -361,7 +361,7 @@ where
         #[cfg(test)]
         {
             use super::MERKLE_CRH_PERSONALIZATION;
-            use crate::{primitives::sinsemilla::HashDomain, spec::i2lebsp};
+            use crate::{primitives::sinsemilla::HashDomain, sinsemilla::merkle::i2lebsp};
             use ff::PrimeFieldBits;
 
             if let (Some(left), Some(right)) = (left.value(), right.value()) {

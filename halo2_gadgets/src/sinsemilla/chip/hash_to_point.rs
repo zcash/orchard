@@ -116,8 +116,8 @@ where
         #[allow(non_snake_case)]
         // Check equivalence to result from primitives::sinsemilla::hash_to_point
         {
-            use crate::sinsemilla::message::MessagePiece;
             use crate::primitives::sinsemilla::{K, S_PERSONALIZATION};
+            use crate::sinsemilla::message::MessagePiece;
             use group::{prime::PrimeCurveAffine, Curve};
             use pasta_curves::arithmetic::CurveExt;
 

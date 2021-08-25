@@ -19,6 +19,9 @@ use pasta_curves::{
 pub mod base_field_elem;
 pub mod full_width;
 pub mod short;
+pub mod util;
+
+pub use util::{compute_lagrange_coeffs, compute_window_table, find_zs_and_us};
 
 lazy_static! {
     static ref TWO_SCALAR: pallas::Scalar = pallas::Scalar::from_u64(2);

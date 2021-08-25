@@ -1,10 +1,10 @@
 use super::{EccInstructions, FixedPoints, FIXED_BASE_WINDOW_SIZE, H};
 use crate::{
+    primitives::sinsemilla,
     utilities::{
         copy, decompose_running_sum::RunningSumConfig, lookup_range_check::LookupRangeCheckConfig,
         CellValue, UtilitiesInstructions, Var,
     },
-    primitives::sinsemilla,
 };
 use arrayvec::ArrayVec;
 use std::marker::PhantomData;
@@ -22,9 +22,11 @@ pub(super) mod mul;
 pub(super) mod mul_fixed;
 pub(super) mod witness_point;
 
+pub use mul_fixed::{compute_lagrange_coeffs, compute_window_table, find_zs_and_us};
+
 /// Number of windows for a full-width scalar
 pub const NUM_WINDOWS: usize =
-    (L_ORCHARD_SCALAR + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
+    (L_PALLAS_SCALAR + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
 
 /// Number of windows for a short signed scalar
 pub const NUM_WINDOWS_SHORT: usize =
@@ -34,13 +36,11 @@ pub const NUM_WINDOWS_SHORT: usize =
 /// Number of bits in an unsigned short scalar.
 pub(crate) const L_VALUE: usize = 64;
 
-/// $\ell^\mathsf{Orchard}_\mathsf{base}$
 /// Number of bits in a Pallas base field element.
-pub(crate) const L_ORCHARD_BASE: usize = 255;
+pub(crate) const L_PALLAS_BASE: usize = 255;
 
-/// $\ell^\mathsf{Orchard}_\mathsf{scalar}$
 /// Number of bits in a Pallas scalar field element.
-pub(crate) const L_ORCHARD_SCALAR: usize = 255;
+pub(crate) const L_PALLAS_SCALAR: usize = 255;
 
 /// The Pallas scalar field modulus is $q = 2^{254} + \mathsf{t_q}$.
 /// <https://github.com/zcash/pasta>
@@ -62,17 +62,6 @@ pub struct EccPoint {
 }
 
 impl EccPoint {
-    /// Constructs a point from its coordinates, without checking they are on the curve.
-    ///
-    /// This is an internal API that we only use where we know we have a valid curve point
-    /// (specifically inside Sinsemilla).
-    pub(crate) fn from_coordinates_unchecked(
-        x: CellValue<pallas::Base>,
-        y: CellValue<pallas::Base>,
-    ) -> Self {
-        EccPoint { x, y }
-    }
-
     /// Returns the value of this curve point, if known.
     pub fn point(&self) -> Option<pallas::Affine> {
         match (self.x.value(), self.y.value()) {
@@ -97,7 +86,7 @@ impl EccPoint {
         self.y
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "testing")]
     fn is_identity(&self) -> Option<bool> {
         self.x.value().map(|x| x == pallas::Base::zero())
     }
@@ -404,12 +393,6 @@ pub struct EccScalarFixedShort {
 struct EccBaseFieldElemFixed {
     base_field_elem: CellValue<pallas::Base>,
     running_sum: ArrayVec<CellValue<pallas::Base>, { NUM_WINDOWS + 1 }>,
-}
-
-impl EccBaseFieldElemFixed {
-    fn base_field_elem(&self) -> CellValue<pallas::Base> {
-        self.base_field_elem
-    }
 }
 
 impl<Fixed: super::FixedPoints<pallas::Affine>> EccInstructions<pallas::Affine> for EccChip<Fixed> {

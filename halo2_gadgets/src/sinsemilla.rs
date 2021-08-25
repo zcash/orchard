@@ -422,6 +422,11 @@ mod tests {
     };
 
     use crate::{
+        constants::{
+            fixed_bases::COMMIT_IVK_PERSONALIZATION, sinsemilla::MERKLE_CRH_PERSONALIZATION,
+            OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains,
+        },
+        primitives::sinsemilla::{self, K},
         {
             ecc::{
                 chip::{EccChip, EccConfig},
@@ -429,11 +434,6 @@ mod tests {
             },
             utilities::lookup_range_check::LookupRangeCheckConfig,
         },
-        constants::{
-            fixed_bases::COMMIT_IVK_PERSONALIZATION, sinsemilla::MERKLE_CRH_PERSONALIZATION,
-            OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains,
-        },
-        primitives::sinsemilla::{self, K},
     };
 
     use group::Curve;

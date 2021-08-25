@@ -23,7 +23,6 @@ const NUM_COMPLETE_BITS: usize = 3;
 
 // Bits used in incomplete addition. k_{254} to k_{4} inclusive
 const INCOMPLETE_LEN: usize = pallas::Scalar::NUM_BITS as usize - 1 - NUM_COMPLETE_BITS;
-const INCOMPLETE_RANGE: Range<usize> = 0..INCOMPLETE_LEN;
 
 // Bits k_{254} to k_{4} inclusive are used in incomplete addition.
 // The `hi` half is k_{254} to k_{130} inclusive (length 125 bits).
@@ -443,30 +442,29 @@ fn decompose_for_scalar_mul(scalar: Option<pallas::Base>) -> Vec<Option<bool>> {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
-    use group::Curve;
+    use group::{Curve, Group};
     use halo2::{
         circuit::{Chip, Layouter},
         plonk::Error,
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::{
-        ecc::{
-            chip::{EccChip, EccPoint},
-            EccInstructions, NonIdentityPoint, Point,
-        },
-        utilities::UtilitiesInstructions,
+    use crate::ecc::{
+        chip::{EccChip, EccPoint},
+        EccInstructions, FixedPoints, NonIdentityPoint, Point,
     };
-    use crate::constants::OrchardFixedBases;
+    use crate::utilities::UtilitiesInstructions;
 
-    pub fn test_mul(
-        chip: EccChip<OrchardFixedBases>,
+    pub fn test_mul<F: FixedPoints<pallas::Affine>>(
+        chip: EccChip<F>,
         mut layouter: impl Layouter<pallas::Base>,
-        p: &NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
-        p_val: pallas::Affine,
     ) -> Result<(), Error> {
+        // Generate a random point P
+        let p_val = pallas::Point::random(rand::rngs::OsRng).to_affine(); // P
+        let p = NonIdentityPoint::new(chip.clone(), layouter.namespace(|| "P"), Some(p_val))?;
+
         let column = chip.config().advices[0];
 
         fn constrain_equal_non_id<

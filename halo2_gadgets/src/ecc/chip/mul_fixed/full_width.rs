@@ -1,5 +1,5 @@
 use super::super::{
-    EccConfig, EccPoint, EccScalarFixed, FixedPoints, FIXED_BASE_WINDOW_SIZE, H, L_ORCHARD_SCALAR,
+    EccConfig, EccPoint, EccScalarFixed, FixedPoints, FIXED_BASE_WINDOW_SIZE, H, L_PALLAS_SCALAR,
     NUM_WINDOWS,
 };
 
@@ -54,7 +54,7 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
         offset: usize,
         scalar: Option<pallas::Scalar>,
     ) -> Result<EccScalarFixed, Error> {
-        let windows = self.decompose_scalar_fixed::<L_ORCHARD_SCALAR>(scalar, offset, region)?;
+        let windows = self.decompose_scalar_fixed::<L_PALLAS_SCALAR>(scalar, offset, region)?;
 
         Ok(EccScalarFixed {
             value: scalar,
@@ -162,73 +162,42 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
     use group::Curve;
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
-    use crate::ecc::{
-        chip::EccChip, FixedPoint, FixedPoints, NonIdentityPoint, Point, H,
-    };
-    use crate::constants::OrchardFixedBases;
+    use crate::ecc::{chip::EccChip, FixedPoint, FixedPoints, NonIdentityPoint, Point, H};
 
-    pub fn test_mul_fixed(
-        chip: EccChip<OrchardFixedBases>,
+    pub fn test_mul_fixed<F: FixedPoints<pallas::Affine>>(
+        base: F,
+        chip: EccChip<F>,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), Error> {
-        // commit_ivk_r
-        let commit_ivk_r = OrchardFixedBases::CommitIvkR;
         test_single_base(
             chip.clone(),
-            layouter.namespace(|| "commit_ivk_r"),
-            FixedPoint::from_inner(chip.clone(), commit_ivk_r),
-            commit_ivk_r.generator(),
-        )?;
-
-        // note_commit_r
-        let note_commit_r = OrchardFixedBases::NoteCommitR;
-        test_single_base(
-            chip.clone(),
-            layouter.namespace(|| "note_commit_r"),
-            FixedPoint::from_inner(chip.clone(), note_commit_r),
-            note_commit_r.generator(),
-        )?;
-
-        // value_commit_r
-        let value_commit_r = OrchardFixedBases::ValueCommitR;
-        test_single_base(
-            chip.clone(),
-            layouter.namespace(|| "value_commit_r"),
-            FixedPoint::from_inner(chip.clone(), value_commit_r),
-            value_commit_r.generator(),
-        )?;
-
-        // spend_auth_g
-        let spend_auth_g = OrchardFixedBases::SpendAuthG;
-        test_single_base(
-            chip.clone(),
-            layouter.namespace(|| "spend_auth_g"),
-            FixedPoint::from_inner(chip, spend_auth_g),
-            spend_auth_g.generator(),
+            layouter.namespace(|| "fixed base"),
+            FixedPoint::from_inner(chip, base.clone()),
+            base.generator(),
         )?;
 
         Ok(())
     }
 
     #[allow(clippy::op_ref)]
-    fn test_single_base(
-        chip: EccChip<OrchardFixedBases>,
+    fn test_single_base<F: FixedPoints<pallas::Affine>>(
+        chip: EccChip<F>,
         mut layouter: impl Layouter<pallas::Base>,
-        base: FixedPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+        base: FixedPoint<pallas::Affine, EccChip<F>>,
         base_val: pallas::Affine,
     ) -> Result<(), Error> {
-        fn constrain_equal_non_id(
-            chip: EccChip<OrchardFixedBases>,
+        fn constrain_equal_non_id<F: FixedPoints<pallas::Affine>>(
+            chip: EccChip<F>,
             mut layouter: impl Layouter<pallas::Base>,
             base_val: pallas::Affine,
             scalar_val: pallas::Scalar,
-            result: Point<pallas::Affine, EccChip<OrchardFixedBases>>,
+            result: Point<pallas::Affine, EccChip<F>>,
         ) -> Result<(), Error> {
             let expected = NonIdentityPoint::new(
                 chip,

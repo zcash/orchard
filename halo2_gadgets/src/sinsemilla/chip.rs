@@ -3,11 +3,11 @@ use super::{
     CommitDomains, HashDomains, SinsemillaInstructions,
 };
 use crate::{
+    primitives::sinsemilla,
     {
         ecc::{chip::NonIdentityEccPoint, FixedPoints},
         utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, Var},
     },
-    primitives::sinsemilla,
 };
 use std::marker::PhantomData;
 

@@ -1,6 +1,6 @@
 use super::super::{copy, CellValue, EccConfig, Var};
 use super::{T_Q, Z};
-use crate::{utilities::lookup_range_check::LookupRangeCheckConfig, primitives::sinsemilla};
+use crate::{primitives::sinsemilla, utilities::lookup_range_check::LookupRangeCheckConfig};
 use halo2::{
     circuit::Layouter,
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},

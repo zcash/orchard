@@ -1,15 +1,8 @@
 //! Orchard fixed bases.
 use super::{L_ORCHARD_SCALAR, L_VALUE};
-use halo2_gadgets::ecc::FixedPoints;
+use halo2_gadgets::ecc::{chip::compute_lagrange_coeffs, FixedPoints};
 
-use arrayvec::ArrayVec;
-use ff::Field;
-use group::Curve;
-use halo2::arithmetic::lagrange_interpolate;
-use pasta_curves::{
-    arithmetic::{CurveAffine, FieldExt},
-    pallas,
-};
+use pasta_curves::pallas;
 
 pub mod commit_ivk_r;
 pub mod note_commit_r;
@@ -51,127 +44,26 @@ pub const NUM_WINDOWS: usize =
 pub const NUM_WINDOWS_SHORT: usize =
     (L_VALUE + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
 
-/// For each fixed base, we calculate its scalar multiples in three-bit windows.
-/// Each window will have $2^3 = 8$ points.
-fn compute_window_table<C: CurveAffine>(base: C, num_windows: usize) -> Vec<[C; H]> {
-    let mut window_table: Vec<[C; H]> = Vec::with_capacity(num_windows);
-
-    // Generate window table entries for all windows but the last.
-    // For these first `num_windows - 1` windows, we compute the multiple [(k+2)*(2^3)^w]B.
-    // Here, w ranges from [0..`num_windows - 1`)
-    for w in 0..(num_windows - 1) {
-        window_table.push(
-            (0..H)
-                .map(|k| {
-                    // scalar = (k+2)*(8^w)
-                    let scalar = C::ScalarExt::from_u64(k as u64 + 2)
-                        * C::ScalarExt::from_u64(H as u64).pow(&[w as u64, 0, 0, 0]);
-                    (base * scalar).to_affine()
-                })
-                .collect::<ArrayVec<C, H>>()
-                .into_inner()
-                .unwrap(),
-        );
-    }
-
-    // Generate window table entries for the last window, w = `num_windows - 1`.
-    // For the last window, we compute [k * (2^3)^w - sum]B, where sum is defined
-    // as sum = \sum_{j = 0}^{`num_windows - 2`} 2^{3j+1}
-    let sum = (0..(num_windows - 1)).fold(C::ScalarExt::zero(), |acc, j| {
-        acc + C::ScalarExt::from_u64(2).pow(&[
-            FIXED_BASE_WINDOW_SIZE as u64 * j as u64 + 1,
-            0,
-            0,
-            0,
-        ])
-    });
-    window_table.push(
-        (0..H)
-            .map(|k| {
-                // scalar = k * (2^3)^w - sum, where w = `num_windows - 1`
-                let scalar = C::ScalarExt::from_u64(k as u64)
-                    * C::ScalarExt::from_u64(H as u64).pow(&[(num_windows - 1) as u64, 0, 0, 0])
-                    - sum;
-                (base * scalar).to_affine()
-            })
-            .collect::<ArrayVec<C, H>>()
-            .into_inner()
-            .unwrap(),
-    );
-
-    window_table
-}
-
-/// For each window, we interpolate the $x$-coordinate.
-/// Here, we pre-compute and store the coefficients of the interpolation polynomial.
-fn compute_lagrange_coeffs<C: CurveAffine>(base: C, num_windows: usize) -> Vec<[C::Base; H]> {
-    // We are interpolating over the 3-bit window, k \in [0..8)
-    let points: Vec<_> = (0..H).map(|i| C::Base::from_u64(i as u64)).collect();
-
-    let window_table = compute_window_table(base, num_windows);
-
-    window_table
-        .iter()
-        .map(|window_points| {
-            let x_window_points: Vec<_> = window_points
-                .iter()
-                .map(|point| *point.coordinates().unwrap().x())
-                .collect();
-            lagrange_interpolate(&points, &x_window_points)
-                .into_iter()
-                .collect::<ArrayVec<C::Base, H>>()
-                .into_inner()
-                .unwrap()
-        })
-        .collect()
-}
-
-/// For each window, $z$ is a field element such that for each point $(x, y)$ in the window:
-/// - $z + y = u^2$ (some square in the field); and
-/// - $z - y$ is not a square.
-/// If successful, return a vector of `(z: u64, us: [C::Base; H])` for each window.
-///
-/// This function was used to generate the `z`s and `u`s for the Orchard fixed
-/// bases. The outputs of this function have been stored as constants, and it
-/// is not called anywhere in this codebase. However, we keep this function here
-/// as a utility for those who wish to use it with different parameters.
-fn find_zs_and_us<C: CurveAffine>(base: C, num_windows: usize) -> Option<Vec<(u64, [C::Base; H])>> {
-    // Closure to find z and u's for one window
-    let find_z_and_us = |window_points: &[C]| {
-        assert_eq!(H, window_points.len());
-
-        let ys: Vec<_> = window_points
-            .iter()
-            .map(|point| *point.coordinates().unwrap().y())
-            .collect();
-        (0..(1000 * (1 << (2 * H)))).find_map(|z| {
-            ys.iter()
-                .map(|&y| {
-                    if (-y + C::Base::from_u64(z)).sqrt().is_none().into() {
-                        (y + C::Base::from_u64(z)).sqrt().into()
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Option<ArrayVec<C::Base, H>>>()
-                .map(|us| (z, us.into_inner().unwrap()))
-        })
-    };
-
-    let window_table = compute_window_table(base, num_windows);
-    window_table
-        .iter()
-        .map(|window_points| find_z_and_us(window_points))
-        .collect()
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+/// The fixed bases used in the Orchard protocol.
 pub enum OrchardFixedBases {
+    /// The random base used in CommitIvk. This is multiplied by a full-width
+    /// scalar.
     CommitIvkR,
+    /// The random base used in NoteCommit. This is multiplied by a full-width
+    /// scalar.
     NoteCommitR,
+    /// The base used to multiply the trapdoor in ValueCommit. This is multiplied
+    /// by a full-width scalar.
     ValueCommitR,
+    /// The base used in SpendAuthSig. This is multiplied by a full-width
+    /// scalar.
     SpendAuthG,
+    /// The base used in DeriveNullifier. This is multiplied by a base-field
+    /// element.
     NullifierK,
+    /// The base used to multiply the value in ValueCommit. This is multiplied
+    /// by a signed 64-bit integer.
     ValueCommitV,
 }
 
@@ -220,9 +112,26 @@ impl FixedPoints<pallas::Affine> for OrchardFixedBases {
 }
 
 #[cfg(test)]
-// Test that Lagrange interpolation coefficients reproduce the correct x-coordinate
-// for each fixed-base multiple in each window.
+use pasta_curves::arithmetic::{CurveAffine, FieldExt};
+
+#[cfg(test)]
+/// Test that Lagrange interpolation coefficients reproduce the correct x-coordinate
+/// for each fixed-base multiple in each window.
 fn test_lagrange_coeffs<C: CurveAffine>(base: C, num_windows: usize) {
+    use ff::Field;
+    use group::Curve;
+    use halo2_gadgets::ecc::FIXED_BASE_WINDOW_SIZE;
+
+    fn evaluate<C: CurveAffine>(x: u8, coeffs: &[C::Base]) -> C::Base {
+        let x = C::Base::from_u64(x as u64);
+        coeffs
+            .iter()
+            .rev()
+            .cloned()
+            .reduce(|acc, coeff| acc * x + coeff)
+            .unwrap_or_else(C::Base::zero)
+    }
+
     let lagrange_coeffs = compute_lagrange_coeffs(base, num_windows);
 
     // Check first 84 windows, i.e. `k_0, k_1, ..., k_83`
@@ -231,7 +140,7 @@ fn test_lagrange_coeffs<C: CurveAffine>(base: C, num_windows: usize) {
         for bits in 0..(1 << FIXED_BASE_WINDOW_SIZE) {
             {
                 // Interpolate the x-coordinate using this window's coefficients
-                let interpolated_x = super::evaluate::<C>(bits, coeffs);
+                let interpolated_x = evaluate::<C>(bits, coeffs);
 
                 // Compute the actual x-coordinate of the multiple [(k+2)*(8^w)]B.
                 let point = base
@@ -248,7 +157,7 @@ fn test_lagrange_coeffs<C: CurveAffine>(base: C, num_windows: usize) {
     // Check last window.
     for bits in 0..(1 << FIXED_BASE_WINDOW_SIZE) {
         // Interpolate the x-coordinate using the last window's coefficients
-        let interpolated_x = super::evaluate::<C>(bits, &lagrange_coeffs[num_windows - 1]);
+        let interpolated_x = evaluate::<C>(bits, &lagrange_coeffs[num_windows - 1]);
 
         // Compute the actual x-coordinate of the multiple [k * (8^84) - offset]B,
         // where offset = \sum_{j = 0}^{83} 2^{3j+1}
@@ -277,6 +186,9 @@ fn test_lagrange_coeffs<C: CurveAffine>(base: C, num_windows: usize) {
 //      2. z - y is not a square
 // for the y-coordinate of each fixed-base multiple in each window.
 fn test_zs_and_us<C: CurveAffine>(base: C, z: &[u64], u: &[[[u8; 32]; H]], num_windows: usize) {
+    use ff::Field;
+    use halo2_gadgets::ecc::chip::compute_window_table;
+
     let window_table = compute_window_table(base, num_windows);
 
     for ((u, z), window_points) in u.iter().zip(z.iter()).zip(window_table) {
@@ -287,4 +199,34 @@ fn test_zs_and_us<C: CurveAffine>(base: C, z: &[u64], u: &[[[u8; 32]; H]], num_w
             assert!(bool::from((C::Base::from_u64(*z) - y).sqrt().is_none()));
         }
     }
+}
+
+#[cfg(feature = "gadget-tests")]
+#[test]
+fn test_orchard_fixed_bases() {
+    use halo2::dev::MockProver;
+    use halo2_gadgets::ecc::testing;
+
+    struct OrchardTest;
+    impl testing::EccTest<OrchardFixedBases> for OrchardTest {
+        fn fixed_bases_full() -> Vec<OrchardFixedBases> {
+            vec![
+                OrchardFixedBases::CommitIvkR,
+                OrchardFixedBases::NoteCommitR,
+                OrchardFixedBases::SpendAuthG,
+                OrchardFixedBases::ValueCommitR,
+            ]
+        }
+        fn fixed_bases_short() -> Vec<OrchardFixedBases> {
+            vec![OrchardFixedBases::ValueCommitV]
+        }
+        fn fixed_bases_base_field() -> Vec<OrchardFixedBases> {
+            vec![OrchardFixedBases::NullifierK]
+        }
+    }
+
+    let k = 13;
+    let circuit = testing::MyCircuit::<OrchardTest, OrchardFixedBases>(std::marker::PhantomData);
+    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    assert_eq!(prover.verify(), Ok(()))
 }

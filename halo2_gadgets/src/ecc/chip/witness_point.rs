@@ -146,7 +146,7 @@ impl Config {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
     use halo2::circuit::Layouter;
     use pasta_curves::pallas;
@@ -159,7 +159,7 @@ pub mod tests {
     >(
         chip: EccChip,
         mut layouter: impl Layouter<pallas::Base>,
-    ) {
+    ) -> Result<(), Error> {
         // Witnessing the identity should return an error.
         NonIdentityPoint::new(
             chip,
@@ -167,5 +167,7 @@ pub mod tests {
             Some(pallas::Affine::identity()),
         )
         .expect_err("witnessing 𝒪 should return an error");
+
+        Ok(())
     }
 }
