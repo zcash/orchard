@@ -143,9 +143,9 @@ impl Config {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
-    use group::Curve;
+    use group::{prime::PrimeCurveAffine, Curve, Group};
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::pallas;
 
@@ -157,15 +157,32 @@ pub mod tests {
     >(
         chip: EccChip,
         mut layouter: impl Layouter<pallas::Base>,
-        p_val: pallas::Affine,
-        p: &NonIdentityPoint<pallas::Affine, EccChip>,
-        q_val: pallas::Affine,
-        q: &NonIdentityPoint<pallas::Affine, EccChip>,
-        p_neg: &NonIdentityPoint<pallas::Affine, EccChip>,
     ) -> Result<(), Error> {
+        // Generate a random point P
+        let p_val = pallas::Point::random(rand::rngs::OsRng).to_affine(); // P
+        let p = NonIdentityPoint::new(chip.clone(), layouter.namespace(|| "P"), Some(p_val))?;
+        let p_neg = -p_val;
+        let p_neg = NonIdentityPoint::new(chip.clone(), layouter.namespace(|| "-P"), Some(p_neg))?;
+
+        // Generate a random point Q
+        let q_val = pallas::Point::random(rand::rngs::OsRng).to_affine(); // Q
+        let q = NonIdentityPoint::new(chip.clone(), layouter.namespace(|| "Q"), Some(q_val))?;
+
+        // Make sure P and Q are not the same point.
+        assert_ne!(p_val, q_val);
+
+        // Generate a (0,0) point to be used in other tests.
+        let zero = {
+            Point::new(
+                chip.clone(),
+                layouter.namespace(|| "identity"),
+                Some(pallas::Affine::identity()),
+            )?
+        };
+
         // P + Q
         {
-            let result = p.add_incomplete(layouter.namespace(|| "P + Q"), q)?;
+            let result = p.add_incomplete(layouter.namespace(|| "P + Q"), &q)?;
             let witnessed_result = NonIdentityPoint::new(
                 chip,
                 layouter.namespace(|| "witnessed P + Q"),
@@ -175,11 +192,11 @@ pub mod tests {
         }
 
         // P + P should return an error
-        p.add_incomplete(layouter.namespace(|| "P + P"), p)
+        p.add_incomplete(layouter.namespace(|| "P + P"), &p)
             .expect_err("P + P should return an error");
 
         // P + (-P) should return an error
-        p.add_incomplete(layouter.namespace(|| "P + (-P)"), p_neg)
+        p.add_incomplete(layouter.namespace(|| "P + (-P)"), &p_neg)
             .expect_err("P + (-P) should return an error");
 
         Ok(())

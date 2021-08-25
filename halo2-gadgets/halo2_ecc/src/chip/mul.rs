@@ -442,9 +442,9 @@ fn decompose_for_scalar_mul(scalar: Option<pallas::Base>) -> Vec<Option<bool>> {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
-    use group::Curve;
+    use group::{prime::PrimeCurveAffine, Curve, Group};
     use halo2::{
         circuit::{Chip, Layouter},
         plonk::Error,
@@ -453,17 +453,27 @@ pub mod tests {
 
     use crate::{
         chip::EccChip,
-        gadget::{EccInstructions, NonIdentityPoint, Point},
+        gadget::{EccInstructions, FixedPoints, NonIdentityPoint, Point},
     };
-    use orchard::constants::OrchardFixedBases;
     use utilities::UtilitiesInstructions;
 
-    pub fn test_mul(
-        chip: EccChip<OrchardFixedBases>,
+    pub fn test_mul<F: FixedPoints<pallas::Affine>>(
+        chip: EccChip<F>,
         mut layouter: impl Layouter<pallas::Base>,
-        p: &NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
-        p_val: pallas::Affine,
     ) -> Result<(), Error> {
+        // Generate a random point P
+        let p_val = pallas::Point::random(rand::rngs::OsRng).to_affine(); // P
+        let p = NonIdentityPoint::new(chip.clone(), layouter.namespace(|| "P"), Some(p_val))?;
+
+        // Generate a (0,0) point to be used in other tests.
+        let zero = {
+            Point::new(
+                chip.clone(),
+                layouter.namespace(|| "identity"),
+                Some(pallas::Affine::identity()),
+            )?
+        };
+
         let column = chip.config().advices[0];
 
         fn constrain_equal_non_id<

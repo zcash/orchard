@@ -1,6 +1,6 @@
 use super::super::{
     EccBaseFieldElemFixed, EccConfig, EccPoint, FixedPoints, FIXED_BASE_WINDOW_SIZE, LOOKUP_K,
-    L_ORCHARD_BASE, NUM_WINDOWS, T_P,
+    L_PALLAS_BASE, NUM_WINDOWS, T_P,
 };
 use super::H_BASE;
 use utilities::{
@@ -170,7 +170,7 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
                         offset,
                         scalar,
                         true,
-                        L_ORCHARD_BASE,
+                        L_PALLAS_BASE,
                         NUM_WINDOWS,
                     )?;
                     EccBaseFieldElemFixed {
@@ -375,9 +375,9 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
-    use group::Curve;
+    use group::{Curve, Group};
     use halo2::{
         circuit::{Chip, Layouter},
         plonk::Error,
@@ -385,41 +385,47 @@ pub mod tests {
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
     use crate::{
-        chip::EccChip,
+        chip::{EccChip, NUM_WINDOWS},
         gadget::{FixedPoint, FixedPoints, NonIdentityPoint, Point, H},
     };
-    use orchard::constants::OrchardFixedBases;
     use utilities::UtilitiesInstructions;
 
-    pub fn test_mul_fixed_base_field(
-        chip: EccChip<OrchardFixedBases>,
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        static ref BASE: pallas::Affine = pallas::Point::generator().to_affine();
+        static ref ZS_AND_US: Vec<(u64, [[u8; 32]; H])> =
+            crate::chip::find_zs_and_us(*BASE, NUM_WINDOWS).unwrap();
+    }
+
+    pub fn test_mul_fixed_base_field<F: FixedPoints<pallas::Affine>>(
+        base: F,
+        chip: EccChip<F>,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), Error> {
-        // nullifier_k
-        let nullifier_k = OrchardFixedBases::NullifierK;
         test_single_base(
             chip.clone(),
-            layouter.namespace(|| "nullifier_k"),
-            FixedPoint::from_inner(chip, nullifier_k),
-            nullifier_k.generator(),
+            layouter.namespace(|| "fixed base"),
+            FixedPoint::from_inner(chip, base.clone()),
+            base.generator(),
         )
     }
 
     #[allow(clippy::op_ref)]
-    fn test_single_base(
-        chip: EccChip<OrchardFixedBases>,
+    fn test_single_base<F: FixedPoints<pallas::Affine>>(
+        chip: EccChip<F>,
         mut layouter: impl Layouter<pallas::Base>,
-        base: FixedPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+        base: FixedPoint<pallas::Affine, EccChip<F>>,
         base_val: pallas::Affine,
     ) -> Result<(), Error> {
         let column = chip.config().advices[0];
 
-        fn constrain_equal_non_id(
-            chip: EccChip<OrchardFixedBases>,
+        fn constrain_equal_non_id<F: FixedPoints<pallas::Affine>>(
+            chip: EccChip<F>,
             mut layouter: impl Layouter<pallas::Base>,
             base_val: pallas::Affine,
             scalar_val: pallas::Base,
-            result: Point<pallas::Affine, EccChip<OrchardFixedBases>>,
+            result: Point<pallas::Affine, EccChip<F>>,
         ) -> Result<(), Error> {
             // Move scalar from base field into scalar field (which always fits for Pallas).
             let scalar = pallas::Scalar::from_bytes(&scalar_val.to_bytes()).unwrap();

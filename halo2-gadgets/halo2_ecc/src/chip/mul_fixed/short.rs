@@ -232,12 +232,12 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
     use group::Curve;
     use halo2::{
         circuit::{Chip, Layouter},
-        plonk::{Any, Error},
+        plonk::Error,
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
 
@@ -245,21 +245,19 @@ pub mod tests {
         chip::EccChip,
         gadget::{FixedPoint, FixedPoints, NonIdentityPoint, Point},
     };
-    use orchard::constants::OrchardFixedBases;
-    use utilities::{lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions};
+    use utilities::{CellValue, UtilitiesInstructions};
 
     #[allow(clippy::op_ref)]
-    pub fn test_mul_fixed_short(
-        chip: EccChip<OrchardFixedBases>,
+    pub fn test_mul_fixed_short<F: FixedPoints<pallas::Affine>>(
+        base: F,
+        chip: EccChip<F>,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), Error> {
-        // value_commit_v
-        let value_commit_v = OrchardFixedBases::ValueCommitV;
-        let base_val = value_commit_v.generator();
-        let value_commit_v = FixedPoint::from_inner(chip.clone(), value_commit_v);
+        let base_val = base.generator();
+        let base = FixedPoint::from_inner(chip.clone(), base);
 
-        fn load_magnitude_sign(
-            chip: EccChip<OrchardFixedBases>,
+        fn load_magnitude_sign<F: FixedPoints<pallas::Affine>>(
+            chip: EccChip<F>,
             mut layouter: impl Layouter<pallas::Base>,
             magnitude: pallas::Base,
             sign: pallas::Base,
@@ -272,12 +270,12 @@ pub mod tests {
             Ok((magnitude, sign))
         }
 
-        fn constrain_equal_non_id(
-            chip: EccChip<OrchardFixedBases>,
+        fn constrain_equal_non_id<F: FixedPoints<pallas::Affine>>(
+            chip: EccChip<F>,
             mut layouter: impl Layouter<pallas::Base>,
             base_val: pallas::Affine,
             scalar_val: pallas::Scalar,
-            result: Point<pallas::Affine, EccChip<OrchardFixedBases>>,
+            result: Point<pallas::Affine, EccChip<F>>,
         ) -> Result<(), Error> {
             let expected = NonIdentityPoint::new(
                 chip,
@@ -332,7 +330,7 @@ pub mod tests {
                     *magnitude,
                     *sign,
                 )?;
-                value_commit_v.mul_short(layouter.namespace(|| *name), magnitude_sign)?
+                base.mul_short(layouter.namespace(|| *name), magnitude_sign)?
             };
             // Move from base field into scalar field
             let scalar = {
@@ -380,9 +378,45 @@ pub mod tests {
         use halo2::{
             circuit::{Layouter, SimpleFloorPlanner},
             dev::{MockProver, VerifyFailure},
-            plonk::{Circuit, ConstraintSystem, Error},
+            plonk::{Any, Circuit, ConstraintSystem, Error},
         };
-        use utilities::{CellValue, UtilitiesInstructions};
+        use utilities::{
+            lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions,
+        };
+
+        use crate::{
+            chip::{compute_lagrange_coeffs, NUM_WINDOWS_SHORT},
+            gadget::H,
+        };
+        use group::{Curve, Group};
+        use lazy_static::lazy_static;
+
+        lazy_static! {
+            static ref BASE: pallas::Affine = pallas::Point::generator().to_affine();
+            static ref ZS_AND_US: Vec<(u64, [[u8; 32]; H])> =
+                crate::chip::find_zs_and_us(*BASE, NUM_WINDOWS_SHORT).unwrap();
+        }
+
+        #[derive(Debug, Eq, PartialEq, Clone)]
+        struct FixedBase;
+
+        impl FixedPoints<pallas::Affine> for FixedBase {
+            fn generator(&self) -> pallas::Affine {
+                *BASE
+            }
+
+            fn u(&self) -> Vec<[[u8; 32]; H]> {
+                ZS_AND_US.iter().map(|(_, us)| *us).collect()
+            }
+
+            fn z(&self) -> Vec<u64> {
+                ZS_AND_US.iter().map(|(z, _)| *z).collect()
+            }
+
+            fn lagrange_coeffs(&self) -> Vec<[pallas::Base; H]> {
+                compute_lagrange_coeffs(self.generator(), NUM_WINDOWS_SHORT)
+            }
+        }
 
         #[derive(Default)]
         struct MyCircuit {
@@ -432,7 +466,7 @@ pub mod tests {
                 meta.enable_constant(constants);
 
                 let range_check = LookupRangeCheckConfig::configure(meta, advices[9], lookup_table);
-                EccChip::<OrchardFixedBases>::configure(meta, advices, lagrange_coeffs, range_check)
+                EccChip::<FixedBase>::configure(meta, advices, lagrange_coeffs, range_check)
             }
 
             fn synthesize(
@@ -442,7 +476,7 @@ pub mod tests {
             ) -> Result<(), Error> {
                 let column = config.advices[0];
 
-                let short_config: super::Config<OrchardFixedBases> = (&config).into();
+                let short_config: super::Config<FixedBase> = (&config).into();
                 let magnitude_sign = {
                     let magnitude = self.load_private(
                         layouter.namespace(|| "load magnitude"),
@@ -454,7 +488,7 @@ pub mod tests {
                     (magnitude, sign)
                 };
 
-                short_config.assign(layouter, magnitude_sign, &OrchardFixedBases::ValueCommitV)?;
+                short_config.assign(layouter, magnitude_sign, &FixedBase)?;
 
                 Ok(())
             }

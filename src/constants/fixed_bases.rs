@@ -110,3 +110,33 @@ impl FixedPoints<pallas::Affine> for OrchardFixedBases {
         }
     }
 }
+
+#[cfg(feature = "test-ecc")]
+#[test]
+fn test_orchard_fixed_bases() {
+    use ecc::gadget::testing;
+    use halo2::dev::MockProver;
+
+    struct OrchardTest;
+    impl testing::EccTest<OrchardFixedBases> for OrchardTest {
+        fn fixed_bases_full() -> Vec<OrchardFixedBases> {
+            vec![
+                OrchardFixedBases::CommitIvkR,
+                OrchardFixedBases::NoteCommitR,
+                OrchardFixedBases::SpendAuthG,
+                OrchardFixedBases::ValueCommitR,
+            ]
+        }
+        fn fixed_bases_short() -> Vec<OrchardFixedBases> {
+            vec![OrchardFixedBases::ValueCommitV]
+        }
+        fn fixed_bases_base_field() -> Vec<OrchardFixedBases> {
+            vec![OrchardFixedBases::NullifierK]
+        }
+    }
+
+    let k = 13;
+    let circuit = testing::MyCircuit::<OrchardTest, OrchardFixedBases>(std::marker::PhantomData);
+    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    assert_eq!(prover.verify(), Ok(()))
+}

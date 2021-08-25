@@ -19,9 +19,11 @@ pub(super) mod mul;
 pub(super) mod mul_fixed;
 pub(super) mod witness_point;
 
+pub use mul_fixed::{compute_lagrange_coeffs, compute_window_table, find_zs_and_us};
+
 /// Number of windows for a full-width scalar
 pub const NUM_WINDOWS: usize =
-    (L_ORCHARD_SCALAR + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
+    (L_PALLAS_SCALAR + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
 
 /// Number of windows for a short signed scalar
 pub const NUM_WINDOWS_SHORT: usize =
@@ -31,13 +33,11 @@ pub const NUM_WINDOWS_SHORT: usize =
 /// Number of bits in an unsigned short scalar.
 pub(crate) const L_VALUE: usize = 64;
 
-/// $\ell^\mathsf{Orchard}_\mathsf{base}$
 /// Number of bits in a Pallas base field element.
-pub(crate) const L_ORCHARD_BASE: usize = 255;
+pub(crate) const L_PALLAS_BASE: usize = 255;
 
-/// $\ell^\mathsf{Orchard}_\mathsf{scalar}$
 /// Number of bits in a Pallas scalar field element.
-pub(crate) const L_ORCHARD_SCALAR: usize = 255;
+pub(crate) const L_PALLAS_SCALAR: usize = 255;
 
 /// The Pallas scalar field modulus is $q = 2^{254} + \mathsf{t_q}$.
 /// <https://github.com/zcash/pasta>
