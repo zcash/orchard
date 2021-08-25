@@ -88,8 +88,8 @@ where
 pub struct SinsemillaChip<Hash, Commit, Fixed>
 where
     Hash: HashDomains<pallas::Affine>,
-    Fixed: FixedPoints<pallas::Affine>,
     Commit: CommitDomains<pallas::Affine, Fixed, Hash>,
+    Fixed: FixedPoints<pallas::Affine>,
 {
     config: SinsemillaConfig<Hash, Commit, Fixed>,
 }
@@ -97,8 +97,8 @@ where
 impl<Hash, Commit, Fixed> Chip<pallas::Base> for SinsemillaChip<Hash, Commit, Fixed>
 where
     Hash: HashDomains<pallas::Affine>,
-    Fixed: FixedPoints<pallas::Affine>,
     Commit: CommitDomains<pallas::Affine, Fixed, Hash>,
+    Fixed: FixedPoints<pallas::Affine>,
 {
     type Config = SinsemillaConfig<Hash, Commit, Fixed>;
     type Loaded = ();

@@ -121,7 +121,7 @@ impl<I: Iterator<Item = bool>> Iterator for Pad<I> {
 #[derive(Debug, Clone)]
 #[allow(non_snake_case)]
 pub struct HashDomain {
-    Q: pallas::Point,
+    pub(crate) Q: pallas::Point,
 }
 
 impl HashDomain {
@@ -164,8 +164,9 @@ impl HashDomain {
     }
 
     /// Returns the Sinsemilla $Q$ constant for this domain.
-    #[cfg(test)]
+    #[cfg(feature = "testing")]
     #[allow(non_snake_case)]
+    #[allow(dead_code)]
     pub(crate) fn Q(&self) -> pallas::Point {
         self.Q
     }
@@ -176,8 +177,8 @@ impl HashDomain {
 #[derive(Debug)]
 #[allow(non_snake_case)]
 pub struct CommitDomain {
-    M: HashDomain,
-    R: pallas::Point,
+    pub(crate) M: HashDomain,
+    pub(crate) R: pallas::Point,
 }
 
 impl CommitDomain {

@@ -265,3 +265,78 @@ mod tests {
         assert_eq!(two_pow_k * inv_two_pow_k, pallas::Base::one());
     }
 }
+
+#[cfg(feature = "test-sinsemilla")]
+#[cfg(feature = "test-ecc")]
+#[test]
+fn test_orchard_domains() {
+    use halo2::dev::MockProver;
+    use sinsemilla::gadget::testing;
+
+    struct OrchardTest;
+    impl testing::SinsemillaTest<OrchardHashDomains, OrchardCommitDomains, super::OrchardFixedBases>
+        for OrchardTest
+    {
+        fn hash_domains() -> Vec<OrchardHashDomains> {
+            vec![OrchardHashDomains::MerkleCrh]
+        }
+        fn commit_domains() -> Vec<OrchardCommitDomains> {
+            vec![
+                OrchardCommitDomains::CommitIvk,
+                OrchardCommitDomains::NoteCommit,
+            ]
+        }
+    }
+
+    let k = 11;
+    let circuit = testing::MyCircuit::<
+        OrchardHashDomains,
+        OrchardCommitDomains,
+        super::OrchardFixedBases,
+        OrchardTest,
+    >(std::marker::PhantomData);
+    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    assert_eq!(prover.verify(), Ok(()))
+}
+
+#[cfg(feature = "test-sinsemilla")]
+#[cfg(feature = "test-ecc")]
+#[test]
+fn test_merkle_crh() {
+    use halo2::dev::MockProver;
+    use rand::random;
+    use sinsemilla::merkle::testing;
+    use std::convert::TryInto;
+
+    struct OrchardTest;
+    impl testing::MerkleTest<OrchardHashDomains> for OrchardTest {
+        fn hash_domain() -> OrchardHashDomains {
+            OrchardHashDomains::MerkleCrh
+        }
+    }
+
+    // Choose a random leaf and position
+    let leaf = pallas::Base::rand();
+    let pos = random::<u32>();
+
+    // Choose a path of random inner nodes
+    let path: Vec<_> = (0..(super::MERKLE_DEPTH_ORCHARD))
+        .map(|_| pallas::Base::rand())
+        .collect();
+
+    let k = 11;
+    let circuit = testing::MyCircuit::<
+        OrchardHashDomains,
+        OrchardCommitDomains,
+        super::OrchardFixedBases,
+        OrchardTest,
+    > {
+        leaf: Some(leaf),
+        leaf_pos: Some(pos),
+        merkle_path: Some(path.try_into().unwrap()),
+        _marker: std::marker::PhantomData,
+    };
+
+    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
+    assert_eq!(prover.verify(), Ok(()))
+}
