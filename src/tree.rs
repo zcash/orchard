@@ -27,9 +27,9 @@ lazy_static! {
         iter::empty()
             .chain(Some(*UNCOMMITTED_ORCHARD))
             .chain(
-                (0..MERKLE_DEPTH_ORCHARD).scan(*UNCOMMITTED_ORCHARD, |state, l| {
-                    *state = hash_with_l(
-                        l,
+                (0..MERKLE_DEPTH_ORCHARD).scan(*UNCOMMITTED_ORCHARD, |state, altitude| {
+                    *state = hash_with_altitude(
+                        altitude,
                         Pair {
                             left: *state,
                             right: *state,
@@ -100,10 +100,10 @@ impl MerklePath {
     /// The layer with 2^n nodes is called "layer n":
     ///      - leaves are at layer MERKLE_DEPTH_ORCHARD = 32;
     ///      - the root is at layer 0.
-    /// `l` is MERKLE_DEPTH_ORCHARD - layer - 1.
+    /// `altitude` is MERKLE_DEPTH_ORCHARD - layer - 1.
     ///      - when hashing two leaves, we produce a node on the layer above the leaves, i.e.
-    ///        layer = 31, l = 0
-    ///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
+    ///        layer = 31, altitude = 0
+    ///      - when hashing to the final root, we produce the anchor with layer = 0, altitude = 31.
     pub fn root(&self, cmx: ExtractedNoteCommitment) -> Anchor {
         self.auth_path
             .iter()
@@ -111,8 +111,8 @@ impl MerklePath {
             .fold(
                 CtOption::new(cmx.inner(), 1.into()),
                 |node, (l, sibling)| {
-                    let swap = self.position & (1 << l) != 0;
-                    node.and_then(|n| hash_with_l(l, cond_swap(swap, n, *sibling)))
+                    let swap = self.position & (altitude << l) != 0;
+                    node.and_then(|n| hash_with_altitude(altitude, cond_swap(swap, n, *sibling)))
                 },
             )
             .unwrap_or_else(pallas::Base::zero)
@@ -151,21 +151,23 @@ fn cond_swap(swap: bool, node: pallas::Base, sibling: pallas::Base) -> Pair {
 
 /// Implements the function `hash` (internal to MerkleCRH^Orchard) defined
 /// in <https://zips.z.cash/protocol/protocol.pdf#orchardmerklecrh>
+/// This function takes an altitude rather than the layer number,
+/// and does not wrap the result in `MerkleCrhOrchardOutput`.
 ///
 /// The layer with 2^n nodes is called "layer n":
 ///      - leaves are at layer MERKLE_DEPTH_ORCHARD = 32;
 ///      - the root is at layer 0.
-/// `l` is MERKLE_DEPTH_ORCHARD - layer - 1.
+/// `altitude` is MERKLE_DEPTH_ORCHARD - layer - 1.
 ///      - when hashing two leaves, we produce a node on the layer above the leaves, i.e.
-///        layer = 31, l = 0
-///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
-fn hash_with_l(l: usize, pair: Pair) -> CtOption<pallas::Base> {
+///        layer = 31, altitude = 0
+///      - when hashing to the final root, we produce the anchor with layer = 0, altitude = 31.
+fn hash_with_altitude(altitude: usize, pair: Pair) -> CtOption<pallas::Base> {
     // MerkleCRH Sinsemilla hash domain.
     let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
 
     domain.hash(
         iter::empty()
-            .chain(i2lebsp_k(l).iter().copied())
+            .chain(i2lebsp_k(altitude).iter().copied())
             .chain(
                 pair.left
                     .to_le_bits()
@@ -248,7 +250,7 @@ impl Hashable for MerkleCrhOrchardOutput {
     /// Implements `MerkleCRH^Orchard` as defined in
     /// <https://zips.z.cash/protocol/protocol.pdf#orchardmerklecrh>
     fn combine(altitude: Altitude, left: &Self, right: &Self) -> Self {
-        hash_with_l(
+        hash_with_altitude(
             altitude.into(),
             Pair {
                 left: left.0,
@@ -305,7 +307,7 @@ pub mod testing {
 
     #[cfg(test)]
     use super::MerkleCrhOrchardOutput;
-    use super::{hash_with_l, Anchor, MerklePath, Pair, EMPTY_ROOTS};
+    use super::{hash_with_altitude, Anchor, MerklePath, Pair, EMPTY_ROOTS};
 
     #[test]
     fn test_vectors() {
@@ -356,22 +358,22 @@ pub mod testing {
                 // The layer with 2^n nodes is called "layer n":
                 //      - leaves are at layer MERKLE_DEPTH_ORCHARD = 32;
                 //      - the root is at layer 0.
-                // `l` is MERKLE_DEPTH_ORCHARD - layer - 1.
+                // `altitude` is MERKLE_DEPTH_ORCHARD - layer - 1.
                 //      - when hashing two leaves, we produce a node on the layer above the leaves, i.e.
-                //        layer = 31, l = 0
-                //      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
-                for l in 0..perfect_subtree_depth {
-                    let inner_nodes = (0..(n_leaves >> (l + 1))).map(|pos| {
-                        let left = perfect_subtree[l][pos * 2];
-                        let right = perfect_subtree[l][pos * 2 + 1];
+                //        layer = 31, altitude = 0
+                //      - when hashing to the final root, we produce the anchor with layer = 0, altitude = 31.
+                for altitude in 0..perfect_subtree_depth {
+                    let inner_nodes = (0..(n_leaves >> (altitude + 1))).map(|pos| {
+                        let left = perfect_subtree[altitude][pos * 2];
+                        let right = perfect_subtree[altitude][pos * 2 + 1];
                         match (left, right) {
                             (None, None) => None,
                             (Some(left), None) => {
-                                let right = EMPTY_ROOTS[l];
-                                Some(hash_with_l(l, Pair {left, right}).unwrap())
+                                let right = EMPTY_ROOTS[altitude];
+                                Some(hash_with_altitude(altitude, Pair {left, right}).unwrap())
                             },
                             (Some(left), Some(right)) => {
-                                Some(hash_with_l(l, Pair {left, right}).unwrap())
+                                Some(hash_with_altitude(altitude, Pair {left, right}).unwrap())
                             },
                             (None, Some(_)) => {
                                 unreachable!("The perfect subtree is left-packed.")
