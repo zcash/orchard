@@ -34,8 +34,7 @@ lazy_static! {
                             left: *state,
                             right: *state,
                         },
-                    )
-                    .unwrap();
+                    );
                     Some(*state)
                 }),
             )
@@ -108,14 +107,10 @@ impl MerklePath {
         self.auth_path
             .iter()
             .enumerate()
-            .fold(
-                CtOption::new(cmx.inner(), 1.into()),
-                |node, (l, sibling)| {
-                    let swap = self.position & (altitude << l) != 0;
-                    node.and_then(|n| hash_with_altitude(altitude, cond_swap(swap, n, *sibling)))
-                },
-            )
-            .unwrap_or_else(pallas::Base::zero)
+            .fold(cmx.inner(), |node, (altitude, sibling)| {
+                let swap = self.position & (1 << altitude) != 0;
+                hash_with_altitude(altitude, cond_swap(swap, node, *sibling))
+            })
             .into()
     }
 
@@ -149,8 +144,8 @@ fn cond_swap(swap: bool, node: pallas::Base, sibling: pallas::Base) -> Pair {
     }
 }
 
-/// Implements the function `hash` (internal to MerkleCRH^Orchard) defined
-/// in <https://zips.z.cash/protocol/protocol.pdf#orchardmerklecrh>
+/// Implements the internal hash function defined in
+/// <https://zips.z.cash/protocol/protocol.pdf#orchardmerklecrh>.
 /// This function takes an altitude rather than the layer number,
 /// and does not wrap the result in `MerkleCrhOrchardOutput`.
 ///
@@ -161,37 +156,34 @@ fn cond_swap(swap: bool, node: pallas::Base, sibling: pallas::Base) -> Pair {
 ///      - when hashing two leaves, we produce a node on the layer above the leaves, i.e.
 ///        layer = 31, altitude = 0
 ///      - when hashing to the final root, we produce the anchor with layer = 0, altitude = 31.
-fn hash_with_altitude(altitude: usize, pair: Pair) -> CtOption<pallas::Base> {
+fn hash_with_altitude(altitude: usize, pair: Pair) -> pallas::Base {
     // MerkleCRH Sinsemilla hash domain.
     let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
 
-    domain.hash(
-        iter::empty()
-            .chain(i2lebsp_k(altitude).iter().copied())
-            .chain(
-                pair.left
-                    .to_le_bits()
-                    .iter()
-                    .by_val()
-                    .take(L_ORCHARD_MERKLE),
-            )
-            .chain(
-                pair.right
-                    .to_le_bits()
-                    .iter()
-                    .by_val()
-                    .take(L_ORCHARD_MERKLE),
-            ),
-    )
+    domain
+        .hash(
+            iter::empty()
+                .chain(i2lebsp_k(altitude).iter().copied())
+                .chain(
+                    pair.left
+                        .to_le_bits()
+                        .iter()
+                        .by_val()
+                        .take(L_ORCHARD_MERKLE),
+                )
+                .chain(
+                    pair.right
+                        .to_le_bits()
+                        .iter()
+                        .by_val()
+                        .take(L_ORCHARD_MERKLE),
+                ),
+        )
+        .unwrap_or_else(pallas::Base::zero)
 }
 
 /// A newtype wrapper for leaves and internal nodes in the Orchard
 /// incremental note commitment tree.
-///
-/// This wraps a CtOption<pallas::Base> because Sinsemilla hashes
-/// can produce a bottom value which needs to be accounted for in
-/// the production of a Merkle root. Leaf nodes are always wrapped
-/// with the `Some` constructor.
 #[derive(Copy, Clone, Debug)]
 pub struct MerkleCrhOrchardOutput(pallas::Base);
 
@@ -250,15 +242,13 @@ impl Hashable for MerkleCrhOrchardOutput {
     /// Implements `MerkleCRH^Orchard` as defined in
     /// <https://zips.z.cash/protocol/protocol.pdf#orchardmerklecrh>
     fn combine(altitude: Altitude, left: &Self, right: &Self) -> Self {
-        hash_with_altitude(
+        MerkleCrhOrchardOutput(hash_with_altitude(
             altitude.into(),
             Pair {
                 left: left.0,
                 right: right.0,
             },
-        )
-        .map(MerkleCrhOrchardOutput)
-        .unwrap_or_else(|| MerkleCrhOrchardOutput(pallas::Base::zero()))
+        ))
     }
 
     fn empty_root(altitude: Altitude) -> Self {
@@ -370,10 +360,10 @@ pub mod testing {
                             (None, None) => None,
                             (Some(left), None) => {
                                 let right = EMPTY_ROOTS[altitude];
-                                Some(hash_with_altitude(altitude, Pair {left, right}).unwrap())
+                                Some(hash_with_altitude(altitude, Pair {left, right}))
                             },
                             (Some(left), Some(right)) => {
-                                Some(hash_with_altitude(altitude, Pair {left, right}).unwrap())
+                                Some(hash_with_altitude(altitude, Pair {left, right}))
                             },
                             (None, Some(_)) => {
                                 unreachable!("The perfect subtree is left-packed.")
