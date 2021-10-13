@@ -18,11 +18,11 @@ publish = false
 [dependencies]
 arrayvec = "0.7.0"
 bigint = "4"
-ff = "0.10"
-group = "0.10"
+ff = "0.11"
+group = "0.11"
 halo2 = "0.0"
 lazy_static = "1"
-pasta_curves = "0.1.2"
+pasta_curves = "0.2.1"
 rand = "0.8"
 utilities = { package = "halo2_utilities", version = "0.0", path = "../halo2_utilities" }
 
