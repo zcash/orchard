@@ -1,9 +1,9 @@
 //! Gadgets for elliptic curve operations.
 
+use pasta_curves::arithmetic::CurveAffine;
 use std::fmt::Debug;
 
 use halo2::{
-    arithmetic::CurveAffine,
     circuit::{Chip, Layouter},
     plonk::Error,
 };
@@ -81,9 +81,17 @@ pub trait EccInstructions<C: CurveAffine>:
     fn copy_point(
         &self,
         layouter: &mut impl Layouter<C::Base>,
+        point: Self::Point,
+    ) -> Result<Self::Point, Error>;
+
+    /// Copies a point given existing x- and y-coordinate variables,
+    /// checking that the coordinates indeed belong to a valid point.
+    fn copy_point_non_id(
+        &self,
+        layouter: &mut impl Layouter<C::Base>,
         x: Self::Var,
         y: Self::Var,
-    ) -> Result<Self::Point, Error>;
+    ) -> Result<Self::NonIdentityPoint, Error>;
 
     /// Extracts the x-coordinate of a point.
     fn extract_p<Point: Into<Self::Point> + Clone>(point: &Point) -> Self::X;
@@ -199,17 +207,6 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> NonIdentityPoint<C, EccChip> {
         point.map(|inner| NonIdentityPoint { chip, inner })
     }
 
-    /// Constructs a new point by copying in its coordinates as `x`, `y` cells.
-    pub fn copy(
-        chip: EccChip,
-        mut layouter: impl Layouter<C::Base>,
-        x: EccChip::Var,
-        y: EccChip::Var,
-    ) -> Result<Self, Error> {
-        let point = chip.copy_point(&mut layouter, x, y);
-        point.map(|inner| Point { chip, inner })
-    }
-
     /// Constrains this point to be equal in value to another point.
     pub fn constrain_equal<Other: Into<Point<C, EccChip>> + Clone>(
         &self,
@@ -222,6 +219,17 @@ impl<C: CurveAffine, EccChip: EccInstructions<C>> NonIdentityPoint<C, EccChip> {
             &Point::<C, EccChip>::from(self.clone()).inner,
             &other.inner,
         )
+    }
+
+    /// Constructs a new point by copying in its coordinates as `x`, `y` cells.
+    pub fn copy(
+        chip: EccChip,
+        mut layouter: impl Layouter<C::Base>,
+        x: EccChip::Var,
+        y: EccChip::Var,
+    ) -> Result<Self, Error> {
+        let point = chip.copy_point_non_id(&mut layouter, x, y);
+        point.map(|inner| NonIdentityPoint { chip, inner })
     }
 
     /// Returns the inner point.
@@ -336,6 +344,16 @@ impl<C: CurveAffine, EccChip: EccInstructions<C> + Clone + Debug + Eq> Point<C, 
         let other: Point<C, EccChip> = (other.clone()).into();
         self.chip
             .constrain_equal(&mut layouter, &self.inner, &other.inner)
+    }
+
+    /// Constructs a new point by copying in its coordinates as `x`, `y` cells.
+    pub fn copy(
+        chip: EccChip,
+        mut layouter: impl Layouter<C::Base>,
+        point: EccChip::Point,
+    ) -> Result<Self, Error> {
+        let point = chip.copy_point(&mut layouter, point);
+        point.map(|inner| Point { chip, inner })
     }
 
     /// Returns the inner point.

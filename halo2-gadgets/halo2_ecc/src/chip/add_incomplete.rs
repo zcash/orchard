@@ -145,11 +145,13 @@ impl Config {
 
 #[cfg(feature = "testing")]
 pub mod tests {
-    use group::{prime::PrimeCurveAffine, Curve, Group};
+    use group::{Curve, Group};
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::pallas;
 
-    use crate::gadget::{EccInstructions, NonIdentityPoint};
+    use crate::{
+        gadget::{EccInstructions, NonIdentityPoint},
+    };
 
     #[allow(clippy::too_many_arguments)]
     pub fn test_add_incomplete<
@@ -170,15 +172,6 @@ pub mod tests {
 
         // Make sure P and Q are not the same point.
         assert_ne!(p_val, q_val);
-
-        // Generate a (0,0) point to be used in other tests.
-        let zero = {
-            Point::new(
-                chip.clone(),
-                layouter.namespace(|| "identity"),
-                Some(pallas::Affine::identity()),
-            )?
-        };
 
         // P + Q
         {

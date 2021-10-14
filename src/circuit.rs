@@ -15,8 +15,7 @@ use pasta_curves::{
 
 use crate::{
     constants::{
-        util::gen_const_array, OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains,
-        MERKLE_DEPTH_ORCHARD,
+        OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, MERKLE_DEPTH_ORCHARD,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
@@ -48,7 +47,8 @@ use sinsemilla::{
     },
 };
 use utilities::{
-    copy, lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions, Var,
+    copy, gen_const_array, lookup_range_check::LookupRangeCheckConfig, CellValue,
+    UtilitiesInstructions, Var,
 };
 
 use std::convert::TryInto;
@@ -411,7 +411,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.merkle_chip_2(),
                 OrchardHashDomains::MerkleCrh,
                 self.pos,
-                self.path,
+                path,
             );
             let leaf = *cm_old.extract_p().inner();
             merkle_inputs.calculate_root(layouter.namespace(|| "MerkleCRH"), leaf)?

@@ -86,7 +86,7 @@ impl EccPoint {
         self.y
     }
 
-    #[cfg(test)]
+    #[cfg(feature = "testing")]
     fn is_identity(&self) -> Option<bool> {
         self.x.value().map(|x| x == pallas::Base::zero())
     }
@@ -103,17 +103,6 @@ pub struct NonIdentityEccPoint {
 }
 
 impl NonIdentityEccPoint {
-    /// Constructs a point from its coordinates, without checking they are on the curve.
-    ///
-    /// This is an internal API that we only use where we know we have a valid non-identity
-    /// curve point (specifically inside Sinsemilla).
-    pub(in crate::circuit::gadget) fn from_coordinates_unchecked(
-        x: CellValue<pallas::Base>,
-        y: CellValue<pallas::Base>,
-    ) -> Self {
-        NonIdentityEccPoint { x, y }
-    }
-
     /// Returns the value of this curve point, if known.
     pub fn point(&self) -> Option<pallas::Affine> {
         match (self.x.value(), self.y.value()) {
@@ -445,6 +434,81 @@ impl<Fixed: FixedPoints<pallas::Affine>> EccInstructions<pallas::Affine> for Ecc
             || "witness non-identity point",
             |mut region| config.point_non_id(value, 0, &mut region),
         )
+    }
+
+    fn copy_point(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        point: Self::Point,
+    ) -> Result<Self::Point, Error> {
+        let config: witness_point::Config = self.config().into();
+        let (x, y) = layouter.assign_region(
+            || "copy point",
+            |mut region| {
+                let x = {
+                    let cell = region.assign_advice(
+                        || "copy x",
+                        config.x,
+                        0,
+                        || point.x().value().ok_or(Error::SynthesisError),
+                    )?;
+                    region.constrain_equal(cell, point.x().cell())?;
+                    CellValue::new(cell, point.x().value())
+                };
+                let y = {
+                    let cell = region.assign_advice(
+                        || "copy y",
+                        config.y,
+                        0,
+                        || point.y().value().ok_or(Error::SynthesisError),
+                    )?;
+                    region.constrain_equal(cell, point.y().cell())?;
+                    CellValue::new(cell, point.y().value())
+                };
+
+                Ok((x, y))
+            },
+        )?;
+
+        Ok(EccPoint { x, y })
+    }
+
+    fn copy_point_non_id(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        x: Self::Var,
+        y: Self::Var,
+    ) -> Result<Self::NonIdentityPoint, Error> {
+        let config: witness_point::Config = self.config().into();
+        let (x, y) = layouter.assign_region(
+            || "copy point",
+            |mut region| {
+                let x = {
+                    let cell = region.assign_advice(
+                        || "copy x",
+                        config.x,
+                        0,
+                        || x.value().ok_or(Error::SynthesisError),
+                    )?;
+                    region.constrain_equal(cell, x.cell())?;
+                    CellValue::new(cell, x.value())
+                };
+                let y = {
+                    let cell = region.assign_advice(
+                        || "copy y",
+                        config.y,
+                        0,
+                        || y.value().ok_or(Error::SynthesisError),
+                    )?;
+                    region.constrain_equal(cell, y.cell())?;
+                    CellValue::new(cell, y.value())
+                };
+
+                Ok((x, y))
+            },
+        )?;
+
+        Ok(NonIdentityEccPoint { x, y })
     }
 
     fn extract_p<Point: Into<Self::Point> + Clone>(point: &Point) -> Self::X {

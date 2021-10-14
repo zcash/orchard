@@ -8,7 +8,6 @@ use halo2::{
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::CurveAffine, pallas};
-use utilities::copy;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -147,20 +146,20 @@ impl Config {
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "testing")]
 pub mod tests {
     use halo2::circuit::Layouter;
     use pasta_curves::pallas;
 
     use super::*;
-    use crate::circuit::gadget::ecc::{EccInstructions, NonIdentityPoint};
+    use crate::gadget::{EccInstructions, NonIdentityPoint};
 
     pub fn test_witness_non_id<
         EccChip: EccInstructions<pallas::Affine> + Clone + Eq + std::fmt::Debug,
     >(
         chip: EccChip,
         mut layouter: impl Layouter<pallas::Base>,
-    ) {
+    ) -> Result<(), Error> {
         // Witnessing the identity should return an error.
         NonIdentityPoint::new(
             chip,
@@ -168,23 +167,7 @@ pub mod tests {
             Some(pallas::Affine::identity()),
         )
         .expect_err("witnessing 𝒪 should return an error");
-    }
 
-    pub(super) fn copy_point(
-        &self,
-        x: CellValue<pallas::Base>,
-        y: CellValue<pallas::Base>,
-        offset: usize,
-        region: &mut Region<'_, pallas::Base>,
-    ) -> Result<EccPoint, Error> {
-        // Enable `q_point` selector
-        self.q_point.enable(region, offset)?;
-
-        // Copy `x` value
-        let x = copy(region, || "x", self.x, offset, &x)?;
-        // Copy `y` value
-        let y = copy(region, || "y", self.y, offset, &y)?;
-
-        Ok(EccPoint { x, y })
+        Ok(())
     }
 }

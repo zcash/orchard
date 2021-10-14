@@ -7,10 +7,10 @@ use crate::{
     },
     note::commitment::ExtractedNoteCommitment,
 };
-use halo2_utilities::utilities::gen_const_array_with_default;
 use incrementalmerkletree::{Altitude, Hashable};
 use pasta_curves::{arithmetic::FieldExt, pallas};
 use sinsemilla::primitive::HashDomain;
+use utilities::gen_const_array_with_default;
 
 use ff::{Field, PrimeField, PrimeFieldBits};
 use lazy_static::lazy_static;

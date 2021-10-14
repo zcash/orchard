@@ -303,6 +303,7 @@ fn test_orchard_domains() {
 #[cfg(feature = "test-ecc")]
 #[test]
 fn test_merkle_crh() {
+    use crate::constants::MERKLE_DEPTH_ORCHARD;
     use halo2::dev::MockProver;
     use rand::random;
     use sinsemilla::merkle::testing;
@@ -312,6 +313,17 @@ fn test_merkle_crh() {
     impl testing::MerkleTest<OrchardHashDomains> for OrchardTest {
         fn hash_domain() -> OrchardHashDomains {
             OrchardHashDomains::MerkleCrh
+        }
+
+        fn root(
+            path: [pallas::Base; MERKLE_DEPTH_ORCHARD],
+            leaf_pos: u32,
+            leaf: pallas::Base,
+        ) -> pallas::Base {
+            use crate::{note::ExtractedNoteCommitment, tree::MerklePath};
+            let path = MerklePath::new(leaf_pos, path);
+            let leaf = ExtractedNoteCommitment::from_bytes(&leaf.to_bytes()).unwrap();
+            path.root(leaf).inner()
         }
     }
 

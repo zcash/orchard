@@ -364,7 +364,7 @@ pub mod tests {
                     *magnitude,
                     *sign,
                 )?;
-                value_commit_v.mul_short(layouter.namespace(|| *name), magnitude_sign)?
+                base.mul_short(layouter.namespace(|| *name), magnitude_sign)?
             };
             assert!(result.inner().is_identity().unwrap());
         }

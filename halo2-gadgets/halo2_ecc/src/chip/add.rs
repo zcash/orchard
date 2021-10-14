@@ -391,7 +391,10 @@ pub mod tests {
     use halo2::{circuit::Layouter, plonk::Error};
     use pasta_curves::{arithmetic::CurveExt, pallas};
 
-    use crate::gadget::{EccInstructions, NonIdentityPoint};
+    use crate::{
+        chip::EccPoint,
+        gadget::{EccInstructions, NonIdentityPoint, Point},
+    };
 
     #[allow(clippy::too_many_arguments)]
     pub fn test_add<

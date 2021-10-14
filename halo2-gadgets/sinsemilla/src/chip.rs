@@ -1,5 +1,5 @@
 use super::{
-    gadget::{self, CommitDomains, HashDomains, SinsemillaInstructions},
+    gadget::{CommitDomains, HashDomains, SinsemillaInstructions, Point as PointTrait},
     message::{Message, MessagePiece},
     primitive as sinsemilla,
 };
@@ -26,12 +26,12 @@ mod hash_to_point;
 
 /// A point output by hash_to_point
 #[derive(Clone, Debug)]
-struct Point {
+pub struct Point {
     x: CellValue<pallas::Base>,
     y: CellValue<pallas::Base>,
 }
 
-impl gadget::Point<pallas::Affine, CellValue<pallas::Base>> for Point {
+impl PointTrait<pallas::Affine, CellValue<pallas::Base>> for Point {
     fn x(&self) -> CellValue<pallas::Base> {
         self.x
     }

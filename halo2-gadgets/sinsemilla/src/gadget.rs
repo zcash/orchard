@@ -231,7 +231,7 @@ pub struct HashDomain<
     SinsemillaChip: SinsemillaInstructions<C, K, MAX_WORDS> + Clone + Debug + Eq,
     EccChip: EccInstructions<
             C,
-            NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
+            // NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
             Var = SinsemillaChip::Var,
         > + Clone
@@ -249,7 +249,7 @@ where
     SinsemillaChip: SinsemillaInstructions<C, K, MAX_WORDS> + Clone + Debug + Eq,
     EccChip: EccInstructions<
             C,
-            NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
+            // NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
             Var = SinsemillaChip::Var,
         > + Clone
@@ -340,7 +340,7 @@ pub struct CommitDomain<
     SinsemillaChip: SinsemillaInstructions<C, K, MAX_WORDS> + Clone + Debug + Eq,
     EccChip: EccInstructions<
             C,
-            NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
+            // NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
             Var = SinsemillaChip::Var,
         > + Clone
@@ -357,7 +357,7 @@ where
     SinsemillaChip: SinsemillaInstructions<C, K, MAX_WORDS> + Clone + Debug + Eq,
     EccChip: EccInstructions<
             C,
-            NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
+            // NonIdentityPoint = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::NonIdentityPoint,
             FixedPoints = <SinsemillaChip as SinsemillaInstructions<C, K, MAX_WORDS>>::FixedPoints,
             Var = SinsemillaChip::Var,
         > + Clone
@@ -614,8 +614,8 @@ pub mod testing {
                         None
                     };
 
-                    NonIdentityPoint::new(
-                        ecc_chip,
+                    Point::new(
+                        ecc_chip.clone(),
                         layouter.namespace(|| "Witness expected result"),
                         expected_result,
                     )?

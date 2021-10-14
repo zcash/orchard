@@ -164,26 +164,20 @@ where
 pub mod testing {
     use super::{
         chip::{MerkleChip, MerkleConfig},
-        i2lebsp, MerklePath, L_PALLAS_BASE, MERKLE_DEPTH,
+        MerklePath, MERKLE_DEPTH,
     };
 
     use crate::{
         chip::SinsemillaChip,
         gadget::{CommitDomains, HashDomains},
-        primitive::HashDomain,
     };
 
     use ecc::gadget::FixedPoints;
     use utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions, Var};
 
-    use ff::PrimeFieldBits;
-    use group::prime::PrimeCurveAffine;
     use halo2::{
         circuit::{Layouter, SimpleFloorPlanner},
-        dev::MockProver,
-        note::commitment::ExtractedNoteCommitment,
         plonk::{Circuit, ConstraintSystem, Error},
-        tree,
     };
     use pasta_curves::pallas;
 
@@ -313,24 +307,28 @@ pub mod testing {
                 path.calculate_root(layouter.namespace(|| "calculate root"), leaf)?;
 
             if let Some(leaf_pos) = self.leaf_pos {
-                let domain = HashDomain {
-                    Q: S::hash_domain().Q().to_curve(),
-                };
-
                 // The expected final root
-                let final_root = {
-                    let path = tree::MerklePath::new(leaf_pos, self.merkle_path.unwrap());
-                    let leaf = ExtractedNoteCommitment::from_bytes(&self.leaf.unwrap().to_bytes())
-                        .unwrap();
-                    path.root(leaf)
-                };
+                let final_root = S::root(
+                    self.merkle_path.unwrap(),
+                    leaf_pos,
+                    self.leaf.unwrap(),
+                );
 
                 // Check the computed final root against the expected final root.
-                assert_eq!(computed_final_root.value().unwrap(), final_root.inner());
+                assert_eq!(computed_final_root.value().unwrap(), final_root);
             }
 
             Ok(())
         }
+    }
+
+    pub trait MerkleTest<Hash: HashDomains<pallas::Affine>> {
+        fn hash_domain() -> Hash;
+        fn root(
+            path: [pallas::Base; MERKLE_DEPTH],
+            leaf_pos: u32,
+            leaf: pallas::Base,
+        ) -> pallas::Base;
     }
 }
 
@@ -344,9 +342,11 @@ pub mod tests {
 
     use crate::{
         gadget::{CommitDomains, HashDomains},
+        merkle::{i2lebsp, L_PALLAS_BASE, MERKLE_DEPTH},
         primitive::{CommitDomain, HashDomain},
     };
 
+    use ff::PrimeFieldBits;
     use group::Curve;
     use pasta_curves::pallas;
 
@@ -406,11 +406,50 @@ pub mod tests {
         fn hash_domain() -> Hash {
             Hash
         }
+
+        fn root(path: [pallas::Base; MERKLE_DEPTH],
+        leaf_pos: u32,
+        leaf: pallas::Base,) -> pallas::Base {
+            use group::prime::PrimeCurveAffine;
+            let domain = HashDomain { Q: Self::hash_domain().Q().to_curve() };
+            let pos_bool = i2lebsp::<32>(leaf_pos as u64);
+
+            // Compute the root
+            let mut node = leaf;
+            for (l, (sibling, pos)) in path.iter().zip(pos_bool.iter()).enumerate() {
+                let (left, right) = if *pos {
+                    (*sibling, node)
+                } else {
+                    (node, *sibling)
+                };
+
+                let l_star = i2lebsp::<10>(l as u64);
+                let left: Vec<_> = left
+                    .to_le_bits()
+                    .iter()
+                    .by_val()
+                    .take(L_PALLAS_BASE)
+                    .collect();
+                let right: Vec<_> = right
+                    .to_le_bits()
+                    .iter()
+                    .by_val()
+                    .take(L_PALLAS_BASE)
+                    .collect();
+
+                let mut message = l_star.to_vec();
+                message.extend_from_slice(&left);
+                message.extend_from_slice(&right);
+
+                node = domain.hash(message.into_iter()).unwrap();
+            }
+            node
+        }
     }
 
     #[test]
     fn merkle_chip() {
-        use crate::merkle::{i2lebsp, MERKLE_DEPTH};
+        use crate::merkle::{MERKLE_DEPTH};
         use halo2::dev::MockProver;
         use pasta_curves::arithmetic::FieldExt;
         use rand::random;
