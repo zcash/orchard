@@ -26,15 +26,12 @@ use crate::{
         nullifier::Nullifier,
         ExtractedNoteCommitment,
     },
-    primitives::{
-        poseidon::{self, ConstantLength},
-        redpallas::{SpendAuth, VerificationKey},
-    },
+    primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
     tree::{Anchor, MerkleHashOrchard},
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
 };
-use gadget::{
+use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
         FixedPoint, NonIdentityPoint, Point,
@@ -43,6 +40,7 @@ use gadget::{
         Hash as PoseidonHash, Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig,
         StateWord, Word,
     },
+    primitives::poseidon::{self, ConstantLength},
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{
@@ -50,12 +48,12 @@ use gadget::{
             MerklePath,
         },
     },
-    utilities::{copy, CellValue, UtilitiesInstructions, Var},
+    utilities::{
+        copy, lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions, Var,
+    },
 };
 
 use std::convert::TryInto;
-
-use self::gadget::utilities::lookup_range_check::LookupRangeCheckConfig;
 
 mod commit_ivk;
 pub(crate) mod gadget;
@@ -502,7 +500,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                             let value = message[i].value();
                             let var = region.assign_advice(
                                 || format!("load message_{}", i),
-                                config.poseidon_config.state[i],
+                                config.poseidon_config.state()[i],
                                 0,
                                 || value.ok_or(plonk::Error::SynthesisError),
                             )?;

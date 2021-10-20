@@ -1,14 +1,9 @@
 use pasta_curves::pallas;
 
 use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains};
-use ecc::chip::EccChip;
-use poseidon::Pow5T3Chip as PoseidonChip;
-use sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip};
-
-pub(crate) mod ecc;
-pub(crate) mod poseidon;
-pub(crate) mod sinsemilla;
-pub(crate) mod utilities;
+use halo2_gadgets::ecc::chip::EccChip;
+use halo2_gadgets::poseidon::Pow5T3Chip as PoseidonChip;
+use halo2_gadgets::sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip};
 
 impl super::Config {
     pub(super) fn ecc_chip(&self) -> EccChip<OrchardFixedBases> {

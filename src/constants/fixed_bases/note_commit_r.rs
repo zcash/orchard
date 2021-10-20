@@ -2934,8 +2934,8 @@ mod tests {
         test_lagrange_coeffs, test_zs_and_us, NOTE_COMMITMENT_PERSONALIZATION, NUM_WINDOWS,
     };
     use super::*;
-    use crate::primitives::sinsemilla::CommitDomain;
     use group::Curve;
+    use halo2_gadgets::primitives::sinsemilla::CommitDomain;
     use pasta_curves::{
         arithmetic::{CurveAffine, FieldExt},
         pallas,

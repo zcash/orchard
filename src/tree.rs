@@ -7,8 +7,8 @@ use crate::{
         MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,
-    primitives::sinsemilla::HashDomain,
 };
+use halo2_gadgets::primitives::sinsemilla::HashDomain;
 use incrementalmerkletree::{Altitude, Hashable};
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
