@@ -16,7 +16,7 @@ const WIDTH: usize = 3;
 /// Configuration for an [`Pow5T3Chip`].
 #[derive(Clone, Debug)]
 pub struct Pow5T3Config<F: FieldExt> {
-    pub(in crate::circuit) state: [Column<Advice>; WIDTH],
+    state: [Column<Advice>; WIDTH],
     partial_sbox: Column<Advice>,
     rc_a: [Column<Fixed>; WIDTH],
     rc_b: [Column<Fixed>; WIDTH],
@@ -240,6 +240,27 @@ impl<F: FieldExt> Chip<F> for Pow5T3Chip<F> {
 
 impl<F: FieldExt, S: Spec<F, WIDTH, 2>> PoseidonInstructions<F, S, WIDTH, 2> for Pow5T3Chip<F> {
     type Word = StateWord<F>;
+
+    fn load_word(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        word: CellValue<F>,
+    ) -> Result<Self::Word, Error> {
+        layouter.assign_region(
+            || "load input word",
+            |mut region| {
+                let value = word.value();
+                let var = region.assign_advice(
+                    || "load word",
+                    self.config.state[0],
+                    0,
+                    || value.ok_or(Error::SynthesisError),
+                )?;
+                region.constrain_equal(var, word.cell())?;
+                Ok(StateWord { var, value })
+            },
+        )
+    }
 
     fn permute(
         &self,

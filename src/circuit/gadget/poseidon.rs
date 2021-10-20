@@ -12,14 +12,24 @@ use halo2::{
 mod pow5t3;
 pub use pow5t3::{Pow5T3Chip, Pow5T3Config, StateWord};
 
-use crate::primitives::poseidon::{ConstantLength, Domain, Spec, Sponge, SpongeState, State};
+use crate::{
+    circuit::gadget::utilities::CellValue,
+    primitives::poseidon::{ConstantLength, Domain, Spec, Sponge, SpongeState, State},
+};
 
 /// The set of circuit instructions required to use the Poseidon permutation.
 pub trait PoseidonInstructions<F: FieldExt, S: Spec<F, T, RATE>, const T: usize, const RATE: usize>:
-    Chip<F>
+    Chip<F> + fmt::Debug
 {
     /// Variable representing the word over which the Poseidon permutation operates.
     type Word: Copy + fmt::Debug;
+
+    /// Loads a Poseidon word.
+    fn load_word(
+        &self,
+        layouter: &mut impl Layouter<F>,
+        value: CellValue<F>,
+    ) -> Result<Self::Word, Error>;
 
     /// Applies the Poseidon permutation to the given state.
     fn permute(
@@ -60,6 +70,7 @@ pub trait PoseidonDuplexInstructions<
 }
 
 /// A word over which the Poseidon permutation operates.
+#[derive(Debug)]
 pub struct Word<
     F: FieldExt,
     PoseidonChip: PoseidonInstructions<F, S, T, RATE>,
@@ -143,6 +154,17 @@ impl<
                 state,
                 domain,
             })
+    }
+
+    /// Loads a word.
+    pub fn load_word(
+        &self,
+        mut layouter: impl Layouter<F>,
+        value: CellValue<F>,
+    ) -> Result<Word<F, PoseidonChip, S, T, RATE>, Error> {
+        self.chip
+            .load_word(&mut layouter, value)
+            .map(Word::from_inner)
     }
 
     /// Absorbs an element into the sponge.
@@ -246,6 +268,26 @@ impl<
         const L: usize,
     > Hash<F, PoseidonChip, S, ConstantLength<L>, T, RATE>
 {
+    /// Prepares a message.
+    pub fn load_message(
+        &self,
+        mut layouter: impl Layouter<F>,
+        message: [CellValue<F>; L],
+    ) -> Result<[Word<F, PoseidonChip, S, T, RATE>; L], Error> {
+        use std::convert::TryInto;
+
+        let message: Result<Vec<Word<F, PoseidonChip, S, T, RATE>>, Error> = message
+            .iter()
+            .enumerate()
+            .map(|(idx, word)| {
+                self.duplex
+                    .load_word(layouter.namespace(|| format!("load word {}", idx)), *word)
+            })
+            .collect();
+
+        message.map(|message| message.try_into().unwrap())
+    }
+
     /// Hashes the given input.
     pub fn hash(
         mut self,
