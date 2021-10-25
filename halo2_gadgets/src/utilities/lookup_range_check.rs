@@ -125,7 +125,7 @@ impl<F: FieldExt + PrimeFieldBits, const K: usize> LookupRangeCheckConfig<F, K> 
         config
     }
 
-    #[cfg(feature = "testing")]
+    #[cfg(test)]
     // Loads the values [0..2^K) into `table_idx`. This is only used in testing
     // for now, since the Sinsemilla chip provides a pre-loaded table in the
     // Orchard context.

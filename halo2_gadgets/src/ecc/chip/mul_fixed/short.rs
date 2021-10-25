@@ -232,7 +232,7 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(test)]
 pub mod tests {
     use group::Curve;
     use halo2::{
@@ -243,7 +243,7 @@ pub mod tests {
 
     use crate::{
         ecc::{chip::EccChip, FixedPoint, FixedPoints, NonIdentityPoint, Point},
-        utilities::{ CellValue, UtilitiesInstructions},
+        utilities::{CellValue, UtilitiesInstructions},
     };
 
     #[allow(clippy::op_ref)]
@@ -378,7 +378,7 @@ pub mod tests {
                 chip::{compute_lagrange_coeffs, EccConfig, NUM_WINDOWS_SHORT},
                 H,
             },
-            utilities::lookup_range_check::LookupRangeCheckConfig
+            utilities::lookup_range_check::LookupRangeCheckConfig,
         };
         use group::{Curve, Group};
         use halo2::{

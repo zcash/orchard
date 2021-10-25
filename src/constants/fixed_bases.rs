@@ -200,33 +200,3 @@ fn test_zs_and_us<C: CurveAffine>(base: C, z: &[u64], u: &[[[u8; 32]; H]], num_w
         }
     }
 }
-
-#[cfg(feature = "gadget-tests")]
-#[test]
-fn test_orchard_fixed_bases() {
-    use halo2::dev::MockProver;
-    use halo2_gadgets::ecc::testing;
-
-    struct OrchardTest;
-    impl testing::EccTest<OrchardFixedBases> for OrchardTest {
-        fn fixed_bases_full() -> Vec<OrchardFixedBases> {
-            vec![
-                OrchardFixedBases::CommitIvkR,
-                OrchardFixedBases::NoteCommitR,
-                OrchardFixedBases::SpendAuthG,
-                OrchardFixedBases::ValueCommitR,
-            ]
-        }
-        fn fixed_bases_short() -> Vec<OrchardFixedBases> {
-            vec![OrchardFixedBases::ValueCommitV]
-        }
-        fn fixed_bases_base_field() -> Vec<OrchardFixedBases> {
-            vec![OrchardFixedBases::NullifierK]
-        }
-    }
-
-    let k = 13;
-    let circuit = testing::MyCircuit::<OrchardTest, OrchardFixedBases>(std::marker::PhantomData);
-    let prover = MockProver::run(k, &circuit, vec![]).unwrap();
-    assert_eq!(prover.verify(), Ok(()))
-}

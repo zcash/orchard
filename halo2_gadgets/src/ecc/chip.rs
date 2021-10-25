@@ -86,7 +86,7 @@ impl EccPoint {
         self.y
     }
 
-    #[cfg(feature = "testing")]
+    #[cfg(test)]
     fn is_identity(&self) -> Option<bool> {
         self.x.value().map(|x| x == pallas::Base::zero())
     }

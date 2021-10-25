@@ -378,7 +378,7 @@ impl<Fixed: FixedPoints<pallas::Affine>> Config<Fixed> {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(test)]
 pub mod tests {
     use group::{Curve, Group};
     use halo2::{

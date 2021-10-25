@@ -145,16 +145,19 @@ where
     }
 }
 
-#[cfg(feature = "testing")]
-pub mod testing {
+#[cfg(test)]
+pub mod tests {
     use super::{
         chip::{MerkleChip, MerkleConfig},
-        MerklePath,
-        MERKLE_DEPTH
+        i2lebsp, MerklePath, L_PALLAS_BASE, MERKLE_DEPTH,
     };
 
     use crate::{
-        ecc::FixedPoints,
+        ecc::{
+            chip::{compute_lagrange_coeffs, find_zs_and_us, NUM_WINDOWS},
+            FixedPoints, H,
+        },
+        primitives::sinsemilla,
         sinsemilla::{chip::SinsemillaChip, CommitDomains, HashDomains},
         utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions, Var},
     };
@@ -165,44 +168,121 @@ pub mod testing {
     };
     use pasta_curves::pallas;
 
+    use group::Curve;
     use std::convert::TryInto;
-    use std::marker::PhantomData;
 
-    pub struct MyCircuit<Hash, Commit, FixedBase, S: MerkleTest<Hash>>
-    where
-        Hash: HashDomains<pallas::Affine>,
-        Commit: CommitDomains<pallas::Affine, FixedBase, Hash>,
-        FixedBase: FixedPoints<pallas::Affine>,
-    {
+    use lazy_static::lazy_static;
+
+    lazy_static! {
+        static ref PERSONALIZATION: &'static str = "MerkleCRH";
+        static ref HASH_DOMAIN: sinsemilla::HashDomain =
+            sinsemilla::HashDomain::new(*PERSONALIZATION);
+        static ref Q: pallas::Affine = HASH_DOMAIN.Q().to_affine();
+        static ref R: pallas::Affine = sinsemilla::CommitDomain::new(*PERSONALIZATION)
+            .R()
+            .to_affine();
+        static ref ZS_AND_US: Vec<(u64, [[u8; 32]; H])> = find_zs_and_us(*R, NUM_WINDOWS).unwrap();
+    }
+
+    #[derive(Debug, Eq, PartialEq, Clone)]
+    pub struct FixedBase;
+    impl FixedPoints<pallas::Affine> for FixedBase {
+        fn generator(&self) -> pallas::Affine {
+            *R
+        }
+
+        fn u(&self) -> Vec<[[u8; 32]; H]> {
+            ZS_AND_US.iter().map(|(_, us)| *us).collect()
+        }
+
+        fn z(&self) -> Vec<u64> {
+            ZS_AND_US.iter().map(|(z, _)| *z).collect()
+        }
+
+        fn lagrange_coeffs(&self) -> Vec<[pallas::Base; H]> {
+            compute_lagrange_coeffs(self.generator(), NUM_WINDOWS)
+        }
+    }
+
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    pub struct Hash;
+    impl HashDomains<pallas::Affine> for Hash {
+        fn Q(&self) -> pallas::Affine {
+            *Q
+        }
+    }
+
+    // This test does not make use of the CommitDomain.
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    pub struct Commit;
+    impl CommitDomains<pallas::Affine, FixedBase, Hash> for Commit {
+        fn r(&self) -> FixedBase {
+            FixedBase
+        }
+
+        fn hash_domain(&self) -> Hash {
+            Hash
+        }
+    }
+
+    fn root(path: [pallas::Base; MERKLE_DEPTH], leaf_pos: u32, leaf: pallas::Base) -> pallas::Base {
+        use ff::PrimeFieldBits;
+        use group::prime::PrimeCurveAffine;
+
+        let domain = sinsemilla::HashDomain {
+            Q: Hash.Q().to_curve(),
+        };
+        let pos_bool = i2lebsp::<32>(leaf_pos as u64);
+
+        // Compute the root
+        let mut node = leaf;
+        for (l, (sibling, pos)) in path.iter().zip(pos_bool.iter()).enumerate() {
+            let (left, right) = if *pos {
+                (*sibling, node)
+            } else {
+                (node, *sibling)
+            };
+
+            let l_star = i2lebsp::<10>(l as u64);
+            let left: Vec<_> = left
+                .to_le_bits()
+                .iter()
+                .by_val()
+                .take(L_PALLAS_BASE)
+                .collect();
+            let right: Vec<_> = right
+                .to_le_bits()
+                .iter()
+                .by_val()
+                .take(L_PALLAS_BASE)
+                .collect();
+
+            let mut message = l_star.to_vec();
+            message.extend_from_slice(&left);
+            message.extend_from_slice(&right);
+
+            node = domain.hash(message.into_iter()).unwrap();
+        }
+        node
+    }
+
+    pub struct MyCircuit {
         pub leaf: Option<pallas::Base>,
         pub leaf_pos: Option<u32>,
         pub merkle_path: Option<[pallas::Base; MERKLE_DEPTH]>,
-        pub _marker: PhantomData<(Hash, Commit, FixedBase, S)>,
     }
 
-    impl<Hash, Commit, FixedBase, S: MerkleTest<Hash>> Default for MyCircuit<Hash, Commit, FixedBase, S> 
-    where
-        Hash: HashDomains<pallas::Affine>,
-        Commit: CommitDomains<pallas::Affine, FixedBase, Hash>,
-        FixedBase: FixedPoints<pallas::Affine>,
-    {
+    impl Default for MyCircuit {
         fn default() -> Self {
             MyCircuit {
                 leaf: None,
                 leaf_pos: None,
                 merkle_path: None,
-                _marker: PhantomData
             }
         }
-    }    
+    }
 
-    impl<Hash, Commit, FixedBase, S: MerkleTest<Hash>> Circuit<pallas::Base>
-        for MyCircuit<Hash, Commit, FixedBase, S>
-    where
-        Hash: HashDomains<pallas::Affine>,
-        Commit: CommitDomains<pallas::Affine, FixedBase, Hash>,
-        FixedBase: FixedPoints<pallas::Affine>,
-    {
+    impl Circuit<pallas::Base> for MyCircuit {
         type Config = (
             MerkleConfig<Hash, Commit, FixedBase>,
             MerkleConfig<Hash, Commit, FixedBase>,
@@ -214,7 +294,6 @@ pub mod testing {
                 leaf: None,
                 leaf_pos: None,
                 merkle_path: None,
-                _marker: PhantomData,
             }
         }
 
@@ -297,7 +376,7 @@ pub mod testing {
             let path = MerklePath {
                 chip_1,
                 chip_2,
-                domain: S::hash_domain(),
+                domain: Hash,
                 leaf_pos: self.leaf_pos,
                 path: self.merkle_path,
             };
@@ -307,143 +386,13 @@ pub mod testing {
 
             if let Some(leaf_pos) = self.leaf_pos {
                 // The expected final root
-                let final_root = S::root(self.merkle_path.unwrap(), leaf_pos, self.leaf.unwrap());
+                let final_root = root(self.merkle_path.unwrap(), leaf_pos, self.leaf.unwrap());
 
                 // Check the computed final root against the expected final root.
                 assert_eq!(computed_final_root.value().unwrap(), final_root);
             }
 
             Ok(())
-        }
-    }
-
-    pub trait MerkleTest<Hash: HashDomains<pallas::Affine>> {
-        fn hash_domain() -> Hash;
-        fn root(
-            path: [pallas::Base; MERKLE_DEPTH],
-            leaf_pos: u32,
-            leaf: pallas::Base,
-        ) -> pallas::Base;
-    }
-}
-
-#[cfg(feature = "testing")]
-pub mod tests {
-    use crate::{
-        ecc::{
-            chip::{compute_lagrange_coeffs, find_zs_and_us, NUM_WINDOWS},
-            FixedPoints, H,
-        },
-        sinsemilla::{
-            CommitDomains, HashDomains
-        },
-        primitives::sinsemilla::{CommitDomain, HashDomain},
-    };
-
-    use group::Curve;
-    use pasta_curves::pallas;
-
-    use lazy_static::lazy_static;
-    use super::{i2lebsp, MERKLE_DEPTH, L_PALLAS_BASE};
-
-    lazy_static! {
-        static ref PERSONALIZATION: &'static str = "MerkleCRH";
-        static ref HASH_DOMAIN: HashDomain = HashDomain::new(*PERSONALIZATION);
-        static ref Q: pallas::Affine = HASH_DOMAIN.Q().to_affine();
-        static ref R: pallas::Affine = CommitDomain::new(*PERSONALIZATION).R().to_affine();
-        static ref ZS_AND_US: Vec<(u64, [[u8; 32]; H])> = find_zs_and_us(*R, NUM_WINDOWS).unwrap();
-    }
-
-    #[derive(Debug, Eq, PartialEq, Clone)]
-    pub struct FixedBase;
-    impl FixedPoints<pallas::Affine> for FixedBase {
-        fn generator(&self) -> pallas::Affine {
-            *R
-        }
-
-        fn u(&self) -> Vec<[[u8; 32]; H]> {
-            ZS_AND_US.iter().map(|(_, us)| *us).collect()
-        }
-
-        fn z(&self) -> Vec<u64> {
-            ZS_AND_US.iter().map(|(z, _)| *z).collect()
-        }
-
-        fn lagrange_coeffs(&self) -> Vec<[pallas::Base; H]> {
-            compute_lagrange_coeffs(self.generator(), NUM_WINDOWS)
-        }
-    }
-
-    #[derive(Debug, Clone, Eq, PartialEq)]
-    struct Hash;
-    impl HashDomains<pallas::Affine> for Hash {
-        fn Q(&self) -> pallas::Affine {
-            *Q
-        }
-    }
-
-    // This test does not make use of the CommitDomain.
-    #[derive(Debug, Clone, Eq, PartialEq)]
-    pub struct Commit;
-    impl CommitDomains<pallas::Affine, FixedBase, Hash> for Commit {
-        fn r(&self) -> FixedBase {
-            FixedBase
-        }
-
-        fn hash_domain(&self) -> Hash {
-            Hash
-        }
-    }
-
-    struct Test;
-    impl super::testing::MerkleTest<Hash> for Test {
-        fn hash_domain() -> Hash {
-            Hash
-        }
-
-        fn root(
-            path: [pallas::Base; MERKLE_DEPTH],
-            leaf_pos: u32,
-            leaf: pallas::Base,
-        ) -> pallas::Base {
-            use group::prime::PrimeCurveAffine;
-            use ff::PrimeFieldBits;
-
-            let domain = HashDomain {
-                Q: Self::hash_domain().Q().to_curve(),
-            };
-            let pos_bool = i2lebsp::<32>(leaf_pos as u64);
-
-            // Compute the root
-            let mut node = leaf;
-            for (l, (sibling, pos)) in path.iter().zip(pos_bool.iter()).enumerate() {
-                let (left, right) = if *pos {
-                    (*sibling, node)
-                } else {
-                    (node, *sibling)
-                };
-
-                let l_star = i2lebsp::<10>(l as u64);
-                let left: Vec<_> = left
-                    .to_le_bits()
-                    .iter()
-                    .by_val()
-                    .take(L_PALLAS_BASE)
-                    .collect();
-                let right: Vec<_> = right
-                    .to_le_bits()
-                    .iter()
-                    .by_val()
-                    .take(L_PALLAS_BASE)
-                    .collect();
-
-                let mut message = l_star.to_vec();
-                message.extend_from_slice(&left);
-                message.extend_from_slice(&right);
-
-                node = domain.hash(message.into_iter()).unwrap();
-            }
-            node
         }
     }
 
@@ -459,15 +408,16 @@ pub mod tests {
         let pos = random::<u32>();
 
         // Choose a path of random inner nodes
-        let path: Vec<_> = (0..(super::MERKLE_DEPTH)).map(|_| pallas::Base::rand()).collect();
+        let path: Vec<_> = (0..(super::MERKLE_DEPTH))
+            .map(|_| pallas::Base::rand())
+            .collect();
 
         // The root is provided as a public input in the Orchard circuit.
 
-        let circuit = super::testing::MyCircuit::<Hash, Commit, FixedBase, Test> {
+        let circuit = MyCircuit {
             leaf: Some(leaf),
             leaf_pos: Some(pos),
             merkle_path: Some(path.try_into().unwrap()),
-            _marker: std::marker::PhantomData,
         };
 
         let prover = MockProver::run(11, &circuit, vec![]).unwrap();
@@ -483,7 +433,7 @@ pub mod tests {
         root.fill(&WHITE).unwrap();
         let root = root.titled("MerkleCRH Path", ("sans-serif", 60)).unwrap();
 
-        let circuit = super::testing::MyCircuit::<Hash, Commit, FixedBase, Test>::default();
+        let circuit = MyCircuit::default();
         halo2::dev::CircuitLayout::default()
             .show_labels(false)
             .render(11, &circuit, &root)

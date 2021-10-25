@@ -60,7 +60,6 @@ bench = false
 [features]
 dev-graph = ["halo2/dev-graph", "plotters"]
 test-dependencies = ["proptest"]
-testing = []
 
 [[bench]]
 name = "primitives"

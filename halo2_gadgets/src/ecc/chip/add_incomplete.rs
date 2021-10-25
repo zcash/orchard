@@ -143,7 +143,7 @@ impl Config {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(test)]
 pub mod tests {
     use group::{Curve, Group};
     use halo2::{circuit::Layouter, plonk::Error};

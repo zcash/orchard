@@ -408,12 +408,12 @@ where
     }
 }
 
-#[cfg(feature = "testing")]
-pub mod testing {
+#[cfg(test)]
+pub mod tests {
     use crate::{
         ecc::{
-            chip::{EccChip, EccConfig},
-            FixedPoints, NonIdentityPoint,
+            chip::{compute_lagrange_coeffs, find_zs_and_us, EccChip, EccConfig, NUM_WINDOWS},
+            FixedPoints, NonIdentityPoint, H,
         },
         primitives::sinsemilla,
         sinsemilla::{
@@ -431,23 +431,61 @@ pub mod testing {
 
     use group::{prime::PrimeCurveAffine, Curve};
     use std::convert::TryInto;
-    use std::marker::PhantomData;
 
-    pub struct MyCircuit<Hash, Commit, FixedBase, S: SinsemillaTest<Hash, Commit, FixedBase>>(
-        pub PhantomData<(Hash, Commit, FixedBase, S)>,
-    )
-    where
-        Hash: HashDomains<pallas::Affine>,
-        Commit: CommitDomains<pallas::Affine, FixedBase, Hash>,
-        FixedBase: FixedPoints<pallas::Affine>;
+    use lazy_static::lazy_static;
 
-    impl<Hash, Commit, FixedBase, S: SinsemillaTest<Hash, Commit, FixedBase>> Circuit<pallas::Base>
-        for MyCircuit<Hash, Commit, FixedBase, S>
-    where
-        Hash: HashDomains<pallas::Affine>,
-        Commit: CommitDomains<pallas::Affine, FixedBase, Hash>,
-        FixedBase: FixedPoints<pallas::Affine>,
-    {
+    lazy_static! {
+        static ref PERSONALIZATION: &'static str = "personalization";
+        static ref COMMIT_DOMAIN: sinsemilla::CommitDomain =
+            sinsemilla::CommitDomain::new(*PERSONALIZATION);
+        static ref Q: pallas::Affine = COMMIT_DOMAIN.Q().to_affine();
+        static ref R: pallas::Affine = COMMIT_DOMAIN.R().to_affine();
+        static ref ZS_AND_US: Vec<(u64, [[u8; 32]; H])> = find_zs_and_us(*R, NUM_WINDOWS).unwrap();
+    }
+
+    #[derive(Debug, Eq, PartialEq, Clone)]
+    pub struct FixedBase;
+    impl FixedPoints<pallas::Affine> for FixedBase {
+        fn generator(&self) -> pallas::Affine {
+            *R
+        }
+
+        fn u(&self) -> Vec<[[u8; 32]; H]> {
+            ZS_AND_US.iter().map(|(_, us)| *us).collect()
+        }
+
+        fn z(&self) -> Vec<u64> {
+            ZS_AND_US.iter().map(|(z, _)| *z).collect()
+        }
+
+        fn lagrange_coeffs(&self) -> Vec<[pallas::Base; H]> {
+            compute_lagrange_coeffs(self.generator(), NUM_WINDOWS)
+        }
+    }
+
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    pub struct Hash;
+    impl HashDomains<pallas::Affine> for Hash {
+        fn Q(&self) -> pallas::Affine {
+            *Q
+        }
+    }
+
+    #[derive(Debug, Clone, Eq, PartialEq)]
+    pub struct Commit;
+    impl CommitDomains<pallas::Affine, FixedBase, Hash> for Commit {
+        fn r(&self) -> FixedBase {
+            FixedBase
+        }
+
+        fn hash_domain(&self) -> Hash {
+            Hash
+        }
+    }
+
+    pub struct MyCircuit;
+
+    impl Circuit<pallas::Base> for MyCircuit {
         type Config = (
             EccConfig,
             SinsemillaConfig<Hash, Commit, FixedBase>,
@@ -456,7 +494,7 @@ pub mod testing {
         type FloorPlanner = SimpleFloorPlanner;
 
         fn without_witnesses(&self) -> Self {
-            MyCircuit(PhantomData)
+            MyCircuit
         }
 
         #[allow(non_snake_case)]
@@ -535,10 +573,11 @@ pub mod testing {
             // The two `SinsemillaChip`s share the same lookup table.
             SinsemillaChip::<Hash, Commit, FixedBase>::load(config.1.clone(), &mut layouter)?;
 
-            for domain in S::hash_domains().iter() {
+            // Test hash domain.
+            {
                 let chip1 = SinsemillaChip::construct(config.1.clone());
 
-                let hash_domain = HashDomain::new(chip1.clone(), ecc_chip.clone(), domain);
+                let hash_domain = HashDomain::new(chip1.clone(), ecc_chip.clone(), &Hash);
 
                 let message: Vec<Option<bool>> =
                     (0..500).map(|_| Some(rand::random::<bool>())).collect();
@@ -578,10 +617,12 @@ pub mod testing {
                 )?;
             }
 
-            for domain in S::commit_domains().iter() {
+            // Test commit domain.
+            {
                 let chip2 = SinsemillaChip::construct(config.2.clone());
 
-                let commit_domain = CommitDomain::new(chip2.clone(), ecc_chip.clone(), domain);
+                let domain = Commit;
+                let commit_domain = CommitDomain::new(chip2.clone(), ecc_chip.clone(), &domain);
 
                 let r_val = pallas::Scalar::rand();
                 let message: Vec<Option<bool>> =
@@ -630,101 +671,12 @@ pub mod testing {
         }
     }
 
-    pub trait SinsemillaTest<Hash, Commit, FixedBase>
-    where
-        Hash: HashDomains<pallas::Affine>,
-        Commit: CommitDomains<pallas::Affine, FixedBase, Hash>,
-        FixedBase: FixedPoints<pallas::Affine>,
-    {
-        fn hash_domains() -> Vec<Hash>;
-        fn commit_domains() -> Vec<Commit>;
-    }
-}
-
-#[cfg(feature = "testing")]
-pub mod tests {
-    use crate::{
-        ecc::{
-            chip::{compute_lagrange_coeffs, find_zs_and_us, NUM_WINDOWS},
-            FixedPoints, H,
-        },
-        sinsemilla::{
-            CommitDomains, HashDomains
-        },
-        primitives::sinsemilla,
-    };
-
-    use group::Curve;
-    use pasta_curves::pallas;
-
-    use lazy_static::lazy_static;
-
-    lazy_static! {
-        static ref PERSONALIZATION: &'static str = "personalization";
-        static ref COMMIT_DOMAIN: sinsemilla::CommitDomain =
-            sinsemilla::CommitDomain::new(*PERSONALIZATION);
-        static ref Q: pallas::Affine = COMMIT_DOMAIN.Q().to_affine();
-        static ref R: pallas::Affine = COMMIT_DOMAIN.R().to_affine();
-        static ref ZS_AND_US: Vec<(u64, [[u8; 32]; H])> = find_zs_and_us(*R, NUM_WINDOWS).unwrap();
-    }
-
-    #[derive(Debug, Eq, PartialEq, Clone)]
-    pub struct FixedBase;
-    impl FixedPoints<pallas::Affine> for FixedBase {
-        fn generator(&self) -> pallas::Affine {
-            *R
-        }
-
-        fn u(&self) -> Vec<[[u8; 32]; H]> {
-            ZS_AND_US.iter().map(|(_, us)| *us).collect()
-        }
-
-        fn z(&self) -> Vec<u64> {
-            ZS_AND_US.iter().map(|(z, _)| *z).collect()
-        }
-
-        fn lagrange_coeffs(&self) -> Vec<[pallas::Base; H]> {
-            compute_lagrange_coeffs(self.generator(), NUM_WINDOWS)
-        }
-    }
-
-    #[derive(Debug, Clone, Eq, PartialEq)]
-    struct Hash;
-    impl HashDomains<pallas::Affine> for Hash {
-        fn Q(&self) -> pallas::Affine {
-            *Q
-        }
-    }
-
-    #[derive(Debug, Clone, Eq, PartialEq)]
-    pub struct Commit;
-    impl CommitDomains<pallas::Affine, FixedBase, Hash> for Commit {
-        fn r(&self) -> FixedBase {
-            FixedBase
-        }
-
-        fn hash_domain(&self) -> Hash {
-            Hash
-        }
-    }
-
-    struct Test;
-    impl super::testing::SinsemillaTest<Hash, Commit, FixedBase> for Test {
-        fn hash_domains() -> Vec<Hash> {
-            vec![Hash]
-        }
-        fn commit_domains() -> Vec<Commit> {
-            vec![Commit]
-        }
-    }
-
     #[test]
     fn sinsemilla_chip() {
         use halo2::dev::MockProver;
 
         let k = 11;
-        let circuit =
-            super::testing::MyCircuit::<Hash, Commit, FixedBase, Test>(std::marker::PhantomData);
+        let circuit = MyCircuit;
         let prover = MockProver::run(k, &circuit, vec![]).unwrap();
         assert_eq!(prover.verify(), Ok(()))
     }
@@ -739,8 +691,7 @@ pub mod tests {
         root.fill(&WHITE).unwrap();
         let root = root.titled("SinsemillaHash", ("sans-serif", 60)).unwrap();
 
-        let circuit =
-            super::testing::MyCircuit::<Hash, Commit, FixedBase, Test>(std::marker::PhantomData);
+        let circuit = MyCircuit;
         halo2::dev::CircuitLayout::default()
             .render(11, &circuit, &root)
             .unwrap();

@@ -146,7 +146,7 @@ impl Config {
     }
 }
 
-#[cfg(feature = "testing")]
+#[cfg(test)]
 pub mod tests {
     use halo2::circuit::Layouter;
     use pasta_curves::pallas;

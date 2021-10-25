@@ -61,7 +61,6 @@ bench = false
 [features]
 dev-graph = ["halo2/dev-graph", "plotters"]
 test-dependencies = ["proptest"]
-gadget-tests = ["halo2_gadgets/testing"]
 
 [[bench]]
 name = "note_decryption"
