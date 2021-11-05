@@ -60,7 +60,7 @@ Each of these trees would have had a fixed depth (necessary for being able to cr
 proofs). Chains that integrated Orchard could have decoupled the limits on
 commitments-per-subtree from higher-layer constraints like block size, by enabling their
 blocks and transactions to be structured internally as a series of Orchard blocks or txs
-(e.g. a Zcash block would have contained  a `Vec<BlockTreeRoot>`, that each were appended
+(e.g. a Zcash block would have contained a `Vec<BlockTreeRoot>`, that each were appended
 in-order).
 
 The motivation for considering this change was to improve the lives of light client wallet

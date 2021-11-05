@@ -126,7 +126,7 @@ $$
 In the above alternatives:
 
 - $\mathit{Hash}$ is a keyed circuit-efficient hash (such as Rescue).
-- $\mathcal{I}$ is an fixed independent base, independent of $\mathcal{G}$ and any others
+- $\mathcal{I}$ is a fixed independent base, independent of $\mathcal{G}$ and any others
   returned by $\mathit{GH}$.
 - $\mathcal{G_v}$ is a pair of fixed independent bases (independent of all others), where
   the specific choice of base depends on whether the note has zero value.

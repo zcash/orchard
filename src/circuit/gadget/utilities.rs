@@ -100,7 +100,7 @@ pub fn transpose_option_array<T: Copy + std::fmt::Debug, const LEN: usize>(
     ret
 }
 
-/// Checks that an expresssion is either 1 or 0.
+/// Checks that an expression is either 1 or 0.
 pub fn bool_check<F: FieldExt>(value: Expression<F>) -> Expression<F> {
     value.clone() * (Expression::Constant(F::one()) - value)
 }

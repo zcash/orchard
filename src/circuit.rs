@@ -213,7 +213,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Poseidon requires four advice columns, while ECC incomplete addition requires
         // six, so we could choose to configure them in parallel. However, we only use a
-        // single Poseidon invocation, and we have the rows to accomodate it serially.
+        // single Poseidon invocation, and we have the rows to accommodate it serially.
         // Instead, we reduce the proof size by sharing fixed columns between the ECC and
         // Poseidon chips.
         let lagrange_coeffs = [

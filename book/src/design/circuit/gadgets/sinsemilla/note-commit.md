@@ -498,7 +498,7 @@ $$
 where $\textsf{LSB}$ is $b_2$ for $y(\mathsf{g_d})$, and $d_1$ for $y(\mathsf{pk_d})$.
 Let $$j = \textsf{LSB} + 2 \cdot k_0 + 2^{10} \cdot k_1.$$ We decompose $j$ to be $250$
 bits using a strict $25-$word [ten-bit lookup](../decomposition.md#lookup-decomposition).
-The running sum outputs allow us to susbstitute $k_1 = z_{j, 1}.$
+The running sum outputs allow us to substitute $k_1 = z_{j, 1}.$
 
 Recall that $b_2 = ỹ(\mathsf{g_d})$ and $d_1 = ỹ(\mathsf{pk_d})$ were pieces input to the
 Sinsemilla hash and have already been boolean-constrained. $k_0$ and $k_2$ are constrained
