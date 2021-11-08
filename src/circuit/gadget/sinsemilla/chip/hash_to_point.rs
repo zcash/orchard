@@ -240,7 +240,7 @@ impl SinsemillaChip {
         let words: Option<Vec<u32>> = bitstring.map(|bitstring| {
             bitstring
                 .chunks_exact(sinsemilla::K)
-                .map(|word| lebs2ip_k(word))
+                .map(lebs2ip_k)
                 .collect()
         });
 
