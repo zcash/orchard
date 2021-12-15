@@ -118,7 +118,7 @@ where
         // Message must have at most `MAX_WORDS` words.
         assert!(bitstring.len() / K <= MAX_WORDS);
 
-        // Message piece must be at most `ceil(C::NUM_BITS / K)` bits
+        // There must be at most `floor(C::NUM_BITS / K)` words
         let piece_num_words = C::Base::NUM_BITS as usize / K;
         let pieces: Result<Vec<_>, _> = bitstring
             .chunks(piece_num_words * K)
