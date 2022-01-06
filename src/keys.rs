@@ -418,6 +418,22 @@ impl FullViewingKey {
 
         Some(FullViewingKey { ak, nk, rivk })
     }
+
+    /// Derives an internal full viewing key from a full viewing key, as specified in [ZIP32][orchardinternalfullviewingkey]
+    ///
+    /// [orchardinternalfullviewingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
+    pub fn derive_internal(&self) -> Option<Self> {
+        let k = self.rivk().to_bytes();
+        let rivk_internal = PrfExpand::OrchardRivkInternal
+            .with_ad_slices(&k, &[&self.ak.clone().to_bytes(), &self.nk().to_bytes()]);
+        let rivk_internal = CommitIvkRandomness::from_bytes(&rivk_internal)?;
+
+        Some(FullViewingKey {
+            ak: self.ak.clone(),
+            nk: self.nk,
+            rivk: rivk_internal,
+        })
+    }
 }
 
 /// A key that provides the capability to derive a sequence of diversifiers.
