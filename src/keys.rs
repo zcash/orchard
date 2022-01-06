@@ -38,6 +38,14 @@ const ZIP32_PURPOSE: u32 = 32;
 #[derive(Debug, Copy, Clone)]
 pub struct SpendingKey([u8; 32]);
 
+/// An internal spending key, derived from a spending key.
+///
+/// Specified in [ZIP32][orchardinternalspendingkey].
+///
+/// [orchardinternalspendingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
+#[derive(Debug, Copy, Clone)]
+pub struct InternalSpendingKey([u8; 32]);
+
 impl ConstantTimeEq for SpendingKey {
     fn ct_eq(&self, other: &Self) -> Choice {
         self.to_bytes().ct_eq(other.to_bytes())
@@ -95,6 +103,11 @@ impl SpendingKey {
             ChildIndex::try_from(account)?,
         ];
         ExtendedSpendingKey::from_path(seed, path).map(|esk| esk.sk())
+    }
+
+    /// Derives an internal spending key from a spending key,
+    pub fn derive_internal(&self) -> InternalSpendingKey {
+        InternalSpendingKey(self.0)
     }
 }
 
@@ -253,6 +266,12 @@ pub(crate) struct CommitIvkRandomness(pallas::Scalar);
 impl From<&SpendingKey> for CommitIvkRandomness {
     fn from(sk: &SpendingKey) -> Self {
         CommitIvkRandomness(to_scalar(PrfExpand::OrchardRivk.expand(&sk.0)))
+    }
+}
+
+impl From<&InternalSpendingKey> for CommitIvkRandomness {
+    fn from(sk: &InternalSpendingKey) -> Self {
+        CommitIvkRandomness(to_scalar(PrfExpand::OrchardRivkInternal.expand(&sk.0)))
     }
 }
 
