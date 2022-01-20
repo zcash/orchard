@@ -8,7 +8,13 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Changed
-- pass in an additional `rng: impl RngCore` argument to `builder::InProgress::create_proof`, `builder::Bundle::create_proof`, `circuit::Proof::create`.
+- MSRV is now 1.54.0.
+- Bumped dependencies to `pasta_curves 0.3`.
+- The following methods now have an additional `rng: impl RngCore` argument:
+  - `orchard::builder::Bundle::create_proof`
+  - `orchard::builder::InProgress::create_proof`
+  - `orchard::circuit::Proof::create`
+
 ### Removed
 - `orchard::value::ValueSum::from_raw`
 

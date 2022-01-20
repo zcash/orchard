@@ -491,6 +491,8 @@ impl ScalarFixed {
             .iter()
             .map(|window| {
                 if let Some(window) = window {
+                    // TODO: Remove this trait dependency
+                    use pasta_curves::arithmetic::SqrtRatio;
                     let window = window.get_lower_32() as usize;
                     assert!(window < H);
                     Some(window)

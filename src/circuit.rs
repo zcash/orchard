@@ -3,7 +3,9 @@
 use group::{Curve, GroupEncoding};
 use halo2::{
     circuit::{floor_planner, AssignedCell, Layouter},
-    plonk::{self, Advice, Column, Expression, Instance as InstanceColumn, Selector},
+    plonk::{
+        self, Advice, Column, Expression, Instance as InstanceColumn, Selector, SingleVerifier,
+    },
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
 };
@@ -873,15 +875,9 @@ impl Proof {
             .collect();
         let instances: Vec<_> = instances.iter().map(|i| &i[..]).collect();
 
-        let msm = vk.params.empty_msm();
+        let strategy = SingleVerifier::new(&vk.params);
         let mut transcript = Blake2bRead::init(&self.0[..]);
-        let guard = plonk::verify_proof(&vk.params, &vk.vk, msm, &instances, &mut transcript)?;
-        let msm = guard.clone().use_challenges();
-        if msm.eval() {
-            Ok(())
-        } else {
-            Err(plonk::Error::ConstraintSystemFailure)
-        }
+        plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
     }
 
     /// Constructs a new Proof value.
