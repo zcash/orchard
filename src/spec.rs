@@ -73,7 +73,7 @@ impl NonZeroPallasBase {
         pallas::Base::from_repr(*bytes).and_then(NonZeroPallasBase::from_base)
     }
 
-    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
         self.0.to_repr()
     }
 
