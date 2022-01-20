@@ -227,7 +227,7 @@ impl NullifierDerivingKey {
     }
 
     /// Converts this nullifier deriving key to its serialized form.
-    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 
@@ -262,7 +262,7 @@ impl CommitIvkRandomness {
     }
 
     /// Converts this nullifier deriving key to its serialized form.
-    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 

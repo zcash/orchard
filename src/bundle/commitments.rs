@@ -55,9 +55,9 @@ where
             .unwrap();
     }
 
-    h.write_all(&ch.finalize().as_bytes()).unwrap();
-    h.write_all(&mh.finalize().as_bytes()).unwrap();
-    h.write_all(&nh.finalize().as_bytes()).unwrap();
+    h.write_all(ch.finalize().as_bytes()).unwrap();
+    h.write_all(mh.finalize().as_bytes()).unwrap();
+    h.write_all(nh.finalize().as_bytes()).unwrap();
     h.write_all(&[bundle.flags().to_byte()]).unwrap();
     h.write_all(&<i64>::from(bundle.value_balance()).to_le_bytes())
         .unwrap();
