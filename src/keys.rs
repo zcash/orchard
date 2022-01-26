@@ -12,7 +12,7 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
-use pasta_curves::pallas;
+use pasta_curves::{arithmetic::FieldExt, pallas};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
@@ -37,14 +37,6 @@ const ZIP32_PURPOSE: u32 = 32;
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Debug, Copy, Clone)]
 pub struct SpendingKey([u8; 32]);
-
-/// An internal spending key, derived from a spending key.
-///
-/// Specified in [ZIP32][orchardinternalspendingkey].
-///
-/// [orchardinternalspendingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
-#[derive(Debug, Copy, Clone)]
-pub struct InternalSpendingKey([u8; 32]);
 
 impl ConstantTimeEq for SpendingKey {
     fn ct_eq(&self, other: &Self) -> Choice {
@@ -103,11 +95,6 @@ impl SpendingKey {
             ChildIndex::try_from(account)?,
         ];
         ExtendedSpendingKey::from_path(seed, path).map(|esk| esk.sk())
-    }
-
-    /// Derives an internal spending key from a spending key,
-    pub fn derive_internal(&self) -> InternalSpendingKey {
-        InternalSpendingKey(self.0)
     }
 }
 
@@ -269,12 +256,6 @@ impl From<&SpendingKey> for CommitIvkRandomness {
     }
 }
 
-impl From<&InternalSpendingKey> for CommitIvkRandomness {
-    fn from(sk: &InternalSpendingKey) -> Self {
-        CommitIvkRandomness(to_scalar(PrfExpand::OrchardRivkInternal.expand(&sk.0)))
-    }
-}
-
 impl CommitIvkRandomness {
     pub(crate) fn inner(&self) -> pallas::Scalar {
         self.0
@@ -340,6 +321,15 @@ impl FullViewingKey {
 
     pub(crate) fn rivk(&self) -> &CommitIvkRandomness {
         &self.rivk
+    }
+
+    pub(crate) fn rivk_internal(&self) -> CommitIvkRandomness {
+        let k = self.rivk.0.to_bytes();
+        let ak = self.ak.to_bytes();
+        let nk = self.nk.to_bytes();
+        CommitIvkRandomness(to_scalar(
+            PrfExpand::OrchardRivkInternal.with_ad_slices(&k, &[&ak, &nk]),
+        ))
     }
 
     /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
@@ -423,15 +413,10 @@ impl FullViewingKey {
     ///
     /// [orchardinternalfullviewingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
     pub fn derive_internal(&self) -> Option<Self> {
-        let k = self.rivk().to_bytes();
-        let rivk_internal = PrfExpand::OrchardRivkInternal
-            .with_ad_slices(&k, &[&self.ak.clone().to_bytes(), &self.nk().to_bytes()]);
-        let rivk_internal = CommitIvkRandomness::from_bytes(&rivk_internal)?;
-
         Some(FullViewingKey {
             ak: self.ak.clone(),
             nk: self.nk,
-            rivk: rivk_internal,
+            rivk: self.rivk_internal(),
         })
     }
 }
