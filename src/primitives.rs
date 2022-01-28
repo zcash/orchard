@@ -4,6 +4,4 @@
 //     - EphemeralPublicKey
 //     - EphemeralSecretKey
 
-pub mod poseidon;
 pub mod redpallas;
-pub mod sinsemilla;

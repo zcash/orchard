@@ -1,23 +1,21 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use crate::{
-    circuit::gadget::{
-        ecc::{
-            chip::{EccChip, NonIdentityEccPoint},
-            Point,
-        },
-        sinsemilla::{
-            chip::{SinsemillaChip, SinsemillaConfig},
-            CommitDomain, Message, MessagePiece,
-        },
-        utilities::{bitrange_subset, bool_check},
+use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
+use halo2_gadgets::{
+    ecc::{
+        chip::{EccChip, NonIdentityEccPoint},
+        Point,
     },
-    constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
+    sinsemilla::{
+        chip::{SinsemillaChip, SinsemillaConfig},
+        CommitDomain, Message, MessagePiece,
+    },
+    utilities::{bitrange_subset, bool_check},
 };
 
 /// The values of the running sum at the start and end of the range being used for a
@@ -1455,25 +1453,23 @@ struct GateCells {
 #[cfg(test)]
 mod tests {
     use super::NoteCommitConfig;
-    use crate::{
-        circuit::gadget::{
-            ecc::{
-                chip::{EccChip, EccConfig},
-                NonIdentityPoint,
-            },
-            sinsemilla::chip::SinsemillaChip,
-            utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
-        },
-        constants::{
-            fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
-            OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
+    use crate::constants::{
+        fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
+        OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
+    };
+    use halo2_gadgets::{
+        ecc::{
+            chip::{EccChip, EccConfig},
+            NonIdentityPoint,
         },
         primitives::sinsemilla::CommitDomain,
+        sinsemilla::chip::SinsemillaChip,
+        utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
     };
 
     use ff::{Field, PrimeField, PrimeFieldBits};
     use group::Curve;
-    use halo2::{
+    use halo2_proofs::{
         circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},

@@ -6,16 +6,14 @@ use std::ops::Deref;
 use ff::{Field, PrimeField, PrimeFieldBits};
 use group::GroupEncoding;
 use group::{Curve, Group};
-use halo2::arithmetic::{CurveAffine, CurveExt, FieldExt};
+use halo2_gadgets::primitives::{poseidon, sinsemilla};
+use halo2_proofs::arithmetic::{CurveAffine, CurveExt, FieldExt};
 use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};
 
-use crate::{
-    constants::{
-        fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
-        KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
-    },
-    primitives::{poseidon, sinsemilla},
+use crate::constants::{
+    fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
+    KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
 };
 
 mod prf_expand;
@@ -283,7 +281,7 @@ mod tests {
     use super::{i2lebsp, lebs2ip};
 
     use group::Group;
-    use halo2::arithmetic::CurveExt;
+    use halo2_proofs::arithmetic::CurveExt;
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
     use std::convert::TryInto;

@@ -1,7 +1,7 @@
 //! The Orchard Action circuit implementation.
 
 use group::{Curve, GroupEncoding};
-use halo2::{
+use halo2_proofs::{
     circuit::{floor_planner, AssignedCell, Layouter},
     plonk::{
         self, Advice, Column, Expression, Instance as InstanceColumn, Selector, SingleVerifier,
@@ -14,21 +14,6 @@ use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
 use rand::RngCore;
 
 use self::commit_ivk::CommitIvkConfig;
-use self::gadget::{
-    ecc::{
-        chip::{EccChip, EccConfig},
-        FixedPoint, FixedPointBaseField, FixedPointShort, NonIdentityPoint, Point,
-    },
-    poseidon::{Hash as PoseidonHash, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
-    sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig},
-        merkle::{
-            chip::{MerkleChip, MerkleConfig},
-            MerklePath,
-        },
-    },
-    utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
-};
 use self::note_commit::NoteCommitConfig;
 use crate::{
     constants::{
@@ -43,13 +28,26 @@ use crate::{
         nullifier::Nullifier,
         ExtractedNoteCommitment,
     },
-    primitives::{
-        poseidon::{self, ConstantLength},
-        redpallas::{SpendAuth, VerificationKey},
-    },
+    primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
     tree::{Anchor, MerkleHashOrchard},
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
+};
+use halo2_gadgets::{
+    ecc::{
+        chip::{EccChip, EccConfig},
+        FixedPoint, FixedPointBaseField, FixedPointShort, NonIdentityPoint, Point,
+    },
+    poseidon::{Hash as PoseidonHash, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    primitives::poseidon::{self, ConstantLength},
+    sinsemilla::{
+        chip::{SinsemillaChip, SinsemillaConfig},
+        merkle::{
+            chip::{MerkleChip, MerkleConfig},
+            MerklePath,
+        },
+    },
+    utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
 };
 
 use std::convert::TryInto;
@@ -398,13 +396,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 // TODO: Replace with array::map once MSRV is 1.55.0.
                 gen_const_array(|i| typed_path[i].inner())
             });
-            let merkle_inputs = MerklePath {
-                chip_1: config.merkle_chip_1(),
-                chip_2: config.merkle_chip_2(),
-                domain: OrchardHashDomains::MerkleCrh,
-                leaf_pos: self.pos,
+            let merkle_inputs = MerklePath::construct(
+                config.merkle_chip_1(),
+                config.merkle_chip_2(),
+                OrchardHashDomains::MerkleCrh,
+                self.pos,
                 path,
-            };
+            );
             let leaf = cm_old.extract_p().inner().clone();
             merkle_inputs.calculate_root(layouter.namespace(|| "MerkleCRH"), leaf)?
         };
@@ -717,14 +715,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 /// The verifying key for the Orchard Action circuit.
 #[derive(Debug)]
 pub struct VerifyingKey {
-    params: halo2::poly::commitment::Params<vesta::Affine>,
+    params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     vk: plonk::VerifyingKey<vesta::Affine>,
 }
 
 impl VerifyingKey {
     /// Builds the verifying key.
     pub fn build() -> Self {
-        let params = halo2::poly::commitment::Params::new(K);
+        let params = halo2_proofs::poly::commitment::Params::new(K);
         let circuit: Circuit = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -736,14 +734,14 @@ impl VerifyingKey {
 /// The proving key for the Orchard Action circuit.
 #[derive(Debug)]
 pub struct ProvingKey {
-    params: halo2::poly::commitment::Params<vesta::Affine>,
+    params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     pk: plonk::ProvingKey<vesta::Affine>,
 }
 
 impl ProvingKey {
     /// Builds the proving key.
     pub fn build() -> Self {
-        let params = halo2::poly::commitment::Params::new(K);
+        let params = halo2_proofs::poly::commitment::Params::new(K);
         let circuit: Circuit = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -890,7 +888,7 @@ impl Proof {
 mod tests {
     use ff::Field;
     use group::GroupEncoding;
-    use halo2::dev::MockProver;
+    use halo2_proofs::dev::MockProver;
     use pasta_curves::pallas;
     use rand::rngs::OsRng;
     use std::iter;
@@ -978,10 +976,11 @@ mod tests {
 
         // Test that the proof size is as expected.
         let expected_proof_size = {
-            let circuit_cost = halo2::dev::CircuitCost::<pasta_curves::vesta::Point, _>::measure(
-                K as usize,
-                &circuits[0],
-            );
+            let circuit_cost =
+                halo2_proofs::dev::CircuitCost::<pasta_curves::vesta::Point, _>::measure(
+                    K as usize,
+                    &circuits[0],
+                );
             assert_eq!(usize::from(circuit_cost.proof_size(1)), 4992);
             assert_eq!(usize::from(circuit_cost.proof_size(2)), 7264);
             usize::from(circuit_cost.proof_size(instances.len()))
@@ -1042,7 +1041,7 @@ mod tests {
             rcm_new: None,
             rcv: None,
         };
-        halo2::dev::CircuitLayout::default()
+        halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
             .view_height(0..(1 << 11))
             .render(K, &circuit, &root)

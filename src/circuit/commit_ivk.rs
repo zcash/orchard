@@ -1,20 +1,18 @@
-use halo2::{
+use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use crate::{
-    circuit::gadget::{
-        ecc::{chip::EccChip, X},
-        sinsemilla::{
-            chip::{SinsemillaChip, SinsemillaConfig},
-            CommitDomain, Message, MessagePiece,
-        },
-        utilities::{bitrange_subset, bool_check},
+use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
+use halo2_gadgets::{
+    ecc::{chip::EccChip, X},
+    sinsemilla::{
+        chip::{SinsemillaChip, SinsemillaConfig},
+        CommitDomain, Message, MessagePiece,
     },
-    constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
+    utilities::{bitrange_subset, bool_check},
 };
 
 #[derive(Clone, Debug)]
@@ -635,20 +633,18 @@ struct GateCells {
 #[cfg(test)]
 mod tests {
     use super::CommitIvkConfig;
-    use crate::{
-        circuit::gadget::{
-            ecc::chip::{EccChip, EccConfig},
-            sinsemilla::chip::SinsemillaChip,
-            utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
-        },
-        constants::{
-            fixed_bases::COMMIT_IVK_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
-            OrchardHashDomains, L_ORCHARD_BASE, T_Q,
-        },
-        primitives::sinsemilla::CommitDomain,
+    use crate::constants::{
+        fixed_bases::COMMIT_IVK_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
+        OrchardHashDomains, L_ORCHARD_BASE, T_Q,
     };
     use group::ff::{Field, PrimeFieldBits};
-    use halo2::{
+    use halo2_gadgets::{
+        ecc::chip::{EccChip, EccConfig},
+        primitives::sinsemilla::CommitDomain,
+        sinsemilla::chip::SinsemillaChip,
+        utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
+    };
+    use halo2_proofs::{
         circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},

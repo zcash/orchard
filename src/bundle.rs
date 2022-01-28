@@ -461,7 +461,7 @@ impl<V> Bundle<Authorized, V> {
     }
 
     /// Verifies the proof for this bundle.
-    pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2::plonk::Error> {
+    pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
         self.authorization()
             .proof()
             .verify(vk, &self.to_instances())

@@ -2931,8 +2931,8 @@ pub fn generator() -> pallas::Affine {
 mod tests {
     use super::super::{NUM_WINDOWS, ORCHARD_PERSONALIZATION};
     use super::*;
-    use crate::circuit::gadget::ecc::chip::constants::{test_lagrange_coeffs, test_zs_and_us};
     use group::Curve;
+    use halo2_gadgets::ecc::chip::constants::{test_lagrange_coeffs, test_zs_and_us};
     use pasta_curves::{
         arithmetic::{CurveAffine, CurveExt},
         pallas,

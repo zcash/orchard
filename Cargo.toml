@@ -30,7 +30,8 @@ blake2b_simd = "1"
 ff = "0.11"
 fpe = "0.5"
 group = "0.11"
-halo2 = "=0.1.0-beta.1"
+halo2_gadgets = { version = "0.0", features = ["test-dependencies"] }
+halo2_proofs = "=0.1.0-beta.1"
 lazy_static = "1"
 memuse = { version = "0.2", features = ["nonempty"] }
 pasta_curves = "0.3"
@@ -59,15 +60,11 @@ pprof = { version = "=0.6.1", features = ["criterion", "flamegraph"] }
 bench = false
 
 [features]
-dev-graph = ["halo2/dev-graph", "plotters"]
+dev-graph = ["halo2_proofs/dev-graph", "plotters"]
 test-dependencies = ["proptest"]
 
 [[bench]]
 name = "note_decryption"
-harness = false
-
-[[bench]]
-name = "primitives"
 harness = false
 
 [[bench]]
@@ -78,10 +75,6 @@ harness = false
 name = "circuit"
 harness = false
 
-[[bench]]
-name = "poseidon"
-harness = false
-
 [profile.release]
 debug = true
 
@@ -89,5 +82,5 @@ debug = true
 debug = true
 
 [patch.crates-io]
-# halo2_proofs = { git = "https://github.com/zcash/halo2.git", branch = "halo2_gadgets-import" }
-# halo2_gadgets = { git = "https://github.com/zcash/halo2.git", branch = "halo2_gadgets-import" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "5312343e6d68b1bdd141337b52a5b73cce752bff" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "5312343e6d68b1bdd141337b52a5b73cce752bff" }

@@ -7,10 +7,10 @@ use subtle::{ConstantTimeEq, CtOption};
 
 use crate::{
     constants::{fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, L_ORCHARD_BASE},
-    primitives::sinsemilla,
     spec::extract_p,
     value::NoteValue,
 };
+use halo2_gadgets::primitives::sinsemilla;
 
 #[derive(Debug)]
 pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);

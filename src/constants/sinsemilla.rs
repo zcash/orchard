@@ -1,12 +1,10 @@
 //! Sinsemilla generators
 use super::{OrchardFixedBases, OrchardFixedBasesFull};
-use crate::circuit::gadget::sinsemilla::{CommitDomains, HashDomains};
 use crate::spec::i2lebsp;
+use halo2_gadgets::sinsemilla::{CommitDomains, HashDomains};
 
-use pasta_curves::{
-    arithmetic::{CurveAffine, FieldExt},
-    pallas,
-};
+use group::ff::PrimeField;
+use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 /// Number of bits of each message piece in $\mathsf{SinsemillaHashToPoint}$
 pub const K: usize = 10;
@@ -89,18 +87,18 @@ impl HashDomains<pallas::Affine> for OrchardHashDomains {
     fn Q(&self) -> pallas::Affine {
         match self {
             OrchardHashDomains::CommitIvk => pallas::Affine::from_xy(
-                pallas::Base::from_bytes(&Q_COMMIT_IVK_M_GENERATOR.0).unwrap(),
-                pallas::Base::from_bytes(&Q_COMMIT_IVK_M_GENERATOR.1).unwrap(),
+                pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.0).unwrap(),
+                pallas::Base::from_repr(Q_COMMIT_IVK_M_GENERATOR.1).unwrap(),
             )
             .unwrap(),
             OrchardHashDomains::NoteCommit => pallas::Affine::from_xy(
-                pallas::Base::from_bytes(&Q_NOTE_COMMITMENT_M_GENERATOR.0).unwrap(),
-                pallas::Base::from_bytes(&Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap(),
+                pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.0).unwrap(),
+                pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap(),
             )
             .unwrap(),
             OrchardHashDomains::MerkleCrh => pallas::Affine::from_xy(
-                pallas::Base::from_bytes(&Q_MERKLE_CRH.0).unwrap(),
-                pallas::Base::from_bytes(&Q_MERKLE_CRH.1).unwrap(),
+                pallas::Base::from_repr(Q_MERKLE_CRH.0).unwrap(),
+                pallas::Base::from_repr(Q_MERKLE_CRH.1).unwrap(),
             )
             .unwrap(),
         }
@@ -136,10 +134,10 @@ mod tests {
         fixed_bases::{COMMIT_IVK_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION},
         sinsemilla::MERKLE_CRH_PERSONALIZATION,
     };
-    use crate::primitives::sinsemilla::{CommitDomain, HashDomain};
     use group::{ff::PrimeField, Curve};
-    use halo2::arithmetic::CurveAffine;
-    use halo2::pasta::pallas;
+    use halo2_gadgets::primitives::sinsemilla::{CommitDomain, HashDomain};
+    use halo2_proofs::arithmetic::CurveAffine;
+    use halo2_proofs::pasta::pallas;
     use rand::{self, rngs::OsRng, Rng};
 
     #[test]

@@ -1,6 +1,6 @@
 //! Orchard fixed bases.
 use super::{L_ORCHARD_SCALAR, L_VALUE};
-use crate::circuit::gadget::ecc::{
+use halo2_gadgets::ecc::{
     chip::{BaseFieldElem, FixedPoint, FullScalar, ShortScalar},
     FixedPoints,
 };
