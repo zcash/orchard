@@ -940,6 +940,19 @@ mod tests {
             assert_eq!(cmx.to_bytes(), tv.note_cmx);
 
             assert_eq!(note.nullifier(&fvk).to_bytes(), tv.note_nf);
+
+            let internal_rivk = fvk.rivk_internal();
+            assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);
+
+            let internal_fvk = fvk.derive_internal().unwrap();
+            assert_eq!(internal_rivk, *internal_fvk.rivk());
+
+            let internal_ivk: KeyAgreementPrivateKey = (&internal_fvk).into();
+            assert_eq!(internal_ivk.0.to_repr(), tv.internal_ivk);
+
+            let (internal_dk, internal_ovk) = internal_fvk.derive_dk_ovk();
+            assert_eq!(internal_dk.0, tv.internal_dk);
+            assert_eq!(internal_ovk.0, tv.internal_ovk);
         }
     }
 }
