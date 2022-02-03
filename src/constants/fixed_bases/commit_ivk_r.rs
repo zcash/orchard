@@ -2930,9 +2930,11 @@ pub fn generator() -> pallas::Affine {
 mod tests {
     use super::super::{COMMIT_IVK_PERSONALIZATION, NUM_WINDOWS};
     use super::*;
-    use crate::circuit::gadget::ecc::chip::constants::{test_lagrange_coeffs, test_zs_and_us};
-    use crate::primitives::sinsemilla::CommitDomain;
     use group::Curve;
+    use halo2_gadgets::{
+        ecc::chip::constants::{test_lagrange_coeffs, test_zs_and_us},
+        primitives::sinsemilla::CommitDomain,
+    };
     use pasta_curves::{arithmetic::CurveAffine, pallas};
 
     #[test]

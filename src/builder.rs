@@ -31,14 +31,14 @@ pub enum Error {
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
     /// An error occurred in the process of producing a proof for a bundle.
-    Proof(halo2::plonk::Error),
+    Proof(halo2_proofs::plonk::Error),
     /// An overflow error occurred while attempting to construct the value
     /// for a bundle.
     ValueSum(value::OverflowError),
 }
 
-impl From<halo2::plonk::Error> for Error {
-    fn from(e: halo2::plonk::Error) -> Self {
+impl From<halo2_proofs::plonk::Error> for Error {
+    fn from(e: halo2_proofs::plonk::Error) -> Self {
         Error::Proof(e)
     }
 }
@@ -392,7 +392,7 @@ impl<S: InProgressSignatures> InProgress<Unproven, S> {
         pk: &ProvingKey,
         instances: &[Instance],
         rng: impl RngCore,
-    ) -> Result<Proof, halo2::plonk::Error> {
+    ) -> Result<Proof, halo2_proofs::plonk::Error> {
         Proof::create(pk, &self.proof.circuits, instances, rng)
     }
 }
