@@ -12,6 +12,7 @@ pub(crate) enum PrfExpand {
     Psi,
     OrchardZip32Child,
     OrchardDkOvk,
+    OrchardRivkInternal,
 }
 
 impl PrfExpand {
@@ -25,6 +26,7 @@ impl PrfExpand {
             Self::Psi => 0x09,
             Self::OrchardZip32Child => 0x81,
             Self::OrchardDkOvk => 0x82,
+            Self::OrchardRivkInternal => 0x83,
         }
     }
 

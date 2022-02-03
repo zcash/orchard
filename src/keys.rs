@@ -12,7 +12,7 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
-use pasta_curves::pallas;
+use pasta_curves::{arithmetic::FieldExt, pallas};
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
@@ -323,6 +323,15 @@ impl FullViewingKey {
         &self.rivk
     }
 
+    pub(crate) fn rivk_internal(&self) -> CommitIvkRandomness {
+        let k = self.rivk.0.to_bytes();
+        let ak = self.ak.to_bytes();
+        let nk = self.nk.to_bytes();
+        CommitIvkRandomness(to_scalar(
+            PrfExpand::OrchardRivkInternal.with_ad_slices(&k, &[&ak, &nk]),
+        ))
+    }
+
     /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
     ///
     /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
@@ -398,6 +407,17 @@ impl FullViewingKey {
         let rivk = CommitIvkRandomness::from_bytes(&bytes[64..])?;
 
         Some(FullViewingKey { ak, nk, rivk })
+    }
+
+    /// Derives an internal full viewing key from a full viewing key, as specified in [ZIP32][orchardinternalfullviewingkey]
+    ///
+    /// [orchardinternalfullviewingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
+    pub fn derive_internal(&self) -> Option<Self> {
+        Some(FullViewingKey {
+            ak: self.ak.clone(),
+            nk: self.nk,
+            rivk: self.rivk_internal(),
+        })
     }
 }
 
@@ -920,6 +940,19 @@ mod tests {
             assert_eq!(cmx.to_bytes(), tv.note_cmx);
 
             assert_eq!(note.nullifier(&fvk).to_bytes(), tv.note_nf);
+
+            let internal_rivk = fvk.rivk_internal();
+            assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);
+
+            let internal_fvk = fvk.derive_internal().unwrap();
+            assert_eq!(internal_rivk, *internal_fvk.rivk());
+
+            let internal_ivk: KeyAgreementPrivateKey = (&internal_fvk).into();
+            assert_eq!(internal_ivk.0.to_repr(), tv.internal_ivk);
+
+            let (internal_dk, internal_ovk) = internal_fvk.derive_dk_ovk();
+            assert_eq!(internal_dk.0, tv.internal_dk);
+            assert_eq!(internal_ovk.0, tv.internal_ovk);
         }
     }
 }
