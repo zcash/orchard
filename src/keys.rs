@@ -12,7 +12,7 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
-use pasta_curves::{arithmetic::FieldExt, pallas};
+use pasta_curves::pallas;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
@@ -324,7 +324,7 @@ impl FullViewingKey {
     }
 
     pub(crate) fn rivk_internal(&self) -> CommitIvkRandomness {
-        let k = self.rivk.0.to_bytes();
+        let k = self.rivk.0.to_repr();
         let ak = self.ak.to_bytes();
         let nk = self.nk.to_bytes();
         CommitIvkRandomness(to_scalar(
