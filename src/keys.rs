@@ -475,6 +475,15 @@ impl DiversifierKey {
         Diversifier(enc.to_bytes_le().try_into().unwrap())
     }
 
+    /// Returns the diversifier index obtained by decrypting the diversifier.
+    pub fn diversifier_index(&self, d: &Diversifier) -> DiversifierIndex {
+        let ff = FF1::<Aes256>::new(&self.0, 2).expect("valid radix");
+        let dec = ff
+            .decrypt(&[], &BinaryNumeralString::from_bytes_le(d.as_array()))
+            .unwrap();
+        DiversifierIndex::from(<[u8; 11]>::try_from(dec.to_bytes_le()).unwrap())
+    }
+
     /// Return the raw bytes of the diversifier key
     pub fn to_bytes(&self) -> &[u8; 32] {
         &self.0
@@ -819,10 +828,10 @@ impl SharedSecret {
 pub mod testing {
     use proptest::prelude::*;
 
-    use super::{EphemeralSecretKey, SpendingKey};
+    use super::{DiversifierIndex, DiversifierKey, EphemeralSecretKey, SpendingKey};
 
     prop_compose! {
-        /// Generate a uniformly distributed fake note commitment value.
+        /// Generate a uniformly distributed Orchard spending key.
         pub fn arb_spending_key()(
             key in prop::array::uniform32(prop::num::u8::ANY)
                 .prop_map(SpendingKey::from_bytes)
@@ -836,7 +845,7 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate a uniformly distributed fake note commitment value.
+        /// Generate a uniformly distributed Orchard ephemeral secret key.
         pub fn arb_esk()(
             esk in prop::array::uniform32(prop::num::u8::ANY)
                 .prop_map(|b| EphemeralSecretKey::from_bytes(&b))
@@ -848,6 +857,24 @@ pub mod testing {
             esk.unwrap()
         }
     }
+
+    prop_compose! {
+        /// Generate a uniformly distributed Orchard diversifier key.
+        pub fn arb_diversifier_key()(
+            dk_bytes in prop::array::uniform32(prop::num::u8::ANY)
+        ) -> DiversifierKey {
+            DiversifierKey::from_bytes(dk_bytes)
+        }
+    }
+
+    prop_compose! {
+        /// Generate a uniformly distributed diversifier index.
+        pub fn arb_diversifier_index()(
+            d_bytes in prop::array::uniform11(prop::num::u8::ANY)
+        ) -> DiversifierIndex {
+            DiversifierIndex::from(d_bytes)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -856,7 +883,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{
-        testing::{arb_esk, arb_spending_key},
+        testing::{arb_diversifier_index, arb_diversifier_key, arb_esk, arb_spending_key},
         *,
     };
     use crate::{
@@ -895,6 +922,17 @@ mod tests {
             assert!(bool::from(
                 esk.agree(addr.pk_d()).0.ct_eq(&epk.agree(&ivk).0)
             ));
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn diversifier_index(
+            dk in arb_diversifier_key(),
+            j in arb_diversifier_index(),
+        ) {
+            let d = dk.get(j);
+            assert_eq!(j, dk.diversifier_index(&d));
         }
     }
 
