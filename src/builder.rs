@@ -7,7 +7,7 @@ use ff::Field;
 use group::GroupEncoding;
 use nonempty::NonEmpty;
 use pasta_curves::pallas;
-use rand::{CryptoRng, RngCore};
+use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
 use crate::{
     address::Address,
@@ -286,10 +286,6 @@ impl Builder {
         mut rng: impl RngCore,
     ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, Error> {
         // Pair up the spends and recipients, extending with dummy values as necessary.
-        //
-        // TODO: Do we want to shuffle the order like we do for Sapling? And if we do, do
-        // we need the extra logic for mapping the user-provided input order to the
-        // shuffled order?
         let pre_actions: Vec<_> = {
             let num_spends = self.spends.len();
             let num_recipients = self.recipients.len();
@@ -306,6 +302,12 @@ impl Builder {
                 iter::repeat_with(|| RecipientInfo::dummy(&mut rng))
                     .take(num_actions - num_recipients),
             );
+
+            // Shuffle the spends and recipients, so that learning the position of a
+            // specific spent note or output note doesn't reveal anything on its own about
+            // the meaning of that note in the transaction context.
+            self.spends.shuffle(&mut rng);
+            self.recipients.shuffle(&mut rng);
 
             self.spends
                 .into_iter()
