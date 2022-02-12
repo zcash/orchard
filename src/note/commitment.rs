@@ -12,7 +12,7 @@ use crate::{
     value::NoteValue,
 };
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
 
 impl NoteCommitTrapdoor {

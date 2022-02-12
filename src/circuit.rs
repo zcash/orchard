@@ -96,7 +96,7 @@ pub struct Config {
 }
 
 /// The Orchard Action circuit.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Circuit {
     pub(crate) path: Option<[MerkleHashOrchard; MERKLE_DEPTH_ORCHARD]>,
     pub(crate) pos: Option<u32>,
