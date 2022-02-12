@@ -104,7 +104,7 @@ impl SpendingKey {
 /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SpendAuthorizingKey(redpallas::SigningKey<SpendAuth>);
 
 impl SpendAuthorizingKey {

@@ -12,7 +12,7 @@ use crate::{
 };
 use halo2_gadgets::primitives::sinsemilla;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
 
 impl NoteCommitTrapdoor {

@@ -369,7 +369,7 @@ pub trait InProgressSignatures {
 }
 
 /// Marker for a bundle in the process of being built.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct InProgress<P, S: InProgressSignatures> {
     proof: P,
     sigs: S,
@@ -382,7 +382,7 @@ impl<P, S: InProgressSignatures> Authorization for InProgress<P, S> {
 /// Marker for a bundle without a proof.
 ///
 /// This struct contains the private data needed to create a [`Proof`] for a [`Bundle`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Unproven {
     circuits: Vec<Circuit>,
 }
@@ -426,7 +426,7 @@ impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
 }
 
 /// The parts needed to sign an [`Action`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SigningParts {
     /// The spend validating key for this action. Used to match spend authorizing keys to
     /// actions they can create signatures for.
@@ -436,7 +436,7 @@ pub struct SigningParts {
 }
 
 /// Marker for an unauthorized bundle with no signatures.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Unauthorized {
     bsk: redpallas::SigningKey<Binding>,
 }
@@ -446,7 +446,7 @@ impl InProgressSignatures for Unauthorized {
 }
 
 /// Container for metadata needed to sign an [`Action`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SigningMetadata {
     /// If this action is spending a dummy note, this field holds that note's spend
     /// authorizing key.
