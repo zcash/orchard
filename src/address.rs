@@ -32,7 +32,7 @@ impl Address {
         Address { d, pk_d }
     }
 
-    pub(crate) fn diversifer(&self) -> Diversifier {
+    pub(crate) fn diversifier(&self) -> Diversifier {
         self.d
     }
 

@@ -406,12 +406,6 @@ impl FullViewingKey {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DiversifierKey([u8; 32]);
 
-impl From<&FullViewingKey> for DiversifierKey {
-    fn from(fvk: &FullViewingKey) -> Self {
-        fvk.derive_dk_ovk().0
-    }
-}
-
 /// The index for a particular diversifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DiversifierIndex([u8; 11]);
@@ -434,6 +428,13 @@ di_from!(usize);
 impl From<[u8; 11]> for DiversifierIndex {
     fn from(j_bytes: [u8; 11]) -> Self {
         DiversifierIndex(j_bytes)
+    }
+}
+
+impl DiversifierIndex {
+    /// Returns the raw bytes of the diversifier index.
+    pub fn to_bytes(&self) -> &[u8; 11] {
+        &self.0
     }
 }
 
@@ -556,7 +557,7 @@ pub struct IncomingViewingKey {
 impl From<&FullViewingKey> for IncomingViewingKey {
     fn from(fvk: &FullViewingKey) -> Self {
         IncomingViewingKey {
-            dk: fvk.into(),
+            dk: fvk.derive_dk_ovk().0,
             ivk: fvk.into(),
         }
     }
@@ -581,6 +582,18 @@ impl IncomingViewingKey {
                 ivk: KeyAgreementPrivateKey(ivk.into()),
             }
         })
+    }
+
+    /// Checks whether the given address was derived from this incoming viewing
+    /// key, and returns the diversifier index used to derive the address if
+    /// so. Returns `None` if the address was not derived from this key.
+    pub fn diversifier_index(&self, addr: &Address) -> Option<DiversifierIndex> {
+        let j = self.dk.diversifier_index(&addr.diversifier());
+        if &self.address_at(j) == addr {
+            Some(j)
+        } else {
+            None
+        }
     }
 
     /// Returns the default payment address for this key.
