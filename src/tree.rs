@@ -107,11 +107,19 @@ impl MerklePath {
 
     /// Instantiates a new Merkle path given a leaf position and authentication path.
     pub(crate) fn new(position: u32, auth_path: [pallas::Base; MERKLE_DEPTH_ORCHARD]) -> Self {
-        Self {
+        Self::from_parts(
             position,
-            auth_path: gen_const_array_with_default(MerkleHashOrchard::empty_leaf(), |i| {
+            gen_const_array_with_default(MerkleHashOrchard::empty_leaf(), |i| {
                 MerkleHashOrchard(auth_path[i])
             }),
+        )
+    }
+
+    /// Instantiates a new Merkle path given a leaf position and authentication path.
+    pub fn from_parts(position: u32, auth_path: [MerkleHashOrchard; MERKLE_DEPTH_ORCHARD]) -> Self {
+        Self {
+            position,
+            auth_path,
         }
     }
 

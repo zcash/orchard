@@ -147,6 +147,13 @@ impl VerificationKey<Binding> {
     }
 }
 
+impl<T: SigType> VerificationKey<T> {
+    /// Verifies a purported `signature` over `msg` made by this verification key.
+    pub fn verify(&self, msg: &[u8], signature: &Signature<T>) -> Result<(), reddsa::Error> {
+        self.0.verify(msg, &signature.0)
+    }
+}
+
 /// A RedPallas signature.
 #[derive(Debug, Clone)]
 pub struct Signature<T: SigType>(reddsa::Signature<T>);
