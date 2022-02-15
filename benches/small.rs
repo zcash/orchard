@@ -12,7 +12,7 @@ fn key_derivation(c: &mut Criterion) {
     let fvk = FullViewingKey::from(&sk);
 
     c.bench_function("derive_fvk", |b| b.iter(|| FullViewingKey::from(&sk)));
-    c.bench_function("default_address", |b| b.iter(|| fvk.default_address()));
+    c.bench_function("default_address", |b| b.iter(|| fvk.address_at(0u32)));
 }
 
 criterion_group!(benches, key_derivation);

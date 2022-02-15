@@ -140,6 +140,16 @@ impl ValueSum {
         // Default for i64 is zero.
         Default::default()
     }
+
+    /// Creates a value sum from its raw numeric value.
+    ///
+    /// This only enforces that the value is a signed 63-bit integer. We use it internally
+    /// in `Bundle::binding_validating_key`, where we are converting from the user-defined
+    /// `valueBalance` type that enforces any additional constraints on the value's valid
+    /// range.
+    pub(crate) fn from_raw(value: i64) -> Self {
+        ValueSum(value as i128)
+    }
 }
 
 impl Add for ValueSum {

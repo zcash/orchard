@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let rng = OsRng;
 
     let sk = SpendingKey::from_bytes([7; 32]).unwrap();
-    let recipient = FullViewingKey::from(&sk).default_address();
+    let recipient = FullViewingKey::from(&sk).address_at(0u32);
 
     let vk = VerifyingKey::build();
     let pk = ProvingKey::build();
