@@ -27,6 +27,10 @@ and this project adheres to Rust's notion of
   `V: Into<i64>` instead of `V: Into<ValueSum>`.
 
 ### Removed
+- `orchard::bundle`:
+  - `commitments::hash_bundle_txid_data` (use `Bundle::commitment` instead).
+  - `commitments::hash_bundle_auth_data` (use `Bundle::authorizing_commitment`
+    instead).
 - `orchard::keys`:
   - `FullViewingKey::default_address`
   - `IncomingViewingKey::default_address`
