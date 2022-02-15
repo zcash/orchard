@@ -961,7 +961,7 @@ mod tests {
             .map(|()| {
                 let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
 
-                let sender_address = fvk.default_address();
+                let sender_address = fvk.address_at(0u32);
                 let nk = *fvk.nk();
                 let rivk = *fvk.rivk();
                 let nf_old = spent_note.nullifier(&fvk);

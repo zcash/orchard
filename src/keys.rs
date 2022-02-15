@@ -333,11 +333,6 @@ impl FullViewingKey {
         )
     }
 
-    /// Returns the default payment address for this key.
-    pub fn default_address(&self) -> Address {
-        IncomingViewingKey::from(self).default_address()
-    }
-
     /// Returns the payment address for this key at the given index.
     pub fn address_at(&self, j: impl Into<DiversifierIndex>) -> Address {
         IncomingViewingKey::from(self).address_at(j)
@@ -439,11 +434,6 @@ impl DiversifierIndex {
 }
 
 impl DiversifierKey {
-    /// Returns the diversifier at index 0.
-    pub fn default_diversifier(&self) -> Diversifier {
-        self.get(0u32)
-    }
-
     /// Returns the diversifier at the given index.
     pub fn get(&self, j: impl Into<DiversifierIndex>) -> Diversifier {
         let ff = FF1::<Aes256>::new(&self.0, 2).expect("valid radix");
@@ -594,11 +584,6 @@ impl IncomingViewingKey {
         } else {
             None
         }
-    }
-
-    /// Returns the default payment address for this key.
-    pub fn default_address(&self) -> Address {
-        self.address(self.dk.default_diversifier())
     }
 
     /// Returns the payment address for this key at the given index.
@@ -903,9 +888,10 @@ mod tests {
         fn key_agreement(
             sk in arb_spending_key(),
             esk in arb_esk(),
+            j in arb_diversifier_index(),
         ) {
             let ivk = IncomingViewingKey::from(&(&sk).into());
-            let addr = ivk.default_address();
+            let addr = ivk.address_at(j);
 
             let epk = esk.derive_public(addr.g_d());
 
