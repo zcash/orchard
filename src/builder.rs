@@ -133,7 +133,7 @@ impl ActionInfo {
         let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
-        let sender_address = self.spend.fvk.address_at(0u32);
+        let sender_address = self.spend.note.recipient();
         let rho_old = self.spend.note.rho();
         let psi_old = self.spend.note.rseed().psi(&rho_old);
         let rcm_old = self.spend.note.rseed().rcm(&rho_old);
