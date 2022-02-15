@@ -28,10 +28,9 @@ fn hasher(personal: &[u8; 16]) -> State {
 /// personalized with ZCASH_ORCHARD_ACTIONS_HASH_PERSONALIZATION
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
-pub fn hash_bundle_txid_data<'a, A: Authorization, V>(bundle: &'a Bundle<A, V>) -> Blake2bHash
-where
-    i64: From<&'a V>,
-{
+pub fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
+    bundle: &Bundle<A, V>,
+) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
     let mut ch = hasher(ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION);
     let mut mh = hasher(ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION);
@@ -59,7 +58,7 @@ where
     h.write_all(mh.finalize().as_bytes()).unwrap();
     h.write_all(nh.finalize().as_bytes()).unwrap();
     h.write_all(&[bundle.flags().to_byte()]).unwrap();
-    h.write_all(&<i64>::from(bundle.value_balance()).to_le_bytes())
+    h.write_all(&(*bundle.value_balance()).into().to_le_bytes())
         .unwrap();
     h.write_all(&bundle.anchor().to_bytes()).unwrap();
     h.finalize()

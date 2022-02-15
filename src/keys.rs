@@ -345,11 +345,6 @@ impl FullViewingKey {
         )
     }
 
-    /// Returns the default payment address for this key.
-    pub fn default_address(&self) -> Address {
-        IncomingViewingKey::from(self).default_address()
-    }
-
     /// Returns the payment address for this key at the given index.
     pub fn address_at(&self, j: impl Into<DiversifierIndex>) -> Address {
         IncomingViewingKey::from(self).address_at(j)
@@ -427,13 +422,7 @@ impl FullViewingKey {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DiversifierKey([u8; 32]);
-
-impl From<&FullViewingKey> for DiversifierKey {
-    fn from(fvk: &FullViewingKey) -> Self {
-        fvk.derive_dk_ovk().0
-    }
-}
+pub(crate) struct DiversifierKey([u8; 32]);
 
 /// The index for a particular diversifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -460,12 +449,14 @@ impl From<[u8; 11]> for DiversifierIndex {
     }
 }
 
-impl DiversifierKey {
-    /// Returns the diversifier at index 0.
-    pub fn default_diversifier(&self) -> Diversifier {
-        self.get(0u32)
+impl DiversifierIndex {
+    /// Returns the raw bytes of the diversifier index.
+    pub fn to_bytes(&self) -> &[u8; 11] {
+        &self.0
     }
+}
 
+impl DiversifierKey {
     /// Returns the diversifier at the given index.
     pub fn get(&self, j: impl Into<DiversifierIndex>) -> Diversifier {
         let ff = FF1::<Aes256>::new(&self.0, 2).expect("valid radix");
@@ -579,7 +570,7 @@ pub struct IncomingViewingKey {
 impl From<&FullViewingKey> for IncomingViewingKey {
     fn from(fvk: &FullViewingKey) -> Self {
         IncomingViewingKey {
-            dk: fvk.into(),
+            dk: fvk.derive_dk_ovk().0,
             ivk: fvk.into(),
         }
     }
@@ -606,9 +597,16 @@ impl IncomingViewingKey {
         })
     }
 
-    /// Returns the default payment address for this key.
-    pub fn default_address(&self) -> Address {
-        self.address(self.dk.default_diversifier())
+    /// Checks whether the given address was derived from this incoming viewing
+    /// key, and returns the diversifier index used to derive the address if
+    /// so. Returns `None` if the address was not derived from this key.
+    pub fn diversifier_index(&self, addr: &Address) -> Option<DiversifierIndex> {
+        let j = self.dk.diversifier_index(&addr.diversifier());
+        if &self.address_at(j) == addr {
+            Some(j)
+        } else {
+            None
+        }
     }
 
     /// Returns the payment address for this key at the given index.
@@ -860,7 +858,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate a uniformly distributed Orchard diversifier key.
-        pub fn arb_diversifier_key()(
+        pub(crate) fn arb_diversifier_key()(
             dk_bytes in prop::array::uniform32(prop::num::u8::ANY)
         ) -> DiversifierKey {
             DiversifierKey::from_bytes(dk_bytes)
@@ -913,9 +911,10 @@ mod tests {
         fn key_agreement(
             sk in arb_spending_key(),
             esk in arb_esk(),
+            j in arb_diversifier_index(),
         ) {
             let ivk = IncomingViewingKey::from(&(&sk).into());
-            let addr = ivk.default_address();
+            let addr = ivk.address_at(j);
 
             let epk = esk.derive_public(addr.g_d());
 

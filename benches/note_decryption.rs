@@ -22,7 +22,7 @@ fn bench_note_decryption(c: &mut Criterion) {
 
     let fvk = FullViewingKey::from(&SpendingKey::from_bytes([7; 32]).unwrap());
     let valid_ivk = IncomingViewingKey::from(&fvk);
-    let recipient = fvk.default_address();
+    let recipient = fvk.address_at(0u32);
 
     // Compact actions don't have the full AEAD ciphertext, so ZIP 307 trial-decryption
     // relies on an invalid ivk resulting in random noise for which the note commitment

@@ -155,7 +155,7 @@ impl Note {
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
-        let recipient = fvk.default_address();
+        let recipient = fvk.address_at(0u32);
 
         let note = Note::new(
             recipient,

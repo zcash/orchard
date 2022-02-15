@@ -2,6 +2,7 @@
 
 pub mod commitments;
 
+use std::convert::TryInto;
 use std::io;
 
 use blake2b_simd::Hash as Blake2bHash;
@@ -298,15 +299,6 @@ impl<T: Authorization, V> Bundle<T, V> {
         &self.authorization
     }
 
-    /// Computes a commitment to the effects of this bundle, suitable for inclusion within
-    /// a transaction ID.
-    pub fn commitment<'a>(&'a self) -> BundleCommitment
-    where
-        i64: From<&'a V>,
-    {
-        BundleCommitment(hash_bundle_txid_data(self))
-    }
-
     /// Construct a new bundle by applying a transformation that might fail
     /// to the value balance.
     pub fn try_map_value_balance<V0, E, F: FnOnce(V) -> Result<V0, E>>(
@@ -405,7 +397,13 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 }
 
-impl<T: Authorization, V: Copy + Into<ValueSum>> Bundle<T, V> {
+impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
+    /// Computes a commitment to the effects of this bundle, suitable for inclusion within
+    /// a transaction ID.
+    pub fn commitment(&self) -> BundleCommitment {
+        BundleCommitment(hash_bundle_txid_data(self))
+    }
+
     /// Returns the transaction binding validating key for this bundle.
     ///
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
@@ -416,7 +414,10 @@ impl<T: Authorization, V: Copy + Into<ValueSum>> Bundle<T, V> {
             .iter()
             .map(|a| a.cv_net())
             .sum::<ValueCommitment>()
-            - ValueCommitment::derive(self.value_balance.into(), ValueCommitTrapdoor::zero()))
+            - ValueCommitment::derive(
+                ValueSum::from_raw(self.value_balance.into()),
+                ValueCommitTrapdoor::zero(),
+            ))
         .into_bvk()
     }
 }
@@ -499,6 +500,13 @@ impl<V: DynamicUsage> DynamicUsage for Bundle<Authorized, V> {
 /// change if the effects of the bundle are altered.
 #[derive(Debug)]
 pub struct BundleCommitment(pub Blake2bHash);
+
+impl From<BundleCommitment> for [u8; 32] {
+    fn from(commitment: BundleCommitment) -> Self {
+        // The commitment uses BLAKE2b-256.
+        commitment.0.as_bytes().try_into().unwrap()
+    }
+}
 
 /// A commitment to the authorizing data within a bundle of actions.
 #[derive(Debug)]

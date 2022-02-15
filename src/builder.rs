@@ -90,7 +90,7 @@ impl RecipientInfo {
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     fn dummy(rng: &mut impl RngCore) -> Self {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
-        let recipient = fvk.default_address();
+        let recipient = fvk.address_at(0u32);
 
         RecipientInfo {
             ovk: None,
@@ -133,7 +133,7 @@ impl ActionInfo {
         let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
-        let sender_address = self.spend.fvk.default_address();
+        let sender_address = self.spend.note.recipient();
         let rho_old = self.spend.note.rho();
         let psi_old = self.spend.note.rseed().psi(&rho_old);
         let rcm_old = self.spend.note.rseed().rcm(&rho_old);
@@ -731,7 +731,7 @@ mod tests {
 
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
-        let recipient = fvk.default_address();
+        let recipient = fvk.address_at(0u32);
 
         let mut builder = Builder::new(
             Flags::from_parts(true, true),
