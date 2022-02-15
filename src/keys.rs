@@ -404,7 +404,7 @@ impl FullViewingKey {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DiversifierKey([u8; 32]);
+pub(crate) struct DiversifierKey([u8; 32]);
 
 /// The index for a particular diversifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -850,7 +850,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate a uniformly distributed Orchard diversifier key.
-        pub fn arb_diversifier_key()(
+        pub(crate) fn arb_diversifier_key()(
             dk_bytes in prop::array::uniform32(prop::num::u8::ANY)
         ) -> DiversifierKey {
             DiversifierKey::from_bytes(dk_bytes)
