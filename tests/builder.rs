@@ -50,7 +50,7 @@ fn bundle_chain() {
         );
         let unauthorized = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
-        let proven = unauthorized.create_proof(&pk).unwrap();
+        let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(&mut rng, sighash, &[]).unwrap()
     };
 
@@ -91,7 +91,7 @@ fn bundle_chain() {
         );
         let unauthorized = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
-        let proven = unauthorized.create_proof(&pk).unwrap();
+        let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
             .apply_signatures(&mut rng, sighash, &[SpendAuthorizingKey::from(&sk)])
             .unwrap()
