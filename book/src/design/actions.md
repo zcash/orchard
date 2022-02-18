@@ -1,7 +1,7 @@
 # Actions
 
 In Sprout, we had a single proof that represented two spent notes and two new notes. This
-was necessary in order to faciliate spending multiple notes in a single transaction (to
+was necessary in order to facilitate spending multiple notes in a single transaction (to
 balance value, an output of one JoinSplit could be spent in the next one), but also
 provided a minimal level of arity-hiding: single-JoinSplit transactions all looked like
 2-in 2-out transactions, and in multi-JoinSplit transactions each JoinSplit looked like a
