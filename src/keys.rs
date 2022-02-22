@@ -7,7 +7,11 @@ use std::mem;
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
-use group::{ff::Field, prime::PrimeCurveAffine, Curve, GroupEncoding};
+use group::{
+    ff::{Field, PrimeField},
+    prime::PrimeCurveAffine,
+    Curve, GroupEncoding,
+};
 use halo2::arithmetic::FieldExt;
 use pasta_curves::pallas;
 use rand::RngCore;
@@ -320,6 +324,15 @@ impl FullViewingKey {
         &self.rivk
     }
 
+    pub(crate) fn rivk_internal(&self) -> CommitIvkRandomness {
+        let k = self.rivk.0.to_repr();
+        let ak = self.ak.to_bytes();
+        let nk = self.nk.to_bytes();
+        CommitIvkRandomness(to_scalar(
+            PrfExpand::OrchardRivkInternal.with_ad_slices(&k, &[&ak, &nk]),
+        ))
+    }
+
     /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
     ///
     /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
@@ -390,6 +403,17 @@ impl FullViewingKey {
         let rivk = CommitIvkRandomness::from_bytes(&bytes[64..])?;
 
         Some(FullViewingKey { ak, nk, rivk })
+    }
+
+    /// Derives an internal full viewing key from a full viewing key, as specified in [ZIP32][orchardinternalfullviewingkey]
+    ///
+    /// [orchardinternalfullviewingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
+    pub fn derive_internal(&self) -> Self {
+        FullViewingKey {
+            ak: self.ak.clone(),
+            nk: self.nk,
+            rivk: self.rivk_internal(),
+        }
     }
 }
 
