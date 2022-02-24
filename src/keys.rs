@@ -408,6 +408,7 @@ impl FullViewingKey {
     /// Derives an internal full viewing key from a full viewing key, as specified in [ZIP32][orchardinternalfullviewingkey]
     ///
     /// [orchardinternalfullviewingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
+    #[must_use]
     pub fn derive_internal(&self) -> Self {
         FullViewingKey {
             ak: self.ak.clone(),
@@ -656,7 +657,7 @@ impl AsRef<[u8; 32]> for OutgoingViewingKey {
 /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DiversifiedTransmissionKey(NonIdentityPallasPoint);
 
 impl DiversifiedTransmissionKey {
@@ -686,12 +687,6 @@ impl DiversifiedTransmissionKey {
     /// $repr_P(self)$
     pub(crate) fn to_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
-    }
-}
-
-impl Default for DiversifiedTransmissionKey {
-    fn default() -> Self {
-        DiversifiedTransmissionKey(NonIdentityPallasPoint::default())
     }
 }
 

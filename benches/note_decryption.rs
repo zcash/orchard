@@ -1,5 +1,3 @@
-use std::array;
-
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
     builder::Builder,
@@ -115,24 +113,24 @@ fn bench_note_decryption(c: &mut Criterion) {
 
         let mut group = c.benchmark_group("batch-note-decryption");
 
-        for size in array::IntoIter::new([10, 50, 100]) {
+        for size in &[10, 50, 100] {
             group.throughput(Throughput::Elements((ivks * size) as u64));
 
             group.bench_function(BenchmarkId::new("valid", size), |b| {
-                b.iter(|| batch::try_note_decryption(&valid_ivks, &actions[..size]))
+                b.iter(|| batch::try_note_decryption(&valid_ivks, &actions[..*size]))
             });
 
             group.bench_function(BenchmarkId::new("invalid", size), |b| {
-                b.iter(|| batch::try_note_decryption(&invalid_ivks[..ivks], &actions[..size]))
+                b.iter(|| batch::try_note_decryption(&invalid_ivks[..ivks], &actions[..*size]))
             });
 
             group.bench_function(BenchmarkId::new("compact-valid", size), |b| {
-                b.iter(|| batch::try_compact_note_decryption(&valid_ivks, &compact[..size]))
+                b.iter(|| batch::try_compact_note_decryption(&valid_ivks, &compact[..*size]))
             });
 
             group.bench_function(BenchmarkId::new("compact-invalid", size), |b| {
                 b.iter(|| {
-                    batch::try_compact_note_decryption(&invalid_ivks[..ivks], &compact[..size])
+                    batch::try_compact_note_decryption(&invalid_ivks[..ivks], &compact[..*size])
                 })
             });
         }

@@ -531,6 +531,7 @@ impl<P, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
     /// Signs this bundle with the given [`SpendAuthorizingKey`].
     ///
     /// This will apply signatures for all notes controlled by this spending key.
+    #[must_use]
     pub fn sign<R: RngCore + CryptoRng>(self, mut rng: R, ask: &SpendAuthorizingKey) -> Self {
         let expected_ak = ask.into();
         self.authorize(

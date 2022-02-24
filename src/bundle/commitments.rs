@@ -54,9 +54,9 @@ pub fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
             .unwrap();
     }
 
-    h.write_all(&ch.finalize().as_bytes()).unwrap();
-    h.write_all(&mh.finalize().as_bytes()).unwrap();
-    h.write_all(&nh.finalize().as_bytes()).unwrap();
+    h.write_all(ch.finalize().as_bytes()).unwrap();
+    h.write_all(mh.finalize().as_bytes()).unwrap();
+    h.write_all(nh.finalize().as_bytes()).unwrap();
     h.write_all(&[bundle.flags().to_byte()]).unwrap();
     h.write_all(&(*bundle.value_balance()).into().to_le_bytes())
         .unwrap();

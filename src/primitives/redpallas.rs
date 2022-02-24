@@ -50,6 +50,7 @@ impl SigningKey<SpendAuth> {
     /// Randomizes this signing key with the given `randomizer`.
     ///
     /// Randomization is only supported for `SpendAuth` keys.
+    #[must_use]
     pub fn randomize(&self, randomizer: &pallas::Scalar) -> Self {
         SigningKey(self.0.randomize(randomizer))
     }
@@ -122,6 +123,7 @@ impl VerificationKey<SpendAuth> {
     /// Randomizes this verification key with the given `randomizer`.
     ///
     /// Randomization is only supported for `SpendAuth` keys.
+    #[must_use]
     pub fn randomize(&self, randomizer: &pallas::Scalar) -> Self {
         VerificationKey(self.0.randomize(randomizer))
     }
