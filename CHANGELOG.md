@@ -7,3 +7,6 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 Initial release!
+
+## [Removed]
+- The `std::hash::Hash` instance for `MerkleHashOrchard` has been removed.
