@@ -285,7 +285,7 @@ pub mod testing {
         {
             let cmx = MerkleHashOrchard::from_bytes(&tv.leaves[i]).unwrap();
             tree.append(&cmx);
-            tree.witness().unwrap();
+            tree.witness().expect("tree is not empty");
 
             assert_eq!(tree.root().0, pallas::Base::from_bytes(&tv.root).unwrap());
 

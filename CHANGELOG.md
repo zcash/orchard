@@ -9,4 +9,4 @@ and this project adheres to Rust's notion of
 Initial release!
 
 ## [Removed]
-- The `std::hash::Hash` instance for `MerkleHashOrchard` has been removed.
+- `impl std::hash::Hash for MerkleHashOrchard` (use `BTreeMap` instead of `HashMap`).
