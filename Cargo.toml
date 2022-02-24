@@ -47,7 +47,7 @@ incrementalmerkletree = "0.2"
 plotters = { version = "0.3.0", optional = true }
 
 [patch.crates-io]
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "23c0370b5414dc2ddd3305c6821bca5ea6fbf812" }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "dd57b430dee7c0b163f4035fef2280cd1935036c" }
 
 [dev-dependencies]
 criterion = "0.3"
