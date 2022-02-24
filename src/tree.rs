@@ -18,7 +18,7 @@ use serde::de::{Deserializer, Error};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
 use std::iter;
-use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
+use subtle::{Choice, ConditionallySelectable, CtOption};
 
 // The uncommitted leaf is defined as pallas::Base(2).
 // <https://zips.z.cash/protocol/protocol.pdf#thmuncommittedorchard>
@@ -164,7 +164,7 @@ impl MerklePath {
 /// can produce a bottom value which needs to be accounted for in
 /// the production of a Merkle root. Leaf nodes are always wrapped
 /// with the `Some` constructor.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MerkleHashOrchard(pallas::Base);
 
 impl MerkleHashOrchard {
@@ -191,25 +191,6 @@ impl MerkleHashOrchard {
     /// a non-canonical encoding.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Base::from_bytes(bytes).map(MerkleHashOrchard)
-    }
-}
-
-/// This instance should only be used for hash table key comparisons.
-impl std::cmp::PartialEq for MerkleHashOrchard {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.ct_eq(&other.0).into()
-    }
-}
-
-/// This instance should only be used for hash table key comparisons.
-impl std::cmp::Eq for MerkleHashOrchard {}
-
-/// This instance should only be used for hash table key hashing.
-impl std::hash::Hash for MerkleHashOrchard {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        <Option<pallas::Base>>::from(self.0)
-            .map(|b| b.to_bytes())
-            .hash(state)
     }
 }
 
@@ -304,7 +285,7 @@ pub mod testing {
         {
             let cmx = MerkleHashOrchard::from_bytes(&tv.leaves[i]).unwrap();
             tree.append(&cmx);
-            tree.witness();
+            tree.witness().unwrap();
 
             assert_eq!(tree.root().0, pallas::Base::from_bytes(&tv.root).unwrap());
 
@@ -314,14 +295,13 @@ pub mod testing {
             for j in 0..=i {
                 let leaf = MerkleHashOrchard::from_bytes(&tv.leaves[j]).unwrap();
                 assert_eq!(
-                    tree.authentication_path(&leaf),
-                    Some((
-                        j.try_into().unwrap(),
+                    tree.authentication_path(j.try_into().unwrap(), &leaf),
+                    Some(
                         tv.paths[j]
                             .iter()
                             .map(|v| MerkleHashOrchard::from_bytes(v).unwrap())
                             .collect()
-                    ))
+                    )
                 );
             }
         }

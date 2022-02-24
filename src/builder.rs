@@ -672,9 +672,9 @@ pub mod testing {
             for note in notes.iter() {
                 let leaf = MerkleHashOrchard::from_cmx(&note.commitment().into());
                 tree.append(&leaf);
-                tree.witness();
+                let (position, leaf) = tree.witness().unwrap();
 
-                let path = tree.authentication_path(&leaf).unwrap().into();
+                let path = MerklePath::from((position, tree.authentication_path(position, &leaf).unwrap()));
                 notes_and_auth_paths.push((*note, path));
             }
 
