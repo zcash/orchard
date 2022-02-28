@@ -40,3 +40,6 @@ and this project adheres to Rust's notion of
 
 ## [0.1.0-beta.1] - 2021-12-17
 Initial release!
+
+## [Removed]
+- The `std::hash::Hash` instance for `MerkleHashOrchard` has been removed.

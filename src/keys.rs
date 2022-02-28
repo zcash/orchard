@@ -407,12 +407,12 @@ impl FullViewingKey {
     /// Derives an internal full viewing key from a full viewing key, as specified in [ZIP32][orchardinternalfullviewingkey]
     ///
     /// [orchardinternalfullviewingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
-    pub fn derive_internal(&self) -> Option<Self> {
-        Some(FullViewingKey {
+    pub fn derive_internal(&self) -> Self {
+        FullViewingKey {
             ak: self.ak.clone(),
             nk: self.nk,
             rivk: self.rivk_internal(),
-        })
+        }
     }
 }
 
@@ -981,7 +981,7 @@ mod tests {
             let internal_rivk = fvk.rivk_internal();
             assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);
 
-            let internal_fvk = fvk.derive_internal().unwrap();
+            let internal_fvk = fvk.derive_internal();
             assert_eq!(internal_rivk, *internal_fvk.rivk());
 
             let internal_ivk: KeyAgreementPrivateKey = (&internal_fvk).into();
