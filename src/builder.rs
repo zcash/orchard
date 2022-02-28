@@ -1,6 +1,7 @@
 //! Logic for building Orchard components of transactions.
 
 use std::convert::TryFrom;
+use std::fmt;
 use std::iter;
 
 use ff::Field;
@@ -361,9 +362,9 @@ impl Builder {
 }
 
 /// Marker trait representing bundle signatures in the process of being created.
-pub trait InProgressSignatures {
+pub trait InProgressSignatures: fmt::Debug {
     /// The authorization type of an Orchard action in the process of being authorized.
-    type SpendAuth;
+    type SpendAuth: fmt::Debug;
 }
 
 /// Marker for a bundle in the process of being built.
@@ -373,7 +374,7 @@ pub struct InProgress<P, S: InProgressSignatures> {
     sigs: S,
 }
 
-impl<P, S: InProgressSignatures> Authorization for InProgress<P, S> {
+impl<P: fmt::Debug, S: InProgressSignatures> Authorization for InProgress<P, S> {
     type SpendAuth = S::SpendAuth;
 }
 
@@ -481,7 +482,7 @@ impl MaybeSigned {
     }
 }
 
-impl<P, V> Bundle<InProgress<P, Unauthorized>, V> {
+impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
     /// Loads the sighash into this bundle, preparing it for signing.
     ///
     /// This API ensures that all signatures are created over the same sighash.
@@ -527,7 +528,7 @@ impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
     }
 }
 
-impl<P, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
+impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
     /// Signs this bundle with the given [`SpendAuthorizingKey`].
     ///
     /// This will apply signatures for all notes controlled by this spending key.

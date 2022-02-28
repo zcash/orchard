@@ -3,6 +3,7 @@
 pub mod commitments;
 
 use std::convert::TryInto;
+use std::fmt;
 use std::io;
 
 use blake2b_simd::Hash as Blake2bHash;
@@ -230,9 +231,9 @@ impl Flags {
 }
 
 /// Defines the authorization type of an Orchard bundle.
-pub trait Authorization {
+pub trait Authorization: fmt::Debug {
     /// The authorization type of an Orchard action.
-    type SpendAuth;
+    type SpendAuth: fmt::Debug;
 }
 
 /// A bundle of actions to be applied to the ledger.
