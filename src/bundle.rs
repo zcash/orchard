@@ -365,8 +365,9 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Performs trial decryption of each action in the bundle with each of the
-    /// specified incoming viewing keys, and return the decrypted note contents
-    /// along with the index of the action from which it was derived.
+    /// specified incoming viewing keys, and returns a vector of each decrypted
+    /// note plaintext contents along with the index of the action from which it
+    /// was derived.
     pub fn decrypt_outputs_with_keys(
         &self,
         keys: &[IncomingViewingKey],
@@ -385,7 +386,8 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Performs trial decryption of the action at `action_idx` in the bundle with the
-    /// specified incoming viewing key, and return the decrypted note contents.
+    /// specified incoming viewing key, and returns the decrypted note plaintext
+    /// contents if successful.
     pub fn decrypt_output_with_key(
         &self,
         action_idx: usize,
@@ -398,8 +400,9 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Performs trial decryption of each action in the bundle with each of the
-    /// specified outgoing viewing keys, and return the decrypted note contents
-    /// along with the index of the action from which it was derived.
+    /// specified outgoing viewing keys, and returns a vector of each decrypted
+    /// note plaintext contents along with the index of the action from which it
+    /// was derived.
     pub fn recover_outputs_with_ovks(
         &self,
         keys: &[OutgoingViewingKey],
@@ -424,7 +427,8 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Attempts to decrypt the action at the specified index with the specified
-    /// outgoing viewing key, and return the decrypted note contents.
+    /// outgoing viewing key, and returns the decrypted note plaintext contents
+    /// if successful.
     pub fn recover_output_with_ovk(
         &self,
         action_idx: usize,
