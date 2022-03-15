@@ -184,12 +184,20 @@ pub(crate) fn commit_ivk(
                 .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
             rivk,
         )
-        // Commit^ivk.Output is specified as [1..q_P] ∪ {⊥}. We get this from
-        // sinsemilla::CommitDomain::short_commit by construction:
+        // sinsemilla::CommitDomain::short_commit returns a value in range [0..q_P] ∪ {⊥}:
+        // - sinsemilla::HashDomain::hash_to_point uses incomplete addition and returns a
+        //   point in P* ∪ {⊥}.
+        // - sinsemilla::CommitDomain::commit applies a final complete addition step and
+        //   returns a point in P ∪ {⊥}.
         // - 0 is not a valid x-coordinate for any Pallas point.
         // - sinsemilla::CommitDomain::short_commit calls extract_p_bottom, which replaces
-        //   the identity (which has no affine coordinates) with 0. but Sinsemilla is
-        //   defined using incomplete addition, and thus will never produce the identity.
+        //   the identity (which has no affine coordinates) with 0.
+        //
+        // Commit^ivk.Output is specified as [1..q_P] ∪ {⊥}, so we explicitly check for 0
+        // and map it to None. Note that we are collapsing this case (which is rejected by
+        // the circuit) with ⊥ (which the circuit explicitly allows for efficiency); this
+        // is fine because we don't want users of the `orchard` crate to encounter either
+        // case.
         .and_then(NonZeroPallasBase::from_base)
 }
 
