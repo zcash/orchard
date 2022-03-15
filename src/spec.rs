@@ -190,7 +190,7 @@ pub(crate) fn commit_ivk(
         // - sinsemilla::CommitDomain::short_commit calls extract_p_bottom, which replaces
         //   the identity (which has no affine coordinates) with 0. but Sinsemilla is
         //   defined using incomplete addition, and thus will never produce the identity.
-        .map(NonZeroPallasBase::guaranteed)
+        .and_then(NonZeroPallasBase::from_base)
 }
 
 /// Defined in [Zcash Protocol Spec § 5.4.1.6: DiversifyHash^Sapling and DiversifyHash^Orchard Hash Functions][concretediversifyhash].
