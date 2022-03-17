@@ -537,9 +537,30 @@ impl From<&FullViewingKey> for KeyAgreementPrivateKey {
 
 impl KeyAgreementPrivateKey {
     /// Derives ivk from fvk. Internal use only, does not enforce all constraints.
+    ///
+    /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+    ///
+    /// [orchardkeycomponents]: https://zips.z.cash/protocol/protocol.pdf#orchardkeycomponents
     fn derive_inner(fvk: &FullViewingKey) -> CtOption<NonZeroPallasBase> {
         let ak = extract_p(&pallas::Point::from_bytes(&(&fvk.ak.0).into()).unwrap());
         commit_ivk(&ak, &fvk.nk.0, &fvk.rivk.0)
+            // sinsemilla::CommitDomain::short_commit returns a value in range
+            // [0..q_P] ∪ {⊥}:
+            // - sinsemilla::HashDomain::hash_to_point uses incomplete addition and
+            //   returns a point in P* ∪ {⊥}.
+            // - sinsemilla::CommitDomain::commit applies a final complete addition step
+            //   and returns a point in P ∪ {⊥}.
+            // - 0 is not a valid x-coordinate for any Pallas point.
+            // - sinsemilla::CommitDomain::short_commit calls extract_p_bottom, which
+            //   replaces the identity (which has no affine coordinates) with 0.
+            //
+            // Commit^ivk.Output is specified as [1..q_P] ∪ {⊥}, so we explicitly check
+            // for 0 and map it to None. Note that we are collapsing this case (which is
+            // rejected by the circuit) with ⊥ (which the circuit explicitly allows for
+            // efficiency); this is fine because we don't want users of the `orchard`
+            // crate to encounter either case (and it matches the behaviour described in
+            // Section 4.2.3 of the protocol spec when generating spending keys).
+            .and_then(NonZeroPallasBase::from_base)
     }
 
     /// Returns the payment address for this key corresponding to the given diversifier.

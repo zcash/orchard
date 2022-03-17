@@ -166,31 +166,23 @@ pub(crate) fn mod_r_p(x: pallas::Base) -> pallas::Scalar {
     pallas::Scalar::from_repr(x.to_repr()).unwrap()
 }
 
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// Defined in [Zcash Protocol Spec § 5.4.8.4: Sinsemilla commitments][concretesinsemillacommit].
 ///
-/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+/// [concretesinsemillacommit]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillacommit
 pub(crate) fn commit_ivk(
     ak: &pallas::Base,
     nk: &pallas::Base,
     rivk: &pallas::Scalar,
-) -> CtOption<NonZeroPallasBase> {
+) -> CtOption<pallas::Base> {
     // We rely on the API contract that to_le_bits() returns at least PrimeField::NUM_BITS
     // bits, which is equal to L_ORCHARD_BASE.
     let domain = sinsemilla::CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
-    domain
-        .short_commit(
-            iter::empty()
-                .chain(ak.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
-                .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
-            rivk,
-        )
-        // Commit^ivk.Output is specified as [1..q_P] ∪ {⊥}. We get this from
-        // sinsemilla::CommitDomain::short_commit by construction:
-        // - 0 is not a valid x-coordinate for any Pallas point.
-        // - sinsemilla::CommitDomain::short_commit calls extract_p_bottom, which replaces
-        //   the identity (which has no affine coordinates) with 0. but Sinsemilla is
-        //   defined using incomplete addition, and thus will never produce the identity.
-        .map(NonZeroPallasBase::guaranteed)
+    domain.short_commit(
+        iter::empty()
+            .chain(ak.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
+            .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
+        rivk,
+    )
 }
 
 /// Defined in [Zcash Protocol Spec § 5.4.1.6: DiversifyHash^Sapling and DiversifyHash^Orchard Hash Functions][concretediversifyhash].
