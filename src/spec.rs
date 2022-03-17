@@ -166,39 +166,23 @@ pub(crate) fn mod_r_p(x: pallas::Base) -> pallas::Scalar {
     pallas::Scalar::from_repr(x.to_repr()).unwrap()
 }
 
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// Defined in [Zcash Protocol Spec § 5.4.8.4: Sinsemilla commitments][concretesinsemillacommit].
 ///
-/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+/// [concretesinsemillacommit]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillacommit
 pub(crate) fn commit_ivk(
     ak: &pallas::Base,
     nk: &pallas::Base,
     rivk: &pallas::Scalar,
-) -> CtOption<NonZeroPallasBase> {
+) -> CtOption<pallas::Base> {
     // We rely on the API contract that to_le_bits() returns at least PrimeField::NUM_BITS
     // bits, which is equal to L_ORCHARD_BASE.
     let domain = sinsemilla::CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
-    domain
-        .short_commit(
-            iter::empty()
-                .chain(ak.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
-                .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
-            rivk,
-        )
-        // sinsemilla::CommitDomain::short_commit returns a value in range [0..q_P] ∪ {⊥}:
-        // - sinsemilla::HashDomain::hash_to_point uses incomplete addition and returns a
-        //   point in P* ∪ {⊥}.
-        // - sinsemilla::CommitDomain::commit applies a final complete addition step and
-        //   returns a point in P ∪ {⊥}.
-        // - 0 is not a valid x-coordinate for any Pallas point.
-        // - sinsemilla::CommitDomain::short_commit calls extract_p_bottom, which replaces
-        //   the identity (which has no affine coordinates) with 0.
-        //
-        // Commit^ivk.Output is specified as [1..q_P] ∪ {⊥}, so we explicitly check for 0
-        // and map it to None. Note that we are collapsing this case (which is rejected by
-        // the circuit) with ⊥ (which the circuit explicitly allows for efficiency); this
-        // is fine because we don't want users of the `orchard` crate to encounter either
-        // case.
-        .and_then(NonZeroPallasBase::from_base)
+    domain.short_commit(
+        iter::empty()
+            .chain(ak.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
+            .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
+        rivk,
+    )
 }
 
 /// Defined in [Zcash Protocol Spec § 5.4.1.6: DiversifyHash^Sapling and DiversifyHash^Orchard Hash Functions][concretediversifyhash].
