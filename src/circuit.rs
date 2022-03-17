@@ -941,7 +941,7 @@ mod tests {
     use group::GroupEncoding;
     use halo2::dev::MockProver;
     use pasta_curves::pallas;
-    use rand::rngs::OsRng;
+    use rand::{rngs::OsRng, RngCore};
     use std::iter;
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
@@ -952,65 +952,68 @@ mod tests {
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
 
+    fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
+
+        let sender_address = spent_note.recipient();
+        let nk = *fvk.nk();
+        let rivk = *fvk.rivk();
+        let nf_old = spent_note.nullifier(&fvk);
+        let ak: SpendValidatingKey = fvk.into();
+        let alpha = pallas::Scalar::random(&mut rng);
+        let rk = ak.randomize(&alpha);
+
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old));
+        let cmx = output_note.commitment().into();
+
+        let value = spent_note.value() - output_note.value();
+        let rcv = ValueCommitTrapdoor::random(&mut rng);
+        let cv_net = ValueCommitment::derive(value.unwrap(), rcv.clone());
+
+        let path = MerklePath::dummy(&mut rng);
+        let anchor = path.root(spent_note.commitment().into());
+
+        (
+            Circuit {
+                path: Some(path.auth_path()),
+                pos: Some(path.position()),
+                g_d_old: Some(sender_address.g_d()),
+                pk_d_old: Some(*sender_address.pk_d()),
+                v_old: Some(spent_note.value()),
+                rho_old: Some(spent_note.rho()),
+                psi_old: Some(spent_note.rseed().psi(&spent_note.rho())),
+                rcm_old: Some(spent_note.rseed().rcm(&spent_note.rho())),
+                cm_old: Some(spent_note.commitment()),
+                alpha: Some(alpha),
+                ak: Some(ak),
+                nk: Some(nk),
+                rivk: Some(rivk),
+                g_d_new_star: Some((*output_note.recipient().g_d()).to_bytes()),
+                pk_d_new_star: Some(output_note.recipient().pk_d().to_bytes()),
+                v_new: Some(output_note.value()),
+                psi_new: Some(output_note.rseed().psi(&output_note.rho())),
+                rcm_new: Some(output_note.rseed().rcm(&output_note.rho())),
+                rcv: Some(rcv),
+            },
+            Instance {
+                anchor,
+                cv_net,
+                nf_old,
+                rk,
+                cmx,
+                enable_spend: true,
+                enable_output: true,
+            },
+        )
+    }
+
     // TODO: recast as a proptest
     #[test]
     fn round_trip() {
         let mut rng = OsRng;
 
         let (circuits, instances): (Vec<_>, Vec<_>) = iter::once(())
-            .map(|()| {
-                let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
-
-                let sender_address = spent_note.recipient();
-                let nk = *fvk.nk();
-                let rivk = *fvk.rivk();
-                let nf_old = spent_note.nullifier(&fvk);
-                let ak: SpendValidatingKey = fvk.into();
-                let alpha = pallas::Scalar::random(&mut rng);
-                let rk = ak.randomize(&alpha);
-
-                let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old));
-                let cmx = output_note.commitment().into();
-
-                let value = spent_note.value() - output_note.value();
-                let cv_net = ValueCommitment::derive(value.unwrap(), ValueCommitTrapdoor::zero());
-
-                let path = MerklePath::dummy(&mut rng);
-                let anchor = path.root(spent_note.commitment().into());
-
-                (
-                    Circuit {
-                        path: Some(path.auth_path()),
-                        pos: Some(path.position()),
-                        g_d_old: Some(sender_address.g_d()),
-                        pk_d_old: Some(*sender_address.pk_d()),
-                        v_old: Some(spent_note.value()),
-                        rho_old: Some(spent_note.rho()),
-                        psi_old: Some(spent_note.rseed().psi(&spent_note.rho())),
-                        rcm_old: Some(spent_note.rseed().rcm(&spent_note.rho())),
-                        cm_old: Some(spent_note.commitment()),
-                        alpha: Some(alpha),
-                        ak: Some(ak),
-                        nk: Some(nk),
-                        rivk: Some(rivk),
-                        g_d_new_star: Some((*output_note.recipient().g_d()).to_bytes()),
-                        pk_d_new_star: Some(output_note.recipient().pk_d().to_bytes()),
-                        v_new: Some(output_note.value()),
-                        psi_new: Some(output_note.rseed().psi(&output_note.rho())),
-                        rcm_new: Some(output_note.rseed().rcm(&output_note.rho())),
-                        rcv: Some(ValueCommitTrapdoor::zero()),
-                    },
-                    Instance {
-                        anchor,
-                        cv_net,
-                        nf_old,
-                        rk,
-                        cmx,
-                        enable_spend: true,
-                        enable_output: true,
-                    },
-                )
-            })
+            .map(|()| generate_circuit_instance(&mut rng))
             .unzip();
 
         let vk = VerifyingKey::build();
@@ -1057,6 +1060,91 @@ mod tests {
         let proof = Proof::create(&pk, &circuits, &instances).unwrap();
         assert!(proof.verify(&vk, &instances).is_ok());
         assert_eq!(proof.0.len(), expected_proof_size);
+    }
+
+    #[test]
+    fn serialized_proof_test_case() {
+        use std::convert::TryInto;
+        use std::io::{Read, Write};
+
+        let vk = VerifyingKey::build();
+
+        fn write_test_case<W: Write>(
+            mut w: W,
+            instance: &Instance,
+            proof: &Proof,
+        ) -> std::io::Result<()> {
+            w.write_all(&instance.anchor.to_bytes())?;
+            w.write_all(&instance.cv_net.to_bytes())?;
+            w.write_all(&instance.nf_old.to_bytes())?;
+            w.write_all(&<[u8; 32]>::from(instance.rk.clone()))?;
+            w.write_all(&instance.cmx.to_bytes())?;
+            w.write_all(&[
+                if instance.enable_spend { 1 } else { 0 },
+                if instance.enable_output { 1 } else { 0 },
+            ])?;
+
+            w.write_all(proof.as_ref())?;
+            Ok(())
+        }
+
+        fn read_test_case<R: Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
+            let read_32_bytes = |r: &mut R| {
+                let mut ret = [0u8; 32];
+                r.read_exact(&mut ret).unwrap();
+                ret
+            };
+            let read_bool = |r: &mut R| {
+                let mut byte = [0u8; 1];
+                r.read_exact(&mut byte).unwrap();
+                match byte {
+                    [0] => false,
+                    [1] => true,
+                    _ => panic!("Unexpected non-boolean byte"),
+                }
+            };
+
+            let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
+            let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+            let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
+            let rk = read_32_bytes(&mut r).try_into().unwrap();
+            let cmx =
+                crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+            let enable_spend = read_bool(&mut r);
+            let enable_output = read_bool(&mut r);
+            let instance =
+                Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output);
+
+            let mut proof_bytes = vec![];
+            r.read_to_end(&mut proof_bytes)?;
+            let proof = Proof::new(proof_bytes);
+
+            Ok((instance, proof))
+        }
+
+        if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+            let create_proof = || -> std::io::Result<()> {
+                let (circuit, instance) = generate_circuit_instance(OsRng);
+                let instances = &[instance.clone()];
+
+                let pk = ProvingKey::build();
+                let proof = Proof::create(&pk, &[circuit], instances).unwrap();
+                assert!(proof.verify(&vk, instances).is_ok());
+
+                let file = std::fs::File::create("circuit_proof_test_case.bin")?;
+                write_test_case(file, &instance, &proof)
+            };
+            create_proof().expect("should be able to write new proof");
+        }
+
+        // Parse the hardcoded proof test case.
+        let (instance, proof) = {
+            let test_case_bytes = include_bytes!("circuit_proof_test_case.bin");
+            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
+        };
+        assert_eq!(proof.0.len(), 4992);
+
+        assert!(proof.verify(&vk, &[instance]).is_ok());
     }
 
     #[cfg(feature = "dev-graph")]
