@@ -1,7 +1,5 @@
-use pasta_curves::{
-    arithmetic::{CurveAffine, FieldExt},
-    pallas,
-};
+use group::ff::PrimeField;
+use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 /// The value commitment is used to check balance between inputs and outputs. The value is
 /// placed over this generator.
@@ -776,21 +774,20 @@ pub const U_SHORT: [[[u8; 32]; super::H]; super::NUM_WINDOWS_SHORT] = [
 
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
-        pallas::Base::from_bytes(&GENERATOR.0).unwrap(),
-        pallas::Base::from_bytes(&GENERATOR.1).unwrap(),
+        pallas::Base::from_repr(GENERATOR.0).unwrap(),
+        pallas::Base::from_repr(GENERATOR.1).unwrap(),
     )
     .unwrap()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        test_lagrange_coeffs, test_zs_and_us, NUM_WINDOWS_SHORT, VALUE_COMMITMENT_PERSONALIZATION,
-    };
+    use super::super::{NUM_WINDOWS_SHORT, VALUE_COMMITMENT_PERSONALIZATION};
     use super::*;
     use group::Curve;
+    use halo2_gadgets::ecc::chip::constants::{test_lagrange_coeffs, test_zs_and_us};
     use pasta_curves::{
-        arithmetic::{CurveAffine, CurveExt, FieldExt},
+        arithmetic::{CurveAffine, CurveExt},
         pallas,
     };
 
@@ -800,18 +797,18 @@ mod tests {
         let point = hasher(b"v");
         let coords = point.to_affine().coordinates().unwrap();
 
-        assert_eq!(*coords.x(), pallas::Base::from_bytes(&GENERATOR.0).unwrap());
-        assert_eq!(*coords.y(), pallas::Base::from_bytes(&GENERATOR.1).unwrap());
+        assert_eq!(*coords.x(), pallas::Base::from_repr(GENERATOR.0).unwrap());
+        assert_eq!(*coords.y(), pallas::Base::from_repr(GENERATOR.1).unwrap());
     }
 
     #[test]
-    fn lagrange_coeffs_short() {
+    fn lagrange_coeffs() {
         let base = super::generator();
         test_lagrange_coeffs(base, NUM_WINDOWS_SHORT);
     }
 
     #[test]
-    fn z_short() {
+    fn z() {
         let base = super::generator();
         test_zs_and_us(base, &Z_SHORT, &U_SHORT, NUM_WINDOWS_SHORT);
     }

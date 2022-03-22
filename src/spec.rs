@@ -6,16 +6,14 @@ use std::ops::Deref;
 use ff::{Field, PrimeField, PrimeFieldBits};
 use group::GroupEncoding;
 use group::{Curve, Group};
-use halo2::arithmetic::{CurveAffine, CurveExt, FieldExt};
+use halo2_gadgets::primitives::{poseidon, sinsemilla};
+use halo2_proofs::arithmetic::{CurveAffine, CurveExt, FieldExt};
 use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};
 
-use crate::{
-    constants::{
-        util::gen_const_array, COMMIT_IVK_PERSONALIZATION, KEY_DIVERSIFICATION_PERSONALIZATION,
-        L_ORCHARD_BASE,
-    },
-    primitives::{poseidon, sinsemilla},
+use crate::constants::{
+    fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
+    KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
 };
 
 mod prf_expand;
@@ -70,11 +68,11 @@ impl ConditionallySelectable for NonZeroPallasBase {
 
 impl NonZeroPallasBase {
     pub(crate) fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        pallas::Base::from_bytes(bytes).and_then(NonZeroPallasBase::from_base)
+        pallas::Base::from_repr(*bytes).and_then(NonZeroPallasBase::from_base)
     }
 
-    pub(crate) fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_bytes()
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
+        self.0.to_repr()
     }
 
     pub(crate) fn from_base(b: pallas::Base) -> CtOption<Self> {
@@ -116,7 +114,7 @@ impl ConditionallySelectable for NonZeroPallasScalar {
 
 impl NonZeroPallasScalar {
     pub(crate) fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        pallas::Scalar::from_bytes(bytes).and_then(NonZeroPallasScalar::from_scalar)
+        pallas::Scalar::from_repr(*bytes).and_then(NonZeroPallasScalar::from_scalar)
     }
 
     pub(crate) fn from_scalar(s: pallas::Scalar) -> CtOption<Self> {
@@ -168,31 +166,23 @@ pub(crate) fn mod_r_p(x: pallas::Base) -> pallas::Scalar {
     pallas::Scalar::from_repr(x.to_repr()).unwrap()
 }
 
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// Defined in [Zcash Protocol Spec § 5.4.8.4: Sinsemilla commitments][concretesinsemillacommit].
 ///
-/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+/// [concretesinsemillacommit]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillacommit
 pub(crate) fn commit_ivk(
     ak: &pallas::Base,
     nk: &pallas::Base,
     rivk: &pallas::Scalar,
-) -> CtOption<NonZeroPallasBase> {
+) -> CtOption<pallas::Base> {
     // We rely on the API contract that to_le_bits() returns at least PrimeField::NUM_BITS
     // bits, which is equal to L_ORCHARD_BASE.
     let domain = sinsemilla::CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
-    domain
-        .short_commit(
-            iter::empty()
-                .chain(ak.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
-                .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
-            rivk,
-        )
-        // Commit^ivk.Output is specified as [1..q_P] ∪ {⊥}. We get this from
-        // sinsemilla::CommitDomain::short_commit by construction:
-        // - 0 is not a valid x-coordinate for any Pallas point.
-        // - sinsemilla::CommitDomain::short_commit calls extract_p_bottom, which replaces
-        //   the identity (which has no affine coordinates) with 0. but Sinsemilla is
-        //   defined using incomplete addition, and thus will never produce the identity.
-        .map(NonZeroPallasBase::guaranteed)
+    domain.short_commit(
+        iter::empty()
+            .chain(ak.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
+            .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
+        rivk,
+    )
 }
 
 /// Defined in [Zcash Protocol Spec § 5.4.1.6: DiversifyHash^Sapling and DiversifyHash^Orchard Hash Functions][concretediversifyhash].
@@ -212,7 +202,8 @@ pub(crate) fn diversify_hash(d: &[u8; 11]) -> NonIdentityPallasPoint {
 ///
 /// [concreteprfs]: https://zips.z.cash/protocol/nu5.pdf#concreteprfs
 pub(crate) fn prf_nf(nk: pallas::Base, rho: pallas::Base) -> pallas::Base {
-    poseidon::Hash::init(poseidon::P128Pow5T3, poseidon::ConstantLength).hash([nk, rho])
+    poseidon::Hash::<_, poseidon::P128Pow5T3, poseidon::ConstantLength<2>, 3, 2>::init()
+        .hash([nk, rho])
 }
 
 /// Defined in [Zcash Protocol Spec § 5.4.5.5: Orchard Key Agreement][concreteorchardkeyagreement].
@@ -250,8 +241,8 @@ pub(crate) fn extract_p_bottom(point: CtOption<pallas::Point>) -> CtOption<palla
 
 /// The field element representation of a u64 integer represented by
 /// an L-bit little-endian bitstring.
-pub fn lebs2ip_field<F: FieldExt, const L: usize>(bits: &[bool; L]) -> F {
-    F::from_u64(lebs2ip::<L>(bits))
+pub fn lebs2ip_field<F: PrimeField, const L: usize>(bits: &[bool; L]) -> F {
+    F::from(lebs2ip::<L>(bits))
 }
 
 /// The u64 integer represented by an L-bit little-endian bitstring.
@@ -282,7 +273,7 @@ mod tests {
     use super::{i2lebsp, lebs2ip};
 
     use group::Group;
-    use halo2::arithmetic::CurveExt;
+    use halo2_proofs::arithmetic::CurveExt;
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
     use std::convert::TryInto;

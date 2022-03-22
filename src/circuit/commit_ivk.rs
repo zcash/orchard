@@ -1,35 +1,37 @@
-use halo2::{
-    circuit::Layouter,
+use halo2_proofs::{
+    circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use crate::{
-    circuit::gadget::{
-        ecc::{chip::EccChip, X},
-        utilities::{bitrange_subset, bool_check, copy, CellValue, Var},
+use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
+use halo2_gadgets::{
+    ecc::{chip::EccChip, X},
+    sinsemilla::{
+        chip::{SinsemillaChip, SinsemillaConfig},
+        CommitDomain, Message, MessagePiece,
     },
-    constants::T_P,
-};
-
-use super::{
-    chip::{SinsemillaChip, SinsemillaCommitDomains, SinsemillaConfig},
-    CommitDomain, Message, MessagePiece,
+    utilities::{bitrange_subset, bool_check},
 };
 
 #[derive(Clone, Debug)]
 pub struct CommitIvkConfig {
     q_commit_ivk: Selector,
     advices: [Column<Advice>; 10],
-    sinsemilla_config: SinsemillaConfig,
+    sinsemilla_config:
+        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
 }
 
 impl CommitIvkConfig {
     pub(in crate::circuit) fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         advices: [Column<Advice>; 10],
-        sinsemilla_config: SinsemillaConfig,
+        sinsemilla_config: SinsemillaConfig<
+            OrchardHashDomains,
+            OrchardCommitDomains,
+            OrchardFixedBases,
+        >,
     ) -> Self {
         let q_commit_ivk = meta.selector();
 
@@ -67,8 +69,8 @@ impl CommitIvkConfig {
             let q_commit_ivk = meta.query_selector(config.q_commit_ivk);
 
             // Useful constants
-            let two_pow_4 = pallas::Base::from_u64(1 << 4);
-            let two_pow_5 = pallas::Base::from_u64(1 << 5);
+            let two_pow_4 = pallas::Base::from(1 << 4);
+            let two_pow_5 = pallas::Base::from(1 << 5);
             let two_pow_9 = two_pow_4 * two_pow_5;
             let two_pow_250 = pallas::Base::from_u128(1 << 125).square();
             let two_pow_254 = two_pow_250 * two_pow_4;
@@ -119,7 +121,7 @@ impl CommitIvkConfig {
 
             // Check that nk = b_2 (5 bits) || c (240 bits) || d_0 (9 bits) || d_1 (1 bit)
             let nk_decomposition_check = {
-                let two_pow_245 = pallas::Base::from_u64(1 << 49).pow(&[5, 0, 0, 0]);
+                let two_pow_245 = pallas::Base::from(1 << 49).pow(&[5, 0, 0, 0]);
 
                 b_2.clone()
                     + c.clone() * two_pow_5
@@ -181,7 +183,7 @@ impl CommitIvkConfig {
                 // Check that b2_c_prime = b_2 + c * 2^5 + 2^140 - t_P.
                 // This is checked regardless of the value of d_1.
                 let b2_c_prime_check = {
-                    let two_pow_5 = pallas::Base::from_u64(1 << 5);
+                    let two_pow_5 = pallas::Base::from(1 << 5);
                     let two_pow_140 =
                         Expression::Constant(pallas::Base::from_u128(1 << 70).square());
                     let t_p = Expression::Constant(pallas::Base::from_u128(T_P));
@@ -222,13 +224,17 @@ impl CommitIvkConfig {
     #[allow(clippy::type_complexity)]
     pub(in crate::circuit) fn assign_region(
         &self,
-        sinsemilla_chip: SinsemillaChip,
-        ecc_chip: EccChip,
+        sinsemilla_chip: SinsemillaChip<
+            OrchardHashDomains,
+            OrchardCommitDomains,
+            OrchardFixedBases,
+        >,
+        ecc_chip: EccChip<OrchardFixedBases>,
         mut layouter: impl Layouter<pallas::Base>,
-        ak: CellValue<pallas::Base>,
-        nk: CellValue<pallas::Base>,
+        ak: AssignedCell<pallas::Base, pallas::Base>,
+        nk: AssignedCell<pallas::Base, pallas::Base>,
         rivk: Option<pallas::Scalar>,
-    ) -> Result<X<pallas::Affine, EccChip>, Error> {
+    ) -> Result<X<pallas::Affine, EccChip<OrchardFixedBases>>, Error> {
         // <https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit>
         // We need to hash `ak || nk` where each of `ak`, `nk` is a field element (255 bits).
         //
@@ -257,19 +263,19 @@ impl CommitIvkConfig {
             let b_2 = nk.value().map(|value| bitrange_subset(value, 0..5));
 
             let b = b_0.zip(b_1).zip(b_2).map(|((b_0, b_1), b_2)| {
-                let b1_shifted = b_1 * pallas::Base::from_u64(1 << 4);
-                let b2_shifted = b_2 * pallas::Base::from_u64(1 << 5);
+                let b1_shifted = b_1 * pallas::Base::from(1 << 4);
+                let b2_shifted = b_2 * pallas::Base::from(1 << 5);
                 b_0 + b1_shifted + b2_shifted
             });
 
             // Constrain b_0 to be 4 bits.
-            let b_0 = self.sinsemilla_config.lookup_config.witness_short_check(
+            let b_0 = self.sinsemilla_config.lookup_config().witness_short_check(
                 layouter.namespace(|| "b_0 is 4 bits"),
                 b_0,
                 4,
             )?;
             // Constrain b_2 to be 5 bits.
-            let b_2 = self.sinsemilla_config.lookup_config.witness_short_check(
+            let b_2 = self.sinsemilla_config.lookup_config().witness_short_check(
                 layouter.namespace(|| "b_2 is 5 bits"),
                 b_2,
                 5,
@@ -304,10 +310,10 @@ impl CommitIvkConfig {
 
             let d = d_0
                 .zip(d_1)
-                .map(|(d_0, d_1)| d_0 + d_1 * pallas::Base::from_u64(1 << 9));
+                .map(|(d_0, d_1)| d_0 + d_1 * pallas::Base::from(1 << 9));
 
             // Constrain d_0 to be 9 bits.
-            let d_0 = self.sinsemilla_config.lookup_config.witness_short_check(
+            let d_0 = self.sinsemilla_config.lookup_config().witness_short_check(
                 layouter.namespace(|| "d_0 is 9 bits"),
                 d_0,
                 9,
@@ -329,16 +335,13 @@ impl CommitIvkConfig {
                 sinsemilla_chip.clone(),
                 vec![a.clone(), b.clone(), c.clone(), d.clone()],
             );
-            let domain = CommitDomain::new(
-                sinsemilla_chip,
-                ecc_chip,
-                &SinsemillaCommitDomains::CommitIvk,
-            );
+            let domain =
+                CommitDomain::new(sinsemilla_chip, ecc_chip, &OrchardCommitDomains::CommitIvk);
             domain.short_commit(layouter.namespace(|| "Hash ak||nk"), message, rivk)?
         };
 
-        let z13_a = zs[0][13];
-        let z13_c = zs[2][13];
+        let z13_a = zs[0][13].clone();
+        let z13_c = zs[2][13].clone();
 
         let (a_prime, z13_a_prime) = self.ak_canonicity(
             layouter.namespace(|| "ak canonicity"),
@@ -347,7 +350,7 @@ impl CommitIvkConfig {
 
         let (b2_c_prime, z14_b2_c_prime) = self.nk_canonicity(
             layouter.namespace(|| "nk canonicity"),
-            b_2,
+            b_2.clone(),
             c.inner().cell_value(),
         )?;
 
@@ -384,8 +387,14 @@ impl CommitIvkConfig {
     fn ak_canonicity(
         &self,
         mut layouter: impl Layouter<pallas::Base>,
-        a: CellValue<pallas::Base>,
-    ) -> Result<(CellValue<pallas::Base>, CellValue<pallas::Base>), Error> {
+        a: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<
+        (
+            AssignedCell<pallas::Base, pallas::Base>,
+            AssignedCell<pallas::Base, pallas::Base>,
+        ),
+        Error,
+    > {
         // `ak` = `a (250 bits) || b_0 (4 bits) || b_1 (1 bit)`
         // - b_1 = 1 => b_0 = 0
         // - b_1 = 1 => a < t_P
@@ -400,16 +409,16 @@ impl CommitIvkConfig {
             let t_p = pallas::Base::from_u128(T_P);
             a + two_pow_130 - t_p
         });
-        let zs = self.sinsemilla_config.lookup_config.witness_check(
+        let zs = self.sinsemilla_config.lookup_config().witness_check(
             layouter.namespace(|| "Decompose low 130 bits of (a + 2^130 - t_P)"),
             a_prime,
             13,
             false,
         )?;
-        let a_prime = zs[0];
+        let a_prime = zs[0].clone();
         assert_eq!(zs.len(), 14); // [z_0, z_1, ..., z13_a]
 
-        Ok((a_prime, zs[13]))
+        Ok((a_prime, zs[13].clone()))
     }
 
     #[allow(clippy::type_complexity)]
@@ -417,9 +426,15 @@ impl CommitIvkConfig {
     fn nk_canonicity(
         &self,
         mut layouter: impl Layouter<pallas::Base>,
-        b_2: CellValue<pallas::Base>,
-        c: CellValue<pallas::Base>,
-    ) -> Result<(CellValue<pallas::Base>, CellValue<pallas::Base>), Error> {
+        b_2: AssignedCell<pallas::Base, pallas::Base>,
+        c: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<
+        (
+            AssignedCell<pallas::Base, pallas::Base>,
+            AssignedCell<pallas::Base, pallas::Base>,
+        ),
+        Error,
+    > {
         // `nk` = `b_2 (5 bits) || c (240 bits) || d_0 (9 bits) || d_1 (1 bit)
         // - d_1 = 1 => d_0 = 0
         // - d_1 = 1 => b_2 + c * 2^5 < t_P
@@ -432,21 +447,21 @@ impl CommitIvkConfig {
         // Decompose the low 140 bits of b2_c_prime = b_2 + c * 2^5 + 2^140 - t_P, and output
         // the running sum at the end of it. If b2_c_prime < 2^140, the running sum will be 0.
         let b2_c_prime = b_2.value().zip(c.value()).map(|(b_2, c)| {
-            let two_pow_5 = pallas::Base::from_u64(1 << 5);
+            let two_pow_5 = pallas::Base::from(1 << 5);
             let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
             let t_p = pallas::Base::from_u128(T_P);
             b_2 + c * two_pow_5 + two_pow_140 - t_p
         });
-        let zs = self.sinsemilla_config.lookup_config.witness_check(
+        let zs = self.sinsemilla_config.lookup_config().witness_check(
             layouter.namespace(|| "Decompose low 140 bits of (b_2 + c * 2^5 + 2^140 - t_P)"),
             b2_c_prime,
             14,
             false,
         )?;
-        let b2_c_prime = zs[0];
+        let b2_c_prime = zs[0].clone();
         assert_eq!(zs.len(), 15); // [z_0, z_1, ..., z14]
 
-        Ok((b2_c_prime, zs[14]))
+        Ok((b2_c_prime, zs[14].clone()))
     }
 
     // Assign cells for the canonicity gate.
@@ -474,71 +489,60 @@ impl CommitIvkConfig {
                 {
                     let offset = 0;
                     // Copy in `ak`
-                    copy(
-                        &mut region,
-                        || "ak",
-                        self.advices[0],
-                        offset,
-                        &gate_cells.ak,
-                    )?;
+                    gate_cells
+                        .ak
+                        .copy_advice(|| "ak", &mut region, self.advices[0], offset)?;
 
                     // Copy in `a`
-                    copy(&mut region, || "a", self.advices[1], offset, &gate_cells.a)?;
+                    gate_cells
+                        .a
+                        .copy_advice(|| "a", &mut region, self.advices[1], offset)?;
 
                     // Copy in `b`
-                    copy(&mut region, || "b", self.advices[2], offset, &gate_cells.b)?;
+                    gate_cells
+                        .b
+                        .copy_advice(|| "b", &mut region, self.advices[2], offset)?;
 
                     // Copy in `b_0`
-                    copy(
-                        &mut region,
-                        || "b_0",
-                        self.advices[3],
-                        offset,
-                        &gate_cells.b_0,
-                    )?;
+                    gate_cells
+                        .b_0
+                        .copy_advice(|| "b_0", &mut region, self.advices[3], offset)?;
 
                     // Witness `b_1`
                     region.assign_advice(
                         || "Witness b_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.b_1.ok_or(Error::SynthesisError),
+                        || gate_cells.b_1.ok_or(Error::Synthesis),
                     )?;
 
                     // Copy in `b_2`
-                    copy(
-                        &mut region,
-                        || "b_2",
-                        self.advices[5],
-                        offset,
-                        &gate_cells.b_2,
-                    )?;
+                    gate_cells
+                        .b_2
+                        .copy_advice(|| "b_2", &mut region, self.advices[5], offset)?;
 
                     // Copy in z13_a
-                    copy(
-                        &mut region,
+                    gate_cells.z13_a.copy_advice(
                         || "z13_a",
+                        &mut region,
                         self.advices[6],
                         offset,
-                        &gate_cells.z13_a,
                     )?;
 
                     // Copy in a_prime
-                    copy(
-                        &mut region,
+                    gate_cells.a_prime.copy_advice(
                         || "a_prime",
+                        &mut region,
                         self.advices[7],
                         offset,
-                        &gate_cells.a_prime,
                     )?;
 
                     // Copy in z13_a_prime
-                    copy(
-                        &mut region,
+                    gate_cells.z13_a_prime.copy_advice(
                         || "z13_a_prime",
+                        &mut region,
                         self.advices[8],
                         offset,
-                        &gate_cells.z13_a_prime,
                     )?;
                 }
 
@@ -547,62 +551,55 @@ impl CommitIvkConfig {
                     let offset = 1;
 
                     // Copy in `nk`
-                    copy(
-                        &mut region,
-                        || "nk",
-                        self.advices[0],
-                        offset,
-                        &gate_cells.nk,
-                    )?;
+                    gate_cells
+                        .nk
+                        .copy_advice(|| "nk", &mut region, self.advices[0], offset)?;
 
                     // Copy in `c`
-                    copy(&mut region, || "c", self.advices[1], offset, &gate_cells.c)?;
+                    gate_cells
+                        .c
+                        .copy_advice(|| "c", &mut region, self.advices[1], offset)?;
 
                     // Copy in `d`
-                    copy(&mut region, || "d", self.advices[2], offset, &gate_cells.d)?;
+                    gate_cells
+                        .d
+                        .copy_advice(|| "d", &mut region, self.advices[2], offset)?;
 
                     // Copy in `d_0`
-                    copy(
-                        &mut region,
-                        || "d_0",
-                        self.advices[3],
-                        offset,
-                        &gate_cells.d_0,
-                    )?;
+                    gate_cells
+                        .d_0
+                        .copy_advice(|| "d_0", &mut region, self.advices[3], offset)?;
 
                     // Witness `d_1`
                     region.assign_advice(
                         || "Witness d_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.d_1.ok_or(Error::SynthesisError),
+                        || gate_cells.d_1.ok_or(Error::Synthesis),
                     )?;
 
                     // Copy in z13_c
-                    copy(
-                        &mut region,
+                    gate_cells.z13_c.copy_advice(
                         || "z13_c",
+                        &mut region,
                         self.advices[6],
                         offset,
-                        &gate_cells.z13_c,
                     )?;
 
                     // Copy in b2_c_prime
-                    copy(
-                        &mut region,
+                    gate_cells.b2_c_prime.copy_advice(
                         || "b2_c_prime",
+                        &mut region,
                         self.advices[7],
                         offset,
-                        &gate_cells.b2_c_prime,
                     )?;
 
                     // Copy in z14_b2_c_prime
-                    copy(
-                        &mut region,
+                    gate_cells.z14_b2_c_prime.copy_advice(
                         || "z14_b2_c_prime",
+                        &mut region,
                         self.advices[8],
                         offset,
-                        &gate_cells.z14_b2_c_prime,
                     )?;
                 }
 
@@ -614,46 +611,46 @@ impl CommitIvkConfig {
 
 // Cells used in the canonicity gate.
 struct GateCells {
-    a: CellValue<pallas::Base>,
-    b: CellValue<pallas::Base>,
-    c: CellValue<pallas::Base>,
-    d: CellValue<pallas::Base>,
-    ak: CellValue<pallas::Base>,
-    nk: CellValue<pallas::Base>,
-    b_0: CellValue<pallas::Base>,
+    a: AssignedCell<pallas::Base, pallas::Base>,
+    b: AssignedCell<pallas::Base, pallas::Base>,
+    c: AssignedCell<pallas::Base, pallas::Base>,
+    d: AssignedCell<pallas::Base, pallas::Base>,
+    ak: AssignedCell<pallas::Base, pallas::Base>,
+    nk: AssignedCell<pallas::Base, pallas::Base>,
+    b_0: AssignedCell<pallas::Base, pallas::Base>,
     b_1: Option<pallas::Base>,
-    b_2: CellValue<pallas::Base>,
-    d_0: CellValue<pallas::Base>,
+    b_2: AssignedCell<pallas::Base, pallas::Base>,
+    d_0: AssignedCell<pallas::Base, pallas::Base>,
     d_1: Option<pallas::Base>,
-    z13_a: CellValue<pallas::Base>,
-    a_prime: CellValue<pallas::Base>,
-    z13_a_prime: CellValue<pallas::Base>,
-    z13_c: CellValue<pallas::Base>,
-    b2_c_prime: CellValue<pallas::Base>,
-    z14_b2_c_prime: CellValue<pallas::Base>,
+    z13_a: AssignedCell<pallas::Base, pallas::Base>,
+    a_prime: AssignedCell<pallas::Base, pallas::Base>,
+    z13_a_prime: AssignedCell<pallas::Base, pallas::Base>,
+    z13_c: AssignedCell<pallas::Base, pallas::Base>,
+    b2_c_prime: AssignedCell<pallas::Base, pallas::Base>,
+    z14_b2_c_prime: AssignedCell<pallas::Base, pallas::Base>,
 }
 
 #[cfg(test)]
 mod tests {
     use super::CommitIvkConfig;
-    use crate::{
-        circuit::gadget::{
-            ecc::chip::{EccChip, EccConfig},
-            sinsemilla::chip::SinsemillaChip,
-            utilities::{
-                lookup_range_check::LookupRangeCheckConfig, CellValue, UtilitiesInstructions, Var,
-            },
-        },
-        constants::{COMMIT_IVK_PERSONALIZATION, L_ORCHARD_BASE, T_Q},
-        primitives::sinsemilla::CommitDomain,
+    use crate::constants::{
+        fixed_bases::COMMIT_IVK_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
+        OrchardHashDomains, L_ORCHARD_BASE, T_Q,
     };
-    use ff::PrimeFieldBits;
-    use halo2::{
-        circuit::{Layouter, SimpleFloorPlanner},
+    use group::ff::{Field, PrimeFieldBits};
+    use halo2_gadgets::{
+        ecc::chip::{EccChip, EccConfig},
+        primitives::sinsemilla::CommitDomain,
+        sinsemilla::chip::SinsemillaChip,
+        utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
+    };
+    use halo2_proofs::{
+        circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
     use pasta_curves::{arithmetic::FieldExt, pallas};
+    use rand::rngs::OsRng;
 
     use std::convert::TryInto;
 
@@ -666,11 +663,11 @@ mod tests {
         }
 
         impl UtilitiesInstructions<pallas::Base> for MyCircuit {
-            type Var = CellValue<pallas::Base>;
+            type Var = AssignedCell<pallas::Base, pallas::Base>;
         }
 
         impl Circuit<pallas::Base> for MyCircuit {
-            type Config = (CommitIvkConfig, EccConfig);
+            type Config = (CommitIvkConfig, EccConfig<OrchardFixedBases>);
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -695,7 +692,7 @@ mod tests {
                 meta.enable_constant(constants);
 
                 for advice in advices.iter() {
-                    meta.enable_equality((*advice).into());
+                    meta.enable_equality(*advice);
                 }
 
                 let table_idx = meta.lookup_table_column();
@@ -716,19 +713,28 @@ mod tests {
                 ];
 
                 let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
-                let sinsemilla_config = SinsemillaChip::configure(
+                let sinsemilla_config = SinsemillaChip::<
+                    OrchardHashDomains,
+                    OrchardCommitDomains,
+                    OrchardFixedBases,
+                >::configure(
                     meta,
                     advices[..5].try_into().unwrap(),
                     advices[2],
                     lagrange_coeffs[0],
                     lookup,
-                    range_check.clone(),
+                    range_check,
                 );
 
                 let commit_ivk_config =
                     CommitIvkConfig::configure(meta, advices, sinsemilla_config);
 
-                let ecc_config = EccChip::configure(meta, advices, lagrange_coeffs, range_check);
+                let ecc_config = EccChip::<OrchardFixedBases>::configure(
+                    meta,
+                    advices,
+                    lagrange_coeffs,
+                    range_check,
+                );
 
                 (commit_ivk_config, ecc_config)
             }
@@ -741,7 +747,7 @@ mod tests {
                 let (commit_ivk_config, ecc_config) = config;
 
                 // Load the Sinsemilla generator lookup table used by the whole circuit.
-                SinsemillaChip::load(commit_ivk_config.sinsemilla_config.clone(), &mut layouter)?;
+                SinsemillaChip::<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>::load(commit_ivk_config.sinsemilla_config.clone(), &mut layouter)?;
 
                 // Construct a Sinsemilla chip
                 let sinsemilla_chip =
@@ -765,7 +771,7 @@ mod tests {
                 )?;
 
                 // Use a random scalar for rivk
-                let rivk = pallas::Scalar::rand();
+                let rivk = pallas::Scalar::random(OsRng);
 
                 let ivk = commit_ivk_config.assign_region(
                     sinsemilla_chip,
@@ -803,7 +809,7 @@ mod tests {
                         .unwrap()
                 };
 
-                assert_eq!(expected_ivk, ivk.inner().value().unwrap());
+                assert_eq!(&expected_ivk, ivk.inner().value().unwrap());
 
                 Ok(())
             }

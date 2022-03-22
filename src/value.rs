@@ -1,18 +1,39 @@
 //! Monetary values within the Orchard shielded pool.
 //!
-//! Values are represented in two places within Orchard:
-//! - The value of an individual note, which is an unsigned 63-bit integer.
-//! - The sum of note values within an Orchard [`Action`] or [`Bundle`], which is a signed
-//!   63-bit integer.
+//! Values are represented in three places within the Orchard protocol:
+//! - [`NoteValue`], the value of an individual note. It is an unsigned 64-bit integer
+//!   (with maximum value [`MAX_NOTE_VALUE`]), and is serialized in a note plaintext.
+//! - [`ValueSum`], the sum of note values within an Orchard [`Action`] or [`Bundle`].
+//!   It is a signed 64-bit integer (with range [`VALUE_SUM_RANGE`]).
+//! - `valueBalanceOrchard`, which is a signed 63-bit integer. This is represented by a
+//!   user-defined type parameter on [`Bundle`], returned by [`Bundle::value_balance`].
 //!
-//! We give these separate types within this crate. Users should map these types to their
-//! own general "amount" type as appropriate, and apply their own bounds checks if smaller
-//! than the Orchard protocol supports.
+//! If your specific instantiation of the Orchard protocol requires a smaller bound on
+//! valid note values (for example, Zcash's `MAX_MONEY` fits into a 51-bit integer), you
+//! should enforce this in two ways:
+//!
+//! - Define your `valueBalanceOrchard` type to enforce your valid value range. This can
+//!   be checked in its `TryFrom<i64>` implementation.
+//! - Define your own "amount" type for note values, and convert it to `NoteValue` prior
+//!   to calling [`Builder::add_recipient`].
 //!
 //! Inside the circuit, note values are constrained to be unsigned 64-bit integers.
 //!
+//! # Caution!
+//!
+//! An `i64` is _not_ a signed 64-bit integer! The [Rust documentation] calls `i64` the
+//! 64-bit signed integer type, which is true in the sense that its encoding in memory
+//! takes up 64 bits. Numerically, however, `i64` is a signed 63-bit integer.
+//!
+//! Fortunately, users of this crate should never need to construct [`ValueSum`] directly;
+//! you should only need to interact with [`NoteValue`] (which can be safely constructed
+//! from a `u64`) and `valueBalanceOrchard` (which can be represented as an `i64`).
+//!
 //! [`Action`]: crate::bundle::Action
 //! [`Bundle`]: crate::bundle::Bundle
+//! [`Bundle::value_balance`]: crate::bundle::Bundle::value_balance
+//! [`Builder::add_recipient`]: crate::builder::Builder::add_recipient
+//! [Rust documentation]: https://doc.rust-lang.org/stable/std/primitive.i64.html
 
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Debug};
@@ -23,14 +44,14 @@ use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
 use pasta_curves::{
-    arithmetic::{CurveAffine, CurveExt, FieldExt},
+    arithmetic::{CurveAffine, CurveExt},
     pallas,
 };
 use rand::RngCore;
 use subtle::CtOption;
 
 use crate::{
-    constants::{
+    constants::fixed_bases::{
         VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
     },
     primitives::redpallas::{self, Binding},
@@ -110,7 +131,7 @@ impl Sub for NoteValue {
     }
 }
 
-/// A sum of Orchard note values
+/// A sum of Orchard note values.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ValueSum(i128);
 
@@ -122,9 +143,11 @@ impl ValueSum {
 
     /// Creates a value sum from its raw numeric value.
     ///
-    /// This only enforces that the value is a signed 63-bit integer. Callers should
-    /// enforce any additional constraints on the value's valid range themselves.
-    pub fn from_raw(value: i64) -> Self {
+    /// This only enforces that the value is a signed 63-bit integer. We use it internally
+    /// in `Bundle::binding_validating_key`, where we are converting from the user-defined
+    /// `valueBalance` type that enforces any additional constraints on the value's valid
+    /// range.
+    pub(crate) fn from_raw(value: i64) -> Self {
         ValueSum(value as i128)
     }
 }
@@ -252,9 +275,9 @@ impl ValueCommitment {
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
 
         let value = if value.0.is_negative() {
-            -pallas::Scalar::from_u64(abs_value)
+            -pallas::Scalar::from(abs_value)
         } else {
-            pallas::Scalar::from_u64(abs_value)
+            pallas::Scalar::from(abs_value)
         };
 
         ValueCommitment(V * value + R * rcv.0)

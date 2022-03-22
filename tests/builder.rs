@@ -16,7 +16,7 @@ use rand::rngs::OsRng;
 use zcash_note_encryption::try_note_decryption;
 
 fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
-    assert!(matches!(bundle.verify_proof(&vk), Ok(())));
+    assert!(matches!(bundle.verify_proof(vk), Ok(())));
     let sighash: [u8; 32] = bundle.commitment().into();
     let bvk = bundle.binding_validating_key();
     for action in bundle.actions() {
@@ -50,7 +50,7 @@ fn bundle_chain() {
         );
         let unauthorized = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
-        let proven = unauthorized.create_proof(&pk).unwrap();
+        let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(&mut rng, sighash, &[]).unwrap()
     };
 
@@ -91,7 +91,7 @@ fn bundle_chain() {
         );
         let unauthorized = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
-        let proven = unauthorized.create_proof(&pk).unwrap();
+        let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
             .apply_signatures(&mut rng, sighash, &[SpendAuthorizingKey::from(&sk)])
             .unwrap()

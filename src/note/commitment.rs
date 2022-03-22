@@ -1,16 +1,16 @@
 use std::iter;
 
 use bitvec::{array::BitArray, order::Lsb0};
-use ff::PrimeFieldBits;
-use pasta_curves::{arithmetic::FieldExt, pallas};
+use group::ff::{PrimeField, PrimeFieldBits};
+use pasta_curves::pallas;
 use subtle::{ConstantTimeEq, CtOption};
 
 use crate::{
-    constants::{L_ORCHARD_BASE, NOTE_COMMITMENT_PERSONALIZATION},
-    primitives::sinsemilla,
+    constants::{fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, L_ORCHARD_BASE},
     spec::extract_p,
     value::NoteValue,
 };
+use halo2_gadgets::primitives::sinsemilla;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
@@ -72,12 +72,12 @@ impl ExtractedNoteCommitment {
     ///
     /// [cmxcanon]: https://zips.z.cash/protocol/protocol.pdf#actionencodingandconsensus
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        pallas::Base::from_bytes(bytes).map(ExtractedNoteCommitment)
+        pallas::Base::from_repr(*bytes).map(ExtractedNoteCommitment)
     }
 
     /// Serialize the value commitment to its canonical byte representation.
     pub fn to_bytes(self) -> [u8; 32] {
-        self.0.to_bytes()
+        self.0.to_repr()
     }
 }
 

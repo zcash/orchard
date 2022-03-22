@@ -1,23 +1,24 @@
 //! The Orchard Action circuit implementation.
 
 use group::{Curve, GroupEncoding};
-use halo2::{
-    circuit::{floor_planner, Layouter},
-    plonk::{self, Advice, Column, Expression, Instance as InstanceColumn, Selector},
+use halo2_proofs::{
+    circuit::{floor_planner, AssignedCell, Layouter},
+    plonk::{
+        self, Advice, Column, Expression, Instance as InstanceColumn, Selector, SingleVerifier,
+    },
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
 };
 use memuse::DynamicUsage;
-use pasta_curves::{
-    arithmetic::{CurveAffine, FieldExt},
-    pallas, vesta,
-};
+use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
+use rand::RngCore;
 
+use self::commit_ivk::CommitIvkConfig;
+use self::note_commit::NoteCommitConfig;
 use crate::{
     constants::{
-        load::{NullifierK, OrchardFixedBasesFull, ValueCommitV},
-        util::gen_const_array,
-        MERKLE_DEPTH_ORCHARD,
+        util::gen_const_array, NullifierK, OrchardCommitDomains, OrchardFixedBases,
+        OrchardFixedBasesFull, OrchardHashDomains, ValueCommitV, MERKLE_DEPTH_ORCHARD,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
@@ -27,40 +28,33 @@ use crate::{
         nullifier::Nullifier,
         ExtractedNoteCommitment,
     },
-    primitives::{
-        poseidon::{self, ConstantLength},
-        redpallas::{SpendAuth, VerificationKey},
-    },
+    primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
     tree::{Anchor, MerkleHashOrchard},
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
 };
-use gadget::{
+use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
         FixedPoint, FixedPointBaseField, FixedPointShort, NonIdentityPoint, Point,
     },
-    poseidon::{
-        Hash as PoseidonHash, Pow5T3Chip as PoseidonChip, Pow5T3Config as PoseidonConfig,
-        StateWord, Word,
-    },
+    poseidon::{Hash as PoseidonHash, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    primitives::poseidon::{self, ConstantLength},
     sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig, SinsemillaHashDomains},
-        commit_ivk::CommitIvkConfig,
+        chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{
             chip::{MerkleChip, MerkleConfig},
             MerklePath,
         },
-        note_commit::NoteCommitConfig,
     },
-    utilities::{copy, CellValue, UtilitiesInstructions, Var},
+    utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
 };
 
 use std::convert::TryInto;
 
-use self::gadget::utilities::lookup_range_check::LookupRangeCheckConfig;
-
-pub(crate) mod gadget;
+mod commit_ivk;
+pub mod gadget;
+mod note_commit;
 
 /// Size of the Orchard circuit.
 const K: u32 = 11;
@@ -84,12 +78,14 @@ pub struct Config {
     // Selector for the field addition gate poseidon_hash(nk, rho_old) + psi_old.
     q_add: Selector,
     advices: [Column<Advice>; 10],
-    ecc_config: EccConfig,
-    poseidon_config: PoseidonConfig<pallas::Base>,
-    merkle_config_1: MerkleConfig,
-    merkle_config_2: MerkleConfig,
-    sinsemilla_config_1: SinsemillaConfig,
-    sinsemilla_config_2: SinsemillaConfig,
+    ecc_config: EccConfig<OrchardFixedBases>,
+    poseidon_config: PoseidonConfig<pallas::Base, 3, 2>,
+    merkle_config_1: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+    merkle_config_2: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+    sinsemilla_config_1:
+        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+    sinsemilla_config_2:
+        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
     commit_ivk_config: CommitIvkConfig,
     old_note_commit_config: NoteCommitConfig,
     new_note_commit_config: NoteCommitConfig,
@@ -120,7 +116,7 @@ pub struct Circuit {
 }
 
 impl UtilitiesInstructions<pallas::Base> for Circuit {
-    type Var = CellValue<pallas::Base>;
+    type Var = AssignedCell<pallas::Base, pallas::Base>;
 }
 
 impl plonk::Circuit<pallas::Base> for Circuit {
@@ -204,11 +200,11 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Instance column used for public inputs
         let primary = meta.instance_column();
-        meta.enable_equality(primary.into());
+        meta.enable_equality(primary);
 
         // Permutation over all advice columns.
         for advice in advices.iter() {
-            meta.enable_equality((*advice).into());
+            meta.enable_equality(*advice);
         }
 
         // Poseidon requires four advice columns, while ECC incomplete addition requires
@@ -239,12 +235,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Configuration for curve point operations.
         // This uses 10 advice columns and spans the whole circuit.
-        let ecc_config = EccChip::configure(meta, advices, lagrange_coeffs, range_check.clone());
+        let ecc_config =
+            EccChip::<OrchardFixedBases>::configure(meta, advices, lagrange_coeffs, range_check);
 
         // Configuration for the Poseidon hash.
-        let poseidon_config = PoseidonChip::configure(
+        let poseidon_config = PoseidonChip::configure::<poseidon::P128Pow5T3>(
             meta,
-            poseidon::P128Pow5T3,
             // We place the state columns after the partial_sbox column so that the
             // pad-and-add region can be layed out more efficiently.
             advices[6..9].try_into().unwrap(),
@@ -264,7 +260,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 advices[6],
                 lagrange_coeffs[0],
                 lookup,
-                range_check.clone(),
+                range_check,
             );
             let merkle_config_1 = MerkleChip::configure(meta, sinsemilla_config_1.clone());
 
@@ -381,16 +377,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let v_old = self.load_private(
                 layouter.namespace(|| "witness v_old"),
                 config.advices[0],
-                self.v_old
-                    .map(|v_old| pallas::Base::from_u64(v_old.inner())),
+                self.v_old.map(|v_old| pallas::Base::from(v_old.inner())),
             )?;
 
             // Witness v_new.
             let v_new = self.load_private(
                 layouter.namespace(|| "witness v_new"),
                 config.advices[0],
-                self.v_new
-                    .map(|v_new| pallas::Base::from_u64(v_new.inner())),
+                self.v_new.map(|v_new| pallas::Base::from(v_new.inner())),
             )?;
 
             (psi_old, rho_old, cm_old, g_d_old, ak, nk, v_old, v_new)
@@ -398,18 +392,18 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Merkle path validity check.
         let anchor = {
-            let path = self.path.map(|typed_path| {
+            let path: Option<[pallas::Base; MERKLE_DEPTH_ORCHARD]> = self.path.map(|typed_path| {
                 // TODO: Replace with array::map once MSRV is 1.55.0.
                 gen_const_array(|i| typed_path[i].inner())
             });
-            let merkle_inputs = MerklePath {
-                chip_1: config.merkle_chip_1(),
-                chip_2: config.merkle_chip_2(),
-                domain: SinsemillaHashDomains::MerkleCrh,
-                leaf_pos: self.pos,
+            let merkle_inputs = MerklePath::construct(
+                config.merkle_chip_1(),
+                config.merkle_chip_2(),
+                OrchardHashDomains::MerkleCrh,
+                self.pos,
                 path,
-            };
-            let leaf = *cm_old.extract_p().inner();
+            );
+            let leaf = cm_old.extract_p().inner().clone();
             merkle_inputs.calculate_root(layouter.namespace(|| "MerkleCRH"), leaf)?
         };
 
@@ -419,12 +413,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let v_net = {
                 // v_old, v_new are guaranteed to be 64-bit values. Therefore, we can
                 // move them into the base field.
-                let v_old = self
-                    .v_old
-                    .map(|v_old| pallas::Base::from_u64(v_old.inner()));
-                let v_new = self
-                    .v_new
-                    .map(|v_new| pallas::Base::from_u64(v_new.inner()));
+                let v_old = self.v_old.map(|v_old| pallas::Base::from(v_old.inner()));
+                let v_new = self.v_new.map(|v_new| pallas::Base::from(v_new.inner()));
 
                 let magnitude_sign = v_old.zip(v_new).map(|(v_old, v_new)| {
                     let is_negative = v_old < v_new;
@@ -456,9 +446,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
             // commitment = [v_net] ValueCommitV
             let (commitment, _) = {
-                let value_commit_v = ValueCommitV::get();
+                let value_commit_v = ValueCommitV;
                 let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
-                value_commit_v.mul(layouter.namespace(|| "[v_net] ValueCommitV"), v_net)?
+                value_commit_v.mul(layouter.namespace(|| "[v_net] ValueCommitV"), v_net.clone())?
             };
 
             // blind = [rcv] ValueCommitR
@@ -485,40 +475,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let nf_old = {
             // hash_old = poseidon_hash(nk, rho_old)
             let hash_old = {
-                let message = [nk, rho_old];
-
-                let poseidon_message = layouter.assign_region(
-                    || "load message",
-                    |mut region| {
-                        let mut message_word = |i: usize| {
-                            let value = message[i].value();
-                            let var = region.assign_advice(
-                                || format!("load message_{}", i),
-                                config.poseidon_config.state[i],
-                                0,
-                                || value.ok_or(plonk::Error::SynthesisError),
-                            )?;
-                            region.constrain_equal(var, message[i].cell())?;
-                            Ok(Word::<_, _, poseidon::P128Pow5T3, 3, 2>::from_inner(
-                                StateWord::new(var, value),
-                            ))
-                        };
-
-                        Ok([message_word(0)?, message_word(1)?])
-                    },
-                )?;
-
-                let poseidon_hasher = PoseidonHash::init(
-                    config.poseidon_chip(),
-                    layouter.namespace(|| "Poseidon init"),
-                    ConstantLength::<2>,
-                )?;
-                let poseidon_output = poseidon_hasher.hash(
+                let poseidon_message = [nk.clone(), rho_old.clone()];
+                let poseidon_hasher =
+                    PoseidonHash::<_, _, poseidon::P128Pow5T3, ConstantLength<2>, 3, 2>::init(
+                        config.poseidon_chip(),
+                        layouter.namespace(|| "Poseidon init"),
+                    )?;
+                poseidon_hasher.hash(
                     layouter.namespace(|| "Poseidon hash (nk, rho_old)"),
                     poseidon_message,
-                )?;
-                let poseidon_output: CellValue<pallas::Base> = poseidon_output.inner().into();
-                poseidon_output
+                )?
             };
 
             // Add hash output to psi.
@@ -529,32 +495,19 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 |mut region| {
                     config.q_add.enable(&mut region, 0)?;
 
-                    copy(
-                        &mut region,
-                        || "copy hash_old",
-                        config.advices[7],
-                        0,
-                        &hash_old,
-                    )?;
-                    copy(
-                        &mut region,
-                        || "copy psi_old",
-                        config.advices[8],
-                        0,
-                        &psi_old,
-                    )?;
+                    hash_old.copy_advice(|| "copy hash_old", &mut region, config.advices[7], 0)?;
+                    psi_old.copy_advice(|| "copy psi_old", &mut region, config.advices[8], 0)?;
 
                     let scalar_val = hash_old
                         .value()
                         .zip(psi_old.value())
                         .map(|(hash_old, psi_old)| hash_old + psi_old);
-                    let cell = region.assign_advice(
+                    region.assign_advice(
                         || "poseidon_hash(nk, rho_old) + psi_old",
                         config.advices[6],
                         0,
-                        || scalar_val.ok_or(plonk::Error::SynthesisError),
-                    )?;
-                    Ok(CellValue::new(cell, scalar_val))
+                        || scalar_val.ok_or(plonk::Error::Synthesis),
+                    )
                 },
             )?;
 
@@ -609,7 +562,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     config.sinsemilla_chip_1(),
                     ecc_chip.clone(),
                     layouter.namespace(|| "CommitIvk"),
-                    *ak.extract_p().inner(),
+                    ak.extract_p().inner().clone(),
                     nk,
                     rivk,
                 )?
@@ -647,7 +600,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.ecc_chip(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
-                v_old,
+                v_old.clone(),
                 rho_old,
                 psi_old,
                 rcm_old,
@@ -703,8 +656,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.ecc_chip(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
-                v_new,
-                *nf_old.inner(),
+                v_new.clone(),
+                nf_old.inner().clone(),
                 psi_new,
                 rcm_new,
             )?;
@@ -720,19 +673,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         layouter.assign_region(
             || "v_old - v_new = magnitude * sign",
             |mut region| {
-                copy(&mut region, || "v_old", config.advices[0], 0, &v_old)?;
-                copy(&mut region, || "v_new", config.advices[1], 0, &v_new)?;
-                let (magnitude, sign) = v_net;
-                copy(
-                    &mut region,
-                    || "v_net magnitude",
-                    config.advices[2],
-                    0,
-                    &magnitude,
-                )?;
-                copy(&mut region, || "v_net sign", config.advices[3], 0, &sign)?;
+                v_old.copy_advice(|| "v_old", &mut region, config.advices[0], 0)?;
+                v_new.copy_advice(|| "v_new", &mut region, config.advices[1], 0)?;
+                let (magnitude, sign) = v_net.clone();
+                magnitude.copy_advice(|| "v_net magnitude", &mut region, config.advices[2], 0)?;
+                sign.copy_advice(|| "v_net sign", &mut region, config.advices[3], 0)?;
 
-                copy(&mut region, || "anchor", config.advices[4], 0, &anchor)?;
+                anchor.copy_advice(|| "anchor", &mut region, config.advices[4], 0)?;
                 region.assign_advice_from_instance(
                     || "pub input anchor",
                     config.primary,
@@ -768,14 +715,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 /// The verifying key for the Orchard Action circuit.
 #[derive(Debug)]
 pub struct VerifyingKey {
-    params: halo2::poly::commitment::Params<vesta::Affine>,
+    params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     vk: plonk::VerifyingKey<vesta::Affine>,
 }
 
 impl VerifyingKey {
     /// Builds the verifying key.
     pub fn build() -> Self {
-        let params = halo2::poly::commitment::Params::new(K);
+        let params = halo2_proofs::poly::commitment::Params::new(K);
         let circuit: Circuit = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -787,14 +734,14 @@ impl VerifyingKey {
 /// The proving key for the Orchard Action circuit.
 #[derive(Debug)]
 pub struct ProvingKey {
-    params: halo2::poly::commitment::Params<vesta::Affine>,
+    params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     pk: plonk::ProvingKey<vesta::Affine>,
 }
 
 impl ProvingKey {
     /// Builds the proving key.
     pub fn build() -> Self {
-        let params = halo2::poly::commitment::Params::new(K);
+        let params = halo2_proofs::poly::commitment::Params::new(K);
         let circuit: Circuit = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
@@ -861,8 +808,8 @@ impl Instance {
         instance[RK_X] = *rk.x();
         instance[RK_Y] = *rk.y();
         instance[CMX] = self.cmx.inner();
-        instance[ENABLE_SPEND] = vesta::Scalar::from_u64(self.enable_spend.into());
-        instance[ENABLE_OUTPUT] = vesta::Scalar::from_u64(self.enable_output.into());
+        instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(self.enable_spend));
+        instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
 
         [instance]
     }
@@ -896,6 +843,7 @@ impl Proof {
         pk: &ProvingKey,
         circuits: &[Circuit],
         instances: &[Instance],
+        mut rng: impl RngCore,
     ) -> Result<Self, plonk::Error> {
         let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
         let instances: Vec<Vec<_>> = instances
@@ -905,7 +853,14 @@ impl Proof {
         let instances: Vec<_> = instances.iter().map(|i| &i[..]).collect();
 
         let mut transcript = Blake2bWrite::<_, vesta::Affine, _>::init(vec![]);
-        plonk::create_proof(&pk.params, &pk.pk, circuits, &instances, &mut transcript)?;
+        plonk::create_proof(
+            &pk.params,
+            &pk.pk,
+            circuits,
+            &instances,
+            &mut rng,
+            &mut transcript,
+        )?;
         Ok(Proof(transcript.finalize()))
     }
 
@@ -918,15 +873,9 @@ impl Proof {
             .collect();
         let instances: Vec<_> = instances.iter().map(|i| &i[..]).collect();
 
-        let msm = vk.params.empty_msm();
+        let strategy = SingleVerifier::new(&vk.params);
         let mut transcript = Blake2bRead::init(&self.0[..]);
-        let guard = plonk::verify_proof(&vk.params, &vk.vk, msm, &instances, &mut transcript)?;
-        let msm = guard.clone().use_challenges();
-        if msm.eval() {
-            Ok(())
-        } else {
-            Err(plonk::Error::ConstraintSystemFailure)
-        }
+        plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
     }
 
     /// Constructs a new Proof value.
@@ -939,7 +888,7 @@ impl Proof {
 mod tests {
     use ff::Field;
     use group::GroupEncoding;
-    use halo2::dev::MockProver;
+    use halo2_proofs::dev::MockProver;
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
     use std::iter;
@@ -1030,10 +979,11 @@ mod tests {
 
         // Test that the proof size is as expected.
         let expected_proof_size = {
-            let circuit_cost = halo2::dev::CircuitCost::<pasta_curves::vesta::Point, _>::measure(
-                K as usize,
-                &circuits[0],
-            );
+            let circuit_cost =
+                halo2_proofs::dev::CircuitCost::<pasta_curves::vesta::Point, _>::measure(
+                    K as usize,
+                    &circuits[0],
+                );
             assert_eq!(usize::from(circuit_cost.proof_size(1)), 4992);
             assert_eq!(usize::from(circuit_cost.proof_size(2)), 7264);
             usize::from(circuit_cost.proof_size(instances.len()))
@@ -1057,7 +1007,7 @@ mod tests {
         }
 
         let pk = ProvingKey::build();
-        let proof = Proof::create(&pk, &circuits, &instances).unwrap();
+        let proof = Proof::create(&pk, &circuits, &instances, &mut rng).unwrap();
         assert!(proof.verify(&vk, &instances).is_ok());
         assert_eq!(proof.0.len(), expected_proof_size);
     }
@@ -1179,10 +1129,10 @@ mod tests {
             rcm_new: None,
             rcv: None,
         };
-        halo2::dev::CircuitLayout::default()
+        halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
             .view_height(0..(1 << 11))
-            .render(K as usize, &circuit, &root)
+            .render(K, &circuit, &root)
             .unwrap();
     }
 }

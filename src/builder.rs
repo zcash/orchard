@@ -8,7 +8,7 @@ use ff::Field;
 use group::GroupEncoding;
 use nonempty::NonEmpty;
 use pasta_curves::pallas;
-use rand::{CryptoRng, RngCore};
+use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
 use crate::{
     address::Address,
@@ -32,14 +32,14 @@ pub enum Error {
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
     /// An error occurred in the process of producing a proof for a bundle.
-    Proof(halo2::plonk::Error),
+    Proof(halo2_proofs::plonk::Error),
     /// An overflow error occurred while attempting to construct the value
     /// for a bundle.
     ValueSum(value::OverflowError),
 }
 
-impl From<halo2::plonk::Error> for Error {
-    fn from(e: halo2::plonk::Error) -> Self {
+impl From<halo2_proofs::plonk::Error> for Error {
+    fn from(e: halo2_proofs::plonk::Error) -> Self {
         Error::Proof(e)
     }
 }
@@ -287,10 +287,6 @@ impl Builder {
         mut rng: impl RngCore,
     ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, Error> {
         // Pair up the spends and recipients, extending with dummy values as necessary.
-        //
-        // TODO: Do we want to shuffle the order like we do for Sapling? And if we do, do
-        // we need the extra logic for mapping the user-provided input order to the
-        // shuffled order?
         let pre_actions: Vec<_> = {
             let num_spends = self.spends.len();
             let num_recipients = self.recipients.len();
@@ -307,6 +303,12 @@ impl Builder {
                 iter::repeat_with(|| RecipientInfo::dummy(&mut rng))
                     .take(num_actions - num_recipients),
             );
+
+            // Shuffle the spends and recipients, so that learning the position of a
+            // specific spent note or output note doesn't reveal anything on its own about
+            // the meaning of that note in the transaction context.
+            self.spends.shuffle(&mut rng);
+            self.recipients.shuffle(&mut rng);
 
             self.spends
                 .into_iter()
@@ -392,14 +394,19 @@ impl<S: InProgressSignatures> InProgress<Unproven, S> {
         &self,
         pk: &ProvingKey,
         instances: &[Instance],
-    ) -> Result<Proof, halo2::plonk::Error> {
-        Proof::create(pk, &self.proof.circuits, instances)
+        rng: impl RngCore,
+    ) -> Result<Proof, halo2_proofs::plonk::Error> {
+        Proof::create(pk, &self.proof.circuits, instances, rng)
     }
 }
 
 impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
     /// Creates the proof for this bundle.
-    pub fn create_proof(self, pk: &ProvingKey) -> Result<Bundle<InProgress<Proof, S>, V>, Error> {
+    pub fn create_proof(
+        self,
+        pk: &ProvingKey,
+        mut rng: impl RngCore,
+    ) -> Result<Bundle<InProgress<Proof, S>, V>, Error> {
         let instances: Vec<_> = self
             .actions()
             .iter()
@@ -409,7 +416,7 @@ impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
             &mut (),
             |_, _, a| Ok(a),
             |_, auth| {
-                let proof = auth.create_proof(pk, &instances)?;
+                let proof = auth.create_proof(pk, &instances, &mut rng)?;
                 Ok(InProgress {
                     proof,
                     sigs: auth.sigs,
@@ -635,7 +642,7 @@ pub mod testing {
             builder
                 .build(&mut self.rng)
                 .unwrap()
-                .create_proof(&pk)
+                .create_proof(&pk, &mut self.rng)
                 .unwrap()
                 .prepare(&mut self.rng, [0; 32])
                 .sign(&mut self.rng, &SpendAuthorizingKey::from(&self.sk))
@@ -738,7 +745,7 @@ mod tests {
         let bundle: Bundle<Authorized, i64> = builder
             .build(&mut rng)
             .unwrap()
-            .create_proof(&pk)
+            .create_proof(&pk, &mut rng)
             .unwrap()
             .prepare(&mut rng, [0; 32])
             .finalize()

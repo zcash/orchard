@@ -3,7 +3,7 @@
 use std::{convert::TryInto, fmt};
 
 use blake2b_simd::{Hash, Params};
-use halo2::arithmetic::FieldExt;
+use group::ff::PrimeField;
 use zcash_note_encryption::{
     BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
     OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE,
@@ -151,7 +151,7 @@ impl Domain for OrchardDomain {
         np[0] = 0x02;
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
-        np[20..52].copy_from_slice(note.rseed().to_bytes());
+        np[20..52].copy_from_slice(note.rseed().as_bytes());
         np[52..].copy_from_slice(memo);
         NotePlaintextBytes(np)
     }
@@ -171,7 +171,7 @@ impl Domain for OrchardDomain {
     ) -> OutPlaintextBytes {
         let mut op = [0; OUT_PLAINTEXT_SIZE];
         op[..32].copy_from_slice(&note.recipient().pk_d().to_bytes());
-        op[32..].copy_from_slice(&esk.0.to_bytes());
+        op[32..].copy_from_slice(&esk.0.to_repr());
         OutPlaintextBytes(op)
     }
 

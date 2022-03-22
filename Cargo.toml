@@ -30,13 +30,14 @@ blake2b_simd = "1"
 ff = "0.11"
 fpe = "0.5"
 group = "0.11"
-halo2 = "=0.1.0-beta.1"
+halo2_gadgets = "=0.1.0-beta.1"
+halo2_proofs = "=0.1.0-beta.2"
 lazy_static = "1"
 memuse = { version = "0.2", features = ["nonempty"] }
-pasta_curves = "0.2.1"
+pasta_curves = "0.3"
 proptest = { version = "1.0.0", optional = true }
 rand = "0.8"
-reddsa = "0.1"
+reddsa = "0.2"
 nonempty = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
@@ -51,6 +52,7 @@ incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.
 
 [dev-dependencies]
 criterion = "0.3"
+halo2_gadgets = { version = "=0.1.0-beta.1", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1.0.0"
 zcash_note_encryption = { version = "0.1", features = ["pre-zip-212"] }
@@ -62,15 +64,11 @@ pprof = { version = "=0.6.1", features = ["criterion", "flamegraph"] }
 bench = false
 
 [features]
-dev-graph = ["halo2/dev-graph", "plotters"]
+dev-graph = ["halo2_proofs/dev-graph", "plotters"]
 test-dependencies = ["proptest"]
 
 [[bench]]
 name = "note_decryption"
-harness = false
-
-[[bench]]
-name = "primitives"
 harness = false
 
 [[bench]]

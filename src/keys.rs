@@ -12,7 +12,6 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
-use halo2::arithmetic::FieldExt;
 use pasta_curves::pallas;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -128,10 +127,10 @@ impl From<&SpendingKey> for SpendAuthorizingKey {
         // SpendingKey cannot be constructed such that this assertion would fail.
         assert!(!bool::from(ask.is_zero()));
         // TODO: Add TryFrom<S::Scalar> for SpendAuthorizingKey.
-        let ret = SpendAuthorizingKey(ask.to_bytes().try_into().unwrap());
+        let ret = SpendAuthorizingKey(ask.to_repr().try_into().unwrap());
         // If the last bit of repr_P(ak) is 1, negate ask.
         if (<[u8; 32]>::from(SpendValidatingKey::from(&ret).0)[31] >> 7) == 1 {
-            SpendAuthorizingKey((-ask).to_bytes().try_into().unwrap())
+            SpendAuthorizingKey((-ask).to_repr().try_into().unwrap())
         } else {
             ret
         }
@@ -228,13 +227,13 @@ impl NullifierDerivingKey {
     }
 
     /// Converts this nullifier deriving key to its serialized form.
-    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let nk_bytes = <[u8; 32]>::try_from(bytes).ok()?;
-        let nk = pallas::Base::from_bytes(&nk_bytes).map(NullifierDerivingKey);
+        let nk = pallas::Base::from_repr(nk_bytes).map(NullifierDerivingKey);
         if nk.is_some().into() {
             Some(nk.unwrap())
         } else {
@@ -263,13 +262,13 @@ impl CommitIvkRandomness {
     }
 
     /// Converts this nullifier deriving key to its serialized form.
-    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+    pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let rivk_bytes = <[u8; 32]>::try_from(bytes).ok()?;
-        let rivk = pallas::Scalar::from_bytes(&rivk_bytes).map(CommitIvkRandomness);
+        let rivk = pallas::Scalar::from_repr(rivk_bytes).map(CommitIvkRandomness);
         if rivk.is_some().into() {
             Some(rivk.unwrap())
         } else {
@@ -337,8 +336,8 @@ impl FullViewingKey {
     ///
     /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
     fn derive_dk_ovk(&self) -> (DiversifierKey, OutgoingViewingKey) {
-        let k = self.rivk.0.to_bytes();
-        let b = [(&self.ak.0).into(), self.nk.0.to_bytes()];
+        let k = self.rivk.0.to_repr();
+        let b = [(&self.ak.0).into(), self.nk.0.to_repr()];
         let r = PrfExpand::OrchardDkOvk.with_ad_slices(&k, &[&b[0][..], &b[1][..]]);
         (
             DiversifierKey(r[..32].try_into().unwrap()),
@@ -363,8 +362,8 @@ impl FullViewingKey {
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         let ak_raw: [u8; 32] = self.ak.0.clone().into();
         writer.write_all(&ak_raw)?;
-        writer.write_all(&self.nk.0.to_bytes())?;
-        writer.write_all(&self.rivk.0.to_bytes())?;
+        writer.write_all(&self.nk.0.to_repr())?;
+        writer.write_all(&self.rivk.0.to_repr())?;
 
         Ok(())
     }
@@ -538,9 +537,30 @@ impl From<&FullViewingKey> for KeyAgreementPrivateKey {
 
 impl KeyAgreementPrivateKey {
     /// Derives ivk from fvk. Internal use only, does not enforce all constraints.
+    ///
+    /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+    ///
+    /// [orchardkeycomponents]: https://zips.z.cash/protocol/protocol.pdf#orchardkeycomponents
     fn derive_inner(fvk: &FullViewingKey) -> CtOption<NonZeroPallasBase> {
         let ak = extract_p(&pallas::Point::from_bytes(&(&fvk.ak.0).into()).unwrap());
         commit_ivk(&ak, &fvk.nk.0, &fvk.rivk.0)
+            // sinsemilla::CommitDomain::short_commit returns a value in range
+            // [0..q_P] ∪ {⊥}:
+            // - sinsemilla::HashDomain::hash_to_point uses incomplete addition and
+            //   returns a point in P* ∪ {⊥}.
+            // - sinsemilla::CommitDomain::commit applies a final complete addition step
+            //   and returns a point in P ∪ {⊥}.
+            // - 0 is not a valid x-coordinate for any Pallas point.
+            // - sinsemilla::CommitDomain::short_commit calls extract_p_bottom, which
+            //   replaces the identity (which has no affine coordinates) with 0.
+            //
+            // Commit^ivk.Output is specified as [1..q_P] ∪ {⊥}, so we explicitly check
+            // for 0 and map it to None. Note that we are collapsing this case (which is
+            // rejected by the circuit) with ⊥ (which the circuit explicitly allows for
+            // efficiency); this is fine because we don't want users of the `orchard`
+            // crate to encounter either case (and it matches the behaviour described in
+            // Section 4.2.3 of the protocol spec when generating spending keys).
+            .and_then(NonZeroPallasBase::from_base)
     }
 
     /// Returns the payment address for this key corresponding to the given diversifier.
@@ -584,7 +604,7 @@ impl IncomingViewingKey {
     pub fn to_bytes(&self) -> [u8; 64] {
         let mut result = [0u8; 64];
         result[..32].copy_from_slice(self.dk.to_bytes());
-        result[32..].copy_from_slice(&self.ivk.0.to_bytes());
+        result[32..].copy_from_slice(&self.ivk.0.to_repr());
         result
     }
 
@@ -978,6 +998,19 @@ mod tests {
             assert_eq!(cmx.to_bytes(), tv.note_cmx);
 
             assert_eq!(note.nullifier(&fvk).to_bytes(), tv.note_nf);
+
+            let internal_rivk = fvk.rivk_internal();
+            assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);
+
+            let internal_fvk = fvk.derive_internal();
+            assert_eq!(internal_rivk, *internal_fvk.rivk());
+
+            let internal_ivk: KeyAgreementPrivateKey = (&internal_fvk).into();
+            assert_eq!(internal_ivk.0.to_repr(), tv.internal_ivk);
+
+            let (internal_dk, internal_ovk) = internal_fvk.derive_dk_ovk();
+            assert_eq!(internal_dk.0, tv.internal_dk);
+            assert_eq!(internal_ovk.0, tv.internal_ovk);
         }
     }
 }

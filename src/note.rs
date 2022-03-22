@@ -39,7 +39,7 @@ impl RandomSeed {
         CtOption::new(rseed, esk.is_some())
     }
 
-    pub(crate) fn to_bytes(&self) -> &[u8; 32] {
+    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 

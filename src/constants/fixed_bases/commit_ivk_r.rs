@@ -1,7 +1,5 @@
-use pasta_curves::{
-    arithmetic::{CurveAffine, FieldExt},
-    pallas,
-};
+use group::ff::PrimeField;
+use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 /// Generator used in SinsemillaCommit randomness for IVK commitment
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
@@ -2922,24 +2920,22 @@ pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
 
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
-        pallas::Base::from_bytes(&GENERATOR.0).unwrap(),
-        pallas::Base::from_bytes(&GENERATOR.1).unwrap(),
+        pallas::Base::from_repr(GENERATOR.0).unwrap(),
+        pallas::Base::from_repr(GENERATOR.1).unwrap(),
     )
     .unwrap()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::super::{
-        test_lagrange_coeffs, test_zs_and_us, COMMIT_IVK_PERSONALIZATION, NUM_WINDOWS,
-    };
+    use super::super::{COMMIT_IVK_PERSONALIZATION, NUM_WINDOWS};
     use super::*;
-    use crate::primitives::sinsemilla::CommitDomain;
     use group::Curve;
-    use pasta_curves::{
-        arithmetic::{CurveAffine, FieldExt},
-        pallas,
+    use halo2_gadgets::{
+        ecc::chip::constants::{test_lagrange_coeffs, test_zs_and_us},
+        primitives::sinsemilla::CommitDomain,
     };
+    use pasta_curves::{arithmetic::CurveAffine, pallas};
 
     #[test]
     fn generator() {
@@ -2947,8 +2943,8 @@ mod tests {
         let point = domain.R();
         let coords = point.to_affine().coordinates().unwrap();
 
-        assert_eq!(*coords.x(), pallas::Base::from_bytes(&GENERATOR.0).unwrap());
-        assert_eq!(*coords.y(), pallas::Base::from_bytes(&GENERATOR.1).unwrap());
+        assert_eq!(*coords.x(), pallas::Base::from_repr(GENERATOR.0).unwrap());
+        assert_eq!(*coords.y(), pallas::Base::from_repr(GENERATOR.1).unwrap());
     }
 
     #[test]
