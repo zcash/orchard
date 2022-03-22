@@ -21,7 +21,7 @@ and this project adheres to Rust's notion of
 
 ### Changed
 - MSRV is now 1.56.1.
-- Bumped dependencies to `pasta_curves 0.3`.
+- Bumped dependencies to `pasta_curves 0.3`, `halo2_proofs 0.1.0-beta.3`.
 - The following methods now have an additional `rng: impl RngCore` argument:
   - `orchard::builder::Bundle::create_proof`
   - `orchard::builder::InProgress::create_proof`
