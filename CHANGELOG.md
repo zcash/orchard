@@ -18,10 +18,17 @@ and this project adheres to Rust's notion of
   - `MerklePath::from_parts`
   - `impl PartialEq, Eq, PartialOrd, Ord for MerkleHashOrchard`
 - `impl From<orchard::bundle::BundleCommitment> for [u8; 32]`
+- `Clone` impls for various structs:
+  - `orchard::Bundle::{recover_outputs_with_ovks, recover_output_with_ovk}`
+  - `orchard::builder`:
+    - `InProgress, SigningMetadata, SigningParts, Unauthorized, Unproven`
+  - `orchard::circuit::Circuit`
+  - `orchard::keys::SpendAuthorizingKey`
+  - `orchard::primitives::redpallas::SigningKey`
 
 ### Changed
 - MSRV is now 1.56.1.
-- Bumped dependencies to `pasta_curves 0.3`.
+- Bumped dependencies to `pasta_curves 0.3`, `halo2_proofs 0.1.0-beta.3`.
 - The following methods now have an additional `rng: impl RngCore` argument:
   - `orchard::builder::Bundle::create_proof`
   - `orchard::builder::InProgress::create_proof`

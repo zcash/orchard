@@ -2,7 +2,7 @@
 
 **IMPORTANT**: This library is being actively developed and should not be used in production software.
 
-Requires Rust 1.54+.
+Requires Rust 1.56.1+.
 
 ## Documentation
 
