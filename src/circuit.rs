@@ -1074,11 +1074,13 @@ mod tests {
 
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
             let create_proof = || -> std::io::Result<()> {
+                let mut rng = OsRng;
+
                 let (circuit, instance) = generate_circuit_instance(OsRng);
                 let instances = &[instance.clone()];
 
                 let pk = ProvingKey::build();
-                let proof = Proof::create(&pk, &[circuit], instances).unwrap();
+                let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
                 let file = std::fs::File::create("circuit_proof_test_case.bin")?;
