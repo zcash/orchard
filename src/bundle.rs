@@ -9,13 +9,13 @@ use std::io;
 use blake2b_simd::Hash as Blake2bHash;
 use memuse::DynamicUsage;
 use nonempty::NonEmpty;
-use zcash_note_encryption::try_note_decryption;
+use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
 
 use crate::{
     address::Address,
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     circuit::{Instance, Proof, VerifyingKey},
-    keys::IncomingViewingKey,
+    keys::{IncomingViewingKey, OutgoingViewingKey},
     note::{ExtractedNoteCommitment, Note, Nullifier, TransmittedNoteCiphertext},
     note_encryption::OrchardDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
@@ -364,10 +364,11 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Perform trial decryption of each action in the bundle with each of the
-    /// specified incoming viewing keys, and return the decrypted note contents
-    /// along with the index of the action from which it was derived.
-    pub fn decrypt_outputs_for_keys(
+    /// Performs trial decryption of each action in the bundle with each of the
+    /// specified incoming viewing keys, and returns a vector of each decrypted
+    /// note plaintext contents along with the index of the action from which it
+    /// was derived.
+    pub fn decrypt_outputs_with_keys(
         &self,
         keys: &[IncomingViewingKey],
     ) -> Vec<(usize, IncomingViewingKey, Note, Address, [u8; 512])> {
@@ -384,8 +385,9 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Perform trial decryption of each action at `action_idx` in the bundle with the
-    /// specified incoming viewing key, and return the decrypted note contents.
+    /// Performs trial decryption of the action at `action_idx` in the bundle with the
+    /// specified incoming viewing key, and returns the decrypted note plaintext
+    /// contents if successful.
     pub fn decrypt_output_with_key(
         &self,
         action_idx: usize,
@@ -394,6 +396,53 @@ impl<T: Authorization, V> Bundle<T, V> {
         self.actions.get(action_idx).and_then(move |action| {
             let domain = OrchardDomain::for_action(action);
             try_note_decryption(&domain, key, action)
+        })
+    }
+
+    /// Performs trial decryption of each action in the bundle with each of the
+    /// specified outgoing viewing keys, and returns a vector of each decrypted
+    /// note plaintext contents along with the index of the action from which it
+    /// was derived.
+    pub fn recover_outputs_with_ovks(
+        &self,
+        keys: &[OutgoingViewingKey],
+    ) -> Vec<(usize, OutgoingViewingKey, Note, Address, [u8; 512])> {
+        self.actions
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, action)| {
+                let domain = OrchardDomain::for_action(action);
+                keys.iter().find_map(move |key| {
+                    try_output_recovery_with_ovk(
+                        &domain,
+                        key,
+                        action,
+                        action.cv_net(),
+                        &action.encrypted_note().out_ciphertext,
+                    )
+                    .map(|(n, a, m)| (idx, key.clone(), n, a, m))
+                })
+            })
+            .collect()
+    }
+
+    /// Attempts to decrypt the action at the specified index with the specified
+    /// outgoing viewing key, and returns the decrypted note plaintext contents
+    /// if successful.
+    pub fn recover_output_with_ovk(
+        &self,
+        action_idx: usize,
+        key: &OutgoingViewingKey,
+    ) -> Option<(Note, Address, [u8; 512])> {
+        self.actions.get(action_idx).and_then(move |action| {
+            let domain = OrchardDomain::for_action(action);
+            try_output_recovery_with_ovk(
+                &domain,
+                key,
+                action,
+                action.cv_net(),
+                &action.encrypted_note().out_ciphertext,
+            )
         })
     }
 }
