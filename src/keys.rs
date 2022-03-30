@@ -73,9 +73,14 @@ impl SpendingKey {
         // whether ask = 0; the adjustment to potentially negate ask is not
         // needed. Also, `from` would panic on ask = 0.
         let ask = SpendAuthorizingKey::derive_inner(&sk);
-        // If ivk = ⊥, discard this key.
-        let ivk = KeyAgreementPrivateKey::derive_inner(&(&sk).into());
-        CtOption::new(sk, !(ask.is_zero() | ivk.is_none()))
+        // If ivk is 0 or ⊥, discard this key.
+        let fvk = (&sk).into();
+        let external_ivk = KeyAgreementPrivateKey::derive_inner(&fvk);
+        let internal_ivk = KeyAgreementPrivateKey::derive_inner(&fvk.derive_internal());
+        CtOption::new(
+            sk,
+            !(ask.is_zero() | external_ivk.is_none() | internal_ivk.is_none()),
+        )
     }
 
     /// Returns the raw bytes of the spending key.
@@ -435,8 +440,10 @@ impl FullViewingKey {
 
         let fvk = FullViewingKey { ak, nk, rivk };
 
-        // If ivk is 0 or ⊥, this FVK is invalid.
+        // If either ivk is 0 or ⊥, this FVK is invalid.
         let _: NonZeroPallasBase = Option::from(KeyAgreementPrivateKey::derive_inner(&fvk))?;
+        let _: NonZeroPallasBase =
+            Option::from(KeyAgreementPrivateKey::derive_inner(&fvk.derive_internal()))?;
 
         Some(fvk)
     }
