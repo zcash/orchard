@@ -10,7 +10,7 @@ use orchard::{
     builder::Builder,
     bundle::Flags,
     circuit::{ProvingKey, VerifyingKey},
-    keys::{FullViewingKey, SpendingKey},
+    keys::{FullViewingKey, Scope, SpendingKey},
     value::NoteValue,
     Anchor, Bundle,
 };
@@ -20,7 +20,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let rng = OsRng;
 
     let sk = SpendingKey::from_bytes([7; 32]).unwrap();
-    let recipient = FullViewingKey::from(&sk).address_at(0u32);
+    let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
 
     let vk = VerifyingKey::build();
     let pk = ProvingKey::build();

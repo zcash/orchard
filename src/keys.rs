@@ -1,5 +1,6 @@
 //! Key structures for Orchard.
 
+use std::array;
 use std::convert::{TryFrom, TryInto};
 use std::io::{self, Read, Write};
 use std::mem;
@@ -72,9 +73,14 @@ impl SpendingKey {
         // whether ask = 0; the adjustment to potentially negate ask is not
         // needed. Also, `from` would panic on ask = 0.
         let ask = SpendAuthorizingKey::derive_inner(&sk);
-        // If ivk = ⊥, discard this key.
-        let ivk = KeyAgreementPrivateKey::derive_inner(&(&sk).into());
-        CtOption::new(sk, !(ask.is_zero() | ivk.is_none()))
+        // If ivk is 0 or ⊥, discard this key.
+        let fvk = (&sk).into();
+        let external_ivk = KeyAgreementPrivateKey::derive_inner(&fvk);
+        let internal_ivk = KeyAgreementPrivateKey::derive_inner(&fvk.derive_internal());
+        CtOption::new(
+            sk,
+            !(ask.is_zero() | external_ivk.is_none() | internal_ivk.is_none()),
+        )
     }
 
     /// Returns the raw bytes of the spending key.
@@ -277,6 +283,24 @@ impl CommitIvkRandomness {
     }
 }
 
+/// The scope of a viewing key or address.
+///
+/// A "scope" narrows the visibility or usage to a level below "full".
+///
+/// Consistent usage of `Scope` enables the user to provide consistent views over a wallet
+/// to other people. For example, a user can give an external [`IncomingViewingKey`] to a
+/// merchant terminal, enabling it to only detect "real" transactions from customers and
+/// not internal transactions from the wallet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    /// A scope used for wallet-external operations, namely deriving addresses to give to
+    /// other users in order to receive funds.
+    External,
+    /// A scope used for wallet-internal operations, such as creating change notes,
+    /// auto-shielding, and note management.
+    Internal,
+}
+
 /// A key that provides the capability to view incoming and outgoing transactions.
 ///
 /// This key is useful anywhere you need to maintain accurate balance, but do not want the
@@ -319,17 +343,19 @@ impl FullViewingKey {
         &self.nk
     }
 
-    pub(crate) fn rivk(&self) -> &CommitIvkRandomness {
-        &self.rivk
-    }
-
-    pub(crate) fn rivk_internal(&self) -> CommitIvkRandomness {
-        let k = self.rivk.0.to_repr();
-        let ak = self.ak.to_bytes();
-        let nk = self.nk.to_bytes();
-        CommitIvkRandomness(to_scalar(
-            PrfExpand::OrchardRivkInternal.with_ad_slices(&k, &[&ak, &nk]),
-        ))
+    /// Returns either `rivk` or `rivk_internal` based on `scope`.
+    pub(crate) fn rivk(&self, scope: Scope) -> CommitIvkRandomness {
+        match scope {
+            Scope::External => self.rivk,
+            Scope::Internal => {
+                let k = self.rivk.0.to_repr();
+                let ak = self.ak.to_bytes();
+                let nk = self.nk.to_bytes();
+                CommitIvkRandomness(to_scalar(
+                    PrfExpand::OrchardRivkInternal.with_ad_slices(&k, &[&ak, &nk]),
+                ))
+            }
+        }
     }
 
     /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
@@ -346,14 +372,25 @@ impl FullViewingKey {
     }
 
     /// Returns the payment address for this key at the given index.
-    pub fn address_at(&self, j: impl Into<DiversifierIndex>) -> Address {
-        IncomingViewingKey::from(self).address_at(j)
+    pub fn address_at(&self, j: impl Into<DiversifierIndex>, scope: Scope) -> Address {
+        self.to_ivk(scope).address_at(j)
     }
 
     /// Returns the payment address for this key corresponding to the given diversifier.
-    pub fn address(&self, d: Diversifier) -> Address {
+    pub fn address(&self, d: Diversifier, scope: Scope) -> Address {
         // Shortcut: we don't need to derive DiversifierKey.
-        KeyAgreementPrivateKey::from(self).address(d)
+        match scope {
+            Scope::External => KeyAgreementPrivateKey::from_fvk(self),
+            Scope::Internal => KeyAgreementPrivateKey::from_fvk(&self.derive_internal()),
+        }
+        .address(d)
+    }
+
+    /// Returns the scope of the given address, or `None` if the address is not derived
+    /// from this full viewing key.
+    pub fn scope_for_address(&self, address: &Address) -> Option<Scope> {
+        array::IntoIter::new([Scope::External, Scope::Internal])
+            .find(|scope| self.to_ivk(*scope).diversifier_index(address).is_some())
     }
 
     /// Serializes the full viewing key as specified in [Zcash Protocol Spec § 5.6.4.4: Orchard Raw Full Viewing Keys][orchardrawfullviewingkeys]
@@ -401,17 +438,41 @@ impl FullViewingKey {
         let nk = NullifierDerivingKey::from_bytes(&bytes[32..64])?;
         let rivk = CommitIvkRandomness::from_bytes(&bytes[64..])?;
 
-        Some(FullViewingKey { ak, nk, rivk })
+        let fvk = FullViewingKey { ak, nk, rivk };
+
+        // If either ivk is 0 or ⊥, this FVK is invalid.
+        let _: NonZeroPallasBase = Option::from(KeyAgreementPrivateKey::derive_inner(&fvk))?;
+        let _: NonZeroPallasBase =
+            Option::from(KeyAgreementPrivateKey::derive_inner(&fvk.derive_internal()))?;
+
+        Some(fvk)
     }
 
-    /// Derives an internal full viewing key from a full viewing key, as specified in [ZIP32][orchardinternalfullviewingkey]
+    /// Derives an internal full viewing key from a full viewing key, as specified in
+    /// [ZIP32][orchardinternalfullviewingkey]. Internal use only.
     ///
     /// [orchardinternalfullviewingkey]: https://zips.z.cash/zip-0032#orchard-internal-key-derivation
-    pub fn derive_internal(&self) -> Self {
+    fn derive_internal(&self) -> Self {
         FullViewingKey {
             ak: self.ak.clone(),
             nk: self.nk,
-            rivk: self.rivk_internal(),
+            rivk: self.rivk(Scope::Internal),
+        }
+    }
+
+    /// Derives an `IncomingViewingKey` for this full viewing key.
+    pub fn to_ivk(&self, scope: Scope) -> IncomingViewingKey {
+        match scope {
+            Scope::External => IncomingViewingKey::from_fvk(self),
+            Scope::Internal => IncomingViewingKey::from_fvk(&self.derive_internal()),
+        }
+    }
+
+    /// Derives an `OutgoingViewingKey` for this full viewing key.
+    pub fn to_ovk(&self, scope: Scope) -> OutgoingViewingKey {
+        match scope {
+            Scope::External => OutgoingViewingKey::from_fvk(self),
+            Scope::Internal => OutgoingViewingKey::from_fvk(&self.derive_internal()),
         }
     }
 }
@@ -527,9 +588,14 @@ impl Diversifier {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct KeyAgreementPrivateKey(NonZeroPallasScalar);
 
-impl From<&FullViewingKey> for KeyAgreementPrivateKey {
-    fn from(fvk: &FullViewingKey) -> Self {
-        // KeyAgreementPrivateKey cannot be constructed such that this unwrap would fail.
+impl KeyAgreementPrivateKey {
+    /// Derives `KeyAgreementPrivateKey` from fvk.
+    ///
+    /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+    ///
+    /// [orchardkeycomponents]: https://zips.z.cash/protocol/protocol.pdf#orchardkeycomponents
+    fn from_fvk(fvk: &FullViewingKey) -> Self {
+        // FullViewingKey cannot be constructed such that this unwrap would fail.
         let ivk = KeyAgreementPrivateKey::derive_inner(fvk).unwrap();
         KeyAgreementPrivateKey(ivk.into())
     }
@@ -588,11 +654,12 @@ pub struct IncomingViewingKey {
     ivk: KeyAgreementPrivateKey,
 }
 
-impl From<&FullViewingKey> for IncomingViewingKey {
-    fn from(fvk: &FullViewingKey) -> Self {
+impl IncomingViewingKey {
+    /// Helper method.
+    fn from_fvk(fvk: &FullViewingKey) -> Self {
         IncomingViewingKey {
             dk: fvk.derive_dk_ovk().0,
-            ivk: fvk.into(),
+            ivk: KeyAgreementPrivateKey::from_fvk(fvk),
         }
     }
 }
@@ -653,8 +720,9 @@ impl IncomingViewingKey {
 #[derive(Debug, Clone)]
 pub struct OutgoingViewingKey([u8; 32]);
 
-impl From<&FullViewingKey> for OutgoingViewingKey {
-    fn from(fvk: &FullViewingKey) -> Self {
+impl OutgoingViewingKey {
+    /// Helper method.
+    fn from_fvk(fvk: &FullViewingKey) -> Self {
         fvk.derive_dk_ovk().1
     }
 }
@@ -934,7 +1002,7 @@ mod tests {
             esk in arb_esk(),
             j in arb_diversifier_index(),
         ) {
-            let ivk = IncomingViewingKey::from(&(&sk).into());
+            let ivk = IncomingViewingKey::from_fvk(&(&sk).into());
             let addr = ivk.address_at(j);
 
             let epk = esk.derive_public(addr.g_d());
@@ -978,12 +1046,12 @@ mod tests {
             assert_eq!(fvk.nk().0.to_repr(), tv.nk);
             assert_eq!(fvk.rivk.0.to_repr(), tv.rivk);
 
-            let ivk: KeyAgreementPrivateKey = (&fvk).into();
-            assert_eq!(ivk.0.to_repr(), tv.ivk);
+            let external_ivk = fvk.to_ivk(Scope::External);
+            assert_eq!(external_ivk.ivk.0.to_repr(), tv.ivk);
 
             let diversifier = Diversifier(tv.default_d);
 
-            let addr = fvk.address(diversifier);
+            let addr = fvk.address(diversifier, Scope::External);
             assert_eq!(&addr.pk_d().to_bytes(), &tv.default_pk_d);
 
             let rho = Nullifier::from_bytes(&tv.note_rho).unwrap();
@@ -999,17 +1067,14 @@ mod tests {
 
             assert_eq!(note.nullifier(&fvk).to_bytes(), tv.note_nf);
 
-            let internal_rivk = fvk.rivk_internal();
+            let internal_rivk = fvk.rivk(Scope::Internal);
             assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);
 
-            let internal_fvk = fvk.derive_internal();
-            assert_eq!(internal_rivk, *internal_fvk.rivk());
+            let internal_ivk = fvk.to_ivk(Scope::Internal);
+            assert_eq!(internal_ivk.ivk.0.to_repr(), tv.internal_ivk);
+            assert_eq!(internal_ivk.dk.0, tv.internal_dk);
 
-            let internal_ivk: KeyAgreementPrivateKey = (&internal_fvk).into();
-            assert_eq!(internal_ivk.0.to_repr(), tv.internal_ivk);
-
-            let (internal_dk, internal_ovk) = internal_fvk.derive_dk_ovk();
-            assert_eq!(internal_dk.0, tv.internal_dk);
+            let internal_ovk = fvk.to_ovk(Scope::Internal);
             assert_eq!(internal_ovk.0, tv.internal_ovk);
         }
     }
