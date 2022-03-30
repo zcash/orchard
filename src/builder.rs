@@ -15,7 +15,8 @@ use crate::{
     bundle::{Action, Authorization, Authorized, Bundle, Flags},
     circuit::{Circuit, Instance, Proof, ProvingKey},
     keys::{
-        FullViewingKey, OutgoingViewingKey, SpendAuthorizingKey, SpendValidatingKey, SpendingKey,
+        FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
+        SpendingKey,
     },
     note::{Note, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
@@ -55,6 +56,7 @@ impl From<value::OverflowError> for Error {
 struct SpendInfo {
     dummy_sk: Option<SpendingKey>,
     fvk: FullViewingKey,
+    scope: Scope,
     note: Note,
     merkle_path: MerklePath,
 }
@@ -70,6 +72,9 @@ impl SpendInfo {
         SpendInfo {
             dummy_sk: Some(sk),
             fvk,
+            // We use external scope to avoid unnecessary derivations, because the dummy
+            // note's spending key is random and thus scoping is irrelevant.
+            scope: Scope::External,
             note,
             merkle_path,
         }
@@ -91,7 +96,7 @@ impl RecipientInfo {
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     fn dummy(rng: &mut impl RngCore) -> Self {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
-        let recipient = fvk.address_at(0u32);
+        let recipient = fvk.address_at(0u32, Scope::External);
 
         RecipientInfo {
             ovk: None,
@@ -191,7 +196,7 @@ impl ActionInfo {
                 alpha: Some(alpha),
                 ak: Some(ak),
                 nk: Some(*self.spend.fvk.nk()),
-                rivk: Some(*self.spend.fvk.rivk()),
+                rivk: Some(self.spend.fvk.rivk(self.spend.scope)),
                 g_d_new_star: Some((*note.recipient().g_d()).to_bytes()),
                 pk_d_new_star: Some(note.recipient().pk_d().to_bytes()),
                 v_new: Some(note.value()),
@@ -246,9 +251,15 @@ impl Builder {
             return Err("All anchors must be equal.");
         }
 
+        // Check if note is internal or external.
+        let scope = fvk
+            .scope_for_address(&note.recipient())
+            .ok_or("FullViewingKey does not correspond to the given note")?;
+
         self.spends.push(SpendInfo {
             dummy_sk: None,
             fvk,
+            scope,
             note,
             merkle_path,
         });
@@ -591,10 +602,7 @@ pub mod testing {
         address::testing::arb_address,
         bundle::{Authorized, Bundle, Flags},
         circuit::ProvingKey,
-        keys::{
-            testing::arb_spending_key, FullViewingKey, OutgoingViewingKey, SpendAuthorizingKey,
-            SpendingKey,
-        },
+        keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
@@ -624,7 +632,6 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let ovk = OutgoingViewingKey::from(&fvk);
             let flags = Flags::from_parts(true, true);
             let mut builder = Builder::new(flags, self.anchor);
 
@@ -633,6 +640,9 @@ pub mod testing {
             }
 
             for (addr, value) in self.recipient_amounts.into_iter() {
+                let scope = fvk.scope_for_address(&addr).unwrap();
+                let ovk = fvk.to_ovk(scope);
+
                 builder
                     .add_recipient(Some(ovk.clone()), addr, value, None)
                     .unwrap();
@@ -720,7 +730,7 @@ mod tests {
         bundle::{Authorized, Bundle, Flags},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
-        keys::{FullViewingKey, SpendingKey},
+        keys::{FullViewingKey, Scope, SpendingKey},
         tree::EMPTY_ROOTS,
         value::NoteValue,
     };
@@ -732,7 +742,7 @@ mod tests {
 
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
-        let recipient = fvk.address_at(0u32);
+        let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
             Flags::from_parts(true, true),

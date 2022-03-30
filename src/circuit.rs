@@ -906,7 +906,7 @@ mod tests {
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
-        let rivk = *fvk.rivk();
+        let rivk = fvk.rivk(fvk.scope_for_address(&spent_note.recipient()).unwrap());
         let nf_old = spent_note.nullifier(&fvk);
         let ak: SpendValidatingKey = fvk.into();
         let alpha = pallas::Scalar::random(&mut rng);

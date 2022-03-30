@@ -5,7 +5,7 @@ use orchard::{
     builder::Builder,
     bundle::{Authorized, Flags},
     circuit::{ProvingKey, VerifyingKey},
-    keys::{FullViewingKey, IncomingViewingKey, SpendAuthorizingKey, SpendingKey},
+    keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
     note_encryption::OrchardDomain,
     tree::{MerkleHashOrchard, MerklePath},
@@ -36,7 +36,7 @@ fn bundle_chain() {
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
-    let recipient = fvk.address_at(0u32);
+    let recipient = fvk.address_at(0u32, Scope::External);
 
     // Create a shielding bundle.
     let shielding_bundle: Bundle<_, i64> = {
@@ -59,7 +59,7 @@ fn bundle_chain() {
 
     // Create a shielded bundle spending the previous output.
     let shielded_bundle: Bundle<_, i64> = {
-        let ivk = IncomingViewingKey::from(&fvk);
+        let ivk = fvk.to_ivk(Scope::External);
         let (note, _, _) = shielding_bundle
             .actions()
             .iter()

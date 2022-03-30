@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use orchard::keys::{FullViewingKey, SpendingKey};
+use orchard::keys::{FullViewingKey, Scope, SpendingKey};
 
 fn key_derivation(c: &mut Criterion) {
     // Meaningless random spending key.
@@ -12,7 +12,9 @@ fn key_derivation(c: &mut Criterion) {
     let fvk = FullViewingKey::from(&sk);
 
     c.bench_function("derive_fvk", |b| b.iter(|| FullViewingKey::from(&sk)));
-    c.bench_function("default_address", |b| b.iter(|| fvk.address_at(0u32)));
+    c.bench_function("default_address", |b| {
+        b.iter(|| fvk.address_at(0u32, Scope::External))
+    });
 }
 
 criterion_group!(benches, key_derivation);

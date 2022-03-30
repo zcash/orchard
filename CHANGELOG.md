@@ -8,6 +8,30 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 ### Added
 - `orchard::keys`:
+  - `Scope` enum, for distinguishing external and internal scopes for viewing
+    keys and addresses.
+  - `FullViewingKey::{to_ivk, to_ovk}`, which each take a `Scope` argument.
+  - `FullViewingKey::scope_for_address`
+
+### Changed
+- `orchard::builder`:
+  - `Builder::add_spend` now requires that the `FullViewingKey` matches the
+    given `Note`, and handles any scoping itself (instead of requiring the
+    caller to pass the `FullViewingKey` for the correct scope).
+- `orchard::keys`:
+  - `FullViewingKey::{address, address_at}` now each take a `Scope` argument.
+
+### Removed
+- `orchard::keys`:
+  - `FullViewingKey::derive_internal`
+  - `impl From<&FullViewingKey> for IncomingViewingKey` (use
+    `FullViewingKey::to_ivk` instead).
+  - `impl From<&FullViewingKey> for OutgoingViewingKey` (use
+    `FullViewingKey::to_ovk` instead).
+
+## [0.1.0-beta.2] - 2022-03-22
+### Added
+- `orchard::keys`:
   - `DiversifierIndex::to_bytes`
   - `FullViewingKey::derive_internal`
   - `IncomingViewingKey::diversifier_index`

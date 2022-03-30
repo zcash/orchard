@@ -5,7 +5,7 @@ use rand::RngCore;
 use subtle::CtOption;
 
 use crate::{
-    keys::{EphemeralSecretKey, FullViewingKey, SpendingKey},
+    keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
     spec::{to_base, to_scalar, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
     Address,
@@ -155,7 +155,7 @@ impl Note {
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
-        let recipient = fvk.address_at(0u32);
+        let recipient = fvk.address_at(0u32, Scope::External);
 
         let note = Note::new(
             recipient,
