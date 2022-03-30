@@ -433,7 +433,12 @@ impl FullViewingKey {
         let nk = NullifierDerivingKey::from_bytes(&bytes[32..64])?;
         let rivk = CommitIvkRandomness::from_bytes(&bytes[64..])?;
 
-        Some(FullViewingKey { ak, nk, rivk })
+        let fvk = FullViewingKey { ak, nk, rivk };
+
+        // If ivk is 0 or ⊥, this FVK is invalid.
+        let _: NonZeroPallasBase = Option::from(KeyAgreementPrivateKey::derive_inner(&fvk))?;
+
+        Some(fvk)
     }
 
     /// Derives an internal full viewing key from a full viewing key, as specified in
@@ -583,7 +588,7 @@ impl KeyAgreementPrivateKey {
     ///
     /// [orchardkeycomponents]: https://zips.z.cash/protocol/protocol.pdf#orchardkeycomponents
     fn from_fvk(fvk: &FullViewingKey) -> Self {
-        // KeyAgreementPrivateKey cannot be constructed such that this unwrap would fail.
+        // FullViewingKey cannot be constructed such that this unwrap would fail.
         let ivk = KeyAgreementPrivateKey::derive_inner(fvk).unwrap();
         KeyAgreementPrivateKey(ivk.into())
     }
