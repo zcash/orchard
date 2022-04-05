@@ -1,4 +1,6 @@
 //! Data structures used for note construction.
+use std::fmt;
+
 use group::GroupEncoding;
 use pasta_curves::pallas;
 use rand::RngCore;
@@ -236,7 +238,7 @@ impl Note {
 }
 
 /// An encrypted note.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TransmittedNoteCiphertext {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
@@ -245,6 +247,16 @@ pub struct TransmittedNoteCiphertext {
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
+}
+
+impl fmt::Debug for TransmittedNoteCiphertext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransmittedNoteCiphertext")
+            .field("epk_bytes", &self.epk_bytes)
+            .field("enc_ciphertext", &hex::encode(self.enc_ciphertext))
+            .field("out_ciphertext", &hex::encode(self.out_ciphertext))
+            .finish()
+    }
 }
 
 /// Generators for property testing.
