@@ -237,7 +237,7 @@ pub trait Authorization: fmt::Debug {
 }
 
 /// A bundle of actions to be applied to the ledger.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Bundle<T: Authorization, V> {
     /// The list of actions that make up this bundle.
     actions: NonEmpty<Action<T::SpendAuth>>,
@@ -251,6 +251,26 @@ pub struct Bundle<T: Authorization, V> {
     anchor: Anchor,
     /// The authorization for this bundle.
     authorization: T,
+}
+
+impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        /// Helper struct for debug-printing actions without exposing `NonEmpty`.
+        struct Actions<'a, T>(&'a NonEmpty<Action<T>>);
+        impl<'a, T: fmt::Debug> fmt::Debug for Actions<'a, T> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_list().entries(self.0.iter()).finish()
+            }
+        }
+
+        f.debug_struct("Bundle")
+            .field("actions", &Actions(&self.actions))
+            .field("flags", &self.flags)
+            .field("value_balance", &self.value_balance)
+            .field("anchor", &self.anchor)
+            .field("authorization", &self.authorization)
+            .finish()
+    }
 }
 
 impl<T: Authorization, V> Bundle<T, V> {
