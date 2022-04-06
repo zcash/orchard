@@ -14,6 +14,7 @@ and this project adheres to Rust's notion of
   - `FullViewingKey::scope_for_address`
 
 ### Changed
+- Migrated to `halo2_proofs 0.1.0-beta.4`.
 - `orchard::builder`:
   - `Builder::add_spend` now requires that the `FullViewingKey` matches the
     given `Note`, and handles any scoping itself (instead of requiring the
