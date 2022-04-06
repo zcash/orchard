@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.0-beta.3] - 2022-04-06
 ### Added
 - `orchard::keys`:
   - `Scope` enum, for distinguishing external and internal scopes for viewing
