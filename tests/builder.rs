@@ -74,8 +74,8 @@ fn bundle_chain() {
         let leaf = MerkleHashOrchard::from_cmx(&cmx);
         let mut tree = BridgeTree::<MerkleHashOrchard, 32>::new(0);
         tree.append(&leaf);
-        let (position, leaf) = tree.witness().unwrap();
-        let auth_path = tree.authentication_path(position, &leaf).unwrap();
+        let position = tree.witness().unwrap();
+        let auth_path = tree.authentication_path(position).unwrap();
         let merkle_path = MerklePath::from_parts(
             u64::from(position).try_into().unwrap(),
             auth_path[..].try_into().unwrap(),

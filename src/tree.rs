@@ -283,7 +283,8 @@ pub mod testing {
         {
             let cmx = MerkleHashOrchard::from_bytes(&tv.leaves[i]).unwrap();
             tree.append(&cmx);
-            tree.witness().expect("tree is not empty");
+            let position = tree.witness().expect("tree is not empty");
+            assert_eq!(position, i.into());
 
             assert_eq!(tree.root().0, pallas::Base::from_repr(tv.root).unwrap());
 
@@ -291,9 +292,8 @@ pub mod testing {
             // for not-yet-appended leaves (using UNCOMMITTED_ORCHARD as the leaf value),
             // but BridgeTree doesn't encode these.
             for j in 0..=i {
-                let leaf = MerkleHashOrchard::from_bytes(&tv.leaves[j]).unwrap();
                 assert_eq!(
-                    tree.authentication_path(j.try_into().unwrap(), &leaf),
+                    tree.authentication_path(j.try_into().unwrap()),
                     Some(
                         tv.paths[j]
                             .iter()
