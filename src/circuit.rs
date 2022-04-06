@@ -1,5 +1,7 @@
 //! The Orchard Action circuit implementation.
 
+use std::fmt;
+
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
     circuit::{floor_planner, AssignedCell, Layouter},
@@ -818,8 +820,21 @@ impl Instance {
 /// A proof of the validity of an Orchard [`Bundle`].
 ///
 /// [`Bundle`]: crate::bundle::Bundle
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Proof(Vec<u8>);
+
+impl fmt::Debug for Proof {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            f.debug_tuple("Proof").field(&self.0).finish()
+        } else {
+            // By default, only show the proof length, not its contents.
+            f.debug_tuple("Proof")
+                .field(&format_args!("{} bytes", self.0.len()))
+                .finish()
+        }
+    }
+}
 
 impl AsRef<[u8]> for Proof {
     fn as_ref(&self) -> &[u8] {
