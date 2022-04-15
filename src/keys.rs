@@ -33,7 +33,7 @@ const ZIP32_PURPOSE: u32 = 32;
 
 /// A spending key, from which all key material is derived.
 ///
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// $\mathsf{sk}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Debug, Copy, Clone)]
@@ -107,7 +107,7 @@ impl SpendingKey {
 /// A spend authorizing key, used to create spend authorization signatures.
 /// This type enforces that the corresponding public point (ak^ℙ) has ỹ = 0.
 ///
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// $\mathsf{ask}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Clone, Debug)]
@@ -207,7 +207,7 @@ impl SpendValidatingKey {
 
 /// A key used to derive [`Nullifier`]s from [`Note`]s.
 ///
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// $\mathsf{nk}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [`Nullifier`]: crate::note::Nullifier
 /// [`Note`]: crate::note::Note
@@ -250,7 +250,7 @@ impl NullifierDerivingKey {
 
 /// The randomness for $\mathsf{Commit}^\mathsf{ivk}$.
 ///
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// $\mashsf{rivk}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -479,7 +479,7 @@ impl FullViewingKey {
 
 /// A key that provides the capability to derive a sequence of diversifiers.
 ///
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// $\mathsf{dk}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -550,7 +550,7 @@ impl DiversifierKey {
 /// A diversifier that can be used to derive a specific [`Address`] from a
 /// [`FullViewingKey`] or [`IncomingViewingKey`].
 ///
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// $\mathsf{d}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -777,6 +777,7 @@ impl DiversifiedTransmissionKey {
     }
 }
 
+// Required for CtOption operations.
 impl Default for DiversifiedTransmissionKey {
     fn default() -> Self {
         DiversifiedTransmissionKey(NonIdentityPallasPoint::default())

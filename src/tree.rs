@@ -39,7 +39,8 @@ lazy_static! {
     };
 }
 
-/// The root of an Orchard commitment tree.
+/// The root of an Orchard commitment tree. This must be a value
+/// in the range {0..=q_ℙ-1}
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub struct Anchor(pallas::Base);
 
