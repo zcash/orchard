@@ -590,8 +590,7 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use core::fmt::Debug;
-
-    use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Tree};
+    use incrementalmerkletree::{bridgetree::BridgeTree, Tree};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 
     use proptest::collection::vec;
@@ -666,6 +665,7 @@ pub mod testing {
         (
             n_notes in 1usize..30,
             n_recipients in 1..30,
+
         )
         (
             // generate note values that we're certain won't exceed MAX_NOTE_VALUE in total
@@ -691,14 +691,15 @@ pub mod testing {
                 tree.append(&leaf);
                 let position = tree.witness().expect("tree is not empty");
 
-                let path = MerklePath::from((position, tree.authentication_path(position).expect("we just witnessed the path")));
+                let root = tree.root(0).unwrap();
+                let path = MerklePath::from((position, tree.authentication_path(position, &root).expect("we just witnessed the path")));
                 notes_and_auth_paths.push((*note, path));
             }
 
             ArbitraryBundleInputs {
                 rng: StdRng::from_seed(rng_seed),
                 sk,
-                anchor: tree.root().into(),
+                anchor: tree.root(0).unwrap().into(),
                 notes: notes_and_auth_paths,
                 recipient_amounts
             }

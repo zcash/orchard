@@ -1,4 +1,4 @@
-use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Hashable, Tree};
+use incrementalmerkletree::{bridgetree::BridgeTree, Hashable, Tree};
 use orchard::{
     builder::Builder,
     bundle::{Authorized, Flags},
@@ -73,12 +73,13 @@ fn bundle_chain() {
         let mut tree = BridgeTree::<MerkleHashOrchard, 32>::new(0);
         tree.append(&leaf);
         let position = tree.witness().unwrap();
-        let auth_path = tree.authentication_path(position).unwrap();
+        let root = tree.root(0).unwrap();
+        let auth_path = tree.authentication_path(position, &root).unwrap();
         let merkle_path = MerklePath::from_parts(
             u64::from(position).try_into().unwrap(),
             auth_path[..].try_into().unwrap(),
         );
-        let anchor = tree.root().into();
+        let anchor = root.into();
         assert_eq!(anchor, merkle_path.root(cmx));
 
         let mut builder = Builder::new(Flags::from_parts(true, true), anchor);

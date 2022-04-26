@@ -284,14 +284,15 @@ pub mod testing {
             let position = tree.witness().expect("tree is not empty");
             assert_eq!(position, i.into());
 
-            assert_eq!(tree.root().0, pallas::Base::from_repr(tv.root).unwrap());
+            let root = tree.root(0).unwrap();
+            assert_eq!(root.0, pallas::Base::from_repr(tv.root).unwrap());
 
             // Check paths for all leaves up to this point. The test vectors include paths
             // for not-yet-appended leaves (using UNCOMMITTED_ORCHARD as the leaf value),
             // but BridgeTree doesn't encode these.
             for j in 0..=i {
                 assert_eq!(
-                    tree.authentication_path(j.try_into().unwrap()),
+                    tree.authentication_path(j.try_into().unwrap(), &root),
                     Some(
                         tv.paths[j]
                             .iter()
