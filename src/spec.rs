@@ -1,7 +1,7 @@
 //! Helper functions defined in the Zcash Protocol Specification.
 
-use std::iter;
-use std::ops::Deref;
+use core::iter;
+use core::ops::Deref;
 
 use ff::{Field, PrimeField, PrimeFieldBits};
 use group::GroupEncoding;

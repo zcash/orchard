@@ -1,6 +1,6 @@
 //! A minimal RedPallas implementation for use in Zcash.
 
-use std::cmp::{Ord, Ordering, PartialOrd};
+use core::cmp::{Ord, Ordering, PartialOrd};
 
 use pasta_curves::pallas;
 use rand::{CryptoRng, RngCore};

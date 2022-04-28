@@ -1,7 +1,7 @@
 //! Key structures for Orchard.
 
+use core::mem;
 use std::io::{self, Read, Write};
-use std::mem;
 
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};

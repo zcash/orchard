@@ -1,4 +1,4 @@
-use std::iter;
+use core::iter;
 
 use bitvec::{array::BitArray, order::Lsb0};
 use group::ff::{PrimeField, PrimeFieldBits};

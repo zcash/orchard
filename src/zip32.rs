@@ -1,6 +1,6 @@
 //! Key structures for Orchard.
 
-use std::fmt;
+use core::fmt;
 
 use blake2b_simd::Params as Blake2bParams;
 use subtle::{Choice, ConstantTimeEq};

@@ -1,5 +1,7 @@
 //! Types related to Orchard note commitment trees and anchors.
 
+use core::iter;
+
 use crate::{
     constants::{
         sinsemilla::{i2lebsp_k, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
@@ -18,7 +20,6 @@ use rand::RngCore;
 use serde::de::{Deserializer, Error};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
-use std::iter;
 use subtle::{Choice, ConditionallySelectable, CtOption};
 
 // The uncommitted leaf is defined as pallas::Base(2).

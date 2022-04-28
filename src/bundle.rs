@@ -2,7 +2,7 @@
 
 pub mod commitments;
 
-use std::fmt;
+use core::fmt;
 use std::io;
 
 use blake2b_simd::Hash as Blake2bHash;

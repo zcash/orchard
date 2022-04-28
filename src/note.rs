@@ -1,5 +1,5 @@
 //! Data structures used for note construction.
-use std::fmt;
+use core::fmt;
 
 use group::GroupEncoding;
 use pasta_curves::pallas;

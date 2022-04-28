@@ -1,3 +1,5 @@
+use core::iter;
+
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
@@ -160,7 +162,7 @@ impl CommitIvkConfig {
                     b_1 * z13_a_prime
                 };
 
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("b0_canon_check", b0_canon_check)))
                     .chain(Some(("z13_a_check", z13_a_check)))
                     .chain(Some(("a_prime_check", a_prime_check)))
@@ -198,7 +200,7 @@ impl CommitIvkConfig {
                     d_1 * z14_b2_c_prime
                 };
 
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("c0_canon_check", c0_canon_check)))
                     .chain(Some(("z13_c_check", z13_c_check)))
                     .chain(Some(("b2_c_prime_check", b2_c_prime_check)))
@@ -207,7 +209,7 @@ impl CommitIvkConfig {
 
             Constraints::with_selector(
                 q_commit_ivk,
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("b1_bool_check", b1_bool_check)))
                     .chain(Some(("d1_bool_check", d1_bool_check)))
                     .chain(Some(("b_decomposition_check", b_decomposition_check)))
@@ -634,6 +636,8 @@ struct GateCells {
 
 #[cfg(test)]
 mod tests {
+    use core::iter;
+
     use super::CommitIvkConfig;
     use crate::constants::{
         fixed_bases::COMMIT_IVK_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
@@ -787,7 +791,7 @@ mod tests {
                     // Hash ak || nk
                     domain
                         .short_commit(
-                            std::iter::empty()
+                            iter::empty()
                                 .chain(
                                     self.ak
                                         .unwrap()

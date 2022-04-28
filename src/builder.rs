@@ -1,7 +1,7 @@
 //! Logic for building Orchard components of transactions.
 
-use std::fmt;
-use std::iter;
+use core::fmt;
+use core::iter;
 
 use ff::Field;
 use group::GroupEncoding;
@@ -588,11 +588,10 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Tree};
+    use core::fmt::Debug;
 
+    use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Tree};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
-    use std::convert::TryFrom;
-    use std::fmt::Debug;
 
     use proptest::collection::vec;
     use proptest::prelude::*;
