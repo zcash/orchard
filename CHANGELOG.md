@@ -7,6 +7,7 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Changed
+- `orchard::bundle::Action` has been moved to `orchard::Action`.
 - `orchard::bundle::Flags::from_byte` now returns `Option<Flags>` instead of
   `io::Result<Flags>`.
 

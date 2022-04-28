@@ -10,139 +10,31 @@ use nonempty::NonEmpty;
 use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
 
 use crate::{
+    action::Action,
     address::Address,
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     circuit::{Instance, Proof, VerifyingKey},
     keys::{IncomingViewingKey, OutgoingViewingKey},
-    note::{ExtractedNoteCommitment, Note, Nullifier, TransmittedNoteCiphertext},
+    note::Note,
     note_encryption::OrchardDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
     value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
 };
 
-/// An action applied to the global ledger.
-///
-/// Externally, this both creates a note (adding a commitment to the global ledger),
-/// and consumes some note created prior to this action (adding a nullifier to the
-/// global ledger).
-///
-/// Internally, this may both consume a note and create a note, or it may do only one of
-/// the two. TODO: Determine which is more efficient (circuit size vs bundle size).
-#[derive(Debug, Clone)]
-pub struct Action<A> {
-    /// The nullifier of the note being spent.
-    nf: Nullifier,
-    /// The randomized verification key for the note being spent.
-    rk: redpallas::VerificationKey<SpendAuth>,
-    /// A commitment to the new note being created.
-    cmx: ExtractedNoteCommitment,
-    /// The transmitted note ciphertext.
-    encrypted_note: TransmittedNoteCiphertext,
-    /// A commitment to the net value created or consumed by this action.
-    cv_net: ValueCommitment,
-    /// The authorization for this action.
-    authorization: A,
-}
-
 impl<T> Action<T> {
-    /// Constructs an `Action` from its constituent parts.
-    pub fn from_parts(
-        nf: Nullifier,
-        rk: redpallas::VerificationKey<SpendAuth>,
-        cmx: ExtractedNoteCommitment,
-        encrypted_note: TransmittedNoteCiphertext,
-        cv_net: ValueCommitment,
-        authorization: T,
-    ) -> Self {
-        Action {
-            nf,
-            rk,
-            cmx,
-            encrypted_note,
-            cv_net,
-            authorization,
-        }
-    }
-
-    /// Returns the nullifier of the note being spent.
-    pub fn nullifier(&self) -> &Nullifier {
-        &self.nf
-    }
-
-    /// Returns the randomized verification key for the note being spent.
-    pub fn rk(&self) -> &redpallas::VerificationKey<SpendAuth> {
-        &self.rk
-    }
-
-    /// Returns the commitment to the new note being created.
-    pub fn cmx(&self) -> &ExtractedNoteCommitment {
-        &self.cmx
-    }
-
-    /// Returns the encrypted note ciphertext.
-    pub fn encrypted_note(&self) -> &TransmittedNoteCiphertext {
-        &self.encrypted_note
-    }
-
-    /// Returns the commitment to the net value created or consumed by this action.
-    pub fn cv_net(&self) -> &ValueCommitment {
-        &self.cv_net
-    }
-
-    /// Returns the authorization for this action.
-    pub fn authorization(&self) -> &T {
-        &self.authorization
-    }
-
-    /// Transitions this action from one authorization state to another.
-    pub fn map<U>(self, step: impl FnOnce(T) -> U) -> Action<U> {
-        Action {
-            nf: self.nf,
-            rk: self.rk,
-            cmx: self.cmx,
-            encrypted_note: self.encrypted_note,
-            cv_net: self.cv_net,
-            authorization: step(self.authorization),
-        }
-    }
-
-    /// Transitions this action from one authorization state to another.
-    pub fn try_map<U, E>(self, step: impl FnOnce(T) -> Result<U, E>) -> Result<Action<U>, E> {
-        Ok(Action {
-            nf: self.nf,
-            rk: self.rk,
-            cmx: self.cmx,
-            encrypted_note: self.encrypted_note,
-            cv_net: self.cv_net,
-            authorization: step(self.authorization)?,
-        })
-    }
-
     /// Prepares the public instance for this action, for creating and verifying the
     /// bundle proof.
     pub fn to_instance(&self, flags: Flags, anchor: Anchor) -> Instance {
         Instance {
             anchor,
-            cv_net: self.cv_net.clone(),
-            nf_old: self.nf,
-            rk: self.rk.clone(),
-            cmx: self.cmx,
+            cv_net: self.cv_net().clone(),
+            nf_old: *self.nullifier(),
+            rk: self.rk().clone(),
+            cmx: *self.cmx(),
             enable_spend: flags.spends_enabled,
             enable_output: flags.outputs_enabled,
         }
-    }
-}
-
-impl DynamicUsage for Action<redpallas::Signature<SpendAuth>> {
-    #[inline(always)]
-    fn dynamic_usage(&self) -> usize {
-        0
-    }
-
-    #[inline(always)]
-    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
-        (0, Some(0))
     }
 }
 
@@ -593,24 +485,14 @@ pub mod testing {
 
     use crate::{
         circuit::Proof,
-        note::{
-            commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
-            testing::arb_note, TransmittedNoteCiphertext,
-        },
-        primitives::redpallas::{
-            self,
-            testing::{
-                arb_binding_signing_key, arb_spendauth_signing_key, arb_spendauth_verification_key,
-            },
-        },
-        value::{
-            testing::arb_note_value_bounded, NoteValue, ValueCommitTrapdoor, ValueCommitment,
-            ValueSum, MAX_NOTE_VALUE,
-        },
+        primitives::redpallas::{self, testing::arb_binding_signing_key},
+        value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
         Anchor,
     };
 
     use super::{Action, Authorization, Authorized, Bundle, Flags};
+
+    pub use crate::action::testing::{arb_action, arb_unauthorized_action};
 
     /// Marker for an unauthorized bundle with no proofs or signatures.
     #[derive(Debug)]
@@ -618,35 +500,6 @@ pub mod testing {
 
     impl Authorization for Unauthorized {
         type SpendAuth = ();
-    }
-
-    prop_compose! {
-        /// Generate an action without authorization data.
-        pub fn arb_unauthorized_action(spend_value: NoteValue, output_value: NoteValue)(
-            nf in arb_nullifier(),
-            rk in arb_spendauth_verification_key(),
-            note in arb_note(output_value),
-        ) -> Action<()> {
-            let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let cv_net = ValueCommitment::derive(
-                (spend_value - output_value).unwrap(),
-                ValueCommitTrapdoor::zero()
-            );
-            // FIXME: make a real one from the note.
-            let encrypted_note = TransmittedNoteCiphertext {
-                epk_bytes: [0u8; 32],
-                enc_ciphertext: [0u8; 580],
-                out_ciphertext: [0u8; 80]
-            };
-            Action {
-                nf,
-                rk,
-                cmx,
-                encrypted_note,
-                cv_net,
-                authorization: ()
-            }
-        }
     }
 
     /// Generate an unauthorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
@@ -672,41 +525,6 @@ pub mod testing {
                     .prop_map(move |a| ((spend_value - output_value).unwrap(), a))
             })
         })
-    }
-
-    prop_compose! {
-        /// Generate an action with invalid (random) authorization data.
-        pub fn arb_action(spend_value: NoteValue, output_value: NoteValue)(
-            nf in arb_nullifier(),
-            sk in arb_spendauth_signing_key(),
-            note in arb_note(output_value),
-            rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-            fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
-        ) -> Action<redpallas::Signature<SpendAuth>> {
-            let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let cv_net = ValueCommitment::derive(
-                (spend_value - output_value).unwrap(),
-                ValueCommitTrapdoor::zero()
-            );
-
-            // FIXME: make a real one from the note.
-            let encrypted_note = TransmittedNoteCiphertext {
-                epk_bytes: [0u8; 32],
-                enc_ciphertext: [0u8; 580],
-                out_ciphertext: [0u8; 80]
-            };
-
-            let rng = StdRng::from_seed(rng_seed);
-
-            Action {
-                nf,
-                rk: redpallas::VerificationKey::from(&sk),
-                cmx,
-                encrypted_note,
-                cv_net,
-                authorization: sk.sign(rng, &fake_sighash),
-            }
-        }
     }
 
     /// Generate an authorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.

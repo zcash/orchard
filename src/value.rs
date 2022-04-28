@@ -29,7 +29,7 @@
 //! you should only need to interact with [`NoteValue`] (which can be safely constructed
 //! from a `u64`) and `valueBalanceOrchard` (which can be represented as an `i64`).
 //!
-//! [`Action`]: crate::bundle::Action
+//! [`Action`]: crate::action::Action
 //! [`Bundle`]: crate::bundle::Bundle
 //! [`Bundle::value_balance`]: crate::bundle::Bundle::value_balance
 //! [`Builder::add_recipient`]: crate::builder::Builder::add_recipient

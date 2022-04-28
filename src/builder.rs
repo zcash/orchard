@@ -10,8 +10,9 @@ use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
 use crate::{
+    action::Action,
     address::Address,
-    bundle::{Action, Authorization, Authorized, Bundle, Flags},
+    bundle::{Authorization, Authorized, Bundle, Flags},
     circuit::{Circuit, Instance, Proof, ProvingKey},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
