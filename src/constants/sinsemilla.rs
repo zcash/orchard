@@ -161,27 +161,18 @@ mod tests {
     #[test]
     fn i2lebsp_k_round_trip() {
         {
-            let bitstring = (0..K).map(|_| rand::random()).collect::<Vec<_>>();
-            assert_eq!(
-                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
-                bitstring
-            );
+            let bitstring = [0; K].map(|_| rand::random());
+            assert_eq!(i2lebsp_k(lebs2ip_k(&bitstring) as usize), bitstring);
         }
 
         {
             let bitstring = [false; K];
-            assert_eq!(
-                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
-                bitstring
-            );
+            assert_eq!(i2lebsp_k(lebs2ip_k(&bitstring) as usize), bitstring);
         }
 
         {
             let bitstring = [true; K];
-            assert_eq!(
-                i2lebsp_k(lebs2ip_k(&bitstring) as usize).to_vec(),
-                bitstring
-            );
+            assert_eq!(i2lebsp_k(lebs2ip_k(&bitstring) as usize), bitstring);
         }
     }
 
