@@ -1,7 +1,7 @@
 //! Logic for building Orchard components of transactions.
 
-use std::fmt;
-use std::iter;
+use core::fmt;
+use core::iter;
 
 use ff::Field;
 use group::GroupEncoding;
@@ -10,8 +10,9 @@ use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
 use crate::{
+    action::Action,
     address::Address,
-    bundle::{Action, Authorization, Authorized, Bundle, Flags},
+    bundle::{Authorization, Authorized, Bundle, Flags},
     circuit::{Circuit, Instance, Proof, ProvingKey},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
@@ -588,11 +589,10 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Tree};
+    use core::fmt::Debug;
 
+    use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Tree};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
-    use std::convert::TryFrom;
-    use std::fmt::Debug;
 
     use proptest::collection::vec;
     use proptest::prelude::*;

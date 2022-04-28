@@ -1,5 +1,5 @@
 //! Data structures used for note construction.
-use std::fmt;
+use core::fmt;
 
 use group::GroupEncoding;
 use pasta_curves::pallas;
@@ -91,7 +91,7 @@ pub struct Note {
     /// This is set to the nullifier of the note that was spent in the [`Action`] that
     /// created this note.
     ///
-    /// [`Action`]: crate::bundle::Action
+    /// [`Action`]: crate::action::Action
     rho: Nullifier,
     /// The seed randomness for various note components.
     rseed: RandomSeed,

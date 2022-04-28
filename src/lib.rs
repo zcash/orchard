@@ -16,6 +16,7 @@
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
 
+mod action;
 mod address;
 pub mod builder;
 pub mod bundle;
@@ -33,6 +34,7 @@ pub mod zip32;
 #[cfg(test)]
 mod test_vectors;
 
+pub use action::Action;
 pub use address::Address;
 pub use bundle::Bundle;
 pub use circuit::Proof;

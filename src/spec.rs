@@ -1,7 +1,7 @@
 //! Helper functions defined in the Zcash Protocol Specification.
 
-use std::iter;
-use std::ops::Deref;
+use core::iter;
+use core::ops::Deref;
 
 use ff::{Field, PrimeField, PrimeFieldBits};
 use group::GroupEncoding;
@@ -302,11 +302,8 @@ mod tests {
     #[test]
     fn i2lebsp_round_trip() {
         {
-            let bitstring = (0..64).map(|_| rand::random()).collect::<Vec<_>>();
-            assert_eq!(
-                i2lebsp::<64>(lebs2ip::<64>(&bitstring.clone().try_into().unwrap())).to_vec(),
-                bitstring
-            );
+            let bitstring = [0; 64].map(|_| rand::random());
+            assert_eq!(i2lebsp(lebs2ip(&bitstring)), bitstring);
         }
 
         {

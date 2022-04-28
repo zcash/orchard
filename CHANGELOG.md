@@ -6,6 +6,10 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- `orchard::bundle::Action` has been moved to `orchard::Action`.
+- `orchard::bundle::Flags::from_byte` now returns `Option<Flags>` instead of
+  `io::Result<Flags>`.
 
 ## [0.1.0-beta.3] - 2022-04-06
 ### Added

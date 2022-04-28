@@ -1,6 +1,6 @@
 //! In-band secret distribution for Orchard bundles.
 
-use std::fmt;
+use core::fmt;
 
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
@@ -11,7 +11,7 @@ use zcash_note_encryption::{
 };
 
 use crate::{
-    bundle::Action,
+    action::Action,
     keys::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         IncomingViewingKey, OutgoingViewingKey, SharedSecret,
@@ -315,7 +315,7 @@ mod tests {
 
     use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
     use crate::{
-        bundle::Action,
+        action::Action,
         keys::{
             DiversifiedTransmissionKey, Diversifier, EphemeralSecretKey, IncomingViewingKey,
             OutgoingViewingKey,

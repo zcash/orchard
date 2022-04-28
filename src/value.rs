@@ -29,15 +29,15 @@
 //! you should only need to interact with [`NoteValue`] (which can be safely constructed
 //! from a `u64`) and `valueBalanceOrchard` (which can be represented as an `i64`).
 //!
-//! [`Action`]: crate::bundle::Action
+//! [`Action`]: crate::action::Action
 //! [`Bundle`]: crate::bundle::Bundle
 //! [`Bundle::value_balance`]: crate::bundle::Bundle::value_balance
 //! [`Builder::add_recipient`]: crate::builder::Builder::add_recipient
 //! [Rust documentation]: https://doc.rust-lang.org/stable/std/primitive.i64.html
 
-use std::fmt::{self, Debug};
-use std::iter::Sum;
-use std::ops::{Add, Sub};
+use core::fmt::{self, Debug};
+use core::iter::Sum;
+use core::ops::{Add, RangeInclusive, Sub};
 
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
@@ -55,8 +55,6 @@ use crate::{
     },
     primitives::redpallas::{self, Binding},
 };
-
-use std::ops::RangeInclusive;
 
 /// Maximum note value.
 pub const MAX_NOTE_VALUE: u64 = u64::MAX;

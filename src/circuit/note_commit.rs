@@ -1,3 +1,5 @@
+use core::iter;
+
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
     plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
@@ -145,10 +147,11 @@ impl NoteCommitConfig {
 
             Constraints::with_selector(
                 q_notecommit_b,
-                std::iter::empty()
-                    .chain(Some(("bool_check b_1", bool_check(b_1))))
-                    .chain(Some(("bool_check b_2", bool_check(b_2))))
-                    .chain(Some(("decomposition", decomposition_check))),
+                [
+                    ("bool_check b_1", bool_check(b_1)),
+                    ("bool_check b_2", bool_check(b_2)),
+                    ("decomposition", decomposition_check),
+                ],
             )
         });
 
@@ -176,10 +179,11 @@ impl NoteCommitConfig {
 
             Constraints::with_selector(
                 q_notecommit_d,
-                std::iter::empty()
-                    .chain(Some(("bool_check d_0", bool_check(d_0))))
-                    .chain(Some(("bool_check d_1", bool_check(d_1))))
-                    .chain(Some(("decomposition", decomposition_check))),
+                [
+                    ("bool_check d_0", bool_check(d_0)),
+                    ("bool_check d_1", bool_check(d_1)),
+                    ("decomposition", decomposition_check),
+                ],
             )
         });
 
@@ -223,9 +227,10 @@ impl NoteCommitConfig {
 
             Constraints::with_selector(
                 q_notecommit_g,
-                std::iter::empty()
-                    .chain(Some(("bool_check g_0", bool_check(g_0))))
-                    .chain(Some(("decomposition", decomposition_check))),
+                [
+                    ("bool_check g_0", bool_check(g_0)),
+                    ("decomposition", decomposition_check),
+                ],
             )
         });
 
@@ -247,9 +252,10 @@ impl NoteCommitConfig {
 
             Constraints::with_selector(
                 q_notecommit_h,
-                std::iter::empty()
-                    .chain(Some(("bool_check h_1", bool_check(h_1))))
-                    .chain(Some(("decomposition", decomposition_check))),
+                [
+                    ("bool_check h_1", bool_check(h_1)),
+                    ("decomposition", decomposition_check),
+                ],
             )
         });
 
@@ -285,7 +291,7 @@ impl NoteCommitConfig {
 
             // The gd_x_canonicity_checks are enforced if and only if `b_1` = 1.
             // x(g_d) = a (250 bits) || b_0 (4 bits) || b_1 (1 bit)
-            let canonicity_checks = std::iter::empty()
+            let canonicity_checks = iter::empty()
                 .chain(Some(("b_1 = 1 => b_0", b_0)))
                 .chain(Some(("b_1 = 1 => z13_a", z13_a)))
                 .chain(Some(("b_1 = 1 => z13_a_prime", z13_a_prime)))
@@ -293,7 +299,7 @@ impl NoteCommitConfig {
 
             Constraints::with_selector(
                 q_notecommit_g_d,
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("decomposition", decomposition_check)))
                     .chain(Some(("a_prime_check", a_prime_check)))
                     .chain(canonicity_checks),
@@ -333,14 +339,14 @@ impl NoteCommitConfig {
 
             // The pkd_x_canonicity_checks are enforced if and only if `d_0` = 1.
             // `x(pk_d)` = `b_3 (4 bits) || c (250 bits) || d_0 (1 bit)`
-            let canonicity_checks = std::iter::empty()
+            let canonicity_checks = iter::empty()
                 .chain(Some(("d_0 = 1 => z13_c", z13_c)))
                 .chain(Some(("d_0 = 1 => z14_b3_c_prime", z14_b3_c_prime)))
                 .map(move |(name, poly)| (name, d_0.clone() * poly));
 
             Constraints::with_selector(
                 q_notecommit_pk_d,
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("decomposition", decomposition_check)))
                     .chain(Some(("b3_c_prime_check", b3_c_prime_check)))
                     .chain(canonicity_checks),
@@ -399,14 +405,14 @@ impl NoteCommitConfig {
 
             // The rho_canonicity_checks are enforced if and only if `g_0` = 1.
             // rho = e_1 (4 bits) || f (250 bits) || g_0 (1 bit)
-            let canonicity_checks = std::iter::empty()
+            let canonicity_checks = iter::empty()
                 .chain(Some(("g_0 = 1 => z13_f", z13_f)))
                 .chain(Some(("g_0 = 1 => z14_e1_f_prime", z14_e1_f_prime)))
                 .map(move |(name, poly)| (name, g_0.clone() * poly));
 
             Constraints::with_selector(
                 q_notecommit_rho,
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("decomposition", decomposition_check)))
                     .chain(Some(("e1_f_prime_check", e1_f_prime_check)))
                     .chain(canonicity_checks),
@@ -448,7 +454,7 @@ impl NoteCommitConfig {
 
             // The psi_canonicity_checks are enforced if and only if `h_1` = 1.
             // `psi` = `g_1 (9 bits) || g_2 (240 bits) || h_0 (5 bits) || h_1 (1 bit)`
-            let canonicity_checks = std::iter::empty()
+            let canonicity_checks = iter::empty()
                 .chain(Some(("h_1 = 1 => h_0", h_0)))
                 .chain(Some(("h_1 = 1 => z13_g", z13_g)))
                 .chain(Some(("h_1 = 1 => z13_g1_g2_prime", z13_g1_g2_prime)))
@@ -456,7 +462,7 @@ impl NoteCommitConfig {
 
             Constraints::with_selector(
                 q_notecommit_psi,
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("decomposition", decomposition_check)))
                     .chain(Some(("g1_g2_prime_check", g1_g2_prime_check)))
                     .chain(canonicity_checks),
@@ -512,7 +518,7 @@ impl NoteCommitConfig {
                 // Check that j_prime = j + 2^130 - t_P
                 let j_prime_check = j + two_pow_130 - t_p.clone() - j_prime;
 
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("k3_check", k3_check)))
                     .chain(Some(("j_check", j_check)))
                     .chain(Some(("y_check", y_check)))
@@ -521,7 +527,7 @@ impl NoteCommitConfig {
 
             // Canonicity checks. These are enforced if and only if k_3 = 1.
             let canonicity_checks = {
-                std::iter::empty()
+                iter::empty()
                     .chain(Some(("k_3 = 1 => k_2 = 0", k_2)))
                     .chain(Some(("k_3 = 1 => z13_j = 0", z13_j)))
                     .chain(Some(("k_3 = 1 => z13_j_prime = 0", z13_j_prime)))
@@ -1462,6 +1468,8 @@ struct GateCells {
 
 #[cfg(test)]
 mod tests {
+    use core::iter;
+
     use super::NoteCommitConfig;
     use crate::constants::{
         fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
@@ -1684,7 +1692,7 @@ mod tests {
                     let lsb = |y_lsb: pallas::Base| y_lsb == pallas::Base::one();
                     let point = domain
                         .commit(
-                            std::iter::empty()
+                            iter::empty()
                                 .chain(
                                     self.gd_x
                                         .unwrap()

@@ -1,7 +1,7 @@
 //! Key structures for Orchard.
 
+use core::mem;
 use std::io::{self, Read, Write};
-use std::mem;
 
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
@@ -396,12 +396,7 @@ impl FullViewingKey {
     ///
     /// [orchardrawfullviewingkeys]: https://zips.z.cash/protocol/protocol.pdf#orchardfullviewingkeyencoding
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
-        let ak_raw: [u8; 32] = self.ak.0.clone().into();
-        writer.write_all(&ak_raw)?;
-        writer.write_all(&self.nk.0.to_repr())?;
-        writer.write_all(&self.rivk.0.to_repr())?;
-
-        Ok(())
+        writer.write_all(&self.to_bytes())
     }
 
     /// Parses a full viewing key from its "raw" encoding as specified in [Zcash Protocol Spec § 5.6.4.4: Orchard Raw Full Viewing Keys][orchardrawfullviewingkeys]
@@ -424,8 +419,9 @@ impl FullViewingKey {
     /// [orchardrawfullviewingkeys]: https://zips.z.cash/protocol/protocol.pdf#orchardfullviewingkeyencoding
     pub fn to_bytes(&self) -> [u8; 96] {
         let mut result = [0u8; 96];
-        self.write(&mut result[..])
-            .expect("should be able to serialize a FullViewingKey");
+        result[0..32].copy_from_slice(&<[u8; 32]>::from(self.ak.0.clone()));
+        result[32..64].copy_from_slice(&self.nk.0.to_repr());
+        result[64..96].copy_from_slice(&self.rivk.0.to_repr());
         result
     }
 

@@ -1,6 +1,6 @@
 //! The Orchard Action circuit implementation.
 
-use std::fmt;
+use core::fmt;
 
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
@@ -902,12 +902,13 @@ impl Proof {
 
 #[cfg(test)]
 mod tests {
+    use core::iter;
+
     use ff::Field;
     use group::GroupEncoding;
     use halo2_proofs::dev::MockProver;
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
-    use std::iter;
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
