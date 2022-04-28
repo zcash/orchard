@@ -1,7 +1,6 @@
 //! A minimal RedPallas implementation for use in Zcash.
 
 use std::cmp::{Ord, Ordering, PartialOrd};
-use std::convert::{TryFrom, TryInto};
 
 use pasta_curves::pallas;
 use rand::{CryptoRng, RngCore};
@@ -184,8 +183,6 @@ pub(crate) mod private {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use std::convert::TryFrom;
-
     use proptest::prelude::*;
 
     use super::{Binding, SigningKey, SpendAuth, VerificationKey};

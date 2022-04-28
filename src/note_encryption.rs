@@ -1,6 +1,6 @@
 //! In-band secret distribution for Orchard bundles.
 
-use std::{convert::TryInto, fmt};
+use std::fmt;
 
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;

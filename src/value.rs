@@ -35,7 +35,6 @@
 //! [`Builder::add_recipient`]: crate::builder::Builder::add_recipient
 //! [Rust documentation]: https://doc.rust-lang.org/stable/std/primitive.i64.html
 
-use std::convert::{TryFrom, TryInto};
 use std::fmt::{self, Debug};
 use std::iter::Sum;
 use std::ops::{Add, Sub};

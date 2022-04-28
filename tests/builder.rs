@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Hashable, Tree};
 use orchard::{
     builder::Builder,

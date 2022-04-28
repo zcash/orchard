@@ -1,7 +1,5 @@
 //! Key structures for Orchard.
 
-use std::array;
-use std::convert::{TryFrom, TryInto};
 use std::io::{self, Read, Write};
 use std::mem;
 
@@ -389,7 +387,8 @@ impl FullViewingKey {
     /// Returns the scope of the given address, or `None` if the address is not derived
     /// from this full viewing key.
     pub fn scope_for_address(&self, address: &Address) -> Option<Scope> {
-        array::IntoIter::new([Scope::External, Scope::Internal])
+        [Scope::External, Scope::Internal]
+            .into_iter()
             .find(|scope| self.to_ivk(*scope).diversifier_index(address).is_some())
     }
 

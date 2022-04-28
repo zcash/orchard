@@ -66,7 +66,6 @@ pub mod testing {
     use pasta_curves::{arithmetic::FieldExt, pallas};
     use proptest::collection::vec;
     use proptest::prelude::*;
-    use std::convert::TryFrom;
 
     use super::Nullifier;
     use crate::spec::extract_p;

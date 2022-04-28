@@ -1,9 +1,6 @@
 //! Key structures for Orchard.
 
-use std::{
-    convert::{TryFrom, TryInto},
-    fmt,
-};
+use std::fmt;
 
 use blake2b_simd::Params as Blake2bParams;
 use subtle::{Choice, ConstantTimeEq};

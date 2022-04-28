@@ -8,7 +8,8 @@ authors = [
     "Ying Tong Lai <yingtong@electriccoin.co>",
     "Kris Nuttycombe <kris@electriccoin.co>",
 ]
-edition = "2018"
+edition = "2021"
+rust-version = "1.56.1"
 description = "[BETA] The Orchard shielded transaction protocol"
 license-file = "LICENSE-BOSL"
 repository = "https://github.com/zcash/orchard"
@@ -53,7 +54,7 @@ proptest = "1.0.0"
 zcash_note_encryption = { version = "0.1", features = ["pre-zip-212"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-pprof = { version = "=0.6.1", features = ["criterion", "flamegraph"] }
+pprof = { version = "0.8", features = ["criterion", "flamegraph"] } # MSRV 1.56
 
 [lib]
 bench = false

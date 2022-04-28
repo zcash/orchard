@@ -276,7 +276,6 @@ mod tests {
     use halo2_proofs::arithmetic::CurveExt;
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
-    use std::convert::TryInto;
 
     #[test]
     fn diversify_hash_substitution() {

@@ -652,8 +652,6 @@ mod tests {
     use pasta_curves::{arithmetic::FieldExt, pallas};
     use rand::rngs::OsRng;
 
-    use std::convert::TryInto;
-
     #[test]
     fn commit_ivk() {
         #[derive(Default)]

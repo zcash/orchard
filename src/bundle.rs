@@ -2,7 +2,6 @@
 
 pub mod commitments;
 
-use std::convert::TryInto;
 use std::fmt;
 use std::io;
 
