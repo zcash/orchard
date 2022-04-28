@@ -9,6 +9,7 @@ authors = [
     "Kris Nuttycombe <kris@electriccoin.co>",
 ]
 edition = "2018"
+rust-version = "1.56.1"
 description = "[BETA] The Orchard shielded transaction protocol"
 license-file = "LICENSE-BOSL"
 repository = "https://github.com/zcash/orchard"
