@@ -52,8 +52,6 @@ use halo2_gadgets::{
     utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
 };
 
-use std::convert::TryInto;
-
 mod commit_ivk;
 pub mod gadget;
 mod note_commit;
@@ -163,7 +161,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let not_enable_spends = one.clone() - meta.query_advice(advices[6], Rotation::cur());
             let not_enable_outputs = one - meta.query_advice(advices[7], Rotation::cur());
 
-            std::array::IntoIter::new([
+            [
                 (
                     "v_old - v_new = magnitude * sign",
                     v_old.clone() - v_new.clone() - magnitude * sign,
@@ -177,7 +175,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     "v_new = 0 or enable_outputs = 1",
                     v_new * not_enable_outputs,
                 ),
-            ])
+            ]
             .map(move |(name, poly)| (name, q_orchard.clone() * poly))
         });
 
@@ -1029,7 +1027,6 @@ mod tests {
 
     #[test]
     fn serialized_proof_test_case() {
-        use std::convert::TryInto;
         use std::io::{Read, Write};
 
         let vk = VerifyingKey::build();

@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use subtle::CtOption;
 
 use crate::{

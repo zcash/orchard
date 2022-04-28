@@ -1,5 +1,3 @@
-use std::array;
-
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
     builder::Builder,
@@ -116,7 +114,7 @@ fn bench_note_decryption(c: &mut Criterion) {
 
         let mut group = c.benchmark_group("batch-note-decryption");
 
-        for size in array::IntoIter::new([10, 50, 100]) {
+        for size in [10, 50, 100] {
             group.throughput(Throughput::Elements((ivks * size) as u64));
 
             group.bench_function(BenchmarkId::new("valid", size), |b| {

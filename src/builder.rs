@@ -1,6 +1,5 @@
 //! Logic for building Orchard components of transactions.
 
-use std::convert::TryFrom;
 use std::fmt;
 use std::iter;
 

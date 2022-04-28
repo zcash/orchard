@@ -86,8 +86,6 @@ pub struct MerklePath {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 impl From<(incrementalmerkletree::Position, Vec<MerkleHashOrchard>)> for MerklePath {
     fn from(path: (incrementalmerkletree::Position, Vec<MerkleHashOrchard>)) -> Self {
-        use std::convert::TryInto;
-
         let position: u64 = path.0.into();
         Self {
             position: position as u32,
@@ -266,8 +264,6 @@ pub mod testing {
     use group::ff::PrimeField;
     #[cfg(test)]
     use pasta_curves::pallas;
-    #[cfg(test)]
-    use std::convert::TryInto;
 
     #[test]
     fn test_vectors() {

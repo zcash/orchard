@@ -1480,7 +1480,6 @@ mod tests {
     };
 
     use rand::{rngs::OsRng, RngCore};
-    use std::convert::TryInto;
 
     #[test]
     fn note_commit() {
