@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
@@ -205,16 +205,18 @@ impl CommitIvkConfig {
                     .chain(Some(("z14_b2_c_prime", z14_b2_c_prime)))
             };
 
-            std::iter::empty()
-                .chain(Some(("b1_bool_check", b1_bool_check)))
-                .chain(Some(("d1_bool_check", d1_bool_check)))
-                .chain(Some(("b_decomposition_check", b_decomposition_check)))
-                .chain(Some(("d_decomposition_check", d_decomposition_check)))
-                .chain(Some(("ak_decomposition_check", ak_decomposition_check)))
-                .chain(Some(("nk_decomposition_check", nk_decomposition_check)))
-                .chain(ak_canonicity_checks)
-                .chain(nk_canonicity_checks)
-                .map(move |(name, poly)| (name, q_commit_ivk.clone() * poly))
+            Constraints::with_selector(
+                q_commit_ivk,
+                std::iter::empty()
+                    .chain(Some(("b1_bool_check", b1_bool_check)))
+                    .chain(Some(("d1_bool_check", d1_bool_check)))
+                    .chain(Some(("b_decomposition_check", b_decomposition_check)))
+                    .chain(Some(("d_decomposition_check", d_decomposition_check)))
+                    .chain(Some(("ak_decomposition_check", ak_decomposition_check)))
+                    .chain(Some(("nk_decomposition_check", nk_decomposition_check)))
+                    .chain(ak_canonicity_checks)
+                    .chain(nk_canonicity_checks),
+            )
         });
 
         config

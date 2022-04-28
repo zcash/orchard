@@ -1,6 +1,6 @@
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter},
-    plonk::{Advice, Column, ConstraintSystem, Error, Expression, Selector},
+    plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
@@ -143,11 +143,13 @@ impl NoteCommitConfig {
             let decomposition_check =
                 b - (b_0 + b_1.clone() * two_pow_4 + b_2.clone() * two_pow_5 + b_3 * two_pow_6);
 
-            std::iter::empty()
-                .chain(Some(("bool_check b_1", bool_check(b_1))))
-                .chain(Some(("bool_check b_2", bool_check(b_2))))
-                .chain(Some(("decomposition", decomposition_check)))
-                .map(move |(name, poly)| (name, q_notecommit_b.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_b,
+                std::iter::empty()
+                    .chain(Some(("bool_check b_1", bool_check(b_1))))
+                    .chain(Some(("bool_check b_2", bool_check(b_2))))
+                    .chain(Some(("decomposition", decomposition_check))),
+            )
         });
 
         // | A_6 | A_7 | A_8 | q_notecommit_d |
@@ -172,11 +174,13 @@ impl NoteCommitConfig {
             let decomposition_check =
                 d - (d_0.clone() + d_1.clone() * two + d_2 * two_pow_2 + d_3 * two_pow_10);
 
-            std::iter::empty()
-                .chain(Some(("bool_check d_0", bool_check(d_0))))
-                .chain(Some(("bool_check d_1", bool_check(d_1))))
-                .chain(Some(("decomposition", decomposition_check)))
-                .map(move |(name, poly)| (name, q_notecommit_d.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_d,
+                std::iter::empty()
+                    .chain(Some(("bool_check d_0", bool_check(d_0))))
+                    .chain(Some(("bool_check d_1", bool_check(d_1))))
+                    .chain(Some(("decomposition", decomposition_check))),
+            )
         });
 
         // | A_6 | A_7 | A_8 | q_notecommit_e |
@@ -195,9 +199,7 @@ impl NoteCommitConfig {
             // e = e_0 + (2^6) e_1
             let decomposition_check = e - (e_0 + e_1 * two_pow_6);
 
-            std::iter::empty()
-                .chain(Some(("decomposition", decomposition_check)))
-                .map(move |(name, poly)| (name, q_notecommit_e.clone() * poly))
+            Constraints::with_selector(q_notecommit_e, Some(("decomposition", decomposition_check)))
         });
 
         // | A_6 | A_7 | q_notecommit_g |
@@ -219,10 +221,12 @@ impl NoteCommitConfig {
             // g = g_0 + (2) g_1 + (2^10) g_2
             let decomposition_check = g - (g_0.clone() + g_1 * two + g_2 * two_pow_10);
 
-            std::iter::empty()
-                .chain(Some(("bool_check g_0", bool_check(g_0))))
-                .chain(Some(("decomposition", decomposition_check)))
-                .map(move |(name, poly)| (name, q_notecommit_g.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_g,
+                std::iter::empty()
+                    .chain(Some(("bool_check g_0", bool_check(g_0))))
+                    .chain(Some(("decomposition", decomposition_check))),
+            )
         });
 
         // | A_6 | A_7 | A_8 | q_notecommit_h |
@@ -241,10 +245,12 @@ impl NoteCommitConfig {
             // h = h_0 + (2^5) h_1
             let decomposition_check = h - (h_0 + h_1.clone() * two_pow_5);
 
-            std::iter::empty()
-                .chain(Some(("bool_check h_1", bool_check(h_1))))
-                .chain(Some(("decomposition", decomposition_check)))
-                .map(move |(name, poly)| (name, q_notecommit_h.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_h,
+                std::iter::empty()
+                    .chain(Some(("bool_check h_1", bool_check(h_1))))
+                    .chain(Some(("decomposition", decomposition_check))),
+            )
         });
 
         // |  A_6   | A_7 |   A_8   |     A_9     | q_notecommit_g_d |
@@ -285,11 +291,13 @@ impl NoteCommitConfig {
                 .chain(Some(("b_1 = 1 => z13_a_prime", z13_a_prime)))
                 .map(move |(name, poly)| (name, b_1.clone() * poly));
 
-            std::iter::empty()
-                .chain(Some(("decomposition", decomposition_check)))
-                .chain(Some(("a_prime_check", a_prime_check)))
-                .chain(canonicity_checks)
-                .map(move |(name, poly)| (name, q_notecommit_g_d.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_g_d,
+                std::iter::empty()
+                    .chain(Some(("decomposition", decomposition_check)))
+                    .chain(Some(("a_prime_check", a_prime_check)))
+                    .chain(canonicity_checks),
+            )
         });
 
         // |   A_6   | A_7 |    A_8     |      A_9       | q_notecommit_pk_d |
@@ -330,11 +338,13 @@ impl NoteCommitConfig {
                 .chain(Some(("d_0 = 1 => z14_b3_c_prime", z14_b3_c_prime)))
                 .map(move |(name, poly)| (name, d_0.clone() * poly));
 
-            std::iter::empty()
-                .chain(Some(("decomposition", decomposition_check)))
-                .chain(Some(("b3_c_prime_check", b3_c_prime_check)))
-                .chain(canonicity_checks)
-                .map(move |(name, poly)| (name, q_notecommit_pk_d.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_pk_d,
+                std::iter::empty()
+                    .chain(Some(("decomposition", decomposition_check)))
+                    .chain(Some(("b3_c_prime_check", b3_c_prime_check)))
+                    .chain(canonicity_checks),
+            )
         });
 
         // |  A_6  | A_7 | A_8 | A_9 | q_notecommit_value |
@@ -355,9 +365,7 @@ impl NoteCommitConfig {
             // value = d_2 + (2^8)d_3 + (2^58)e_0
             let value_check = d_2 + d_3 * two_pow_8 + e_0 * two_pow_58 - value;
 
-            std::iter::empty()
-                .chain(Some(("value_check", value_check)))
-                .map(move |(name, poly)| (name, q_notecommit_value.clone() * poly))
+            Constraints::with_selector(q_notecommit_value, Some(("value_check", value_check)))
         });
 
         // | A_6 | A_7 |    A_8     |      A_9       | q_notecommit_rho |
@@ -396,11 +404,13 @@ impl NoteCommitConfig {
                 .chain(Some(("g_0 = 1 => z14_e1_f_prime", z14_e1_f_prime)))
                 .map(move |(name, poly)| (name, g_0.clone() * poly));
 
-            std::iter::empty()
-                .chain(Some(("decomposition", decomposition_check)))
-                .chain(Some(("e1_f_prime_check", e1_f_prime_check)))
-                .chain(canonicity_checks)
-                .map(move |(name, poly)| (name, q_notecommit_rho.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_rho,
+                std::iter::empty()
+                    .chain(Some(("decomposition", decomposition_check)))
+                    .chain(Some(("e1_f_prime_check", e1_f_prime_check)))
+                    .chain(canonicity_checks),
+            )
         });
 
         // | A_6 | A_7 |     A_8     |       A_9       | q_notecommit_psi |
@@ -444,11 +454,13 @@ impl NoteCommitConfig {
                 .chain(Some(("h_1 = 1 => z13_g1_g2_prime", z13_g1_g2_prime)))
                 .map(move |(name, poly)| (name, h_1.clone() * poly));
 
-            std::iter::empty()
-                .chain(Some(("decomposition", decomposition_check)))
-                .chain(Some(("g1_g2_prime_check", g1_g2_prime_check)))
-                .chain(canonicity_checks)
-                .map(move |(name, poly)| (name, q_notecommit_psi.clone() * poly))
+            Constraints::with_selector(
+                q_notecommit_psi,
+                std::iter::empty()
+                    .chain(Some(("decomposition", decomposition_check)))
+                    .chain(Some(("g1_g2_prime_check", g1_g2_prime_check)))
+                    .chain(canonicity_checks),
+            )
         });
 
         /*
@@ -516,9 +528,7 @@ impl NoteCommitConfig {
                     .map(move |(name, poly)| (name, k_3.clone() * poly))
             };
 
-            decomposition_checks
-                .chain(canonicity_checks)
-                .map(move |(name, poly)| (name, q_y_canon.clone() * poly))
+            Constraints::with_selector(q_y_canon, decomposition_checks.chain(canonicity_checks))
         });
 
         config

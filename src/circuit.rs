@@ -6,7 +6,8 @@ use group::{Curve, GroupEncoding};
 use halo2_proofs::{
     circuit::{floor_planner, AssignedCell, Layouter},
     plonk::{
-        self, Advice, Column, Expression, Instance as InstanceColumn, Selector, SingleVerifier,
+        self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector,
+        SingleVerifier,
     },
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
@@ -161,22 +162,24 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let not_enable_spends = one.clone() - meta.query_advice(advices[6], Rotation::cur());
             let not_enable_outputs = one - meta.query_advice(advices[7], Rotation::cur());
 
-            [
-                (
-                    "v_old - v_new = magnitude * sign",
-                    v_old.clone() - v_new.clone() - magnitude * sign,
-                ),
-                (
-                    "Either v_old = 0, or anchor equals public input",
-                    v_old.clone() * (anchor - pub_input_anchor),
-                ),
-                ("v_old = 0 or enable_spends = 1", v_old * not_enable_spends),
-                (
-                    "v_new = 0 or enable_outputs = 1",
-                    v_new * not_enable_outputs,
-                ),
-            ]
-            .map(move |(name, poly)| (name, q_orchard.clone() * poly))
+            Constraints::with_selector(
+                q_orchard,
+                [
+                    (
+                        "v_old - v_new = magnitude * sign",
+                        v_old.clone() - v_new.clone() - magnitude * sign,
+                    ),
+                    (
+                        "Either v_old = 0, or anchor equals public input",
+                        v_old.clone() * (anchor - pub_input_anchor),
+                    ),
+                    ("v_old = 0 or enable_spends = 1", v_old * not_enable_spends),
+                    (
+                        "v_new = 0 or enable_outputs = 1",
+                        v_new * not_enable_outputs,
+                    ),
+                ],
+            )
         });
 
         // Addition of two field elements poseidon_hash(nk, rho_old) + psi_old.
@@ -187,7 +190,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let hash_old = meta.query_advice(advices[7], Rotation::cur());
             let psi_old = meta.query_advice(advices[8], Rotation::cur());
 
-            vec![q_add * (hash_old + psi_old - sum)]
+            Constraints::with_selector(q_add, Some(hash_old + psi_old - sum))
         });
 
         // Fixed columns for the Sinsemilla generator lookup table
