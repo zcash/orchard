@@ -3,7 +3,6 @@
 pub mod commitments;
 
 use core::fmt;
-use std::io;
 
 use blake2b_simd::Hash as Blake2bHash;
 use memuse::DynamicUsage;
@@ -210,21 +209,20 @@ impl Flags {
         value
     }
 
-    /// Parse from a single byte as defined in [Zcash Protocol Spec § 7.1: Transaction
-    /// Encoding And Consensus][txencoding].
+    /// Parses flags from a single byte as defined in [Zcash Protocol Spec § 7.1:
+    /// Transaction Encoding And Consensus][txencoding].
+    ///
+    /// Returns `None` if unexpected bits are set in the flag byte.
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
-    pub fn from_byte(value: u8) -> io::Result<Self> {
+    pub fn from_byte(value: u8) -> Option<Self> {
         if value & FLAGS_EXPECTED_UNSET == 0 {
-            Ok(Self::from_parts(
+            Some(Self::from_parts(
                 value & FLAG_SPENDS_ENABLED != 0,
                 value & FLAG_OUTPUTS_ENABLED != 0,
             ))
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Unexpected bits set in Orchard flags value.",
-            ))
+            None
         }
     }
 }

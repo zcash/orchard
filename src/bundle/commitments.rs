@@ -1,7 +1,6 @@
 //! Utility functions for computing bundle commitments
 
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
-use std::io::Write;
 
 use crate::bundle::{Authorization, Authorized, Bundle};
 
@@ -37,30 +36,25 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     let mut nh = hasher(ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION);
 
     for action in bundle.actions().iter() {
-        ch.write_all(&action.nullifier().to_bytes()).unwrap();
-        ch.write_all(&action.cmx().to_bytes()).unwrap();
-        ch.write_all(&action.encrypted_note().epk_bytes).unwrap();
-        ch.write_all(&action.encrypted_note().enc_ciphertext[..52])
-            .unwrap();
+        ch.update(&action.nullifier().to_bytes());
+        ch.update(&action.cmx().to_bytes());
+        ch.update(&action.encrypted_note().epk_bytes);
+        ch.update(&action.encrypted_note().enc_ciphertext[..52]);
 
-        mh.write_all(&action.encrypted_note().enc_ciphertext[52..564])
-            .unwrap();
+        mh.update(&action.encrypted_note().enc_ciphertext[52..564]);
 
-        nh.write_all(&action.cv_net().to_bytes()).unwrap();
-        nh.write_all(&<[u8; 32]>::from(action.rk())).unwrap();
-        nh.write_all(&action.encrypted_note().enc_ciphertext[564..])
-            .unwrap();
-        nh.write_all(&action.encrypted_note().out_ciphertext)
-            .unwrap();
+        nh.update(&action.cv_net().to_bytes());
+        nh.update(&<[u8; 32]>::from(action.rk()));
+        nh.update(&action.encrypted_note().enc_ciphertext[564..]);
+        nh.update(&action.encrypted_note().out_ciphertext);
     }
 
-    h.write_all(ch.finalize().as_bytes()).unwrap();
-    h.write_all(mh.finalize().as_bytes()).unwrap();
-    h.write_all(nh.finalize().as_bytes()).unwrap();
-    h.write_all(&[bundle.flags().to_byte()]).unwrap();
-    h.write_all(&(*bundle.value_balance()).into().to_le_bytes())
-        .unwrap();
-    h.write_all(&bundle.anchor().to_bytes()).unwrap();
+    h.update(ch.finalize().as_bytes());
+    h.update(mh.finalize().as_bytes());
+    h.update(nh.finalize().as_bytes());
+    h.update(&[bundle.flags().to_byte()]);
+    h.update(&(*bundle.value_balance()).into().to_le_bytes());
+    h.update(&bundle.anchor().to_bytes());
     h.finalize()
 }
 
@@ -79,16 +73,13 @@ pub fn hash_bundle_txid_empty() -> Blake2bHash {
 /// [zip244]: https://zips.z.cash/zip-0244
 pub(crate) fn hash_bundle_auth_data<V>(bundle: &Bundle<Authorized, V>) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
-    h.write_all(bundle.authorization().proof().as_ref())
-        .unwrap();
+    h.update(bundle.authorization().proof().as_ref());
     for action in bundle.actions().iter() {
-        h.write_all(&<[u8; 64]>::from(action.authorization()))
-            .unwrap();
+        h.update(&<[u8; 64]>::from(action.authorization()));
     }
-    h.write_all(&<[u8; 64]>::from(
+    h.update(&<[u8; 64]>::from(
         bundle.authorization().binding_signature(),
-    ))
-    .unwrap();
+    ));
     h.finalize()
 }
 
