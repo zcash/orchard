@@ -7,9 +7,12 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Changed
-- `orchard::bundle::Action` has been moved to `orchard::Action`.
-- `orchard::bundle::Flags::from_byte` now returns `Option<Flags>` instead of
-  `io::Result<Flags>`.
+- `orchard::bundle`:
+  - `Action` has been moved to `orchard::Action`.
+  - `Bundle::{try_}authorize` have been renamed to
+    `Bundle::{try_}map_authorization`.
+  - `Flags::from_byte` now returns `Option<Flags>` instead of
+    `io::Result<Flags>`.
 
 ## [0.1.0-beta.3] - 2022-04-06
 ### Added
