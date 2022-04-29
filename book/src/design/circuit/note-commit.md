@@ -104,7 +104,7 @@ The following helper gates are defined:
 - $\ShortLookupRangeCheck{}$ is a
   [short lookup range check](../decomposition.md#short-range-check).
 
-### $b = b_0 \bconcat b_1 \bconcat b_2 \bconcat b_3$
+### $b = b_0 \bconcat b_1 \bconcat b_2 \bconcat b_3$ <a name="decomposition-b">
 $b$ has been constrained to be $10$ bits by the Sinsemilla hash.
 
 #### Region layout
@@ -132,7 +132,7 @@ Outside this gate, we have constrained:
 - $\ShortLookupRangeCheck{b_0, 4}$
 - $\ShortLookupRangeCheck{b_3, 4}$
 
-### $d = d_0 \bconcat d_1 \bconcat d_2 \bconcat d_3$
+### $d = d_0 \bconcat d_1 \bconcat d_2 \bconcat d_3$ <a name="decomposition-d">
 $d$ has been constrained to be $60$ bits by the $\SinsemillaHash$.
 
 #### Region layout
@@ -161,7 +161,7 @@ Outside this gate, we have constrained:
 - $d_3$ is equality-constrained to $z_{d,1}$, where the latter is the index-1 running sum
   output of $\SinsemillaHash(d),$ constrained by the hash to be $50$ bits.
 
-### $e = e_0 \bconcat e_1$
+### $e = e_0 \bconcat e_1$ <a name="decomposition-e">
 $e$ has been constrained to be $10$ bits by the $\SinsemillaHash$.
 
 #### Region layout
@@ -186,7 +186,7 @@ Outside this gate, we have constrained:
 - $\ShortLookupRangeCheck{e_0, 6}$
 - $\ShortLookupRangeCheck{e_1, 4}$
 
-### $g = g_0 \bconcat g_1 \bconcat g_2$
+### $g = g_0 \bconcat g_1 \bconcat g_2$ <a name="decomposition-g">
 $g$ has been constrained to be $250$ bits by the $\SinsemillaHash$.
 
 #### Region layout
@@ -214,7 +214,7 @@ Outside this gate, we have constrained:
 - $g_2$ is equality-constrained to $z_{g,1}$, where the latter is the index-1 running sum
   output of $\SinsemillaHash(g),$ constrained by the hash to be 240 bits.
 
-### $h = h_0 \bconcat h_1 \bconcat h_2$
+### $h = h_0 \bconcat h_1 \bconcat h_2$ <a name="decomposition-h">
 $h$ has been constrained to be $10$ bits by the $\SinsemillaHash$.
 
 #### Region layout
@@ -280,7 +280,7 @@ below are enforced if and only if the corresponding top bit is set to 1.
 > - Let $x' = x + t' - t$.
 > - Enforce $0 \leq x' < t'$.
 
-### $x(\mathsf{g_d})$ with $b_1 = 1 \implies x(\mathsf{g_d}) \geq 2^{254}$
+### $x(\mathsf{g_d})$ with $b_1 = 1 \implies x(\mathsf{g_d}) \geq 2^{254}$ <a name="canonicity-g_d">
 Recall that $x(\mathsf{g_d}) = a + 2^{250} \cdot b_0 + 2^{254} \cdot b_1$. When the top
 bit $b_1$ is set, we check that $x(\mathsf{g_d})_{0..=253} < t_\mathbb{P}$:
 
@@ -327,7 +327,7 @@ $$
 \end{array}
 $$
 
-### $x(\mathsf{pk_d})$ with $d_0 = 1 \implies x(\mathsf{pk_d}) \geq 2^{254}$
+### $x(\mathsf{pk_d})$ with $d_0 = 1 \implies x(\mathsf{pk_d}) \geq 2^{254}$ <a name="canonicity-pk_d">
 Recall that $x(\mathsf{pk_d}) = b_3 + 2^4 \cdot c + 2^{254} \cdot d_0$. When the top bit
 $d_0$ is set, we check that $x(\mathsf{pk_d})_{0..=253} < t_\mathbb{P}$:
 
@@ -368,7 +368,7 @@ $$
 \end{array}
 $$
 
-### $\mathsf{v} = d_2 + 2^8 \cdot d_3 + 2^{58} \cdot e_0$
+### $\mathsf{v} = d_2 + 2^8 \cdot d_3 + 2^{58} \cdot e_0$ <a name="canonicity-v">
 
 #### Region layout
 $$
@@ -388,7 +388,7 @@ $$
 \end{array}
 $$
 
-### $\rho$ with $g_0 = 1 \implies \rho \geq 2^{254}$
+### $\rho$ with $g_0 = 1 \implies \rho \geq 2^{254}$ <a name="canonicity-rho">
 Recall that $\rho = e_1 + 2^4 \cdot f + 2^{254} \cdot g_0$. When the top bit $g_0$ is set,
 we check that $\rho_{0..=253} < t_\mathbb{P}$:
 
@@ -429,7 +429,7 @@ $$
 \end{array}
 $$
 
-### $\psi$ with $h_1 = 1 \implies \psi \geq 2^{254}$
+### $\psi$ with $h_1 = 1 \implies \psi \geq 2^{254}$ <a name="canonicity-psi">
 Recall that $\psi = g_1 + 2^9 \cdot g_2 + 2^{249} \cdot h_0 + 2^{254} \cdot h_1$. When the
 top bit $h_1$ is set, we check that $\psi_{0..=253} < t_\mathbb{P}$:
 
@@ -476,7 +476,7 @@ $$
 \end{array}
 $$
 
-### $y$-coordinate checks
+### $y$-coordinate checks <a name="decomposition-y">
 
 Note that only the $ỹ$ LSB of the $y$-coordinates $y(\mathsf{g_d}), y(\mathsf{pk_d})$ was
 input to the hash, while the other bits of the $y$-coordinate were unused. However, we
@@ -523,7 +523,7 @@ $$
 \end{array}
 $$
 
-### $y(\mathsf{g_d})$ with $k_3 = 1 \implies y(\mathsf{g_d}) \geq 2^{254}$
+### $y(\mathsf{g_d})$ with $k_3 = 1 \implies y(\mathsf{g_d}) \geq 2^{254}$ <a name="canonicity-y">
 
 In these cases, we check that $y(\mathsf{g_d})_{0..=253} < t_\mathbb{P}$:
 
