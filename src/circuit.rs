@@ -320,6 +320,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         }
     }
 
+    #[allow(non_snake_case)]
     fn synthesize(
         &self,
         config: Self::Config,
@@ -332,7 +333,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let ecc_chip = config.ecc_chip();
 
         // Witness private inputs that are used across multiple checks.
-        let (psi_old, rho_old, cm_old, g_d_old, ak, nk, v_old, v_new) = {
+        let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new) = {
             // Witness psi_old
             let psi_old = self.load_private(
                 layouter.namespace(|| "witness psi_old"),
@@ -361,12 +362,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.g_d_old.as_ref().map(|gd| gd.to_affine()),
             )?;
 
-            // Witness ak.
-            let ak: Option<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
-            let ak = NonIdentityPoint::new(
+            // Witness ak_P.
+            let ak_P: Option<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
+            let ak_P = NonIdentityPoint::new(
                 ecc_chip.clone(),
-                layouter.namespace(|| "ak"),
-                ak.map(|ak| ak.to_affine()),
+                layouter.namespace(|| "witness ak_P"),
+                ak_P.map(|ak_P| ak_P.to_affine()),
             )?;
 
             // Witness nk.
@@ -390,7 +391,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.v_new.map(|v_new| pallas::Base::from(v_new.inner())),
             )?;
 
-            (psi_old, rho_old, cm_old, g_d_old, ak, nk, v_old, v_new)
+            (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new)
         };
 
         // Merkle path validity check.
@@ -546,8 +547,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 spend_auth_g.mul(layouter.namespace(|| "[alpha] SpendAuthG"), self.alpha)?
             };
 
-            // [alpha] SpendAuthG + ak
-            let rk = alpha_commitment.add(layouter.namespace(|| "rk"), &ak)?;
+            // [alpha] SpendAuthG + ak_P
+            let rk = alpha_commitment.add(layouter.namespace(|| "rk"), &ak_P)?;
 
             // Constrain rk to equal public input
             layouter.constrain_instance(rk.inner().x().cell(), config.primary, RK_X)?;
@@ -559,13 +560,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let commit_ivk_config = config.commit_ivk_config.clone();
 
             let ivk = {
+                let ak = ak_P.extract_p().inner().clone();
                 let rivk = self.rivk.map(|rivk| rivk.inner());
 
                 commit_ivk_config.assign_region(
                     config.sinsemilla_chip_1(),
                     ecc_chip.clone(),
                     layouter.namespace(|| "CommitIvk"),
-                    ak.extract_p().inner().clone(),
+                    ak,
                     nk,
                     rivk,
                 )?
