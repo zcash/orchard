@@ -225,7 +225,7 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Transitions this bundle from one authorization state to another.
-    pub fn authorize<R, U: Authorization>(
+    pub fn map_authorization<R, U: Authorization>(
         self,
         context: &mut R,
         mut spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> U::SpendAuth,
@@ -244,7 +244,7 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Transitions this bundle from one authorization state to another.
-    pub fn try_authorize<R, U: Authorization, E>(
+    pub fn try_map_authorization<R, U: Authorization, E>(
         self,
         context: &mut R,
         mut spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> Result<U::SpendAuth, E>,

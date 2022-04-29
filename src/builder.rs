@@ -423,7 +423,7 @@ impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
             .iter()
             .map(|a| a.to_instance(*self.flags(), *self.anchor()))
             .collect();
-        self.try_authorize(
+        self.try_map_authorization(
             &mut (),
             |_, _, a| Ok(a),
             |_, auth| {
@@ -509,7 +509,7 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
         mut rng: R,
         sighash: [u8; 32],
     ) -> Bundle<InProgress<P, PartiallyAuthorized>, V> {
-        self.authorize(
+        self.map_authorization(
             &mut rng,
             |rng, _, SigningMetadata { dummy_ask, parts }| {
                 // We can create signatures for dummy spends immediately.
@@ -552,7 +552,7 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
     /// This will apply signatures for all notes controlled by this spending key.
     pub fn sign<R: RngCore + CryptoRng>(self, mut rng: R, ask: &SpendAuthorizingKey) -> Self {
         let expected_ak = ask.into();
-        self.authorize(
+        self.map_authorization(
             &mut rng,
             |rng, partial, maybe| match maybe {
                 MaybeSigned::SigningMetadata(parts) if parts.ak == expected_ak => {
@@ -572,7 +572,7 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
     ///
     /// Returns an error if any signatures are missing.
     pub fn finalize(self) -> Result<Bundle<Authorized, V>, Error> {
-        self.try_authorize(
+        self.try_map_authorization(
             &mut (),
             |_, _, maybe| maybe.finalize(),
             |_, partial| {
