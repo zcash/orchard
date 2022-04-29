@@ -522,7 +522,7 @@ pub mod testing {
 
             output_value_gen.prop_flat_map(move |output_value| {
                 arb_unauthorized_action(spend_value, output_value)
-                    .prop_map(move |a| ((spend_value - output_value).unwrap(), a))
+                    .prop_map(move |a| (spend_value - output_value, a))
             })
         })
     }
@@ -547,7 +547,7 @@ pub mod testing {
 
             output_value_gen.prop_flat_map(move |output_value| {
                 arb_action(spend_value, output_value)
-                    .prop_map(move |a| ((spend_value - output_value).unwrap(), a))
+                    .prop_map(move |a| (spend_value - output_value, a))
             })
         })
     }

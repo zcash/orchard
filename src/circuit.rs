@@ -412,26 +412,21 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Value commitment integrity.
         let v_net = {
-            // v_net = v_old - v_new
+            // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net = {
-                // v_old, v_new are guaranteed to be 64-bit values. Therefore, we can
-                // move them into the base field.
-                let v_old = self.v_old.map(|v_old| pallas::Base::from(v_old.inner()));
-                let v_new = self.v_new.map(|v_new| pallas::Base::from(v_new.inner()));
+                let magnitude_sign = self.v_old.zip(self.v_new).map(|(v_old, v_new)| {
+                    let v_net = v_old - v_new;
+                    let (magnitude, sign) = v_net.magnitude_sign();
 
-                let magnitude_sign = v_old.zip(v_new).map(|(v_old, v_new)| {
-                    let is_negative = v_old < v_new;
-                    let magnitude = if is_negative {
-                        v_new - v_old
-                    } else {
-                        v_old - v_new
-                    };
-                    let sign = if is_negative {
-                        -pallas::Base::one()
-                    } else {
-                        pallas::Base::one()
-                    };
-                    (magnitude, sign)
+                    (
+                        // magnitude is guaranteed to be an unsigned 64-bit value.
+                        // Therefore, we can move it into the base field.
+                        pallas::Base::from(magnitude),
+                        match sign {
+                            crate::value::Sign::Positive => pallas::Base::one(),
+                            crate::value::Sign::Negative => -pallas::Base::one(),
+                        },
+                    )
                 });
 
                 let magnitude = self.load_private(
@@ -930,7 +925,7 @@ mod tests {
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value.unwrap(), rcv.clone());
+        let cv_net = ValueCommitment::derive(value, rcv.clone());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());

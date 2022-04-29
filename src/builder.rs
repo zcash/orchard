@@ -124,7 +124,7 @@ impl ActionInfo {
     }
 
     /// Returns the value sum for this action.
-    fn value_sum(&self) -> Option<ValueSum> {
+    fn value_sum(&self) -> ValueSum {
         self.spend.note.value() - self.output.value
     }
 
@@ -134,7 +134,7 @@ impl ActionInfo {
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn build(self, mut rng: impl RngCore) -> (Action<SigningMetadata>, Circuit) {
-        let v_net = self.value_sum().expect("already checked this");
+        let v_net = self.value_sum();
         let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
@@ -335,7 +335,7 @@ impl Builder {
         let value_balance = pre_actions
             .iter()
             .fold(Some(ValueSum::zero()), |acc, action| {
-                acc? + action.value_sum()?
+                acc? + action.value_sum()
             })
             .ok_or(OverflowError)?;
 
