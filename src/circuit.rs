@@ -24,7 +24,7 @@ use self::{
 use crate::{
     constants::{
         OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
-        ValueCommitV, MERKLE_DEPTH_ORCHARD,
+        MERKLE_DEPTH_ORCHARD,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
@@ -42,7 +42,7 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, FixedPointShort, NonIdentityPoint, Point,
+        FixedPoint, NonIdentityPoint, Point,
     },
     poseidon::{Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
     primitives::poseidon,
@@ -436,25 +436,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 (magnitude, sign)
             };
 
-            // commitment = [v_net] ValueCommitV
-            let (commitment, _) = {
-                let value_commit_v = ValueCommitV;
-                let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
-                value_commit_v.mul(layouter.namespace(|| "[v_net] ValueCommitV"), v_net.clone())?
-            };
-
-            // blind = [rcv] ValueCommitR
-            let (blind, _rcv) = {
-                let rcv = self.rcv.as_ref().map(|rcv| rcv.inner());
-                let value_commit_r = OrchardFixedBasesFull::ValueCommitR;
-                let value_commit_r = FixedPoint::from_inner(ecc_chip.clone(), value_commit_r);
-
-                // [rcv] ValueCommitR
-                value_commit_r.mul(layouter.namespace(|| "[rcv] ValueCommitR"), rcv)?
-            };
-
-            // [v_net] ValueCommitV + [rcv] ValueCommitR
-            let cv_net = commitment.add(layouter.namespace(|| "cv_net"), &blind)?;
+            let cv_net = gadget::value_commit_orchard(
+                layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net)"),
+                ecc_chip.clone(),
+                v_net.clone(),
+                self.rcv.as_ref().map(|rcv| rcv.inner()),
+            )?;
 
             // Constrain cv_net to equal public input
             layouter.constrain_instance(cv_net.inner().x().cell(), config.primary, CV_NET_X)?;
