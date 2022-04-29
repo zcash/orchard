@@ -108,8 +108,8 @@ pub struct Circuit {
     pub(crate) ak: Option<SpendValidatingKey>,
     pub(crate) nk: Option<NullifierDerivingKey>,
     pub(crate) rivk: Option<CommitIvkRandomness>,
-    pub(crate) g_d_new_star: Option<[u8; 32]>,
-    pub(crate) pk_d_new_star: Option<[u8; 32]>,
+    pub(crate) g_d_new: Option<NonIdentityPallasPoint>,
+    pub(crate) pk_d_new: Option<DiversifiedTransmissionKey>,
     pub(crate) v_new: Option<NoteValue>,
     pub(crate) psi_new: Option<pallas::Base>,
     pub(crate) rcm_new: Option<NoteCommitTrapdoor>,
@@ -619,11 +619,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         {
             let new_note_commit_config = config.new_note_commit_config.clone();
 
-            // Witness g_d_new_star
+            // Witness g_d_new
             let g_d_new = {
-                let g_d_new = self
-                    .g_d_new_star
-                    .map(|bytes| pallas::Affine::from_bytes(&bytes).unwrap());
+                let g_d_new = self.g_d_new.map(|g_d_new| g_d_new.to_affine());
                 NonIdentityPoint::new(
                     ecc_chip.clone(),
                     layouter.namespace(|| "witness g_d_new_star"),
@@ -631,11 +629,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 )?
             };
 
-            // Witness pk_d_new_star
+            // Witness pk_d_new
             let pk_d_new = {
-                let pk_d_new = self
-                    .pk_d_new_star
-                    .map(|bytes| pallas::Affine::from_bytes(&bytes).unwrap());
+                let pk_d_new = self.pk_d_new.map(|pk_d_new| pk_d_new.inner().to_affine());
                 NonIdentityPoint::new(
                     ecc_chip,
                     layouter.namespace(|| "witness pk_d_new"),
@@ -907,7 +903,6 @@ mod tests {
     use core::iter;
 
     use ff::Field;
-    use group::GroupEncoding;
     use halo2_proofs::dev::MockProver;
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
@@ -956,8 +951,8 @@ mod tests {
                 ak: Some(ak),
                 nk: Some(nk),
                 rivk: Some(rivk),
-                g_d_new_star: Some((*output_note.recipient().g_d()).to_bytes()),
-                pk_d_new_star: Some(output_note.recipient().pk_d().to_bytes()),
+                g_d_new: Some(output_note.recipient().g_d()),
+                pk_d_new: Some(*output_note.recipient().pk_d()),
                 v_new: Some(output_note.value()),
                 psi_new: Some(output_note.rseed().psi(&output_note.rho())),
                 rcm_new: Some(output_note.rseed().rcm(&output_note.rho())),
@@ -1142,8 +1137,8 @@ mod tests {
             ak: None,
             nk: None,
             rivk: None,
-            g_d_new_star: None,
-            pk_d_new_star: None,
+            g_d_new: None,
+            pk_d_new: None,
             v_new: None,
             psi_new: None,
             rcm_new: None,
