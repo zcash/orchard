@@ -160,9 +160,10 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let anchor = meta.query_advice(advices[4], Rotation::cur());
             let pub_input_anchor = meta.query_advice(advices[5], Rotation::cur());
 
+            let enable_spends = meta.query_advice(advices[6], Rotation::cur());
+            let enable_outputs = meta.query_advice(advices[7], Rotation::cur());
+
             let one = Expression::Constant(pallas::Base::one());
-            let not_enable_spends = one.clone() - meta.query_advice(advices[6], Rotation::cur());
-            let not_enable_outputs = one - meta.query_advice(advices[7], Rotation::cur());
 
             Constraints::with_selector(
                 q_orchard,
@@ -175,10 +176,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                         "Either v_old = 0, or anchor equals public input",
                         v_old.clone() * (anchor - pub_input_anchor),
                     ),
-                    ("v_old = 0 or enable_spends = 1", v_old * not_enable_spends),
+                    (
+                        "v_old = 0 or enable_spends = 1",
+                        v_old * (one.clone() - enable_spends),
+                    ),
                     (
                         "v_new = 0 or enable_outputs = 1",
-                        v_new * not_enable_outputs,
+                        v_new * (one - enable_outputs),
                     ),
                 ],
             )
@@ -389,7 +393,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         };
 
         // Merkle path validity check.
-        let anchor = {
+        let root = {
             let path = self
                 .path
                 .map(|typed_path| typed_path.map(|node| node.inner()));
@@ -401,7 +405,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 path,
             );
             let leaf = cm_old.extract_p().inner().clone();
-            merkle_inputs.calculate_root(layouter.namespace(|| "MerkleCRH"), leaf)?
+            merkle_inputs.calculate_root(layouter.namespace(|| "Merkle path"), leaf)?
         };
 
         // Value commitment integrity.
@@ -510,6 +514,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 g_d_old.mul(layouter.namespace(|| "[ivk] g_d_old"), ivk.inner())?;
 
             // Constrain derived pk_d_old to equal witnessed pk_d_old
+            //
+            // This equality constraint is technically superfluous, because the assigned
+            // value of `derived_pk_d_old` is an equivalent witness. But it's nice to see
+            // an explicit connection between circuit-synthesized values, and explicit
+            // prover witnesses. We could get the best of both worlds with a write-on-copy
+            // abstraction (https://github.com/zcash/halo2/issues/334).
             let pk_d_old = NonIdentityPoint::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "witness pk_d_old"),
@@ -570,6 +580,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 )?
             };
 
+            // ρ^new = nf^old
+            let rho_new = nf_old.inner().clone();
+
             // Witness psi_new
             let psi_new = self.load_private(
                 layouter.namespace(|| "witness psi_new"),
@@ -589,7 +602,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 g_d_new.inner(),
                 pk_d_new.inner(),
                 v_new.clone(),
-                nf_old.inner().clone(),
+                rho_new,
                 psi_new,
                 rcm_new,
             )?;
@@ -600,10 +613,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             layouter.constrain_instance(cmx.inner().cell(), config.primary, CMX)?;
         }
 
-        // Constrain v_old - v_new = magnitude * sign
-        // Either v_old = 0, or anchor equals public input
+        // Constrain the remaining Orchard circuit checks.
         layouter.assign_region(
-            || "v_old - v_new = magnitude * sign",
+            || "Orchard circuit checks",
             |mut region| {
                 v_old.copy_advice(|| "v_old", &mut region, config.advices[0], 0)?;
                 v_new.copy_advice(|| "v_new", &mut region, config.advices[1], 0)?;
@@ -611,7 +623,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 magnitude.copy_advice(|| "v_net magnitude", &mut region, config.advices[2], 0)?;
                 sign.copy_advice(|| "v_net sign", &mut region, config.advices[3], 0)?;
 
-                anchor.copy_advice(|| "anchor", &mut region, config.advices[4], 0)?;
+                root.copy_advice(|| "calculated root", &mut region, config.advices[4], 0)?;
                 region.assign_advice_from_instance(
                     || "pub input anchor",
                     config.primary,
