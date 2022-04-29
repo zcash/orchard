@@ -20,8 +20,8 @@ use self::commit_ivk::CommitIvkConfig;
 use self::note_commit::NoteCommitConfig;
 use crate::{
     constants::{
-        util::gen_const_array, NullifierK, OrchardCommitDomains, OrchardFixedBases,
-        OrchardFixedBasesFull, OrchardHashDomains, ValueCommitV, MERKLE_DEPTH_ORCHARD,
+        NullifierK, OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull,
+        OrchardHashDomains, ValueCommitV, MERKLE_DEPTH_ORCHARD,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
@@ -396,10 +396,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Merkle path validity check.
         let anchor = {
-            let path: Option<[pallas::Base; MERKLE_DEPTH_ORCHARD]> = self.path.map(|typed_path| {
-                // TODO: Replace with array::map once MSRV is 1.55.0.
-                gen_const_array(|i| typed_path[i].inner())
-            });
+            let path = self
+                .path
+                .map(|typed_path| typed_path.map(|node| node.inner()));
             let merkle_inputs = MerklePath::construct(
                 config.merkle_chip_1(),
                 config.merkle_chip_2(),

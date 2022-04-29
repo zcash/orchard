@@ -5,7 +5,6 @@ use core::iter;
 use crate::{
     constants::{
         sinsemilla::{i2lebsp_k, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
-        util::gen_const_array_with_default,
         MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,
@@ -100,20 +99,14 @@ impl MerklePath {
     pub(crate) fn dummy(mut rng: &mut impl RngCore) -> Self {
         MerklePath {
             position: rng.next_u32(),
-            auth_path: gen_const_array_with_default(MerkleHashOrchard::empty_leaf(), |_| {
-                MerkleHashOrchard(pallas::Base::random(&mut rng))
-            }),
+            auth_path: [(); MERKLE_DEPTH_ORCHARD]
+                .map(|_| MerkleHashOrchard(pallas::Base::random(&mut rng))),
         }
     }
 
     /// Instantiates a new Merkle path given a leaf position and authentication path.
     pub(crate) fn new(position: u32, auth_path: [pallas::Base; MERKLE_DEPTH_ORCHARD]) -> Self {
-        Self::from_parts(
-            position,
-            gen_const_array_with_default(MerkleHashOrchard::empty_leaf(), |i| {
-                MerkleHashOrchard(auth_path[i])
-            }),
-        )
+        Self::from_parts(position, auth_path.map(MerkleHashOrchard))
     }
 
     /// Instantiates a new Merkle path given a leaf position and authentication path.
