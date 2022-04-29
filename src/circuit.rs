@@ -16,12 +16,15 @@ use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
 use rand::RngCore;
 
-use self::commit_ivk::CommitIvkConfig;
-use self::note_commit::NoteCommitConfig;
+use self::{
+    commit_ivk::CommitIvkConfig,
+    gadget::add_chip::{AddChip, AddConfig},
+    note_commit::NoteCommitConfig,
+};
 use crate::{
     constants::{
-        NullifierK, OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull,
-        OrchardHashDomains, ValueCommitV, MERKLE_DEPTH_ORCHARD,
+        OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
+        ValueCommitV, MERKLE_DEPTH_ORCHARD,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
@@ -39,10 +42,10 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, FixedPointBaseField, FixedPointShort, NonIdentityPoint, Point,
+        FixedPoint, FixedPointShort, NonIdentityPoint, Point,
     },
-    poseidon::{Hash as PoseidonHash, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
-    primitives::poseidon::{self, ConstantLength},
+    poseidon::{Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    primitives::poseidon,
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{
@@ -76,9 +79,8 @@ const ENABLE_OUTPUT: usize = 8;
 pub struct Config {
     primary: Column<InstanceColumn>,
     q_orchard: Selector,
-    // Selector for the field addition gate poseidon_hash(nk, rho_old) + psi_old.
-    q_add: Selector,
     advices: [Column<Advice>; 10],
+    add_config: AddConfig,
     ecc_config: EccConfig<OrchardFixedBases>,
     poseidon_config: PoseidonConfig<pallas::Base, 3, 2>,
     merkle_config_1: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
@@ -182,16 +184,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             )
         });
 
-        // Addition of two field elements poseidon_hash(nk, rho_old) + psi_old.
-        let q_add = meta.selector();
-        meta.create_gate("poseidon_hash(nk, rho_old) + psi_old", |meta| {
-            let q_add = meta.query_selector(q_add);
-            let sum = meta.query_advice(advices[6], Rotation::cur());
-            let hash_old = meta.query_advice(advices[7], Rotation::cur());
-            let psi_old = meta.query_advice(advices[8], Rotation::cur());
-
-            Constraints::with_selector(q_add, Some(hash_old + psi_old - sum))
-        });
+        // Addition of two field elements.
+        let add_config = AddChip::configure(meta, advices[7], advices[8], advices[6]);
 
         // Fixed columns for the Sinsemilla generator lookup table
         let table_idx = meta.lookup_table_column();
@@ -306,8 +300,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         Config {
             primary,
             q_orchard,
-            q_add,
             advices,
+            add_config,
             ecc_config,
             poseidon_config,
             merkle_config_1,
@@ -471,60 +465,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Nullifier integrity
         let nf_old = {
-            // hash_old = poseidon_hash(nk, rho_old)
-            let hash_old = {
-                let poseidon_message = [nk.clone(), rho_old.clone()];
-                let poseidon_hasher =
-                    PoseidonHash::<_, _, poseidon::P128Pow5T3, ConstantLength<2>, 3, 2>::init(
-                        config.poseidon_chip(),
-                        layouter.namespace(|| "Poseidon init"),
-                    )?;
-                poseidon_hasher.hash(
-                    layouter.namespace(|| "Poseidon hash (nk, rho_old)"),
-                    poseidon_message,
-                )?
-            };
-
-            // Add hash output to psi.
-            // `scalar` = poseidon_hash(nk, rho_old) + psi_old.
-            //
-            let scalar = layouter.assign_region(
-                || " `scalar` = poseidon_hash(nk, rho_old) + psi_old",
-                |mut region| {
-                    config.q_add.enable(&mut region, 0)?;
-
-                    hash_old.copy_advice(|| "copy hash_old", &mut region, config.advices[7], 0)?;
-                    psi_old.copy_advice(|| "copy psi_old", &mut region, config.advices[8], 0)?;
-
-                    let scalar_val = hash_old
-                        .value()
-                        .zip(psi_old.value())
-                        .map(|(hash_old, psi_old)| hash_old + psi_old);
-                    region.assign_advice(
-                        || "poseidon_hash(nk, rho_old) + psi_old",
-                        config.advices[6],
-                        0,
-                        || scalar_val.ok_or(plonk::Error::Synthesis),
-                    )
-                },
+            let nf_old = gadget::derive_nullifier(
+                layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_old, cm_old)"),
+                config.poseidon_chip(),
+                config.add_chip(),
+                ecc_chip.clone(),
+                rho_old.clone(),
+                &psi_old,
+                &cm_old,
+                nk.clone(),
             )?;
-
-            // Multiply scalar by NullifierK
-            // `product` = [poseidon_hash(nk, rho_old) + psi_old] NullifierK.
-            //
-            let product = {
-                let nullifier_k = FixedPointBaseField::from_inner(ecc_chip.clone(), NullifierK);
-                nullifier_k.mul(
-                    layouter.namespace(|| "[poseidon_output + psi_old] NullifierK"),
-                    scalar,
-                )?
-            };
-
-            // Add cm_old to multiplied fixed base to get nf_old
-            // cm_old + [poseidon_output + psi_old] NullifierK
-            let nf_old = cm_old
-                .add(layouter.namespace(|| "nf_old"), &product)?
-                .extract_p();
 
             // Constrain nf_old to equal public input
             layouter.constrain_instance(nf_old.inner().cell(), config.primary, NF_OLD)?;
