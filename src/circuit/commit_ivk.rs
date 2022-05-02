@@ -11,7 +11,7 @@ use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomai
 use halo2_gadgets::{
     ecc::{chip::EccChip, X},
     sinsemilla::{chip::SinsemillaChip, CommitDomain, Message, MessagePiece},
-    utilities::{bitrange_subset, bool_check},
+    utilities::{bool_check, RangeConstrained},
 };
 
 #[derive(Clone, Debug)]
@@ -224,7 +224,7 @@ impl CommitIvkChip {
 }
 
 pub(in crate::circuit) mod gadgets {
-    use halo2_gadgets::utilities::lookup_range_check::LookupRangeCheckConfig;
+    use halo2_gadgets::utilities::{lookup_range_check::LookupRangeCheckConfig, RangeConstrained};
     use halo2_proofs::circuit::Chip;
 
     use super::*;
@@ -258,86 +258,64 @@ pub(in crate::circuit) mod gadgets {
         // d = d_0||d_1` = (bits 245..=253 of `nk`) || (bit 254 of `nk`)
 
         // `a` = bits 0..=249 of `ak`
-        let a = {
-            let a = ak.value().map(|value| bitrange_subset(value, 0..250));
-            MessagePiece::from_field_elem(
-                sinsemilla_chip.clone(),
-                layouter.namespace(|| "a"),
-                a,
-                25,
-            )?
-        };
+        let a = MessagePiece::from_subpieces(
+            sinsemilla_chip.clone(),
+            layouter.namespace(|| "a"),
+            [RangeConstrained::subset_of(ak.value(), 0..250)],
+        )?;
 
         // `b = b_0||b_1||b_2`
         //    = (bits 250..=253 of `ak`) || (bit 254 of  `ak`) || (bits 0..=4 of  `nk`)
         let (b_0, b_1, b_2, b) = {
-            let b_0 = ak.value().map(|value| bitrange_subset(value, 250..254));
-            let b_1 = ak.value().map(|value| bitrange_subset(value, 254..255));
-            let b_2 = nk.value().map(|value| bitrange_subset(value, 0..5));
-
-            let b = b_0.zip(b_1).zip(b_2).map(|((b_0, b_1), b_2)| {
-                let b1_shifted = b_1 * pallas::Base::from(1 << 4);
-                let b2_shifted = b_2 * pallas::Base::from(1 << 5);
-                b_0 + b1_shifted + b2_shifted
-            });
-
             // Constrain b_0 to be 4 bits.
-            let b_0 = lookup_config.witness_short_check(
-                layouter.namespace(|| "b_0 is 4 bits"),
-                b_0,
-                4,
-            )?;
-            // Constrain b_2 to be 5 bits.
-            let b_2 = lookup_config.witness_short_check(
-                layouter.namespace(|| "b_2 is 5 bits"),
-                b_2,
-                5,
+            let b_0 = RangeConstrained::witness_short(
+                &lookup_config,
+                layouter.namespace(|| "b_0"),
+                ak.value(),
+                250..254,
             )?;
             // b_1 will be boolean-constrained in the custom gate.
+            let b_1 = RangeConstrained::subset_of(ak.value(), 254..255);
+            // Constrain b_2 to be 5 bits.
+            let b_2 = RangeConstrained::witness_short(
+                &lookup_config,
+                layouter.namespace(|| "b_2"),
+                nk.value(),
+                0..5,
+            )?;
 
-            let b = MessagePiece::from_field_elem(
+            let b = MessagePiece::from_subpieces(
                 sinsemilla_chip.clone(),
                 layouter.namespace(|| "b = b_0 || b_1 || b_2"),
-                b,
-                1,
+                [b_0.value(), b_1, b_2.value()],
             )?;
 
             (b_0, b_1, b_2, b)
         };
 
         // c = bits 5..=244 of `nk`
-        let c = {
-            let c = nk.value().map(|value| bitrange_subset(value, 5..245));
-            MessagePiece::from_field_elem(
-                sinsemilla_chip.clone(),
-                layouter.namespace(|| "c"),
-                c,
-                24,
-            )?
-        };
+        let c = MessagePiece::from_subpieces(
+            sinsemilla_chip.clone(),
+            layouter.namespace(|| "c"),
+            [RangeConstrained::subset_of(nk.value(), 5..245)],
+        )?;
 
         // `d = d_0||d_1` = (bits 245..=253 of `nk`) || (bit 254 of `nk`)
         let (d_0, d_1, d) = {
-            let d_0 = nk.value().map(|value| bitrange_subset(value, 245..254));
-            let d_1 = nk.value().map(|value| bitrange_subset(value, 254..255));
-
-            let d = d_0
-                .zip(d_1)
-                .map(|(d_0, d_1)| d_0 + d_1 * pallas::Base::from(1 << 9));
-
             // Constrain d_0 to be 9 bits.
-            let d_0 = lookup_config.witness_short_check(
-                layouter.namespace(|| "d_0 is 9 bits"),
-                d_0,
-                9,
+            let d_0 = RangeConstrained::witness_short(
+                &lookup_config,
+                layouter.namespace(|| "d_0"),
+                nk.value(),
+                245..254,
             )?;
             // d_1 will be boolean-constrained in the custom gate.
+            let d_1 = RangeConstrained::subset_of(nk.value(), 254..255);
 
-            let d = MessagePiece::from_field_elem(
+            let d = MessagePiece::from_subpieces(
                 sinsemilla_chip.clone(),
                 layouter.namespace(|| "d = d_0 || d_1"),
-                d,
-                1,
+                [d_0.value(), d_1],
             )?;
 
             (d_0, d_1, d)
@@ -365,7 +343,7 @@ pub(in crate::circuit) mod gadgets {
         let (b2_c_prime, z14_b2_c_prime) = nk_canonicity(
             &lookup_config,
             layouter.namespace(|| "nk canonicity"),
-            b_2.clone(),
+            &b_2,
             c.inner().cell_value(),
         )?;
 
@@ -441,7 +419,7 @@ pub(in crate::circuit) mod gadgets {
     fn nk_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
-        b_2: AssignedCell<pallas::Base, pallas::Base>,
+        b_2: &RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         c: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<
         (
@@ -461,7 +439,7 @@ pub(in crate::circuit) mod gadgets {
 
         // Decompose the low 140 bits of b2_c_prime = b_2 + c * 2^5 + 2^140 - t_P, and output
         // the running sum at the end of it. If b2_c_prime < 2^140, the running sum will be 0.
-        let b2_c_prime = b_2.value().zip(c.value()).map(|(b_2, c)| {
+        let b2_c_prime = b_2.inner().value().zip(c.value()).map(|(b_2, c)| {
             let two_pow_5 = pallas::Base::from(1 << 5);
             let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
             let t_p = pallas::Base::from_u128(T_P);
@@ -521,22 +499,28 @@ impl CommitIvkConfig {
                         .copy_advice(|| "b", &mut region, self.advices[2], offset)?;
 
                     // Copy in `b_0`
-                    gate_cells
-                        .b_0
-                        .copy_advice(|| "b_0", &mut region, self.advices[3], offset)?;
+                    gate_cells.b_0.inner().copy_advice(
+                        || "b_0",
+                        &mut region,
+                        self.advices[3],
+                        offset,
+                    )?;
 
                     // Witness `b_1`
                     region.assign_advice(
                         || "Witness b_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.b_1.ok_or(Error::Synthesis),
+                        || gate_cells.b_1.inner().ok_or(Error::Synthesis),
                     )?;
 
                     // Copy in `b_2`
-                    gate_cells
-                        .b_2
-                        .copy_advice(|| "b_2", &mut region, self.advices[5], offset)?;
+                    gate_cells.b_2.inner().copy_advice(
+                        || "b_2",
+                        &mut region,
+                        self.advices[5],
+                        offset,
+                    )?;
 
                     // Copy in z13_a
                     gate_cells.z13_a.copy_advice(
@@ -583,16 +567,19 @@ impl CommitIvkConfig {
                         .copy_advice(|| "d", &mut region, self.advices[2], offset)?;
 
                     // Copy in `d_0`
-                    gate_cells
-                        .d_0
-                        .copy_advice(|| "d_0", &mut region, self.advices[3], offset)?;
+                    gate_cells.d_0.inner().copy_advice(
+                        || "d_0",
+                        &mut region,
+                        self.advices[3],
+                        offset,
+                    )?;
 
                     // Witness `d_1`
                     region.assign_advice(
                         || "Witness d_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.d_1.ok_or(Error::Synthesis),
+                        || gate_cells.d_1.inner().ok_or(Error::Synthesis),
                     )?;
 
                     // Copy in z13_c
@@ -634,11 +621,11 @@ struct GateCells {
     d: AssignedCell<pallas::Base, pallas::Base>,
     ak: AssignedCell<pallas::Base, pallas::Base>,
     nk: AssignedCell<pallas::Base, pallas::Base>,
-    b_0: AssignedCell<pallas::Base, pallas::Base>,
-    b_1: Option<pallas::Base>,
-    b_2: AssignedCell<pallas::Base, pallas::Base>,
-    d_0: AssignedCell<pallas::Base, pallas::Base>,
-    d_1: Option<pallas::Base>,
+    b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    b_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    d_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    d_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
     z13_a: AssignedCell<pallas::Base, pallas::Base>,
     a_prime: AssignedCell<pallas::Base, pallas::Base>,
     z13_a_prime: AssignedCell<pallas::Base, pallas::Base>,

@@ -17,7 +17,7 @@ use halo2_gadgets::{
         chip::{SinsemillaChip, SinsemillaConfig},
         CommitDomain, Message, MessagePiece,
     },
-    utilities::{bitrange_subset, bool_check},
+    utilities::{bool_check, FieldValue, RangeConstrained},
 };
 
 /// The values of the running sum at the start and end of the range being used for a
@@ -565,148 +565,134 @@ impl NoteCommitConfig {
         let psi_val = psi.value();
 
         // `a` = bits 0..=249 of `x(g_d)`
-        let a = {
-            let a = gd_x.map(|gd_x| bitrange_subset(gd_x, 0..250));
-            MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "a"), a, 25)?
-        };
+        let a = MessagePiece::from_subpieces(
+            chip.clone(),
+            layouter.namespace(|| "a"),
+            [RangeConstrained::subset_of(gd_x, 0..250)],
+        )?;
 
         // b = b_0 || b_1 || b_2 || b_3
         //   = (bits 250..=253 of x(g_d)) || (bit 254 of x(g_d)) || (ỹ bit of g_d) || (bits 0..=3 of pk★_d)
-        let (b_0, b_1, b_2, b_3, b) =
-            {
-                let b_0 = gd_x.map(|gd_x| bitrange_subset(gd_x, 250..254));
-                let b_1 = gd_x.map(|gd_x| bitrange_subset(gd_x, 254..255));
-                let b_2 = gd_y.map(|gd_y| bitrange_subset(gd_y, 0..1));
-                let b_3 = pkd_x.map(|pkd_x| bitrange_subset(pkd_x, 0..4));
+        let (b_0, b_1, b_2, b_3, b) = {
+            // Constrain b_0 to be 4 bits
+            let b_0 = RangeConstrained::witness_short(
+                &self.sinsemilla_config.lookup_config(),
+                layouter.namespace(|| "b_0"),
+                gd_x,
+                250..254,
+            )?;
 
-                // Constrain b_0 to be 4 bits
-                let b_0 = self.sinsemilla_config.lookup_config().witness_short_check(
-                    layouter.namespace(|| "b_0 is 4 bits"),
-                    b_0,
-                    4,
-                )?;
+            // b_1, b_2 will be boolean-constrained in the gate.
+            let b_1 = RangeConstrained::subset_of(gd_x, 254..255);
+            let b_2 = RangeConstrained::subset_of(gd_y, 0..1);
 
-                // Constrain b_3 to be 4 bits
-                let b_3 = self.sinsemilla_config.lookup_config().witness_short_check(
-                    layouter.namespace(|| "b_3 is 4 bits"),
-                    b_3,
-                    4,
-                )?;
+            // Constrain b_3 to be 4 bits
+            let b_3 = RangeConstrained::witness_short(
+                &self.sinsemilla_config.lookup_config(),
+                layouter.namespace(|| "b_3"),
+                pkd_x,
+                0..4,
+            )?;
 
-                // b_1, b_2 will be boolean-constrained in the gate.
+            let b = MessagePiece::from_subpieces(
+                chip.clone(),
+                layouter.namespace(|| "b"),
+                [b_0.value(), b_1, b_2, b_3.value()],
+            )?;
 
-                let b = b_0.value().zip(b_1).zip(b_2).zip(b_3.value()).map(
-                    |(((b_0, b_1), b_2), b_3)| {
-                        let b1_shifted = b_1 * pallas::Base::from(1 << 4);
-                        let b2_shifted = b_2 * pallas::Base::from(1 << 5);
-                        let b3_shifted = b_3 * pallas::Base::from(1 << 6);
-                        b_0 + b1_shifted + b2_shifted + b3_shifted
-                    },
-                );
-
-                let b =
-                    MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "b"), b, 1)?;
-
-                (b_0, b_1, b_2, b_3, b)
-            };
+            (b_0, b_1, b_2, b_3, b)
+        };
 
         // c = bits 4..=253 of pk★_d
-        let c = {
-            let c = pkd_x.map(|pkd_x| bitrange_subset(pkd_x, 4..254));
-            MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "c"), c, 25)?
-        };
+        let c = MessagePiece::from_subpieces(
+            chip.clone(),
+            layouter.namespace(|| "c"),
+            [RangeConstrained::subset_of(pkd_x, 4..254)],
+        )?;
 
         // d = d_0 || d_1 || d_2 || d_3
         //   = (bit 254 of x(pk_d)) || (ỹ bit of pk_d) || (bits 0..=7 of v) || (bits 8..=57 of v)
         let (d_0, d_1, d_2, d) = {
-            let d_0 = pkd_x.map(|pkd_x| bitrange_subset(pkd_x, 254..255));
-            let d_1 = pkd_y.map(|pkd_y| bitrange_subset(pkd_y, 0..1));
-            let d_2 = value_val.map(|value| bitrange_subset(value, 0..8));
-            let d_3 = value_val.map(|value| bitrange_subset(value, 8..58));
+            // d_0, d_1 will be boolean-constrained in the gate.
+            let d_0 = RangeConstrained::subset_of(pkd_x, 254..255);
+            let d_1 = RangeConstrained::subset_of(pkd_y, 0..1);
 
             // Constrain d_2 to be 8 bits
-            let d_2 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "d_2 is 8 bits"),
-                d_2,
-                8,
+            let d_2 = RangeConstrained::witness_short(
+                &self.sinsemilla_config.lookup_config(),
+                layouter.namespace(|| "d_2"),
+                value_val,
+                0..8,
             )?;
 
-            // d_0, d_1 will be boolean-constrained in the gate.
             // d_3 = z1_d from the SinsemillaHash(d) running sum output.
+            let d_3 = RangeConstrained::subset_of(value_val, 8..58);
 
-            let d = d_0
-                .zip(d_1)
-                .zip(d_2.value())
-                .zip(d_3)
-                .map(|(((d_0, d_1), d_2), d_3)| {
-                    let d1_shifted = d_1 * pallas::Base::from(2);
-                    let d2_shifted = d_2 * pallas::Base::from(1 << 2);
-                    let d3_shifted = d_3 * pallas::Base::from(1 << 10);
-                    d_0 + d1_shifted + d2_shifted + d3_shifted
-                });
-
-            let d = MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "d"), d, 6)?;
+            let d = MessagePiece::from_subpieces(
+                chip.clone(),
+                layouter.namespace(|| "d"),
+                [d_0, d_1, d_2.value(), d_3],
+            )?;
 
             (d_0, d_1, d_2, d)
         };
 
         // e = e_0 || e_1 = (bits 58..=63 of v) || (bits 0..=3 of rho)
         let (e_0, e_1, e) = {
-            let e_0 = value_val.map(|value| bitrange_subset(value, 58..64));
-            let e_1 = rho_val.map(|rho| bitrange_subset(rho, 0..4));
-
             // Constrain e_0 to be 6 bits.
-            let e_0 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "e_0 is 6 bits"),
-                e_0,
-                6,
+            let e_0 = RangeConstrained::witness_short(
+                &self.sinsemilla_config.lookup_config(),
+                layouter.namespace(|| "e_0"),
+                value_val,
+                58..64,
             )?;
 
             // Constrain e_1 to be 4 bits.
-            let e_1 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "e_1 is 4 bits"),
-                e_1,
-                4,
+            let e_1 = RangeConstrained::witness_short(
+                &self.sinsemilla_config.lookup_config(),
+                layouter.namespace(|| "e_1"),
+                rho_val,
+                0..4,
             )?;
 
-            let e = e_0
-                .value()
-                .zip(e_1.value())
-                .map(|(e_0, e_1)| e_0 + e_1 * pallas::Base::from(1 << 6));
-            let e = MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "e"), e, 1)?;
+            let e = MessagePiece::from_subpieces(
+                chip.clone(),
+                layouter.namespace(|| "e"),
+                [e_0.value(), e_1.value()],
+            )?;
 
             (e_0, e_1, e)
         };
 
         // f = bits 4..=253 inclusive of rho
-        let f = {
-            let f = rho_val.map(|rho| bitrange_subset(rho, 4..254));
-            MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "f"), f, 25)?
-        };
+        let f = MessagePiece::from_subpieces(
+            chip.clone(),
+            layouter.namespace(|| "f"),
+            [RangeConstrained::subset_of(rho_val, 4..254)],
+        )?;
 
         // g = g_0 || g_1 || g_2
         //   = (bit 254 of rho) || (bits 0..=8 of psi) || (bits 9..=248 of psi)
         let (g_0, g_1, g) = {
-            let g_0 = rho_val.map(|rho| bitrange_subset(rho, 254..255));
-            let g_1 = psi_val.map(|psi| bitrange_subset(psi, 0..9));
-            let g_2 = psi_val.map(|psi| bitrange_subset(psi, 9..249));
+            // g_0 will be boolean-constrained in the gate.
+            let g_0 = RangeConstrained::subset_of(rho_val, 254..255);
 
             // Constrain g_1 to be 9 bits.
-            let g_1 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "g_1 is 9 bits"),
-                g_1,
-                9,
+            let g_1 = RangeConstrained::witness_short(
+                &self.sinsemilla_config.lookup_config(),
+                layouter.namespace(|| "g_1"),
+                psi_val,
+                0..9,
             )?;
 
-            // g_0 will be boolean-constrained in the gate.
             // g_2 = z1_g from the SinsemillaHash(g) running sum output.
+            let g_2 = RangeConstrained::subset_of(psi_val, 9..249);
 
-            let g = g_0.zip(g_1.value()).zip(g_2).map(|((g_0, g_1), g_2)| {
-                let g1_shifted = g_1 * pallas::Base::from(2);
-                let g2_shifted = g_2 * pallas::Base::from(1 << 10);
-                g_0 + g1_shifted + g2_shifted
-            });
-            let g = MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "g"), g, 25)?;
+            let g = MessagePiece::from_subpieces(
+                chip.clone(),
+                layouter.namespace(|| "g"),
+                [g_0, g_1.value(), g_2],
+            )?;
 
             (g_0, g_1, g)
         };
@@ -714,23 +700,26 @@ impl NoteCommitConfig {
         // h = h_0 || h_1 || h_2
         //   = (bits 249..=253 of psi) || (bit 254 of psi) || 4 zero bits
         let (h_0, h_1, h) = {
-            let h_0 = psi_val.map(|psi| bitrange_subset(psi, 249..254));
-            let h_1 = psi_val.map(|psi| bitrange_subset(psi, 254..255));
-
             // Constrain h_0 to be 5 bits.
-            let h_0 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "h_0 is 5 bits"),
-                h_0,
-                5,
+            let h_0 = RangeConstrained::witness_short(
+                &self.sinsemilla_config.lookup_config(),
+                layouter.namespace(|| "h_0"),
+                psi_val,
+                249..254,
             )?;
 
             // h_1 will be boolean-constrained in the gate.
+            let h_1 = RangeConstrained::subset_of(psi_val, 254..255);
 
-            let h = h_0
-                .value()
-                .zip(h_1)
-                .map(|(h_0, h_1)| h_0 + h_1 * pallas::Base::from(1 << 5));
-            let h = MessagePiece::from_field_elem(chip.clone(), layouter.namespace(|| "h"), h, 1)?;
+            let h = MessagePiece::from_subpieces(
+                chip.clone(),
+                layouter.namespace(|| "h"),
+                [
+                    h_0.value(),
+                    h_1,
+                    RangeConstrained::subset_of(Some(&pallas::Base::zero()), 0..4),
+                ],
+            )?;
 
             (h_0, h_1, h)
         };
@@ -878,7 +867,7 @@ impl NoteCommitConfig {
     fn pkd_x_canonicity(
         &self,
         mut layouter: impl Layouter<pallas::Base>,
-        b_3: AssignedCell<pallas::Base, pallas::Base>,
+        b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         c: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<CanonicityBounds, Error> {
         // `x(pk_d)` = `b_3 (4 bits) || c (250 bits) || d_0 (1 bit)`
@@ -894,7 +883,7 @@ impl NoteCommitConfig {
         // Decompose the low 140 bits of b3_c_prime = b_3 + 2^4 c + 2^140 - t_P,
         // and output the running sum at the end of it.
         // If b3_c_prime < 2^140, the running sum will be 0.
-        let b3_c_prime = b_3.value().zip(c.value()).map(|(b_3, c)| {
+        let b3_c_prime = b_3.inner().value().zip(c.value()).map(|(b_3, c)| {
             let two_pow_4 = pallas::Base::from(1u64 << 4);
             let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
             let t_p = pallas::Base::from_u128(T_P);
@@ -917,7 +906,7 @@ impl NoteCommitConfig {
     fn rho_canonicity(
         &self,
         mut layouter: impl Layouter<pallas::Base>,
-        e_1: AssignedCell<pallas::Base, pallas::Base>,
+        e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         f: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<CanonicityBounds, Error> {
         // `rho` = `e_1 (4 bits) || f (250 bits) || g_0 (1 bit)`
@@ -930,7 +919,7 @@ impl NoteCommitConfig {
         //       to 130 bits. z13_f == 0 is directly checked in the gate.
         // - 0 ≤ e_1 + 2^4 f + 2^140 - t_P < 2^140 (14 ten-bit lookups)
 
-        let e1_f_prime = e_1.value().zip(f.value()).map(|(e_1, f)| {
+        let e1_f_prime = e_1.inner().value().zip(f.value()).map(|(e_1, f)| {
             let two_pow_4 = pallas::Base::from(1u64 << 4);
             let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
             let t_p = pallas::Base::from_u128(T_P);
@@ -956,7 +945,7 @@ impl NoteCommitConfig {
     fn psi_canonicity(
         &self,
         mut layouter: impl Layouter<pallas::Base>,
-        g_1: AssignedCell<pallas::Base, pallas::Base>,
+        g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         g_2: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<CanonicityBounds, Error> {
         // `psi` = `g_1 (9 bits) || g_2 (240 bits) || h_0 (5 bits) || h_1 (1 bit)`
@@ -970,7 +959,7 @@ impl NoteCommitConfig {
         // Decompose the low 130 bits of g1_g2_prime = g_1 + (2^9)g_2 + 2^130 - t_P,
         // and output the running sum at the end of it.
         // If g1_g2_prime < 2^130, the running sum will be 0.
-        let g1_g2_prime = g_1.value().zip(g_2.value()).map(|(g_1, g_2)| {
+        let g1_g2_prime = g_1.inner().value().zip(g_2.value()).map(|(g_1, g_2)| {
             let two_pow_9 = pallas::Base::from(1u64 << 9);
             let two_pow_130 = pallas::Base::from_u128(1u128 << 65).square();
             let t_p = pallas::Base::from_u128(T_P);
@@ -995,41 +984,47 @@ impl NoteCommitConfig {
         &self,
         mut layouter: impl Layouter<pallas::Base>,
         y: AssignedCell<pallas::Base, pallas::Base>,
-        lsb: Option<pallas::Base>,
-    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        lsb: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    ) -> Result<RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>, Error>
+    {
         // Decompose the field element
         //      y = LSB || k_0 || k_1 || k_2 || k_3
         //        = (bit 0) || (bits 1..=9) || (bits 10..=249) || (bits 250..=253) || (bit 254)
-        let (k_0, k_1, k_2, k_3) = {
-            let k_0 = y.value().map(|y| bitrange_subset(y, 1..10));
-            let k_1 = y.value().map(|y| bitrange_subset(y, 10..250));
-            let k_2 = y.value().map(|y| bitrange_subset(y, 250..254));
-            let k_3 = y.value().map(|y| bitrange_subset(y, 254..255));
-
-            (k_0, k_1, k_2, k_3)
-        };
 
         // Range-constrain k_0 to be 9 bits.
-        let k_0 = self.sinsemilla_config.lookup_config().witness_short_check(
-            layouter.namespace(|| "Constrain k_0 to be 9 bits"),
-            k_0,
-            9,
+        let k_0 = RangeConstrained::witness_short(
+            &self.sinsemilla_config.lookup_config(),
+            layouter.namespace(|| "k_0"),
+            y.value(),
+            1..10,
         )?;
 
+        // k_1 will be constrained by the decomposition of j.
+        let k_1 = RangeConstrained::subset_of(y.value(), 10..250);
+
         // Range-constrain k_2 to be 4 bits.
-        let k_2 = self.sinsemilla_config.lookup_config().witness_short_check(
-            layouter.namespace(|| "Constrain k_2 to be 4 bits"),
-            k_2,
-            4,
+        let k_2 = RangeConstrained::witness_short(
+            &self.sinsemilla_config.lookup_config(),
+            layouter.namespace(|| "k_2"),
+            y.value(),
+            250..254,
         )?;
+
+        // k_3 will be boolean-constrained in the gate.
+        let k_3 = RangeConstrained::subset_of(y.value(), 254..255);
 
         // Decompose j = LSB + (2)k_0 + (2^10)k_1 using 25 ten-bit lookups.
         let (j, z1_j, z13_j) = {
-            let j = lsb.zip(k_0.value()).zip(k_1).map(|((lsb, k_0), k_1)| {
-                let two = pallas::Base::from(2);
-                let two_pow_10 = pallas::Base::from(1 << 10);
-                lsb + two * k_0 + two_pow_10 * k_1
-            });
+            let j = lsb
+                .inner()
+                .value()
+                .zip(k_0.inner().value())
+                .zip(k_1.inner().value())
+                .map(|((lsb, k_0), k_1)| {
+                    let two = pallas::Base::from(2);
+                    let two_pow_10 = pallas::Base::from(1 << 10);
+                    lsb + two * k_0 + two_pow_10 * k_1
+                });
             let zs = self.sinsemilla_config.lookup_config().witness_check(
                 layouter.namespace(|| "Decompose j = LSB + (2)k_0 + (2^10)k_1"),
                 j,
@@ -1067,22 +1062,28 @@ impl NoteCommitConfig {
                     // Copy y.
                     y.copy_advice(|| "copy y", &mut region, self.advices[5], offset)?;
                     // Witness LSB.
-                    let lsb = region.assign_advice(
-                        || "witness LSB",
-                        self.advices[6],
-                        offset,
-                        || lsb.ok_or(Error::Synthesis),
-                    )?;
+                    let lsb = region
+                        .assign_advice(
+                            || "witness LSB",
+                            self.advices[6],
+                            offset,
+                            || lsb.inner().value().copied().ok_or(Error::Synthesis),
+                        )
+                        // SAFETY: This is sound because we just assigned this cell from a
+                        // range-constrained value.
+                        .map(|cell| RangeConstrained::unsound_unchecked(cell, lsb.num_bits()))?;
                     // Witness k_0.
-                    k_0.copy_advice(|| "copy k_0", &mut region, self.advices[7], offset)?;
+                    k_0.inner()
+                        .copy_advice(|| "copy k_0", &mut region, self.advices[7], offset)?;
                     // Copy k_2.
-                    k_2.copy_advice(|| "copy k_2", &mut region, self.advices[8], offset)?;
+                    k_2.inner()
+                        .copy_advice(|| "copy k_2", &mut region, self.advices[8], offset)?;
                     // Witness k_3.
                     region.assign_advice(
                         || "witness k_3",
                         self.advices[9],
                         offset,
-                        || k_3.ok_or(Error::Synthesis),
+                        || k_3.inner().ok_or(Error::Synthesis),
                     )?;
 
                     lsb
@@ -1137,19 +1138,22 @@ impl NoteCommitConfig {
                 gate_cells.b.copy_advice(|| "b", &mut region, col_l, 0)?;
                 gate_cells
                     .b_0
+                    .inner()
                     .copy_advice(|| "b_0", &mut region, col_m, 0)?;
                 let b_1 = region.assign_advice(
                     || "b_1",
                     col_r,
                     0,
-                    || gate_cells.b_1.ok_or(Error::Synthesis),
+                    || gate_cells.b_1.inner().ok_or(Error::Synthesis),
                 )?;
 
                 gate_cells
                     .b_2
+                    .inner()
                     .copy_advice(|| "b_2", &mut region, col_m, 1)?;
                 gate_cells
                     .b_3
+                    .inner()
                     .copy_advice(|| "b_3", &mut region, col_r, 1)?;
 
                 Ok(b_1)
@@ -1170,14 +1174,16 @@ impl NoteCommitConfig {
                     || "d_0",
                     col_m,
                     0,
-                    || gate_cells.d_0.ok_or(Error::Synthesis),
+                    || gate_cells.d_0.inner().ok_or(Error::Synthesis),
                 )?;
                 gate_cells
                     .d_1
+                    .inner()
                     .copy_advice(|| "d_1", &mut region, col_r, 0)?;
 
                 gate_cells
                     .d_2
+                    .inner()
                     .copy_advice(|| "d_2", &mut region, col_m, 1)?;
                 gate_cells
                     .z1_d
@@ -1198,9 +1204,11 @@ impl NoteCommitConfig {
                 gate_cells.e.copy_advice(|| "e", &mut region, col_l, 0)?;
                 gate_cells
                     .e_0
+                    .inner()
                     .copy_advice(|| "e_0", &mut region, col_m, 0)?;
                 gate_cells
                     .e_1
+                    .inner()
                     .copy_advice(|| "e_1", &mut region, col_r, 0)?;
 
                 Ok(())
@@ -1221,11 +1229,12 @@ impl NoteCommitConfig {
                     || "g_0",
                     col_m,
                     0,
-                    || gate_cells.g_0.ok_or(Error::Synthesis),
+                    || gate_cells.g_0.inner().ok_or(Error::Synthesis),
                 )?;
 
                 gate_cells
                     .g_1
+                    .inner()
                     .copy_advice(|| "g_1", &mut region, col_l, 1)?;
                 gate_cells
                     .z1_g
@@ -1246,12 +1255,13 @@ impl NoteCommitConfig {
                 gate_cells.h.copy_advice(|| "h", &mut region, col_l, 0)?;
                 gate_cells
                     .h_0
+                    .inner()
                     .copy_advice(|| "h_0", &mut region, col_m, 0)?;
                 let h_1 = region.assign_advice(
                     || "h_1",
                     col_r,
                     0,
-                    || gate_cells.h_1.ok_or(Error::Synthesis),
+                    || gate_cells.h_1.inner().ok_or(Error::Synthesis),
                 )?;
 
                 Ok(h_1)
@@ -1271,6 +1281,7 @@ impl NoteCommitConfig {
 
                 gate_cells
                     .b_0
+                    .inner()
                     .copy_advice(|| "b_0", &mut region, col_m, 0)?;
                 b_1.copy_advice(|| "b_1", &mut region, col_m, 1)?;
 
@@ -1303,6 +1314,7 @@ impl NoteCommitConfig {
 
                 gate_cells
                     .b_3
+                    .inner()
                     .copy_advice(|| "b_3", &mut region, col_m, 0)?;
                 d_0.copy_advice(|| "d_0", &mut region, col_m, 1)?;
 
@@ -1334,12 +1346,14 @@ impl NoteCommitConfig {
                     .copy_advice(|| "value", &mut region, col_l, 0)?;
                 gate_cells
                     .d_2
+                    .inner()
                     .copy_advice(|| "d_2", &mut region, col_m, 0)?;
                 gate_cells
                     .z1_d
                     .copy_advice(|| "d3 = z1_d", &mut region, col_r, 0)?;
                 gate_cells
                     .e_0
+                    .inner()
                     .copy_advice(|| "e_0", &mut region, col_z, 0)?;
 
                 self.q_notecommit_value.enable(&mut region, 0)
@@ -1359,6 +1373,7 @@ impl NoteCommitConfig {
 
                 gate_cells
                     .e_1
+                    .inner()
                     .copy_advice(|| "e_1", &mut region, col_m, 0)?;
                 g_0.copy_advice(|| "g_0", &mut region, col_m, 1)?;
 
@@ -1393,10 +1408,12 @@ impl NoteCommitConfig {
                     .copy_advice(|| "psi", &mut region, col_l, 0)?;
                 gate_cells
                     .h_0
+                    .inner()
                     .copy_advice(|| "h_0", &mut region, col_l, 1)?;
 
                 gate_cells
                     .g_1
+                    .inner()
                     .copy_advice(|| "g_1", &mut region, col_m, 0)?;
                 h_1.copy_advice(|| "h_1", &mut region, col_m, 1)?;
 
@@ -1426,27 +1443,27 @@ impl NoteCommitConfig {
 struct GateCells {
     a: AssignedCell<pallas::Base, pallas::Base>,
     b: AssignedCell<pallas::Base, pallas::Base>,
-    b_0: AssignedCell<pallas::Base, pallas::Base>,
-    b_1: Option<pallas::Base>,
-    b_2: AssignedCell<pallas::Base, pallas::Base>,
-    b_3: AssignedCell<pallas::Base, pallas::Base>,
+    b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    b_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     c: AssignedCell<pallas::Base, pallas::Base>,
     d: AssignedCell<pallas::Base, pallas::Base>,
-    d_0: Option<pallas::Base>,
-    d_1: AssignedCell<pallas::Base, pallas::Base>,
-    d_2: AssignedCell<pallas::Base, pallas::Base>,
+    d_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    d_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    d_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     z1_d: AssignedCell<pallas::Base, pallas::Base>,
     e: AssignedCell<pallas::Base, pallas::Base>,
-    e_0: AssignedCell<pallas::Base, pallas::Base>,
-    e_1: AssignedCell<pallas::Base, pallas::Base>,
+    e_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     f: AssignedCell<pallas::Base, pallas::Base>,
     g: AssignedCell<pallas::Base, pallas::Base>,
-    g_0: Option<pallas::Base>,
-    g_1: AssignedCell<pallas::Base, pallas::Base>,
+    g_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     z1_g: AssignedCell<pallas::Base, pallas::Base>,
     h: AssignedCell<pallas::Base, pallas::Base>,
-    h_0: AssignedCell<pallas::Base, pallas::Base>,
-    h_1: Option<pallas::Base>,
+    h_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    h_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
     gd_x: AssignedCell<pallas::Base, pallas::Base>,
     pkd_x: AssignedCell<pallas::Base, pallas::Base>,
     value: AssignedCell<pallas::Base, pallas::Base>,
