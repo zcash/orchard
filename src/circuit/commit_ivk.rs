@@ -105,10 +105,8 @@ impl CommitIvkChip {
             // Check that d_whole is consistent with the witnessed subpieces.
             let d_decomposition_check = d_whole - (d_0.clone() + d_1.clone() * two_pow_9);
 
-            // Check `b_1` is a single-bit value
+            // Check `b_1` and `d_1` are each a single-bit value.
             let b1_bool_check = bool_check(b_1.clone());
-
-            // Check `d_1` is a single-bit value
             let d1_bool_check = bool_check(d_1.clone());
 
             // Check that ak = a (250 bits) || b_0 (4 bits) || b_1 (1 bit)
@@ -256,6 +254,9 @@ pub(in crate::circuit) mod gadgets {
         //   = (bits 250..=253 of `ak`) || (bit 254 of  `ak`) || (bits 0..=4 of  `nk`)
         // c = bits 5..=244 of `nk`
         // d = d_0||d_1` = (bits 245..=253 of `nk`) || (bit 254 of `nk`)
+        //
+        // We start by witnessing all of the individual pieces, and range-constraining
+        // the short pieces b_0, b_2, and d_0.
 
         // `a` = bits 0..=249 of `ak`
         let a = MessagePiece::from_subpieces(
@@ -321,6 +322,11 @@ pub(in crate::circuit) mod gadgets {
             (d_0, d_1, d)
         };
 
+        // ivk = Commit^ivk_rivk(I2LEBSP_255(ak) || I2LEBSP_255(nk))
+        //
+        // `ivk = ⊥` is handled internally to `CommitDomain::short_commit`: incomplete
+        // addition constraints allows ⊥ to occur, and then during synthesis it detects
+        // these edge cases and raises an error (aborting proof creation).
         let (ivk, zs) = {
             let message = Message::from_pieces(
                 sinsemilla_chip.clone(),
@@ -331,6 +337,9 @@ pub(in crate::circuit) mod gadgets {
             domain.short_commit(layouter.namespace(|| "Hash ak||nk"), message, rivk)?
         };
 
+        // `CommitDomain::short_commit` returns the running sum for each `MessagePiece`.
+        // Grab the outputs for pieces `a` and `c` that we will need for canonicity checks
+        // on `ak` and `nk`.
         let z13_a = zs[0][13].clone();
         let z13_c = zs[2][13].clone();
 
@@ -375,8 +384,8 @@ pub(in crate::circuit) mod gadgets {
         Ok(ivk)
     }
 
+    /// Witnesses and decomposes the `a'` value we need to check the canonicity of `ak`.
     #[allow(clippy::type_complexity)]
-    // Check canonicity of `ak` encoding
     fn ak_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -409,13 +418,13 @@ pub(in crate::circuit) mod gadgets {
             false,
         )?;
         let a_prime = zs[0].clone();
-        assert_eq!(zs.len(), 14); // [z_0, z_1, ..., z13_a]
+        assert_eq!(zs.len(), 14); // [z_0, z_1, ..., z13]
 
         Ok((a_prime, zs[13].clone()))
     }
 
+    /// Witnesses and decomposes the `b2c'` value we need to check the canonicity of `nk`.
     #[allow(clippy::type_complexity)]
-    // Check canonicity of `nk` encoding
     fn nk_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -459,7 +468,7 @@ pub(in crate::circuit) mod gadgets {
 }
 
 impl CommitIvkConfig {
-    // Assign cells for the canonicity gate.
+    /// Assign cells for the canonicity gate.
     /*
         The pieces are laid out in this configuration:
 
