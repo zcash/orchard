@@ -2,6 +2,7 @@
 
 use pasta_curves::pallas;
 
+use super::commit_ivk::CommitIvkChip;
 use crate::constants::{
     NullifierK, OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
     ValueCommitV,
@@ -25,6 +26,10 @@ pub(in crate::circuit) mod add_chip;
 impl super::Config {
     pub(super) fn add_chip(&self) -> add_chip::AddChip {
         add_chip::AddChip::construct(self.add_config.clone())
+    }
+
+    pub(super) fn commit_ivk_chip(&self) -> CommitIvkChip {
+        CommitIvkChip::construct(self.commit_ivk_config.clone())
     }
 
     pub(super) fn ecc_chip(&self) -> EccChip<OrchardFixedBases> {
@@ -166,3 +171,5 @@ pub(in crate::circuit) fn derive_nullifier<
     cm.add(layouter.namespace(|| "nf"), &product)
         .map(|res| res.extract_p())
 }
+
+pub(in crate::circuit) use crate::circuit::commit_ivk::gadgets::commit_ivk;

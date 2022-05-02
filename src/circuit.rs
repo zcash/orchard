@@ -17,7 +17,7 @@ use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
 use rand::RngCore;
 
 use self::{
-    commit_ivk::CommitIvkConfig,
+    commit_ivk::{CommitIvkChip, CommitIvkConfig},
     gadget::add_chip::{AddChip, AddConfig},
     note_commit::NoteCommitConfig,
 };
@@ -288,8 +288,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Configuration to handle decomposition and canonicity checking
         // for CommitIvk.
-        let commit_ivk_config =
-            CommitIvkConfig::configure(meta, advices, sinsemilla_config_1.clone());
+        let commit_ivk_config = CommitIvkChip::configure(meta, advices);
 
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_old.
@@ -492,15 +491,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Diversified address integrity.
         let pk_d_old = {
-            let commit_ivk_config = config.commit_ivk_config.clone();
-
             let ivk = {
                 let ak = ak_P.extract_p().inner().clone();
                 let rivk = self.rivk.map(|rivk| rivk.inner());
 
-                commit_ivk_config.assign_region(
+                gadget::commit_ivk(
                     config.sinsemilla_chip_1(),
                     ecc_chip.clone(),
+                    config.commit_ivk_chip(),
                     layouter.namespace(|| "CommitIvk"),
                     ak,
                     nk,
