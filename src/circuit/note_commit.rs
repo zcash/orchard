@@ -50,6 +50,9 @@ type CanonicityBounds = (
 #[derive(Clone, Debug)]
 struct DecomposeB {
     q_notecommit_b: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
 }
 
 impl DecomposeB {
@@ -92,7 +95,46 @@ impl DecomposeB {
             )
         });
 
-        Self { q_notecommit_b }
+        Self {
+            q_notecommit_b,
+            col_l,
+            col_m,
+            col_r,
+        }
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        b: AssignedCell<pallas::Base, pallas::Base>,
+        b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        b_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        layouter.assign_region(
+            || "NoteCommit MessagePiece b",
+            |mut region| {
+                self.q_notecommit_b.enable(&mut region, 0)?;
+
+                b.copy_advice(|| "b", &mut region, self.col_l, 0)?;
+                b_0.inner()
+                    .copy_advice(|| "b_0", &mut region, self.col_m, 0)?;
+                let b_1 = region.assign_advice(
+                    || "b_1",
+                    self.col_r,
+                    0,
+                    || b_1.inner().ok_or(Error::Synthesis),
+                )?;
+
+                b_2.inner()
+                    .copy_advice(|| "b_2", &mut region, self.col_m, 1)?;
+                b_3.inner()
+                    .copy_advice(|| "b_3", &mut region, self.col_r, 1)?;
+
+                Ok(b_1)
+            },
+        )
     }
 }
 
@@ -103,6 +145,9 @@ impl DecomposeB {
 #[derive(Clone, Debug)]
 struct DecomposeD {
     q_notecommit_d: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
 }
 
 impl DecomposeD {
@@ -145,7 +190,45 @@ impl DecomposeD {
             )
         });
 
-        Self { q_notecommit_d }
+        Self {
+            q_notecommit_d,
+            col_l,
+            col_m,
+            col_r,
+        }
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        d: AssignedCell<pallas::Base, pallas::Base>,
+        d_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        d_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        d_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        z1_d: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        layouter.assign_region(
+            || "NoteCommit MessagePiece d",
+            |mut region| {
+                self.q_notecommit_d.enable(&mut region, 0)?;
+
+                d.copy_advice(|| "d", &mut region, self.col_l, 0)?;
+                let d_0 = region.assign_advice(
+                    || "d_0",
+                    self.col_m,
+                    0,
+                    || d_0.inner().ok_or(Error::Synthesis),
+                )?;
+                d_1.inner()
+                    .copy_advice(|| "d_1", &mut region, self.col_r, 0)?;
+
+                d_2.inner()
+                    .copy_advice(|| "d_2", &mut region, self.col_m, 1)?;
+                z1_d.copy_advice(|| "d_3 = z1_d", &mut region, self.col_r, 1)?;
+
+                Ok(d_0)
+            },
+        )
     }
 }
 
@@ -155,6 +238,9 @@ impl DecomposeD {
 #[derive(Clone, Debug)]
 struct DecomposeE {
     q_notecommit_e: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
 }
 
 impl DecomposeE {
@@ -183,7 +269,35 @@ impl DecomposeE {
             Constraints::with_selector(q_notecommit_e, Some(("decomposition", decomposition_check)))
         });
 
-        Self { q_notecommit_e }
+        Self {
+            q_notecommit_e,
+            col_l,
+            col_m,
+            col_r,
+        }
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        e: AssignedCell<pallas::Base, pallas::Base>,
+        e_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "NoteCommit MessagePiece e",
+            |mut region| {
+                self.q_notecommit_e.enable(&mut region, 0)?;
+
+                e.copy_advice(|| "e", &mut region, self.col_l, 0)?;
+                e_0.inner()
+                    .copy_advice(|| "e_0", &mut region, self.col_m, 0)?;
+                e_1.inner()
+                    .copy_advice(|| "e_1", &mut region, self.col_r, 0)?;
+
+                Ok(())
+            },
+        )
     }
 }
 
@@ -194,6 +308,8 @@ impl DecomposeE {
 #[derive(Clone, Debug)]
 struct DecomposeG {
     q_notecommit_g: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
 }
 
 impl DecomposeG {
@@ -230,7 +346,41 @@ impl DecomposeG {
             )
         });
 
-        Self { q_notecommit_g }
+        Self {
+            q_notecommit_g,
+            col_l,
+            col_m,
+        }
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        g: AssignedCell<pallas::Base, pallas::Base>,
+        g_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        z1_g: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        layouter.assign_region(
+            || "NoteCommit MessagePiece g",
+            |mut region| {
+                self.q_notecommit_g.enable(&mut region, 0)?;
+
+                g.copy_advice(|| "g", &mut region, self.col_l, 0)?;
+                let g_0 = region.assign_advice(
+                    || "g_0",
+                    self.col_m,
+                    0,
+                    || g_0.inner().ok_or(Error::Synthesis),
+                )?;
+
+                g_1.inner()
+                    .copy_advice(|| "g_1", &mut region, self.col_l, 1)?;
+                z1_g.copy_advice(|| "g_2 = z1_g", &mut region, self.col_m, 1)?;
+
+                Ok(g_0)
+            },
+        )
     }
 }
 
@@ -240,6 +390,9 @@ impl DecomposeG {
 #[derive(Clone, Debug)]
 struct DecomposeH {
     q_notecommit_h: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
 }
 
 impl DecomposeH {
@@ -274,7 +427,39 @@ impl DecomposeH {
             )
         });
 
-        Self { q_notecommit_h }
+        Self {
+            q_notecommit_h,
+            col_l,
+            col_m,
+            col_r,
+        }
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        h: AssignedCell<pallas::Base, pallas::Base>,
+        h_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        h_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        layouter.assign_region(
+            || "NoteCommit MessagePiece h",
+            |mut region| {
+                self.q_notecommit_h.enable(&mut region, 0)?;
+
+                h.copy_advice(|| "h", &mut region, self.col_l, 0)?;
+                h_0.inner()
+                    .copy_advice(|| "h_0", &mut region, self.col_m, 0)?;
+                let h_1 = region.assign_advice(
+                    || "h_1",
+                    self.col_r,
+                    0,
+                    || h_1.inner().ok_or(Error::Synthesis),
+                )?;
+
+                Ok(h_1)
+            },
+        )
     }
 }
 
@@ -285,6 +470,10 @@ impl DecomposeH {
 #[derive(Clone, Debug)]
 struct GdCanonicity {
     q_notecommit_g_d: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
+    col_z: Column<Advice>,
 }
 
 impl GdCanonicity {
@@ -345,7 +534,45 @@ impl GdCanonicity {
             )
         });
 
-        Self { q_notecommit_g_d }
+        Self {
+            q_notecommit_g_d,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        gd_x: AssignedCell<pallas::Base, pallas::Base>,
+        a: AssignedCell<pallas::Base, pallas::Base>,
+        b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        b_1: AssignedCell<pallas::Base, pallas::Base>,
+        a_prime: AssignedCell<pallas::Base, pallas::Base>,
+        z13_a: AssignedCell<pallas::Base, pallas::Base>,
+        z13_a_prime: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "NoteCommit input g_d",
+            |mut region| {
+                gd_x.copy_advice(|| "gd_x", &mut region, self.col_l, 0)?;
+
+                b_0.inner()
+                    .copy_advice(|| "b_0", &mut region, self.col_m, 0)?;
+                b_1.copy_advice(|| "b_1", &mut region, self.col_m, 1)?;
+
+                a.copy_advice(|| "a", &mut region, self.col_r, 0)?;
+                a_prime.copy_advice(|| "a_prime", &mut region, self.col_r, 1)?;
+
+                z13_a.copy_advice(|| "z13_a", &mut region, self.col_z, 0)?;
+                z13_a_prime.copy_advice(|| "z13_a_prime", &mut region, self.col_z, 1)?;
+
+                self.q_notecommit_g_d.enable(&mut region, 0)
+            },
+        )
     }
 }
 
@@ -356,6 +583,10 @@ impl GdCanonicity {
 #[derive(Clone, Debug)]
 struct PkdCanonicity {
     q_notecommit_pk_d: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
+    col_z: Column<Advice>,
 }
 
 impl PkdCanonicity {
@@ -415,7 +646,45 @@ impl PkdCanonicity {
             )
         });
 
-        Self { q_notecommit_pk_d }
+        Self {
+            q_notecommit_pk_d,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        pkd_x: AssignedCell<pallas::Base, pallas::Base>,
+        b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        c: AssignedCell<pallas::Base, pallas::Base>,
+        d_0: AssignedCell<pallas::Base, pallas::Base>,
+        b3_c_prime: AssignedCell<pallas::Base, pallas::Base>,
+        z13_c: AssignedCell<pallas::Base, pallas::Base>,
+        z14_b3_c_prime: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "NoteCommit input pk_d",
+            |mut region| {
+                pkd_x.copy_advice(|| "pkd_x", &mut region, self.col_l, 0)?;
+
+                b_3.inner()
+                    .copy_advice(|| "b_3", &mut region, self.col_m, 0)?;
+                d_0.copy_advice(|| "d_0", &mut region, self.col_m, 1)?;
+
+                c.copy_advice(|| "c", &mut region, self.col_r, 0)?;
+                b3_c_prime.copy_advice(|| "b3_c_prime", &mut region, self.col_r, 1)?;
+
+                z13_c.copy_advice(|| "z13_c", &mut region, self.col_z, 0)?;
+                z14_b3_c_prime.copy_advice(|| "z14_b3_c_prime", &mut region, self.col_z, 1)?;
+
+                self.q_notecommit_pk_d.enable(&mut region, 0)
+            },
+        )
     }
 }
 
@@ -425,6 +694,10 @@ impl PkdCanonicity {
 #[derive(Clone, Debug)]
 struct ValueCanonicity {
     q_notecommit_value: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
+    col_z: Column<Advice>,
 }
 
 impl ValueCanonicity {
@@ -457,7 +730,36 @@ impl ValueCanonicity {
             Constraints::with_selector(q_notecommit_value, Some(("value_check", value_check)))
         });
 
-        Self { q_notecommit_value }
+        Self {
+            q_notecommit_value,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+        }
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        value: AssignedCell<NoteValue, pallas::Base>,
+        d_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        z1_d: AssignedCell<pallas::Base, pallas::Base>,
+        e_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "NoteCommit input value",
+            |mut region| {
+                value.copy_advice(|| "value", &mut region, self.col_l, 0)?;
+                d_2.inner()
+                    .copy_advice(|| "d_2", &mut region, self.col_m, 0)?;
+                z1_d.copy_advice(|| "d3 = z1_d", &mut region, self.col_r, 0)?;
+                e_0.inner()
+                    .copy_advice(|| "e_0", &mut region, self.col_z, 0)?;
+
+                self.q_notecommit_value.enable(&mut region, 0)
+            },
+        )
     }
 }
 
@@ -468,6 +770,10 @@ impl ValueCanonicity {
 #[derive(Clone, Debug)]
 struct RhoCanonicity {
     q_notecommit_rho: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
+    col_z: Column<Advice>,
 }
 
 impl RhoCanonicity {
@@ -526,7 +832,45 @@ impl RhoCanonicity {
             )
         });
 
-        Self { q_notecommit_rho }
+        Self {
+            q_notecommit_rho,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        rho: AssignedCell<pallas::Base, pallas::Base>,
+        e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        f: AssignedCell<pallas::Base, pallas::Base>,
+        g_0: AssignedCell<pallas::Base, pallas::Base>,
+        e1_f_prime: AssignedCell<pallas::Base, pallas::Base>,
+        z13_f: AssignedCell<pallas::Base, pallas::Base>,
+        z14_e1_f_prime: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "NoteCommit input rho",
+            |mut region| {
+                rho.copy_advice(|| "rho", &mut region, self.col_l, 0)?;
+
+                e_1.inner()
+                    .copy_advice(|| "e_1", &mut region, self.col_m, 0)?;
+                g_0.copy_advice(|| "g_0", &mut region, self.col_m, 1)?;
+
+                f.copy_advice(|| "f", &mut region, self.col_r, 0)?;
+                e1_f_prime.copy_advice(|| "e1_f_prime", &mut region, self.col_r, 1)?;
+
+                z13_f.copy_advice(|| "z13_f", &mut region, self.col_z, 0)?;
+                z14_e1_f_prime.copy_advice(|| "z14_e1_f_prime", &mut region, self.col_z, 1)?;
+
+                self.q_notecommit_rho.enable(&mut region, 0)
+            },
+        )
     }
 }
 
@@ -537,6 +881,10 @@ impl RhoCanonicity {
 #[derive(Clone, Debug)]
 struct PsiCanonicity {
     q_notecommit_psi: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
+    col_z: Column<Advice>,
 }
 
 impl PsiCanonicity {
@@ -600,7 +948,48 @@ impl PsiCanonicity {
             )
         });
 
-        Self { q_notecommit_psi }
+        Self {
+            q_notecommit_psi,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        psi: AssignedCell<pallas::Base, pallas::Base>,
+        g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        z1_g: AssignedCell<pallas::Base, pallas::Base>,
+        h_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        h_1: AssignedCell<pallas::Base, pallas::Base>,
+        g1_g2_prime: AssignedCell<pallas::Base, pallas::Base>,
+        z13_g: AssignedCell<pallas::Base, pallas::Base>,
+        z13_g1_g2_prime: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<(), Error> {
+        layouter.assign_region(
+            || "NoteCommit input psi",
+            |mut region| {
+                psi.copy_advice(|| "psi", &mut region, self.col_l, 0)?;
+                h_0.inner()
+                    .copy_advice(|| "h_0", &mut region, self.col_l, 1)?;
+
+                g_1.inner()
+                    .copy_advice(|| "g_1", &mut region, self.col_m, 0)?;
+                h_1.copy_advice(|| "h_1", &mut region, self.col_m, 1)?;
+
+                z1_g.copy_advice(|| "g_2 = z1_g", &mut region, self.col_r, 0)?;
+                g1_g2_prime.copy_advice(|| "g1_g2_prime", &mut region, self.col_r, 1)?;
+
+                z13_g.copy_advice(|| "z13_g", &mut region, self.col_z, 0)?;
+                z13_g1_g2_prime.copy_advice(|| "z13_g1_g2_prime", &mut region, self.col_z, 1)?;
+
+                self.q_notecommit_psi.enable(&mut region, 0)
+            },
+        )
     }
 }
 
@@ -619,6 +1008,7 @@ impl PsiCanonicity {
 #[derive(Clone, Debug)]
 struct YCanonicity {
     q_y_canon: Selector,
+    advices: [Column<Advice>; 10],
 }
 
 impl YCanonicity {
@@ -689,7 +1079,88 @@ impl YCanonicity {
             Constraints::with_selector(q_y_canon, decomposition_checks.chain(canonicity_checks))
         });
 
-        Self { q_y_canon }
+        Self { q_y_canon, advices }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        y: AssignedCell<pallas::Base, pallas::Base>,
+        lsb: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        k_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        k_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        k_3: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        j: AssignedCell<pallas::Base, pallas::Base>,
+        z1_j: AssignedCell<pallas::Base, pallas::Base>,
+        z13_j: AssignedCell<pallas::Base, pallas::Base>,
+        j_prime: AssignedCell<pallas::Base, pallas::Base>,
+        z13_j_prime: AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>, Error>
+    {
+        layouter.assign_region(
+            || "y canonicity",
+            |mut region| {
+                self.q_y_canon.enable(&mut region, 0)?;
+
+                // Offset 0
+                let lsb = {
+                    let offset = 0;
+
+                    // Copy y.
+                    y.copy_advice(|| "copy y", &mut region, self.advices[5], offset)?;
+                    // Witness LSB.
+                    let lsb = region
+                        .assign_advice(
+                            || "witness LSB",
+                            self.advices[6],
+                            offset,
+                            || lsb.inner().ok_or(Error::Synthesis),
+                        )
+                        // SAFETY: This is sound because we just assigned this cell from a
+                        // range-constrained value.
+                        .map(|cell| RangeConstrained::unsound_unchecked(cell, lsb.num_bits()))?;
+                    // Witness k_0.
+                    k_0.inner()
+                        .copy_advice(|| "copy k_0", &mut region, self.advices[7], offset)?;
+                    // Copy k_2.
+                    k_2.inner()
+                        .copy_advice(|| "copy k_2", &mut region, self.advices[8], offset)?;
+                    // Witness k_3.
+                    region.assign_advice(
+                        || "witness k_3",
+                        self.advices[9],
+                        offset,
+                        || k_3.inner().ok_or(Error::Synthesis),
+                    )?;
+
+                    lsb
+                };
+
+                // Offset 1
+                {
+                    let offset = 1;
+
+                    // Copy j.
+                    j.copy_advice(|| "copy j", &mut region, self.advices[5], offset)?;
+                    // Copy z1_j.
+                    z1_j.copy_advice(|| "copy z1_j", &mut region, self.advices[6], offset)?;
+                    // Copy z13_j.
+                    z13_j.copy_advice(|| "copy z13_j", &mut region, self.advices[7], offset)?;
+                    // Copy j_prime.
+                    j_prime.copy_advice(|| "copy j_prime", &mut region, self.advices[8], offset)?;
+                    // Copy z13_j_prime.
+                    z13_j_prime.copy_advice(
+                        || "copy z13_j_prime",
+                        &mut region,
+                        self.advices[9],
+                        offset,
+                    )?;
+                }
+
+                Ok(lsb)
+            },
+        )
     }
 }
 
@@ -1334,77 +1805,18 @@ impl NoteCommitConfig {
             j.clone(),
         )?;
 
-        /*
-
-            Assign y canonicity gate in the following configuration:
-                | A_5 | A_6 |  A_7  |   A_8   |     A_9     |
-                ----------------------------------------------
-                |  y  | lsb |  k_0  |   k_2   |     k_3     |
-                |  j  | z1_j| z13_j | j_prime | z13_j_prime |
-            where z1_j = k_1.
-        */
-        layouter.assign_region(
-            || "y canonicity",
-            |mut region| {
-                self.y_canon.q_y_canon.enable(&mut region, 0)?;
-
-                // Offset 0
-                let lsb = {
-                    let offset = 0;
-
-                    // Copy y.
-                    y.copy_advice(|| "copy y", &mut region, self.advices[5], offset)?;
-                    // Witness LSB.
-                    let lsb = region
-                        .assign_advice(
-                            || "witness LSB",
-                            self.advices[6],
-                            offset,
-                            || lsb.inner().value().copied().ok_or(Error::Synthesis),
-                        )
-                        // SAFETY: This is sound because we just assigned this cell from a
-                        // range-constrained value.
-                        .map(|cell| RangeConstrained::unsound_unchecked(cell, lsb.num_bits()))?;
-                    // Witness k_0.
-                    k_0.inner()
-                        .copy_advice(|| "copy k_0", &mut region, self.advices[7], offset)?;
-                    // Copy k_2.
-                    k_2.inner()
-                        .copy_advice(|| "copy k_2", &mut region, self.advices[8], offset)?;
-                    // Witness k_3.
-                    region.assign_advice(
-                        || "witness k_3",
-                        self.advices[9],
-                        offset,
-                        || k_3.inner().ok_or(Error::Synthesis),
-                    )?;
-
-                    lsb
-                };
-
-                // Offset 1
-                {
-                    let offset = 1;
-
-                    // Copy j.
-                    j.copy_advice(|| "copy j", &mut region, self.advices[5], offset)?;
-                    // Copy z1_j.
-                    z1_j.copy_advice(|| "copy z1_j", &mut region, self.advices[6], offset)?;
-                    // Copy z13_j.
-                    z13_j.copy_advice(|| "copy z13_j", &mut region, self.advices[7], offset)?;
-                    // Copy j_prime.
-                    j_prime.copy_advice(|| "copy j_prime", &mut region, self.advices[8], offset)?;
-                    // Copy z13_j_prime.
-                    z13_j_prime.copy_advice(
-                        || "copy z13_j_prime",
-                        &mut region,
-                        self.advices[9],
-                        offset,
-                    )?;
-                }
-
-                Ok(lsb)
-            },
+        self.y_canon.assign(
+            &mut layouter,
+            y,
+            lsb,
+            k_0,
+            k_2,
+            k_3,
+            j,
+            z1_j,
+            z13_j,
+            j_prime,
+            z13_j_prime,
         )
     }
 
@@ -1413,322 +1825,97 @@ impl NoteCommitConfig {
         mut layouter: impl Layouter<pallas::Base>,
         gate_cells: GateCells,
     ) -> Result<(), Error> {
-        // Columns used for MessagePiece gates.
-        let col_l = self.advices[6];
-        let col_m = self.advices[7];
-        let col_r = self.advices[8];
-        let col_z = self.advices[9];
-
-        // | A_6 | A_7 | A_8 | q_notecommit_b |
-        // ------------------------------------
-        // |  b  | b_0 | b_1 |       1        |
-        // |     | b_2 | b_3 |       0        |
-        let b_1 = layouter.assign_region(
-            || "NoteCommit MessagePiece b",
-            |mut region| {
-                self.b.q_notecommit_b.enable(&mut region, 0)?;
-
-                gate_cells.b.copy_advice(|| "b", &mut region, col_l, 0)?;
-                gate_cells
-                    .b_0
-                    .inner()
-                    .copy_advice(|| "b_0", &mut region, col_m, 0)?;
-                let b_1 = region.assign_advice(
-                    || "b_1",
-                    col_r,
-                    0,
-                    || gate_cells.b_1.inner().ok_or(Error::Synthesis),
-                )?;
-
-                gate_cells
-                    .b_2
-                    .inner()
-                    .copy_advice(|| "b_2", &mut region, col_m, 1)?;
-                gate_cells
-                    .b_3
-                    .inner()
-                    .copy_advice(|| "b_3", &mut region, col_r, 1)?;
-
-                Ok(b_1)
-            },
+        let b_1 = self.b.assign(
+            &mut layouter,
+            gate_cells.b,
+            gate_cells.b_0.clone(),
+            gate_cells.b_1,
+            gate_cells.b_2,
+            gate_cells.b_3.clone(),
         )?;
 
-        // | A_6 | A_7 | A_8 | q_notecommit_d |
-        // ------------------------------------
-        // |  d  | d_0 | d_1 |       1        |
-        // |     | d_2 | d_3 |       0        |
-        let d_0 = layouter.assign_region(
-            || "NoteCommit MessagePiece d",
-            |mut region| {
-                self.d.q_notecommit_d.enable(&mut region, 0)?;
-
-                gate_cells.d.copy_advice(|| "d", &mut region, col_l, 0)?;
-                let d_0 = region.assign_advice(
-                    || "d_0",
-                    col_m,
-                    0,
-                    || gate_cells.d_0.inner().ok_or(Error::Synthesis),
-                )?;
-                gate_cells
-                    .d_1
-                    .inner()
-                    .copy_advice(|| "d_1", &mut region, col_r, 0)?;
-
-                gate_cells
-                    .d_2
-                    .inner()
-                    .copy_advice(|| "d_2", &mut region, col_m, 1)?;
-                gate_cells
-                    .z1_d
-                    .copy_advice(|| "d_3 = z1_d", &mut region, col_r, 1)?;
-
-                Ok(d_0)
-            },
+        let d_0 = self.d.assign(
+            &mut layouter,
+            gate_cells.d,
+            gate_cells.d_0,
+            gate_cells.d_1,
+            gate_cells.d_2.clone(),
+            gate_cells.z1_d.clone(),
         )?;
 
-        // | A_6 | A_7 | A_8 | q_notecommit_e |
-        // ------------------------------------
-        // |  e  | e_0 | e_1 |       1        |
-        layouter.assign_region(
-            || "NoteCommit MessagePiece e",
-            |mut region| {
-                self.e.q_notecommit_e.enable(&mut region, 0)?;
-
-                gate_cells.e.copy_advice(|| "e", &mut region, col_l, 0)?;
-                gate_cells
-                    .e_0
-                    .inner()
-                    .copy_advice(|| "e_0", &mut region, col_m, 0)?;
-                gate_cells
-                    .e_1
-                    .inner()
-                    .copy_advice(|| "e_1", &mut region, col_r, 0)?;
-
-                Ok(())
-            },
+        self.e.assign(
+            &mut layouter,
+            gate_cells.e,
+            gate_cells.e_0.clone(),
+            gate_cells.e_1.clone(),
         )?;
 
-        // | A_6 | A_7 | q_notecommit_g |
-        // ------------------------------
-        // |  g  | g_0 |       1        |
-        // | g_1 | g_2 |       0        |
-        let g_0 = layouter.assign_region(
-            || "NoteCommit MessagePiece g",
-            |mut region| {
-                self.g.q_notecommit_g.enable(&mut region, 0)?;
-
-                gate_cells.g.copy_advice(|| "g", &mut region, col_l, 0)?;
-                let g_0 = region.assign_advice(
-                    || "g_0",
-                    col_m,
-                    0,
-                    || gate_cells.g_0.inner().ok_or(Error::Synthesis),
-                )?;
-
-                gate_cells
-                    .g_1
-                    .inner()
-                    .copy_advice(|| "g_1", &mut region, col_l, 1)?;
-                gate_cells
-                    .z1_g
-                    .copy_advice(|| "g_2 = z1_g", &mut region, col_m, 1)?;
-
-                Ok(g_0)
-            },
+        let g_0 = self.g.assign(
+            &mut layouter,
+            gate_cells.g,
+            gate_cells.g_0,
+            gate_cells.g_1.clone(),
+            gate_cells.z1_g.clone(),
         )?;
 
-        // | A_6 | A_7 | A_8 | q_notecommit_h |
-        // ------------------------------------
-        // |  h  | h_0 | h_1 |       1        |
-        let h_1 = layouter.assign_region(
-            || "NoteCommit MessagePiece h",
-            |mut region| {
-                self.h.q_notecommit_h.enable(&mut region, 0)?;
-
-                gate_cells.h.copy_advice(|| "h", &mut region, col_l, 0)?;
-                gate_cells
-                    .h_0
-                    .inner()
-                    .copy_advice(|| "h_0", &mut region, col_m, 0)?;
-                let h_1 = region.assign_advice(
-                    || "h_1",
-                    col_r,
-                    0,
-                    || gate_cells.h_1.inner().ok_or(Error::Synthesis),
-                )?;
-
-                Ok(h_1)
-            },
+        let h_1 = self.h.assign(
+            &mut layouter,
+            gate_cells.h,
+            gate_cells.h_0.clone(),
+            gate_cells.h_1,
         )?;
 
-        // |  A_6   | A_7 |   A_8   |     A_9     | q_notecommit_g_d |
-        // -----------------------------------------------------------
-        // | x(g_d) | b_0 | a       | z13_a       |        1         |
-        // |        | b_1 | a_prime | z13_a_prime |        0         |
-        layouter.assign_region(
-            || "NoteCommit input g_d",
-            |mut region| {
-                gate_cells
-                    .gd_x
-                    .copy_advice(|| "gd_x", &mut region, col_l, 0)?;
-
-                gate_cells
-                    .b_0
-                    .inner()
-                    .copy_advice(|| "b_0", &mut region, col_m, 0)?;
-                b_1.copy_advice(|| "b_1", &mut region, col_m, 1)?;
-
-                gate_cells.a.copy_advice(|| "a", &mut region, col_r, 0)?;
-                gate_cells
-                    .a_prime
-                    .copy_advice(|| "a_prime", &mut region, col_r, 1)?;
-
-                gate_cells
-                    .z13_a
-                    .copy_advice(|| "z13_a", &mut region, col_z, 0)?;
-                gate_cells
-                    .z13_a_prime
-                    .copy_advice(|| "z13_a_prime", &mut region, col_z, 1)?;
-
-                self.g_d.q_notecommit_g_d.enable(&mut region, 0)
-            },
+        self.g_d.assign(
+            &mut layouter,
+            gate_cells.gd_x,
+            gate_cells.a,
+            gate_cells.b_0,
+            b_1,
+            gate_cells.a_prime,
+            gate_cells.z13_a,
+            gate_cells.z13_a_prime,
         )?;
 
-        // |   A_6   | A_7 |    A_8     |      A_9       | q_notecommit_pk_d |
-        // -------------------------------------------------------------------
-        // | x(pk_d) | b_3 |    c       | z13_c          |         1         |
-        // |         | d_0 | b3_c_prime | z14_b3_c_prime |         0         |
-        layouter.assign_region(
-            || "NoteCommit input pk_d",
-            |mut region| {
-                gate_cells
-                    .pkd_x
-                    .copy_advice(|| "pkd_x", &mut region, col_l, 0)?;
-
-                gate_cells
-                    .b_3
-                    .inner()
-                    .copy_advice(|| "b_3", &mut region, col_m, 0)?;
-                d_0.copy_advice(|| "d_0", &mut region, col_m, 1)?;
-
-                gate_cells.c.copy_advice(|| "c", &mut region, col_r, 0)?;
-                gate_cells
-                    .b3_c_prime
-                    .copy_advice(|| "b3_c_prime", &mut region, col_r, 1)?;
-
-                gate_cells
-                    .z13_c
-                    .copy_advice(|| "z13_c", &mut region, col_z, 0)?;
-                gate_cells.z14_b3_c_prime.copy_advice(
-                    || "z14_b3_c_prime",
-                    &mut region,
-                    col_z,
-                    1,
-                )?;
-
-                self.pk_d.q_notecommit_pk_d.enable(&mut region, 0)
-            },
+        self.pk_d.assign(
+            &mut layouter,
+            gate_cells.pkd_x,
+            gate_cells.b_3,
+            gate_cells.c,
+            d_0,
+            gate_cells.b3_c_prime,
+            gate_cells.z13_c,
+            gate_cells.z14_b3_c_prime,
         )?;
 
-        // | value | d_2 | d_3 | e_0 |
-        layouter.assign_region(
-            || "NoteCommit input value",
-            |mut region| {
-                gate_cells
-                    .value
-                    .copy_advice(|| "value", &mut region, col_l, 0)?;
-                gate_cells
-                    .d_2
-                    .inner()
-                    .copy_advice(|| "d_2", &mut region, col_m, 0)?;
-                gate_cells
-                    .z1_d
-                    .copy_advice(|| "d3 = z1_d", &mut region, col_r, 0)?;
-                gate_cells
-                    .e_0
-                    .inner()
-                    .copy_advice(|| "e_0", &mut region, col_z, 0)?;
-
-                self.value.q_notecommit_value.enable(&mut region, 0)
-            },
+        self.value.assign(
+            &mut layouter,
+            gate_cells.value,
+            gate_cells.d_2,
+            gate_cells.z1_d,
+            gate_cells.e_0,
         )?;
 
-        // | A_6 | A_7 |    A_8     |      A_9       | q_notecommit_rho |
-        // --------------------------------------------------------------
-        // | rho | e_1 |    f       | z13_f          |        1         |
-        // |     | g_0 | e1_f_prime | z14_e1_f_prime |        0         |
-        layouter.assign_region(
-            || "NoteCommit input rho",
-            |mut region| {
-                gate_cells
-                    .rho
-                    .copy_advice(|| "rho", &mut region, col_l, 0)?;
-
-                gate_cells
-                    .e_1
-                    .inner()
-                    .copy_advice(|| "e_1", &mut region, col_m, 0)?;
-                g_0.copy_advice(|| "g_0", &mut region, col_m, 1)?;
-
-                gate_cells.f.copy_advice(|| "f", &mut region, col_r, 0)?;
-                gate_cells
-                    .e1_f_prime
-                    .copy_advice(|| "e1_f_prime", &mut region, col_r, 1)?;
-
-                gate_cells
-                    .z13_f
-                    .copy_advice(|| "z13_f", &mut region, col_z, 0)?;
-                gate_cells.z14_e1_f_prime.copy_advice(
-                    || "z14_e1_f_prime",
-                    &mut region,
-                    col_z,
-                    1,
-                )?;
-
-                self.rho.q_notecommit_rho.enable(&mut region, 0)
-            },
+        self.rho.assign(
+            &mut layouter,
+            gate_cells.rho,
+            gate_cells.e_1,
+            gate_cells.f,
+            g_0,
+            gate_cells.e1_f_prime,
+            gate_cells.z13_f,
+            gate_cells.z14_e1_f_prime,
         )?;
 
-        // | A_6 | A_7 |     A_8     |       A_9       | q_notecommit_psi |
-        // ----------------------------------------------------------------
-        // | psi | g_1 |   g_2       | z13_g           |        1         |
-        // | h_0 | h_1 | g1_g2_prime | z13_g1_g2_prime |        0         |
-        layouter.assign_region(
-            || "NoteCommit input psi",
-            |mut region| {
-                gate_cells
-                    .psi
-                    .copy_advice(|| "psi", &mut region, col_l, 0)?;
-                gate_cells
-                    .h_0
-                    .inner()
-                    .copy_advice(|| "h_0", &mut region, col_l, 1)?;
-
-                gate_cells
-                    .g_1
-                    .inner()
-                    .copy_advice(|| "g_1", &mut region, col_m, 0)?;
-                h_1.copy_advice(|| "h_1", &mut region, col_m, 1)?;
-
-                gate_cells
-                    .z1_g
-                    .copy_advice(|| "g_2 = z1_g", &mut region, col_r, 0)?;
-                gate_cells
-                    .g1_g2_prime
-                    .copy_advice(|| "g1_g2_prime", &mut region, col_r, 1)?;
-
-                gate_cells
-                    .z13_g
-                    .copy_advice(|| "z13_g", &mut region, col_z, 0)?;
-                gate_cells.z13_g1_g2_prime.copy_advice(
-                    || "z13_g1_g2_prime",
-                    &mut region,
-                    col_z,
-                    1,
-                )?;
-
-                self.psi.q_notecommit_psi.enable(&mut region, 0)
-            },
+        self.psi.assign(
+            &mut layouter,
+            gate_cells.psi,
+            gate_cells.g_1,
+            gate_cells.z1_g,
+            gate_cells.h_0,
+            h_1,
+            gate_cells.g1_g2_prime,
+            gate_cells.z13_g,
+            gate_cells.z13_g1_g2_prime,
         )
     }
 }
