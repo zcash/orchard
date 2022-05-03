@@ -4,7 +4,7 @@ use core::fmt;
 
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
-    circuit::{floor_planner, AssignedCell, Layouter},
+    circuit::{floor_planner, Layouter},
     plonk::{
         self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector,
         SingleVerifier,
@@ -18,7 +18,10 @@ use rand::RngCore;
 
 use self::{
     commit_ivk::{CommitIvkChip, CommitIvkConfig},
-    gadget::add_chip::{AddChip, AddConfig},
+    gadget::{
+        add_chip::{AddChip, AddConfig},
+        assign_free_advice,
+    },
     note_commit::NoteCommitConfig,
 };
 use crate::{
@@ -53,7 +56,7 @@ use halo2_gadgets::{
             MerklePath,
         },
     },
-    utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
+    utilities::lookup_range_check::LookupRangeCheckConfig,
 };
 
 mod commit_ivk;
@@ -116,10 +119,6 @@ pub struct Circuit {
     pub(crate) psi_new: Option<pallas::Base>,
     pub(crate) rcm_new: Option<NoteCommitTrapdoor>,
     pub(crate) rcv: Option<ValueCommitTrapdoor>,
-}
-
-impl UtilitiesInstructions<pallas::Base> for Circuit {
-    type Var = AssignedCell<pallas::Base, pallas::Base>;
 }
 
 impl plonk::Circuit<pallas::Base> for Circuit {
@@ -332,14 +331,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         // Witness private inputs that are used across multiple checks.
         let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new) = {
             // Witness psi_old
-            let psi_old = self.load_private(
+            let psi_old = assign_free_advice(
                 layouter.namespace(|| "witness psi_old"),
                 config.advices[0],
                 self.psi_old,
             )?;
 
             // Witness rho_old
-            let rho_old = self.load_private(
+            let rho_old = assign_free_advice(
                 layouter.namespace(|| "witness rho_old"),
                 config.advices[0],
                 self.rho_old.map(|rho| rho.0),
@@ -368,21 +367,21 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             )?;
 
             // Witness nk.
-            let nk = self.load_private(
+            let nk = assign_free_advice(
                 layouter.namespace(|| "witness nk"),
                 config.advices[0],
                 self.nk.map(|nk| nk.inner()),
             )?;
 
             // Witness v_old.
-            let v_old = self.load_private(
+            let v_old = assign_free_advice(
                 layouter.namespace(|| "witness v_old"),
                 config.advices[0],
                 self.v_old.map(|v_old| pallas::Base::from(v_old.inner())),
             )?;
 
             // Witness v_new.
-            let v_new = self.load_private(
+            let v_new = assign_free_advice(
                 layouter.namespace(|| "witness v_new"),
                 config.advices[0],
                 self.v_new.map(|v_new| pallas::Base::from(v_new.inner())),
@@ -426,12 +425,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     )
                 });
 
-                let magnitude = self.load_private(
+                let magnitude = assign_free_advice(
                     layouter.namespace(|| "v_net magnitude"),
                     config.advices[9],
                     magnitude_sign.map(|m_s| m_s.0),
                 )?;
-                let sign = self.load_private(
+                let sign = assign_free_advice(
                     layouter.namespace(|| "v_net sign"),
                     config.advices[9],
                     magnitude_sign.map(|m_s| m_s.1),
@@ -582,7 +581,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let rho_new = nf_old.inner().clone();
 
             // Witness psi_new
-            let psi_new = self.load_private(
+            let psi_new = assign_free_advice(
                 layouter.namespace(|| "witness psi_new"),
                 config.advices[0],
                 self.psi_new,

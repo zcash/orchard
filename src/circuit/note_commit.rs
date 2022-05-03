@@ -1488,9 +1488,12 @@ mod tests {
     use core::iter;
 
     use super::NoteCommitConfig;
-    use crate::constants::{
-        fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
-        OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
+    use crate::{
+        circuit::gadget::assign_free_advice,
+        constants::{
+            fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
+            OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
+        },
     };
     use halo2_gadgets::{
         ecc::{
@@ -1499,13 +1502,13 @@ mod tests {
         },
         primitives::sinsemilla::CommitDomain,
         sinsemilla::chip::SinsemillaChip,
-        utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
+        utilities::lookup_range_check::LookupRangeCheckConfig,
     };
 
     use ff::{Field, PrimeField, PrimeFieldBits};
     use group::Curve;
     use halo2_proofs::{
-        circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
@@ -1526,10 +1529,6 @@ mod tests {
             pkd_y_lsb: Option<pallas::Base>,
             rho: Option<pallas::Base>,
             psi: Option<pallas::Base>,
-        }
-
-        impl UtilitiesInstructions<pallas::Base> for MyCircuit {
-            type Var = AssignedCell<pallas::Base, pallas::Base>;
         }
 
         impl Circuit<pallas::Base> for MyCircuit {
@@ -1669,7 +1668,7 @@ mod tests {
                     pallas::Base::from(rng.next_u64())
                 };
                 let value_var = {
-                    self.load_private(
+                    assign_free_advice(
                         layouter.namespace(|| "witness value"),
                         note_commit_config.advices[0],
                         Some(value),
@@ -1677,14 +1676,14 @@ mod tests {
                 };
 
                 // Witness rho
-                let rho = self.load_private(
+                let rho = assign_free_advice(
                     layouter.namespace(|| "witness rho"),
                     note_commit_config.advices[0],
                     self.rho,
                 )?;
 
                 // Witness psi
-                let psi = self.load_private(
+                let psi = assign_free_advice(
                     layouter.namespace(|| "witness psi"),
                     note_commit_config.advices[0],
                     self.psi,
