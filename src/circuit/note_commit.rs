@@ -7,7 +7,10 @@ use halo2_proofs::{
 };
 use pasta_curves::{arithmetic::FieldExt, pallas};
 
-use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
+use crate::{
+    constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
+    value::NoteValue,
+};
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, NonIdentityEccPoint},
@@ -550,8 +553,7 @@ impl NoteCommitConfig {
         ecc_chip: EccChip<OrchardFixedBases>,
         g_d: &NonIdentityEccPoint,
         pk_d: &NonIdentityEccPoint,
-        // TODO: Set V to Orchard value type
-        value: AssignedCell<pallas::Base, pallas::Base>,
+        value: AssignedCell<NoteValue, pallas::Base>,
         rho: AssignedCell<pallas::Base, pallas::Base>,
         psi: AssignedCell<pallas::Base, pallas::Base>,
         rcm: Option<pallas::Scalar>,
@@ -560,7 +562,7 @@ impl NoteCommitConfig {
         let (pkd_x, pkd_y) = (pk_d.x(), pk_d.y());
         let (gd_x, gd_y) = (gd_x.value(), gd_y.value());
         let (pkd_x, pkd_y) = (pkd_x.value(), pkd_y.value());
-        let value_val = value.value();
+        let value_val = value.value().map(|v| pallas::Base::from(v.inner()));
         let rho_val = rho.value();
         let psi_val = psi.value();
 
@@ -621,12 +623,12 @@ impl NoteCommitConfig {
             let d_2 = RangeConstrained::witness_short(
                 &self.sinsemilla_config.lookup_config(),
                 layouter.namespace(|| "d_2"),
-                value_val,
+                value_val.as_ref(),
                 0..8,
             )?;
 
             // d_3 = z1_d from the SinsemillaHash(d) running sum output.
-            let d_3 = RangeConstrained::subset_of(value_val, 8..58);
+            let d_3 = RangeConstrained::subset_of(value_val.as_ref(), 8..58);
 
             let d = MessagePiece::from_subpieces(
                 chip.clone(),
@@ -643,7 +645,7 @@ impl NoteCommitConfig {
             let e_0 = RangeConstrained::witness_short(
                 &self.sinsemilla_config.lookup_config(),
                 layouter.namespace(|| "e_0"),
-                value_val,
+                value_val.as_ref(),
                 58..64,
             )?;
 
@@ -1466,7 +1468,7 @@ struct GateCells {
     h_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
     gd_x: AssignedCell<pallas::Base, pallas::Base>,
     pkd_x: AssignedCell<pallas::Base, pallas::Base>,
-    value: AssignedCell<pallas::Base, pallas::Base>,
+    value: AssignedCell<NoteValue, pallas::Base>,
     rho: AssignedCell<pallas::Base, pallas::Base>,
     psi: AssignedCell<pallas::Base, pallas::Base>,
     a_prime: AssignedCell<pallas::Base, pallas::Base>,
@@ -1494,6 +1496,7 @@ mod tests {
             fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
             OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
         },
+        value::NoteValue,
     };
     use halo2_gadgets::{
         ecc::{
@@ -1665,7 +1668,7 @@ mod tests {
                 // A note value cannot be negative.
                 let value = {
                     let mut rng = OsRng;
-                    pallas::Base::from(rng.next_u64())
+                    NoteValue::from_raw(rng.next_u64())
                 };
                 let value_var = {
                     assign_free_advice(

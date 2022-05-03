@@ -377,14 +377,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let v_old = assign_free_advice(
                 layouter.namespace(|| "witness v_old"),
                 config.advices[0],
-                self.v_old.map(|v_old| pallas::Base::from(v_old.inner())),
+                self.v_old,
             )?;
 
             // Witness v_new.
             let v_new = assign_free_advice(
                 layouter.namespace(|| "witness v_new"),
                 config.advices[0],
-                self.v_new.map(|v_new| pallas::Base::from(v_new.inner())),
+                self.v_new,
             )?;
 
             (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new)

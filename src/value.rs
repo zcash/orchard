@@ -42,6 +42,7 @@ use core::ops::{Add, RangeInclusive, Sub};
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
+use halo2_proofs::plonk::Assigned;
 use pasta_curves::{
     arithmetic::{CurveAffine, CurveExt},
     pallas,
@@ -112,6 +113,12 @@ impl NoteValue {
 
     pub(crate) fn to_le_bits(self) -> BitArray<Lsb0, [u8; 8]> {
         BitArray::<Lsb0, _>::new(self.0.to_le_bytes())
+    }
+}
+
+impl From<&NoteValue> for Assigned<pallas::Base> {
+    fn from(v: &NoteValue) -> Self {
+        pallas::Base::from(v.inner()).into()
     }
 }
 
