@@ -43,95 +43,29 @@ type CanonicityBounds = (
         - psi is a base field element (255 bits).
 */
 
-#[allow(non_snake_case)]
+/// | A_6 | A_7 | A_8 | q_notecommit_b |
+/// ------------------------------------
+/// |  b  | b_0 | b_1 |       1        |
+/// |     | b_2 | b_3 |       0        |
 #[derive(Clone, Debug)]
-pub struct NoteCommitConfig {
+struct DecomposeB {
     q_notecommit_b: Selector,
-    q_notecommit_d: Selector,
-    q_notecommit_e: Selector,
-    q_notecommit_g: Selector,
-    q_notecommit_h: Selector,
-    q_notecommit_g_d: Selector,
-    q_notecommit_pk_d: Selector,
-    q_notecommit_value: Selector,
-    q_notecommit_rho: Selector,
-    q_notecommit_psi: Selector,
-    q_y_canon: Selector,
-    advices: [Column<Advice>; 10],
-    sinsemilla_config:
-        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
 }
 
-impl NoteCommitConfig {
-    #[allow(non_snake_case)]
-    #[allow(clippy::many_single_char_names)]
-    pub(in crate::circuit) fn configure(
+impl DecomposeB {
+    fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
-        advices: [Column<Advice>; 10],
-        sinsemilla_config: SinsemillaConfig<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-        >,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        two_pow_4: pallas::Base,
+        two_pow_5: pallas::Base,
+        two_pow_6: pallas::Base,
     ) -> Self {
         let q_notecommit_b = meta.selector();
-        let q_notecommit_d = meta.selector();
-        let q_notecommit_e = meta.selector();
-        let q_notecommit_g = meta.selector();
-        let q_notecommit_h = meta.selector();
-        let q_notecommit_g_d = meta.selector();
-        let q_notecommit_pk_d = meta.selector();
-        let q_notecommit_value = meta.selector();
-        let q_notecommit_rho = meta.selector();
-        let q_notecommit_psi = meta.selector();
-        let q_y_canon = meta.selector();
 
-        let config = Self {
-            q_notecommit_b,
-            q_notecommit_d,
-            q_notecommit_e,
-            q_notecommit_g,
-            q_notecommit_h,
-            q_notecommit_g_d,
-            q_notecommit_pk_d,
-            q_notecommit_value,
-            q_notecommit_rho,
-            q_notecommit_psi,
-            q_y_canon,
-            advices,
-            sinsemilla_config,
-        };
-
-        // Useful constants
-        let two = pallas::Base::from(2);
-        let two_pow_2 = pallas::Base::from(1 << 2);
-        let two_pow_4 = two_pow_2.square();
-        let two_pow_5 = two_pow_4 * two;
-        let two_pow_6 = two_pow_5 * two;
-        let two_pow_8 = two_pow_4.square();
-        let two_pow_9 = two_pow_8 * two;
-        let two_pow_10 = two_pow_9 * two;
-        let two_pow_58 = pallas::Base::from(1 << 58);
-        let two_pow_130 = Expression::Constant(pallas::Base::from_u128(1 << 65).square());
-        let two_pow_140 = Expression::Constant(pallas::Base::from_u128(1 << 70).square());
-        let two_pow_249 = pallas::Base::from_u128(1 << 124).square() * two;
-        let two_pow_250 = two_pow_249 * two;
-        let two_pow_254 = pallas::Base::from_u128(1 << 127).square();
-
-        let t_p = Expression::Constant(pallas::Base::from_u128(T_P));
-
-        // Columns used for MessagePiece and message input gates.
-        let col_l = config.advices[6];
-        let col_m = config.advices[7];
-        let col_r = config.advices[8];
-        let col_z = config.advices[9];
-
-        // | A_6 | A_7 | A_8 | q_notecommit_b |
-        // ------------------------------------
-        // |  b  | b_0 | b_1 |       1        |
-        // |     | b_2 | b_3 |       0        |
         meta.create_gate("NoteCommit MessagePiece b", |meta| {
-            let q_notecommit_b = meta.query_selector(config.q_notecommit_b);
+            let q_notecommit_b = meta.query_selector(q_notecommit_b);
 
             // b has been constrained to 10 bits by the Sinsemilla hash.
             let b = meta.query_advice(col_l, Rotation::cur());
@@ -158,12 +92,33 @@ impl NoteCommitConfig {
             )
         });
 
-        // | A_6 | A_7 | A_8 | q_notecommit_d |
-        // ------------------------------------
-        // |  d  | d_0 | d_1 |       1        |
-        // |     | d_2 | d_3 |       0        |
+        Self { q_notecommit_b }
+    }
+}
+
+/// | A_6 | A_7 | A_8 | q_notecommit_d |
+/// ------------------------------------
+/// |  d  | d_0 | d_1 |       1        |
+/// |     | d_2 | d_3 |       0        |
+#[derive(Clone, Debug)]
+struct DecomposeD {
+    q_notecommit_d: Selector,
+}
+
+impl DecomposeD {
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        two: pallas::Base,
+        two_pow_2: pallas::Base,
+        two_pow_10: pallas::Base,
+    ) -> Self {
+        let q_notecommit_d = meta.selector();
+
         meta.create_gate("NoteCommit MessagePiece d", |meta| {
-            let q_notecommit_d = meta.query_selector(config.q_notecommit_d);
+            let q_notecommit_d = meta.query_selector(q_notecommit_d);
 
             // d has been constrained to 60 bits by the Sinsemilla hash.
             let d = meta.query_advice(col_l, Rotation::cur());
@@ -190,11 +145,30 @@ impl NoteCommitConfig {
             )
         });
 
-        // | A_6 | A_7 | A_8 | q_notecommit_e |
-        // ------------------------------------
-        // |  e  | e_0 | e_1 |       1        |
+        Self { q_notecommit_d }
+    }
+}
+
+/// | A_6 | A_7 | A_8 | q_notecommit_e |
+/// ------------------------------------
+/// |  e  | e_0 | e_1 |       1        |
+#[derive(Clone, Debug)]
+struct DecomposeE {
+    q_notecommit_e: Selector,
+}
+
+impl DecomposeE {
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        two_pow_6: pallas::Base,
+    ) -> Self {
+        let q_notecommit_e = meta.selector();
+
         meta.create_gate("NoteCommit MessagePiece e", |meta| {
-            let q_notecommit_e = meta.query_selector(config.q_notecommit_e);
+            let q_notecommit_e = meta.query_selector(q_notecommit_e);
 
             // e has been constrained to 10 bits by the Sinsemilla hash.
             let e = meta.query_advice(col_l, Rotation::cur());
@@ -209,12 +183,31 @@ impl NoteCommitConfig {
             Constraints::with_selector(q_notecommit_e, Some(("decomposition", decomposition_check)))
         });
 
-        // | A_6 | A_7 | q_notecommit_g |
-        // ------------------------------
-        // |  g  | g_0 |       1        |
-        // | g_1 | g_2 |       0        |
+        Self { q_notecommit_e }
+    }
+}
+
+/// | A_6 | A_7 | q_notecommit_g |
+/// ------------------------------
+/// |  g  | g_0 |       1        |
+/// | g_1 | g_2 |       0        |
+#[derive(Clone, Debug)]
+struct DecomposeG {
+    q_notecommit_g: Selector,
+}
+
+impl DecomposeG {
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        two: pallas::Base,
+        two_pow_10: pallas::Base,
+    ) -> Self {
+        let q_notecommit_g = meta.selector();
+
         meta.create_gate("NoteCommit MessagePiece g", |meta| {
-            let q_notecommit_g = meta.query_selector(config.q_notecommit_g);
+            let q_notecommit_g = meta.query_selector(q_notecommit_g);
 
             // g has been constrained to 250 bits by the Sinsemilla hash.
             let g = meta.query_advice(col_l, Rotation::cur());
@@ -237,11 +230,30 @@ impl NoteCommitConfig {
             )
         });
 
-        // | A_6 | A_7 | A_8 | q_notecommit_h |
-        // ------------------------------------
-        // |  h  | h_0 | h_1 |       1        |
+        Self { q_notecommit_g }
+    }
+}
+
+/// | A_6 | A_7 | A_8 | q_notecommit_h |
+/// ------------------------------------
+/// |  h  | h_0 | h_1 |       1        |
+#[derive(Clone, Debug)]
+struct DecomposeH {
+    q_notecommit_h: Selector,
+}
+
+impl DecomposeH {
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        two_pow_5: pallas::Base,
+    ) -> Self {
+        let q_notecommit_h = meta.selector();
+
         meta.create_gate("NoteCommit MessagePiece h", |meta| {
-            let q_notecommit_h = meta.query_selector(config.q_notecommit_h);
+            let q_notecommit_h = meta.query_selector(q_notecommit_h);
 
             // h has been constrained to 10 bits by the Sinsemilla hash.
             let h = meta.query_advice(col_l, Rotation::cur());
@@ -262,12 +274,36 @@ impl NoteCommitConfig {
             )
         });
 
-        // |  A_6   | A_7 |   A_8   |     A_9     | q_notecommit_g_d |
-        // -----------------------------------------------------------
-        // | x(g_d) | b_0 | a       | z13_a       |        1         |
-        // |        | b_1 | a_prime | z13_a_prime |        0         |
+        Self { q_notecommit_h }
+    }
+}
+
+/// |  A_6   | A_7 |   A_8   |     A_9     | q_notecommit_g_d |
+/// -----------------------------------------------------------
+/// | x(g_d) | b_0 | a       | z13_a       |        1         |
+/// |        | b_1 | a_prime | z13_a_prime |        0         |
+#[derive(Clone, Debug)]
+struct GdCanonicity {
+    q_notecommit_g_d: Selector,
+}
+
+impl GdCanonicity {
+    #[allow(clippy::too_many_arguments)]
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        col_z: Column<Advice>,
+        two_pow_130: Expression<pallas::Base>,
+        two_pow_250: pallas::Base,
+        two_pow_254: pallas::Base,
+        t_p: Expression<pallas::Base>,
+    ) -> Self {
+        let q_notecommit_g_d = meta.selector();
+
         meta.create_gate("NoteCommit input g_d", |meta| {
-            let q_notecommit_g_d = meta.query_selector(config.q_notecommit_g_d);
+            let q_notecommit_g_d = meta.query_selector(q_notecommit_g_d);
 
             let gd_x = meta.query_advice(col_l, Rotation::cur());
 
@@ -290,7 +326,7 @@ impl NoteCommitConfig {
             };
 
             // a_prime = a + 2^130 - t_P
-            let a_prime_check = a + two_pow_130.clone() - t_p.clone() - a_prime;
+            let a_prime_check = a + two_pow_130 - t_p - a_prime;
 
             // The gd_x_canonicity_checks are enforced if and only if `b_1` = 1.
             // x(g_d) = a (250 bits) || b_0 (4 bits) || b_1 (1 bit)
@@ -309,12 +345,36 @@ impl NoteCommitConfig {
             )
         });
 
-        // |   A_6   | A_7 |    A_8     |      A_9       | q_notecommit_pk_d |
-        // -------------------------------------------------------------------
-        // | x(pk_d) | b_3 |    c       | z13_c          |         1         |
-        // |         | d_0 | b3_c_prime | z14_b3_c_prime |         0         |
+        Self { q_notecommit_g_d }
+    }
+}
+
+/// |   A_6   | A_7 |    A_8     |      A_9       | q_notecommit_pk_d |
+/// -------------------------------------------------------------------
+/// | x(pk_d) | b_3 |    c       | z13_c          |         1         |
+/// |         | d_0 | b3_c_prime | z14_b3_c_prime |         0         |
+#[derive(Clone, Debug)]
+struct PkdCanonicity {
+    q_notecommit_pk_d: Selector,
+}
+
+impl PkdCanonicity {
+    #[allow(clippy::too_many_arguments)]
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        col_z: Column<Advice>,
+        two_pow_4: pallas::Base,
+        two_pow_140: Expression<pallas::Base>,
+        two_pow_254: pallas::Base,
+        t_p: Expression<pallas::Base>,
+    ) -> Self {
+        let q_notecommit_pk_d = meta.selector();
+
         meta.create_gate("NoteCommit input pk_d", |meta| {
-            let q_notecommit_pk_d = meta.query_selector(config.q_notecommit_pk_d);
+            let q_notecommit_pk_d = meta.query_selector(q_notecommit_pk_d);
 
             let pkd_x = meta.query_advice(col_l, Rotation::cur());
 
@@ -337,8 +397,7 @@ impl NoteCommitConfig {
             };
 
             // b3_c_prime = b_3 + (2^4)c + 2^140 - t_P
-            let b3_c_prime_check =
-                b_3 + (c * two_pow_4) + two_pow_140.clone() - t_p.clone() - b3_c_prime;
+            let b3_c_prime_check = b_3 + (c * two_pow_4) + two_pow_140 - t_p - b3_c_prime;
 
             // The pkd_x_canonicity_checks are enforced if and only if `d_0` = 1.
             // `x(pk_d)` = `b_3 (4 bits) || c (250 bits) || d_0 (1 bit)`
@@ -356,11 +415,32 @@ impl NoteCommitConfig {
             )
         });
 
-        // |  A_6  | A_7 | A_8 | A_9 | q_notecommit_value |
-        // ------------------------------------------------
-        // | value | d_2 | d_3 | e_0 |          1         |
+        Self { q_notecommit_pk_d }
+    }
+}
+
+/// |  A_6  | A_7 | A_8 | A_9 | q_notecommit_value |
+/// ------------------------------------------------
+/// | value | d_2 | d_3 | e_0 |          1         |
+#[derive(Clone, Debug)]
+struct ValueCanonicity {
+    q_notecommit_value: Selector,
+}
+
+impl ValueCanonicity {
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        col_z: Column<Advice>,
+        two_pow_8: pallas::Base,
+        two_pow_58: pallas::Base,
+    ) -> Self {
+        let q_notecommit_value = meta.selector();
+
         meta.create_gate("NoteCommit input value", |meta| {
-            let q_notecommit_value = meta.query_selector(config.q_notecommit_value);
+            let q_notecommit_value = meta.query_selector(q_notecommit_value);
 
             let value = meta.query_advice(col_l, Rotation::cur());
             // d_2 has been constrained to 8 bits outside this gate.
@@ -377,12 +457,36 @@ impl NoteCommitConfig {
             Constraints::with_selector(q_notecommit_value, Some(("value_check", value_check)))
         });
 
-        // | A_6 | A_7 |    A_8     |      A_9       | q_notecommit_rho |
-        // --------------------------------------------------------------
-        // | rho | e_1 |    f       | z13_f          |        1         |
-        // |     | g_0 | e1_f_prime | z14_e1_f_prime |        0         |
+        Self { q_notecommit_value }
+    }
+}
+
+/// | A_6 | A_7 |    A_8     |      A_9       | q_notecommit_rho |
+/// --------------------------------------------------------------
+/// | rho | e_1 |    f       | z13_f          |        1         |
+/// |     | g_0 | e1_f_prime | z14_e1_f_prime |        0         |
+#[derive(Clone, Debug)]
+struct RhoCanonicity {
+    q_notecommit_rho: Selector,
+}
+
+impl RhoCanonicity {
+    #[allow(clippy::too_many_arguments)]
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        col_z: Column<Advice>,
+        two_pow_4: pallas::Base,
+        two_pow_140: Expression<pallas::Base>,
+        two_pow_254: pallas::Base,
+        t_p: Expression<pallas::Base>,
+    ) -> Self {
+        let q_notecommit_rho = meta.selector();
+
         meta.create_gate("NoteCommit input rho", |meta| {
-            let q_notecommit_rho = meta.query_selector(config.q_notecommit_rho);
+            let q_notecommit_rho = meta.query_selector(q_notecommit_rho);
 
             let rho = meta.query_advice(col_l, Rotation::cur());
 
@@ -404,7 +508,7 @@ impl NoteCommitConfig {
             };
 
             // e1_f_prime = e_1 + (2^4)f + 2^140 - t_P
-            let e1_f_prime_check = e_1 + (f * two_pow_4) + two_pow_140 - t_p.clone() - e1_f_prime;
+            let e1_f_prime_check = e_1 + (f * two_pow_4) + two_pow_140 - t_p - e1_f_prime;
 
             // The rho_canonicity_checks are enforced if and only if `g_0` = 1.
             // rho = e_1 (4 bits) || f (250 bits) || g_0 (1 bit)
@@ -422,12 +526,37 @@ impl NoteCommitConfig {
             )
         });
 
-        // | A_6 | A_7 |     A_8     |       A_9       | q_notecommit_psi |
-        // ----------------------------------------------------------------
-        // | psi | g_1 |   g_2       | z13_g           |        1         |
-        // | h_0 | h_1 | g1_g2_prime | z13_g1_g2_prime |        0         |
+        Self { q_notecommit_rho }
+    }
+}
+
+/// | A_6 | A_7 |     A_8     |       A_9       | q_notecommit_psi |
+/// ----------------------------------------------------------------
+/// | psi | g_1 |   g_2       | z13_g           |        1         |
+/// | h_0 | h_1 | g1_g2_prime | z13_g1_g2_prime |        0         |
+#[derive(Clone, Debug)]
+struct PsiCanonicity {
+    q_notecommit_psi: Selector,
+}
+
+impl PsiCanonicity {
+    #[allow(clippy::too_many_arguments)]
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        col_z: Column<Advice>,
+        two_pow_9: pallas::Base,
+        two_pow_130: Expression<pallas::Base>,
+        two_pow_249: pallas::Base,
+        two_pow_254: pallas::Base,
+        t_p: Expression<pallas::Base>,
+    ) -> Self {
+        let q_notecommit_psi = meta.selector();
+
         meta.create_gate("NoteCommit input psi", |meta| {
-            let q_notecommit_psi = meta.query_selector(config.q_notecommit_psi);
+            let q_notecommit_psi = meta.query_selector(q_notecommit_psi);
 
             let psi = meta.query_advice(col_l, Rotation::cur());
             let h_0 = meta.query_advice(col_l, Rotation::next());
@@ -452,8 +581,7 @@ impl NoteCommitConfig {
             };
 
             // g1_g2_prime = g_1 + (2^9)g_2 + 2^130 - t_P
-            let g1_g2_prime_check =
-                g_1 + (g_2 * two_pow_9) + two_pow_130.clone() - t_p.clone() - g1_g2_prime;
+            let g1_g2_prime_check = g_1 + (g_2 * two_pow_9) + two_pow_130 - t_p - g1_g2_prime;
 
             // The psi_canonicity_checks are enforced if and only if `h_1` = 1.
             // `psi` = `g_1 (9 bits) || g_2 (240 bits) || h_0 (5 bits) || h_1 (1 bit)`
@@ -472,20 +600,41 @@ impl NoteCommitConfig {
             )
         });
 
-        /*
-            Check decomposition and canonicity of y-coordinates.
-            This is used for both y(g_d) and y(pk_d).
+        Self { q_notecommit_psi }
+    }
+}
 
-            y = LSB || k_0 || k_1 || k_2 || k_3
-              = (bit 0) || (bits 1..=9) || (bits 10..=249) || (bits 250..=253) || (bit 254)
+/// Check decomposition and canonicity of y-coordinates.
+/// This is used for both y(g_d) and y(pk_d).
+///
+/// y = LSB || k_0 || k_1 || k_2 || k_3
+///   = (bit 0) || (bits 1..=9) || (bits 10..=249) || (bits 250..=253) || (bit 254)
+///
+/// These pieces are laid out in the following configuration:
+/// | A_5 | A_6 |  A_7  |   A_8   |     A_9     | q_y_canon |
+/// ---------------------------------------------------------
+/// |  y  | lsb |  k_0  |   k_2   |     k_3     |     1     |
+/// |  j  | z1_j| z13_j | j_prime | z13_j_prime |     0     |
+/// where z1_j = k_1.
+#[derive(Clone, Debug)]
+struct YCanonicity {
+    q_y_canon: Selector,
+}
 
-            These pieces are laid out in the following configuration:
-                    | A_5 | A_6 |  A_7  |   A_8   |     A_9     |
-                    ----------------------------------------------
-                    |  y  | lsb |  k_0  |   k_2   |     k_3     |
-                    |  j  | z1_j| z13_j | j_prime | z13_j_prime |
-            where z1_j = k_1.
-        */
+impl YCanonicity {
+    #[allow(clippy::too_many_arguments)]
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        advices: [Column<Advice>; 10],
+        two: pallas::Base,
+        two_pow_10: pallas::Base,
+        two_pow_130: Expression<pallas::Base>,
+        two_pow_250: pallas::Base,
+        two_pow_254: pallas::Base,
+        t_p: Expression<pallas::Base>,
+    ) -> Self {
+        let q_y_canon = meta.selector();
+
         meta.create_gate("y coordinate checks", |meta| {
             let q_y_canon = meta.query_selector(q_y_canon);
             let y = meta.query_advice(advices[5], Rotation::cur());
@@ -519,7 +668,7 @@ impl NoteCommitConfig {
                 let y_check =
                     y - (j.clone() + k_2.clone() * two_pow_250 + k_3.clone() * two_pow_254);
                 // Check that j_prime = j + 2^130 - t_P
-                let j_prime_check = j + two_pow_130 - t_p.clone() - j_prime;
+                let j_prime_check = j + two_pow_130 - t_p - j_prime;
 
                 iter::empty()
                     .chain(Some(("k3_check", k3_check)))
@@ -540,7 +689,149 @@ impl NoteCommitConfig {
             Constraints::with_selector(q_y_canon, decomposition_checks.chain(canonicity_checks))
         });
 
-        config
+        Self { q_y_canon }
+    }
+}
+
+#[allow(non_snake_case)]
+#[derive(Clone, Debug)]
+pub struct NoteCommitConfig {
+    b: DecomposeB,
+    d: DecomposeD,
+    e: DecomposeE,
+    g: DecomposeG,
+    h: DecomposeH,
+    g_d: GdCanonicity,
+    pk_d: PkdCanonicity,
+    value: ValueCanonicity,
+    rho: RhoCanonicity,
+    psi: PsiCanonicity,
+    y_canon: YCanonicity,
+    advices: [Column<Advice>; 10],
+    sinsemilla_config:
+        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+}
+
+impl NoteCommitConfig {
+    #[allow(non_snake_case)]
+    #[allow(clippy::many_single_char_names)]
+    pub(in crate::circuit) fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        advices: [Column<Advice>; 10],
+        sinsemilla_config: SinsemillaConfig<
+            OrchardHashDomains,
+            OrchardCommitDomains,
+            OrchardFixedBases,
+        >,
+    ) -> Self {
+        // Useful constants
+        let two = pallas::Base::from(2);
+        let two_pow_2 = pallas::Base::from(1 << 2);
+        let two_pow_4 = two_pow_2.square();
+        let two_pow_5 = two_pow_4 * two;
+        let two_pow_6 = two_pow_5 * two;
+        let two_pow_8 = two_pow_4.square();
+        let two_pow_9 = two_pow_8 * two;
+        let two_pow_10 = two_pow_9 * two;
+        let two_pow_58 = pallas::Base::from(1 << 58);
+        let two_pow_130 = Expression::Constant(pallas::Base::from_u128(1 << 65).square());
+        let two_pow_140 = Expression::Constant(pallas::Base::from_u128(1 << 70).square());
+        let two_pow_249 = pallas::Base::from_u128(1 << 124).square() * two;
+        let two_pow_250 = two_pow_249 * two;
+        let two_pow_254 = pallas::Base::from_u128(1 << 127).square();
+
+        let t_p = Expression::Constant(pallas::Base::from_u128(T_P));
+
+        // Columns used for MessagePiece and message input gates.
+        let col_l = advices[6];
+        let col_m = advices[7];
+        let col_r = advices[8];
+        let col_z = advices[9];
+
+        let b = DecomposeB::configure(meta, col_l, col_m, col_r, two_pow_4, two_pow_5, two_pow_6);
+        let d = DecomposeD::configure(meta, col_l, col_m, col_r, two, two_pow_2, two_pow_10);
+        let e = DecomposeE::configure(meta, col_l, col_m, col_r, two_pow_6);
+        let g = DecomposeG::configure(meta, col_l, col_m, two, two_pow_10);
+        let h = DecomposeH::configure(meta, col_l, col_m, col_r, two_pow_5);
+
+        let g_d = GdCanonicity::configure(
+            meta,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+            two_pow_130.clone(),
+            two_pow_250,
+            two_pow_254,
+            t_p.clone(),
+        );
+
+        let pk_d = PkdCanonicity::configure(
+            meta,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+            two_pow_4,
+            two_pow_140.clone(),
+            two_pow_254,
+            t_p.clone(),
+        );
+
+        let value =
+            ValueCanonicity::configure(meta, col_l, col_m, col_r, col_z, two_pow_8, two_pow_58);
+
+        let rho = RhoCanonicity::configure(
+            meta,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+            two_pow_4,
+            two_pow_140,
+            two_pow_254,
+            t_p.clone(),
+        );
+
+        let psi = PsiCanonicity::configure(
+            meta,
+            col_l,
+            col_m,
+            col_r,
+            col_z,
+            two_pow_9,
+            two_pow_130.clone(),
+            two_pow_249,
+            two_pow_254,
+            t_p.clone(),
+        );
+
+        let y_canon = YCanonicity::configure(
+            meta,
+            advices,
+            two,
+            two_pow_10,
+            two_pow_130,
+            two_pow_250,
+            two_pow_254,
+            t_p,
+        );
+
+        Self {
+            b,
+            d,
+            e,
+            g,
+            h,
+            g_d,
+            pk_d,
+            value,
+            rho,
+            psi,
+            y_canon,
+            advices,
+            sinsemilla_config,
+        }
     }
 
     #[allow(clippy::many_single_char_names)]
@@ -1055,7 +1346,7 @@ impl NoteCommitConfig {
         layouter.assign_region(
             || "y canonicity",
             |mut region| {
-                self.q_y_canon.enable(&mut region, 0)?;
+                self.y_canon.q_y_canon.enable(&mut region, 0)?;
 
                 // Offset 0
                 let lsb = {
@@ -1135,7 +1426,7 @@ impl NoteCommitConfig {
         let b_1 = layouter.assign_region(
             || "NoteCommit MessagePiece b",
             |mut region| {
-                self.q_notecommit_b.enable(&mut region, 0)?;
+                self.b.q_notecommit_b.enable(&mut region, 0)?;
 
                 gate_cells.b.copy_advice(|| "b", &mut region, col_l, 0)?;
                 gate_cells
@@ -1169,7 +1460,7 @@ impl NoteCommitConfig {
         let d_0 = layouter.assign_region(
             || "NoteCommit MessagePiece d",
             |mut region| {
-                self.q_notecommit_d.enable(&mut region, 0)?;
+                self.d.q_notecommit_d.enable(&mut region, 0)?;
 
                 gate_cells.d.copy_advice(|| "d", &mut region, col_l, 0)?;
                 let d_0 = region.assign_advice(
@@ -1201,7 +1492,7 @@ impl NoteCommitConfig {
         layouter.assign_region(
             || "NoteCommit MessagePiece e",
             |mut region| {
-                self.q_notecommit_e.enable(&mut region, 0)?;
+                self.e.q_notecommit_e.enable(&mut region, 0)?;
 
                 gate_cells.e.copy_advice(|| "e", &mut region, col_l, 0)?;
                 gate_cells
@@ -1224,7 +1515,7 @@ impl NoteCommitConfig {
         let g_0 = layouter.assign_region(
             || "NoteCommit MessagePiece g",
             |mut region| {
-                self.q_notecommit_g.enable(&mut region, 0)?;
+                self.g.q_notecommit_g.enable(&mut region, 0)?;
 
                 gate_cells.g.copy_advice(|| "g", &mut region, col_l, 0)?;
                 let g_0 = region.assign_advice(
@@ -1252,7 +1543,7 @@ impl NoteCommitConfig {
         let h_1 = layouter.assign_region(
             || "NoteCommit MessagePiece h",
             |mut region| {
-                self.q_notecommit_h.enable(&mut region, 0)?;
+                self.h.q_notecommit_h.enable(&mut region, 0)?;
 
                 gate_cells.h.copy_advice(|| "h", &mut region, col_l, 0)?;
                 gate_cells
@@ -1299,7 +1590,7 @@ impl NoteCommitConfig {
                     .z13_a_prime
                     .copy_advice(|| "z13_a_prime", &mut region, col_z, 1)?;
 
-                self.q_notecommit_g_d.enable(&mut region, 0)
+                self.g_d.q_notecommit_g_d.enable(&mut region, 0)
             },
         )?;
 
@@ -1335,7 +1626,7 @@ impl NoteCommitConfig {
                     1,
                 )?;
 
-                self.q_notecommit_pk_d.enable(&mut region, 0)
+                self.pk_d.q_notecommit_pk_d.enable(&mut region, 0)
             },
         )?;
 
@@ -1358,7 +1649,7 @@ impl NoteCommitConfig {
                     .inner()
                     .copy_advice(|| "e_0", &mut region, col_z, 0)?;
 
-                self.q_notecommit_value.enable(&mut region, 0)
+                self.value.q_notecommit_value.enable(&mut region, 0)
             },
         )?;
 
@@ -1394,7 +1685,7 @@ impl NoteCommitConfig {
                     1,
                 )?;
 
-                self.q_notecommit_rho.enable(&mut region, 0)
+                self.rho.q_notecommit_rho.enable(&mut region, 0)
             },
         )?;
 
@@ -1436,7 +1727,7 @@ impl NoteCommitConfig {
                     1,
                 )?;
 
-                self.q_notecommit_psi.enable(&mut region, 0)
+                self.psi.q_notecommit_psi.enable(&mut region, 0)
             },
         )
     }
