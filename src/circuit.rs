@@ -145,7 +145,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         ];
 
         // Constrain v_old - v_new = magnitude * sign
-        // Either v_old = 0, or anchor equals public input
+        // Either v_old = 0, or calculated root = anchor
         // Constrain v_old = 0 or enable_spends = 1.
         // Constrain v_new = 0 or enable_outputs = 1.
         let q_orchard = meta.selector();
@@ -156,8 +156,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let magnitude = meta.query_advice(advices[2], Rotation::cur());
             let sign = meta.query_advice(advices[3], Rotation::cur());
 
-            let anchor = meta.query_advice(advices[4], Rotation::cur());
-            let pub_input_anchor = meta.query_advice(advices[5], Rotation::cur());
+            let root = meta.query_advice(advices[4], Rotation::cur());
+            let anchor = meta.query_advice(advices[5], Rotation::cur());
 
             let enable_spends = meta.query_advice(advices[6], Rotation::cur());
             let enable_outputs = meta.query_advice(advices[7], Rotation::cur());
@@ -172,8 +172,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                         v_old.clone() - v_new.clone() - magnitude * sign,
                     ),
                     (
-                        "Either v_old = 0, or anchor equals public input",
-                        v_old.clone() * (anchor - pub_input_anchor),
+                        "Either v_old = 0, or root = anchor",
+                        v_old.clone() * (root - anchor),
                     ),
                     (
                         "v_old = 0 or enable_spends = 1",
