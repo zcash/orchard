@@ -82,6 +82,6 @@ debug = true
 debug = true
 
 [patch.crates-io]
-halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "97864d714e33c5258b4ca3f25c9ddc1624e240dd" }
-halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "97864d714e33c5258b4ca3f25c9ddc1624e240dd" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "3800de59188a73b4e04f689c8bcc855a2fc7fdcf" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "3800de59188a73b4e04f689c8bcc855a2fc7fdcf" }
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "f23e3d89507849a24543121839eea6f40b141aff" }

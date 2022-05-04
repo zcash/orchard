@@ -143,8 +143,8 @@ impl DecomposeB {
         )?;
 
         // b_1, b_2 will be boolean-constrained in the gate.
-        let b_1 = RangeConstrained::subset_of(gd_x.value(), 254..255);
-        let b_2 = RangeConstrained::subset_of(gd_y.value(), 0..1);
+        let b_1 = RangeConstrained::bitrange_of(gd_x.value(), 254..255);
+        let b_2 = RangeConstrained::bitrange_of(gd_y.value(), 0..1);
 
         // Constrain b_3 to be 4 bits
         let b_3 = RangeConstrained::witness_short(
@@ -282,8 +282,8 @@ impl DecomposeD {
         let value_val = value.value().map(|v| pallas::Base::from(v.inner()));
 
         // d_0, d_1 will be boolean-constrained in the gate.
-        let d_0 = RangeConstrained::subset_of(pk_d.x().value(), 254..255);
-        let d_1 = RangeConstrained::subset_of(pk_d.y().value(), 0..1);
+        let d_0 = RangeConstrained::bitrange_of(pk_d.x().value(), 254..255);
+        let d_1 = RangeConstrained::bitrange_of(pk_d.y().value(), 0..1);
 
         // Constrain d_2 to be 8 bits
         let d_2 = RangeConstrained::witness_short(
@@ -294,7 +294,7 @@ impl DecomposeD {
         )?;
 
         // d_3 = z1_d from the SinsemillaHash(d) running sum output.
-        let d_3 = RangeConstrained::subset_of(value_val.as_ref(), 8..58);
+        let d_3 = RangeConstrained::bitrange_of(value_val.as_ref(), 8..58);
 
         let d = MessagePiece::from_subpieces(
             chip,
@@ -527,7 +527,7 @@ impl DecomposeG {
         Error,
     > {
         // g_0 will be boolean-constrained in the gate.
-        let g_0 = RangeConstrained::subset_of(rho.value(), 254..255);
+        let g_0 = RangeConstrained::bitrange_of(rho.value(), 254..255);
 
         // Constrain g_1 to be 9 bits.
         let g_1 = RangeConstrained::witness_short(
@@ -538,7 +538,7 @@ impl DecomposeG {
         )?;
 
         // g_2 = z1_g from the SinsemillaHash(g) running sum output.
-        let g_2 = RangeConstrained::subset_of(psi.value(), 9..249);
+        let g_2 = RangeConstrained::bitrange_of(psi.value(), 9..249);
 
         let g = MessagePiece::from_subpieces(
             chip,
@@ -659,7 +659,7 @@ impl DecomposeH {
         )?;
 
         // h_1 will be boolean-constrained in the gate.
-        let h_1 = RangeConstrained::subset_of(psi.value(), 254..255);
+        let h_1 = RangeConstrained::bitrange_of(psi.value(), 254..255);
 
         let h = MessagePiece::from_subpieces(
             chip,
@@ -667,7 +667,7 @@ impl DecomposeH {
             [
                 h_0.value(),
                 h_1,
-                RangeConstrained::subset_of(Some(&pallas::Base::zero()), 0..4),
+                RangeConstrained::bitrange_of(Some(&pallas::Base::zero()), 0..4),
             ],
         )?;
 
@@ -1589,7 +1589,7 @@ pub(in crate::circuit) mod gadgets {
         let a = MessagePiece::from_subpieces(
             chip.clone(),
             layouter.namespace(|| "a"),
-            [RangeConstrained::subset_of(g_d.x().value(), 0..250)],
+            [RangeConstrained::bitrange_of(g_d.x().value(), 0..250)],
         )?;
 
         // b = b_0 || b_1 || b_2 || b_3
@@ -1601,7 +1601,7 @@ pub(in crate::circuit) mod gadgets {
         let c = MessagePiece::from_subpieces(
             chip.clone(),
             layouter.namespace(|| "c"),
-            [RangeConstrained::subset_of(pk_d.x().value(), 4..254)],
+            [RangeConstrained::bitrange_of(pk_d.x().value(), 4..254)],
         )?;
 
         // d = d_0 || d_1 || d_2 || d_3
@@ -1617,7 +1617,7 @@ pub(in crate::circuit) mod gadgets {
         let f = MessagePiece::from_subpieces(
             chip.clone(),
             layouter.namespace(|| "f"),
-            [RangeConstrained::subset_of(rho.value(), 4..254)],
+            [RangeConstrained::bitrange_of(rho.value(), 4..254)],
         )?;
 
         // g = g_0 || g_1 || g_2
@@ -1943,7 +1943,7 @@ pub(in crate::circuit) mod gadgets {
         )?;
 
         // k_1 will be constrained by the decomposition of j.
-        let k_1 = RangeConstrained::subset_of(y.value(), 10..250);
+        let k_1 = RangeConstrained::bitrange_of(y.value(), 10..250);
 
         // Range-constrain k_2 to be 4 bits.
         let k_2 = RangeConstrained::witness_short(
@@ -1954,7 +1954,7 @@ pub(in crate::circuit) mod gadgets {
         )?;
 
         // k_3 will be boolean-constrained in the gate.
-        let k_3 = RangeConstrained::subset_of(y.value(), 254..255);
+        let k_3 = RangeConstrained::bitrange_of(y.value(), 254..255);
 
         // Decompose j = LSB + (2)k_0 + (2^10)k_1 using 25 ten-bit lookups.
         let (j, z1_j, z13_j) = {

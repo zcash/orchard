@@ -262,7 +262,7 @@ pub(in crate::circuit) mod gadgets {
         let a = MessagePiece::from_subpieces(
             sinsemilla_chip.clone(),
             layouter.namespace(|| "a"),
-            [RangeConstrained::subset_of(ak.value(), 0..250)],
+            [RangeConstrained::bitrange_of(ak.value(), 0..250)],
         )?;
 
         // `b = b_0||b_1||b_2`
@@ -276,7 +276,7 @@ pub(in crate::circuit) mod gadgets {
                 250..254,
             )?;
             // b_1 will be boolean-constrained in the custom gate.
-            let b_1 = RangeConstrained::subset_of(ak.value(), 254..255);
+            let b_1 = RangeConstrained::bitrange_of(ak.value(), 254..255);
             // Constrain b_2 to be 5 bits.
             let b_2 = RangeConstrained::witness_short(
                 &lookup_config,
@@ -298,7 +298,7 @@ pub(in crate::circuit) mod gadgets {
         let c = MessagePiece::from_subpieces(
             sinsemilla_chip.clone(),
             layouter.namespace(|| "c"),
-            [RangeConstrained::subset_of(nk.value(), 5..245)],
+            [RangeConstrained::bitrange_of(nk.value(), 5..245)],
         )?;
 
         // `d = d_0||d_1` = (bits 245..=253 of `nk`) || (bit 254 of `nk`)
@@ -311,7 +311,7 @@ pub(in crate::circuit) mod gadgets {
                 245..254,
             )?;
             // d_1 will be boolean-constrained in the custom gate.
-            let d_1 = RangeConstrained::subset_of(nk.value(), 254..255);
+            let d_1 = RangeConstrained::bitrange_of(nk.value(), 254..255);
 
             let d = MessagePiece::from_subpieces(
                 sinsemilla_chip.clone(),
