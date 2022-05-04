@@ -1647,6 +1647,11 @@ pub(in crate::circuit) mod gadgets {
             d_1,
         )?;
 
+        // cm = NoteCommit^Orchard_rcm(g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi)
+        //
+        // `cm = ⊥` is handled internally to `CommitDomain::commit`: incomplete addition
+        // constraints allows ⊥ to occur, and then during synthesis it detects these edge
+        // cases and raises an error (aborting proof creation).
         let (cm, zs) = {
             let message = Message::from_pieces(
                 chip.clone(),
@@ -1669,6 +1674,8 @@ pub(in crate::circuit) mod gadgets {
             )?
         };
 
+        // `CommitDomain::commit` returns the running sum for each `MessagePiece`. Grab
+        // the outputs that we will need for canonicity checks.
         let z13_a = zs[0][13].clone();
         let z13_c = zs[2][13].clone();
         let z1_d = zs[3][1].clone();
@@ -1677,6 +1684,7 @@ pub(in crate::circuit) mod gadgets {
         let g_2 = z1_g.clone();
         let z13_g = zs[6][13].clone();
 
+        // Witness and constrain the bounds we need to ensure canonicity.
         let (a_prime, z13_a_prime) = canon_bitshift_130(
             &lookup_config,
             layouter.namespace(|| "x(g_d) canonicity"),
@@ -1704,6 +1712,7 @@ pub(in crate::circuit) mod gadgets {
             g_2,
         )?;
 
+        // Finally, assign values to all of the NoteCommit regions.
         let cfg = note_commit_chip.config;
 
         let b_1 = cfg
@@ -1764,7 +1773,7 @@ pub(in crate::circuit) mod gadgets {
         Ok(cm)
     }
 
-    // A canonicity check helper used in checking x(g_d), y(g_d), and y(pk_d).
+    /// A canonicity check helper used in checking x(g_d), y(g_d), and y(pk_d).
     fn canon_bitshift_130(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1796,7 +1805,7 @@ pub(in crate::circuit) mod gadgets {
         Ok((a_prime, zs[13].clone()))
     }
 
-    // Check canonicity of `x(pk_d)` encoding
+    /// Check canonicity of `x(pk_d)` encoding.
     fn pkd_x_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1835,7 +1844,7 @@ pub(in crate::circuit) mod gadgets {
         Ok((b3_c_prime, zs[14].clone()))
     }
 
-    // Check canonicity of `rho` encoding
+    /// Check canonicity of `rho` encoding.
     fn rho_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1874,7 +1883,7 @@ pub(in crate::circuit) mod gadgets {
         Ok((e1_f_prime, zs[14].clone()))
     }
 
-    // Check canonicity of `psi` encoding
+    /// Check canonicity of `psi` encoding.
     fn psi_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1911,8 +1920,8 @@ pub(in crate::circuit) mod gadgets {
         Ok((g1_g2_prime, zs[13].clone()))
     }
 
-    // Check canonicity of y-coordinate given its LSB as a value.
-    // Also, witness the LSB and return the witnessed cell.
+    /// Check canonicity of y-coordinate given its LSB as a value.
+    /// Also, witness the LSB and return the witnessed cell.
     fn y_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         y_canon: &YCanonicity,
