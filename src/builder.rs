@@ -291,8 +291,8 @@ impl Builder {
 
     /// Builds a bundle containing the given spent notes and recipients.
     ///
-    /// This API assumes that none of the notes being spent are controlled by (threshold)
-    /// multisignatures, and immediately constructs the bundle proof.
+    /// The returned bundle will have no proof or signatures; these can be applied with
+    /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
     pub fn build<V: TryFrom<i64>>(
         mut self,
         mut rng: impl RngCore,
@@ -531,6 +531,9 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
 
 impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
     /// Applies signatures to this bundle, in order to authorize it.
+    ///
+    /// This is a helper method that wraps [`Bundle::prepare`], [`Bundle::sign`], and
+    /// [`Bundle::finalize`].
     pub fn apply_signatures<R: RngCore + CryptoRng>(
         self,
         mut rng: R,
