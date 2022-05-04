@@ -788,8 +788,8 @@ impl GdCanonicity {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        gd_x: AssignedCell<pallas::Base, pallas::Base>,
-        a: AssignedCell<pallas::Base, pallas::Base>,
+        g_d: &NonIdentityEccPoint,
+        a: NoteCommitPiece,
         b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         b_1: AssignedCell<pallas::Base, pallas::Base>,
         a_prime: AssignedCell<pallas::Base, pallas::Base>,
@@ -799,13 +799,15 @@ impl GdCanonicity {
         layouter.assign_region(
             || "NoteCommit input g_d",
             |mut region| {
-                gd_x.copy_advice(|| "gd_x", &mut region, self.col_l, 0)?;
+                g_d.x().copy_advice(|| "gd_x", &mut region, self.col_l, 0)?;
 
                 b_0.inner()
                     .copy_advice(|| "b_0", &mut region, self.col_m, 0)?;
                 b_1.copy_advice(|| "b_1", &mut region, self.col_m, 1)?;
 
-                a.copy_advice(|| "a", &mut region, self.col_r, 0)?;
+                a.inner()
+                    .cell_value()
+                    .copy_advice(|| "a", &mut region, self.col_r, 0)?;
                 a_prime.copy_advice(|| "a_prime", &mut region, self.col_r, 1)?;
 
                 z13_a.copy_advice(|| "z13_a", &mut region, self.col_z, 0)?;
@@ -900,9 +902,9 @@ impl PkdCanonicity {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        pkd_x: AssignedCell<pallas::Base, pallas::Base>,
+        pk_d: &NonIdentityEccPoint,
         b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-        c: AssignedCell<pallas::Base, pallas::Base>,
+        c: NoteCommitPiece,
         d_0: AssignedCell<pallas::Base, pallas::Base>,
         b3_c_prime: AssignedCell<pallas::Base, pallas::Base>,
         z13_c: AssignedCell<pallas::Base, pallas::Base>,
@@ -911,13 +913,16 @@ impl PkdCanonicity {
         layouter.assign_region(
             || "NoteCommit input pk_d",
             |mut region| {
-                pkd_x.copy_advice(|| "pkd_x", &mut region, self.col_l, 0)?;
+                pk_d.x()
+                    .copy_advice(|| "pkd_x", &mut region, self.col_l, 0)?;
 
                 b_3.inner()
                     .copy_advice(|| "b_3", &mut region, self.col_m, 0)?;
                 d_0.copy_advice(|| "d_0", &mut region, self.col_m, 1)?;
 
-                c.copy_advice(|| "c", &mut region, self.col_r, 0)?;
+                c.inner()
+                    .cell_value()
+                    .copy_advice(|| "c", &mut region, self.col_r, 0)?;
                 b3_c_prime.copy_advice(|| "b3_c_prime", &mut region, self.col_r, 1)?;
 
                 z13_c.copy_advice(|| "z13_c", &mut region, self.col_z, 0)?;
@@ -1088,7 +1093,7 @@ impl RhoCanonicity {
         layouter: &mut impl Layouter<pallas::Base>,
         rho: AssignedCell<pallas::Base, pallas::Base>,
         e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-        f: AssignedCell<pallas::Base, pallas::Base>,
+        f: NoteCommitPiece,
         g_0: AssignedCell<pallas::Base, pallas::Base>,
         e1_f_prime: AssignedCell<pallas::Base, pallas::Base>,
         z13_f: AssignedCell<pallas::Base, pallas::Base>,
@@ -1103,7 +1108,9 @@ impl RhoCanonicity {
                     .copy_advice(|| "e_1", &mut region, self.col_m, 0)?;
                 g_0.copy_advice(|| "g_0", &mut region, self.col_m, 1)?;
 
-                f.copy_advice(|| "f", &mut region, self.col_r, 0)?;
+                f.inner()
+                    .cell_value()
+                    .copy_advice(|| "f", &mut region, self.col_r, 0)?;
                 e1_f_prime.copy_advice(|| "e1_f_prime", &mut region, self.col_r, 1)?;
 
                 z13_f.copy_advice(|| "z13_f", &mut region, self.col_z, 0)?;
@@ -1667,50 +1674,60 @@ impl NoteCommitConfig {
         let (g1_g2_prime, z13_g1_g2_prime) =
             self.psi_canonicity(layouter.namespace(|| "psi canonicity"), g_1.clone(), g_2)?;
 
-        let gate_cells = GateCells {
-            a: a.inner().cell_value(),
-            b,
-            b_0,
-            b_1,
-            b_2,
+        let b_1 = self
+            .b
+            .assign(&mut layouter, b, b_0.clone(), b_1, b_2, b_3.clone())?;
+
+        let d_0 = self
+            .d
+            .assign(&mut layouter, d, d_0, d_1, d_2.clone(), z1_d.clone())?;
+
+        self.e.assign(&mut layouter, e, e_0.clone(), e_1.clone())?;
+
+        let g_0 = self
+            .g
+            .assign(&mut layouter, g, g_0, g_1.clone(), z1_g.clone())?;
+
+        let h_1 = self.h.assign(&mut layouter, h, h_0.clone(), h_1)?;
+
+        self.g_d
+            .assign(&mut layouter, g_d, a, b_0, b_1, a_prime, z13_a, z13_a_prime)?;
+
+        self.pk_d.assign(
+            &mut layouter,
+            pk_d,
             b_3,
-            c: c.inner().cell_value(),
-            d,
+            c,
             d_0,
-            d_1,
-            d_2,
-            z1_d,
-            e,
-            e_0,
+            b3_c_prime,
+            z13_c,
+            z14_b3_c_prime,
+        )?;
+
+        self.value.assign(&mut layouter, value, d_2, z1_d, e_0)?;
+
+        self.rho.assign(
+            &mut layouter,
+            rho,
             e_1,
-            f: f.inner().cell_value(),
-            g,
+            f,
             g_0,
+            e1_f_prime,
+            z13_f,
+            z14_e1_f_prime,
+        )?;
+
+        self.psi.assign(
+            &mut layouter,
+            psi,
             g_1,
             z1_g,
-            h,
             h_0,
             h_1,
-            gd_x: g_d.x(),
-            pkd_x: pk_d.x(),
-            value,
-            rho,
-            psi,
-            a_prime,
-            b3_c_prime,
-            e1_f_prime,
             g1_g2_prime,
-            z13_a_prime,
-            z14_b3_c_prime,
-            z14_e1_f_prime,
-            z13_g1_g2_prime,
-            z13_a,
-            z13_c,
-            z13_f,
             z13_g,
-        };
-
-        self.assign_gate(layouter.namespace(|| "Assign gate cells"), gate_cells)?;
+            z13_g1_g2_prime,
+        )?;
 
         Ok(cm)
     }
@@ -1939,148 +1956,6 @@ impl NoteCommitConfig {
             z13_j_prime,
         )
     }
-
-    fn assign_gate(
-        &self,
-        mut layouter: impl Layouter<pallas::Base>,
-        gate_cells: GateCells,
-    ) -> Result<(), Error> {
-        let b_1 = self.b.assign(
-            &mut layouter,
-            gate_cells.b,
-            gate_cells.b_0.clone(),
-            gate_cells.b_1,
-            gate_cells.b_2,
-            gate_cells.b_3.clone(),
-        )?;
-
-        let d_0 = self.d.assign(
-            &mut layouter,
-            gate_cells.d,
-            gate_cells.d_0,
-            gate_cells.d_1,
-            gate_cells.d_2.clone(),
-            gate_cells.z1_d.clone(),
-        )?;
-
-        self.e.assign(
-            &mut layouter,
-            gate_cells.e,
-            gate_cells.e_0.clone(),
-            gate_cells.e_1.clone(),
-        )?;
-
-        let g_0 = self.g.assign(
-            &mut layouter,
-            gate_cells.g,
-            gate_cells.g_0,
-            gate_cells.g_1.clone(),
-            gate_cells.z1_g.clone(),
-        )?;
-
-        let h_1 = self.h.assign(
-            &mut layouter,
-            gate_cells.h,
-            gate_cells.h_0.clone(),
-            gate_cells.h_1,
-        )?;
-
-        self.g_d.assign(
-            &mut layouter,
-            gate_cells.gd_x,
-            gate_cells.a,
-            gate_cells.b_0,
-            b_1,
-            gate_cells.a_prime,
-            gate_cells.z13_a,
-            gate_cells.z13_a_prime,
-        )?;
-
-        self.pk_d.assign(
-            &mut layouter,
-            gate_cells.pkd_x,
-            gate_cells.b_3,
-            gate_cells.c,
-            d_0,
-            gate_cells.b3_c_prime,
-            gate_cells.z13_c,
-            gate_cells.z14_b3_c_prime,
-        )?;
-
-        self.value.assign(
-            &mut layouter,
-            gate_cells.value,
-            gate_cells.d_2,
-            gate_cells.z1_d,
-            gate_cells.e_0,
-        )?;
-
-        self.rho.assign(
-            &mut layouter,
-            gate_cells.rho,
-            gate_cells.e_1,
-            gate_cells.f,
-            g_0,
-            gate_cells.e1_f_prime,
-            gate_cells.z13_f,
-            gate_cells.z14_e1_f_prime,
-        )?;
-
-        self.psi.assign(
-            &mut layouter,
-            gate_cells.psi,
-            gate_cells.g_1,
-            gate_cells.z1_g,
-            gate_cells.h_0,
-            h_1,
-            gate_cells.g1_g2_prime,
-            gate_cells.z13_g,
-            gate_cells.z13_g1_g2_prime,
-        )
-    }
-}
-
-struct GateCells {
-    a: AssignedCell<pallas::Base, pallas::Base>,
-    b: NoteCommitPiece,
-    b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    b_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
-    b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    c: AssignedCell<pallas::Base, pallas::Base>,
-    d: NoteCommitPiece,
-    d_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
-    d_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    d_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    z1_d: AssignedCell<pallas::Base, pallas::Base>,
-    e: NoteCommitPiece,
-    e_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    f: AssignedCell<pallas::Base, pallas::Base>,
-    g: NoteCommitPiece,
-    g_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
-    g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    z1_g: AssignedCell<pallas::Base, pallas::Base>,
-    h: NoteCommitPiece,
-    h_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    h_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
-    gd_x: AssignedCell<pallas::Base, pallas::Base>,
-    pkd_x: AssignedCell<pallas::Base, pallas::Base>,
-    value: AssignedCell<NoteValue, pallas::Base>,
-    rho: AssignedCell<pallas::Base, pallas::Base>,
-    psi: AssignedCell<pallas::Base, pallas::Base>,
-    a_prime: AssignedCell<pallas::Base, pallas::Base>,
-    b3_c_prime: AssignedCell<pallas::Base, pallas::Base>,
-    e1_f_prime: AssignedCell<pallas::Base, pallas::Base>,
-    g1_g2_prime: AssignedCell<pallas::Base, pallas::Base>,
-    z13_a_prime: AssignedCell<pallas::Base, pallas::Base>,
-    z14_b3_c_prime: AssignedCell<pallas::Base, pallas::Base>,
-    z14_e1_f_prime: AssignedCell<pallas::Base, pallas::Base>,
-    z13_g1_g2_prime: AssignedCell<pallas::Base, pallas::Base>,
-    z13_a: AssignedCell<pallas::Base, pallas::Base>,
-    z13_c: AssignedCell<pallas::Base, pallas::Base>,
-    z13_f: AssignedCell<pallas::Base, pallas::Base>,
-    z13_g: AssignedCell<pallas::Base, pallas::Base>,
 }
 
 #[cfg(test)]
