@@ -268,8 +268,9 @@ impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
 
 /// A compact Action for light clients.
 pub struct CompactAction {
-    ephemeral_key: EphemeralKeyBytes,
+    nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
+    ephemeral_key: EphemeralKeyBytes,
     enc_ciphertext: [u8; 52],
 }
 
@@ -282,8 +283,9 @@ impl fmt::Debug for CompactAction {
 impl<T> From<&Action<T>> for CompactAction {
     fn from(action: &Action<T>) -> Self {
         CompactAction {
-            ephemeral_key: action.ephemeral_key(),
+            nullifier: *action.nullifier(),
             cmx: *action.cmx(),
+            ephemeral_key: action.ephemeral_key(),
             enc_ciphertext: action.encrypted_note().enc_ciphertext[..52]
                 .try_into()
                 .unwrap(),

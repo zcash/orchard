@@ -290,8 +290,8 @@ impl Builder {
 
     /// Builds a bundle containing the given spent notes and recipients.
     ///
-    /// This API assumes that none of the notes being spent are controlled by (threshold)
-    /// multisignatures, and immediately constructs the bundle proof.
+    /// The returned bundle will have no proof or signatures; these can be applied with
+    /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
     pub fn build<V: TryFrom<i64>>(
         mut self,
         mut rng: impl RngCore,
@@ -530,6 +530,9 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
 
 impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
     /// Applies signatures to this bundle, in order to authorize it.
+    ///
+    /// This is a helper method that wraps [`Bundle::prepare`], [`Bundle::sign`], and
+    /// [`Bundle::finalize`].
     pub fn apply_signatures<R: RngCore + CryptoRng>(
         self,
         mut rng: R,
@@ -589,8 +592,7 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use core::fmt::Debug;
-
-    use incrementalmerkletree::{bridgetree::BridgeTree, Frontier, Tree};
+    use incrementalmerkletree::{bridgetree::BridgeTree, Tree};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 
     use proptest::collection::vec;
@@ -665,6 +667,7 @@ pub mod testing {
         (
             n_notes in 1usize..30,
             n_recipients in 1..30,
+
         )
         (
             // generate note values that we're certain won't exceed MAX_NOTE_VALUE in total
@@ -690,14 +693,15 @@ pub mod testing {
                 tree.append(&leaf);
                 let position = tree.witness().expect("tree is not empty");
 
-                let path = MerklePath::from((position, tree.authentication_path(position).expect("we just witnessed the path")));
+                let root = tree.root(0).unwrap();
+                let path = MerklePath::from((position, tree.authentication_path(position, &root).expect("we just witnessed the path")));
                 notes_and_auth_paths.push((*note, path));
             }
 
             ArbitraryBundleInputs {
                 rng: StdRng::from_seed(rng_seed),
                 sk,
-                anchor: tree.root().into(),
+                anchor: tree.root(0).unwrap().into(),
                 notes: notes_and_auth_paths,
                 recipient_amounts
             }
