@@ -1431,7 +1431,12 @@ pub struct NoteCommitConfig {
         SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
 }
 
-impl NoteCommitConfig {
+#[derive(Clone, Debug)]
+pub struct NoteCommitChip {
+    config: NoteCommitConfig,
+}
+
+impl NoteCommitChip {
     #[allow(non_snake_case)]
     #[allow(clippy::many_single_char_names)]
     pub(in crate::circuit) fn configure(
@@ -1442,7 +1447,7 @@ impl NoteCommitConfig {
             OrchardCommitDomains,
             OrchardFixedBases,
         >,
-    ) -> Self {
+    ) -> NoteCommitConfig {
         // Useful constants
         let two = pallas::Base::from(2);
         let two_pow_2 = pallas::Base::from(1 << 2);
@@ -1536,7 +1541,7 @@ impl NoteCommitConfig {
             t_p,
         );
 
-        Self {
+        NoteCommitConfig {
             b,
             d,
             e,
@@ -1553,14 +1558,24 @@ impl NoteCommitConfig {
         }
     }
 
+    pub(in crate::circuit) fn construct(config: NoteCommitConfig) -> Self {
+        Self { config }
+    }
+}
+
+pub(in crate::circuit) mod gadgets {
+    use halo2_proofs::circuit::Chip;
+
+    use super::*;
+
     #[allow(clippy::many_single_char_names)]
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::circuit) fn assign_region(
-        &self,
+    pub(in crate::circuit) fn note_commit(
         mut layouter: impl Layouter<pallas::Base>,
         chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
         ecc_chip: EccChip<OrchardFixedBases>,
+        note_commit_chip: NoteCommitChip,
         g_d: &NonIdentityEccPoint,
         pk_d: &NonIdentityEccPoint,
         value: AssignedCell<NoteValue, pallas::Base>,
@@ -1568,7 +1583,7 @@ impl NoteCommitConfig {
         psi: AssignedCell<pallas::Base, pallas::Base>,
         rcm: Option<pallas::Scalar>,
     ) -> Result<Point<pallas::Affine, EccChip<OrchardFixedBases>>, Error> {
-        let lookup_config = self.sinsemilla_config.lookup_config();
+        let lookup_config = chip.config().lookup_config();
 
         // `a` = bits 0..=249 of `x(g_d)`
         let a = MessagePiece::from_subpieces(
@@ -1616,9 +1631,17 @@ impl NoteCommitConfig {
             DecomposeH::decompose(&lookup_config, chip.clone(), &mut layouter, &psi)?;
 
         // Check decomposition of `y(g_d)`.
-        let b_2 = self.y_canonicity(layouter.namespace(|| "y(g_d) decomposition"), g_d.y(), b_2)?;
+        let b_2 = y_canonicity(
+            &lookup_config,
+            &note_commit_chip.config.y_canon,
+            layouter.namespace(|| "y(g_d) decomposition"),
+            g_d.y(),
+            b_2,
+        )?;
         // Check decomposition of `y(pk_d)`.
-        let d_1 = self.y_canonicity(
+        let d_1 = y_canonicity(
+            &lookup_config,
+            &note_commit_chip.config.y_canon,
             layouter.namespace(|| "y(pk_d) decomposition"),
             pk_d.y(),
             d_1,
@@ -1654,46 +1677,55 @@ impl NoteCommitConfig {
         let g_2 = z1_g.clone();
         let z13_g = zs[6][13].clone();
 
-        let (a_prime, z13_a_prime) = self.canon_bitshift_130(
+        let (a_prime, z13_a_prime) = canon_bitshift_130(
+            &lookup_config,
             layouter.namespace(|| "x(g_d) canonicity"),
             a.inner().cell_value(),
         )?;
 
-        let (b3_c_prime, z14_b3_c_prime) = self.pkd_x_canonicity(
+        let (b3_c_prime, z14_b3_c_prime) = pkd_x_canonicity(
+            &lookup_config,
             layouter.namespace(|| "x(pk_d) canonicity"),
             b_3.clone(),
             c.inner().cell_value(),
         )?;
 
-        let (e1_f_prime, z14_e1_f_prime) = self.rho_canonicity(
+        let (e1_f_prime, z14_e1_f_prime) = rho_canonicity(
+            &lookup_config,
             layouter.namespace(|| "rho canonicity"),
             e_1.clone(),
             f.inner().cell_value(),
         )?;
 
-        let (g1_g2_prime, z13_g1_g2_prime) =
-            self.psi_canonicity(layouter.namespace(|| "psi canonicity"), g_1.clone(), g_2)?;
+        let (g1_g2_prime, z13_g1_g2_prime) = psi_canonicity(
+            &lookup_config,
+            layouter.namespace(|| "psi canonicity"),
+            g_1.clone(),
+            g_2,
+        )?;
 
-        let b_1 = self
+        let cfg = note_commit_chip.config;
+
+        let b_1 = cfg
             .b
             .assign(&mut layouter, b, b_0.clone(), b_1, b_2, b_3.clone())?;
 
-        let d_0 = self
+        let d_0 = cfg
             .d
             .assign(&mut layouter, d, d_0, d_1, d_2.clone(), z1_d.clone())?;
 
-        self.e.assign(&mut layouter, e, e_0.clone(), e_1.clone())?;
+        cfg.e.assign(&mut layouter, e, e_0.clone(), e_1.clone())?;
 
-        let g_0 = self
+        let g_0 = cfg
             .g
             .assign(&mut layouter, g, g_0, g_1.clone(), z1_g.clone())?;
 
-        let h_1 = self.h.assign(&mut layouter, h, h_0.clone(), h_1)?;
+        let h_1 = cfg.h.assign(&mut layouter, h, h_0.clone(), h_1)?;
 
-        self.g_d
+        cfg.g_d
             .assign(&mut layouter, g_d, a, b_0, b_1, a_prime, z13_a, z13_a_prime)?;
 
-        self.pk_d.assign(
+        cfg.pk_d.assign(
             &mut layouter,
             pk_d,
             b_3,
@@ -1704,9 +1736,9 @@ impl NoteCommitConfig {
             z14_b3_c_prime,
         )?;
 
-        self.value.assign(&mut layouter, value, d_2, z1_d, e_0)?;
+        cfg.value.assign(&mut layouter, value, d_2, z1_d, e_0)?;
 
-        self.rho.assign(
+        cfg.rho.assign(
             &mut layouter,
             rho,
             e_1,
@@ -1717,7 +1749,7 @@ impl NoteCommitConfig {
             z14_e1_f_prime,
         )?;
 
-        self.psi.assign(
+        cfg.psi.assign(
             &mut layouter,
             psi,
             g_1,
@@ -1734,7 +1766,7 @@ impl NoteCommitConfig {
 
     // A canonicity check helper used in checking x(g_d), y(g_d), and y(pk_d).
     fn canon_bitshift_130(
-        &self,
+        lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
         a: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<CanonicityBounds, Error> {
@@ -1752,7 +1784,7 @@ impl NoteCommitConfig {
             let t_p = pallas::Base::from_u128(T_P);
             a + two_pow_130 - t_p
         });
-        let zs = self.sinsemilla_config.lookup_config().witness_check(
+        let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 130 bits of (a + 2^130 - t_P)"),
             a_prime,
             13,
@@ -1766,7 +1798,7 @@ impl NoteCommitConfig {
 
     // Check canonicity of `x(pk_d)` encoding
     fn pkd_x_canonicity(
-        &self,
+        lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
         b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         c: AssignedCell<pallas::Base, pallas::Base>,
@@ -1791,7 +1823,7 @@ impl NoteCommitConfig {
             b_3 + (two_pow_4 * c) + two_pow_140 - t_p
         });
 
-        let zs = self.sinsemilla_config.lookup_config().witness_check(
+        let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 140 bits of (b_3 + 2^4 c + 2^140 - t_P)"),
             b3_c_prime,
             14,
@@ -1805,7 +1837,7 @@ impl NoteCommitConfig {
 
     // Check canonicity of `rho` encoding
     fn rho_canonicity(
-        &self,
+        lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
         e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         f: AssignedCell<pallas::Base, pallas::Base>,
@@ -1830,7 +1862,7 @@ impl NoteCommitConfig {
         // Decompose the low 140 bits of e1_f_prime = e_1 + 2^4 f + 2^140 - t_P,
         // and output the running sum at the end of it.
         // If e1_f_prime < 2^140, the running sum will be 0.
-        let zs = self.sinsemilla_config.lookup_config().witness_check(
+        let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 140 bits of (e_1 + 2^4 f + 2^140 - t_P)"),
             e1_f_prime,
             14,
@@ -1844,7 +1876,7 @@ impl NoteCommitConfig {
 
     // Check canonicity of `psi` encoding
     fn psi_canonicity(
-        &self,
+        lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
         g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         g_2: AssignedCell<pallas::Base, pallas::Base>,
@@ -1867,7 +1899,7 @@ impl NoteCommitConfig {
             g_1 + (two_pow_9 * g_2) + two_pow_130 - t_p
         });
 
-        let zs = self.sinsemilla_config.lookup_config().witness_check(
+        let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 130 bits of (g_1 + (2^9)g_2 + 2^130 - t_P)"),
             g1_g2_prime,
             13,
@@ -1882,7 +1914,8 @@ impl NoteCommitConfig {
     // Check canonicity of y-coordinate given its LSB as a value.
     // Also, witness the LSB and return the witnessed cell.
     fn y_canonicity(
-        &self,
+        lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
+        y_canon: &YCanonicity,
         mut layouter: impl Layouter<pallas::Base>,
         y: AssignedCell<pallas::Base, pallas::Base>,
         lsb: RangeConstrained<pallas::Base, Option<pallas::Base>>,
@@ -1894,7 +1927,7 @@ impl NoteCommitConfig {
 
         // Range-constrain k_0 to be 9 bits.
         let k_0 = RangeConstrained::witness_short(
-            &self.sinsemilla_config.lookup_config(),
+            lookup_config,
             layouter.namespace(|| "k_0"),
             y.value(),
             1..10,
@@ -1905,7 +1938,7 @@ impl NoteCommitConfig {
 
         // Range-constrain k_2 to be 4 bits.
         let k_2 = RangeConstrained::witness_short(
-            &self.sinsemilla_config.lookup_config(),
+            lookup_config,
             layouter.namespace(|| "k_2"),
             y.value(),
             250..254,
@@ -1926,7 +1959,7 @@ impl NoteCommitConfig {
                     let two_pow_10 = pallas::Base::from(1 << 10);
                     lsb + two * k_0 + two_pow_10 * k_1
                 });
-            let zs = self.sinsemilla_config.lookup_config().witness_check(
+            let zs = lookup_config.witness_check(
                 layouter.namespace(|| "Decompose j = LSB + (2)k_0 + (2^10)k_1"),
                 j,
                 25,
@@ -1937,12 +1970,13 @@ impl NoteCommitConfig {
 
         // Decompose j_prime = j + 2^130 - t_P using 13 ten-bit lookups.
         // We can reuse the canon_bitshift_130 logic here.
-        let (j_prime, z13_j_prime) = self.canon_bitshift_130(
+        let (j_prime, z13_j_prime) = canon_bitshift_130(
+            lookup_config,
             layouter.namespace(|| "j_prime = j + 2^130 - t_P"),
             j.clone(),
         )?;
 
-        self.y_canon.assign(
+        y_canon.assign(
             &mut layouter,
             y,
             lsb,
@@ -1964,7 +1998,10 @@ mod tests {
 
     use super::NoteCommitConfig;
     use crate::{
-        circuit::gadget::assign_free_advice,
+        circuit::{
+            gadget::assign_free_advice,
+            note_commit::{gadgets, NoteCommitChip},
+        },
         constants::{
             fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
             OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
@@ -2068,7 +2105,7 @@ mod tests {
                     range_check,
                 );
                 let note_commit_config =
-                    NoteCommitConfig::configure(meta, advices, sinsemilla_config);
+                    NoteCommitChip::configure(meta, advices, sinsemilla_config);
 
                 let ecc_config = EccChip::<OrchardFixedBases>::configure(
                     meta,
@@ -2100,6 +2137,9 @@ mod tests {
 
                 // Construct an ECC chip
                 let ecc_chip = EccChip::construct(ecc_config);
+
+                // Construct a NoteCommit chip
+                let note_commit_chip = NoteCommitChip::construct(note_commit_config.clone());
 
                 // Witness g_d
                 let g_d = {
@@ -2167,10 +2207,11 @@ mod tests {
 
                 let rcm = pallas::Scalar::random(OsRng);
 
-                let cm = note_commit_config.assign_region(
+                let cm = gadgets::note_commit(
                     layouter.namespace(|| "Hash NoteCommit pieces"),
                     sinsemilla_chip,
                     ecc_chip.clone(),
+                    note_commit_chip,
                     g_d.inner(),
                     pk_d.inner(),
                     value_var,

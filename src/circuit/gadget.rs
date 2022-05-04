@@ -3,7 +3,7 @@
 use ff::Field;
 use pasta_curves::pallas;
 
-use super::commit_ivk::CommitIvkChip;
+use super::{commit_ivk::CommitIvkChip, note_commit::NoteCommitChip};
 use crate::constants::{
     NullifierK, OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
     ValueCommitV,
@@ -63,6 +63,14 @@ impl super::Config {
 
     pub(super) fn poseidon_chip(&self) -> PoseidonChip<pallas::Base, 3, 2> {
         PoseidonChip::construct(self.poseidon_config.clone())
+    }
+
+    pub(super) fn note_commit_chip_new(&self) -> NoteCommitChip {
+        NoteCommitChip::construct(self.new_note_commit_config.clone())
+    }
+
+    pub(super) fn note_commit_chip_old(&self) -> NoteCommitChip {
+        NoteCommitChip::construct(self.old_note_commit_config.clone())
     }
 }
 
@@ -200,3 +208,4 @@ pub(in crate::circuit) fn derive_nullifier<
 }
 
 pub(in crate::circuit) use crate::circuit::commit_ivk::gadgets::commit_ivk;
+pub(in crate::circuit) use crate::circuit::note_commit::gadgets::note_commit;

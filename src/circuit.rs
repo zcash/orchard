@@ -22,7 +22,7 @@ use self::{
         add_chip::{AddChip, AddConfig},
         assign_free_advice,
     },
-    note_commit::NoteCommitConfig,
+    note_commit::{NoteCommitChip, NoteCommitConfig},
 };
 use crate::{
     constants::{
@@ -292,12 +292,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_old.
         let old_note_commit_config =
-            NoteCommitConfig::configure(meta, advices, sinsemilla_config_1.clone());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_1.clone());
 
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_new.
         let new_note_commit_config =
-            NoteCommitConfig::configure(meta, advices, sinsemilla_config_2.clone());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone());
 
         Config {
             primary,
@@ -530,17 +530,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Old note commitment integrity.
         {
-            let old_note_commit_config = config.old_note_commit_config.clone();
-
             let rcm_old = self.rcm_old.as_ref().map(|rcm_old| rcm_old.inner());
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let derived_cm_old = old_note_commit_config.assign_region(
+            let derived_cm_old = gadget::note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_1(),
                 config.ecc_chip(),
+                config.note_commit_chip_old(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
                 v_old.clone(),
@@ -555,8 +554,6 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // New note commitment integrity.
         {
-            let new_note_commit_config = config.new_note_commit_config.clone();
-
             // Witness g_d_new
             let g_d_new = {
                 let g_d_new = self.g_d_new.map(|g_d_new| g_d_new.to_affine());
@@ -590,12 +587,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let rcm_new = self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner());
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let cm_new = new_note_commit_config.assign_region(
+            let cm_new = gadget::note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_2(),
                 config.ecc_chip(),
+                config.note_commit_chip_new(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
                 v_new.clone(),
