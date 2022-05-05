@@ -213,8 +213,8 @@ impl Hashable for MerkleHashOrchard {
                 .hash(
                     iter::empty()
                         .chain(i2lebsp_k(altitude.into()).iter().copied())
-                        .chain(left.0.to_le_bits().iter().by_val().take(L_ORCHARD_MERKLE))
-                        .chain(right.0.to_le_bits().iter().by_val().take(L_ORCHARD_MERKLE)),
+                        .chain(left.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
+                        .chain(right.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
                 )
                 .unwrap_or(pallas::Base::zero()),
         )

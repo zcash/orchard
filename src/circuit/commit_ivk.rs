@@ -811,7 +811,7 @@ mod tests {
                                         .unwrap()
                                         .to_le_bits()
                                         .iter()
-                                        .by_val()
+                                        .by_vals()
                                         .take(L_ORCHARD_BASE),
                                 )
                                 .chain(
@@ -819,7 +819,7 @@ mod tests {
                                         .unwrap()
                                         .to_le_bits()
                                         .iter()
-                                        .by_val()
+                                        .by_vals()
                                         .take(L_ORCHARD_BASE),
                                 ),
                             &rivk,

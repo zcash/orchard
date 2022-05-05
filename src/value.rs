@@ -111,8 +111,8 @@ impl NoteValue {
         self.0.to_le_bytes()
     }
 
-    pub(crate) fn to_le_bits(self) -> BitArray<Lsb0, [u8; 8]> {
-        BitArray::<Lsb0, _>::new(self.0.to_le_bytes())
+    pub(crate) fn to_le_bits(self) -> BitArray<[u8; 8], Lsb0> {
+        BitArray::<_, Lsb0>::new(self.0.to_le_bytes())
     }
 }
 

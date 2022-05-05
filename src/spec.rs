@@ -179,8 +179,8 @@ pub(crate) fn commit_ivk(
     let domain = sinsemilla::CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
     domain.short_commit(
         iter::empty()
-            .chain(ak.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
-            .chain(nk.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
+            .chain(ak.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE))
+            .chain(nk.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE)),
         rivk,
     )
 }

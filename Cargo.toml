@@ -24,17 +24,17 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 
 [dependencies]
 aes = "0.7"
-bitvec = "0.22"
+bitvec = "1"
 blake2b_simd = "1"
-ff = "0.11"
+ff = "0.12"
 fpe = "0.5"
-group = "0.11"
+group = "0.12"
 halo2_gadgets = "=0.1.0-beta.3"
 halo2_proofs = "=0.1.0-beta.4"
 hex = "0.4"
 lazy_static = "1"
 memuse = { version = "0.2", features = ["nonempty"] }
-pasta_curves = "0.3"
+pasta_curves = "0.4"
 proptest = { version = "1.0.0", optional = true }
 rand = "0.8"
 reddsa = "0.2"
@@ -82,6 +82,7 @@ debug = true
 debug = true
 
 [patch.crates-io]
-halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "3800de59188a73b4e04f689c8bcc855a2fc7fdcf" }
-halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "3800de59188a73b4e04f689c8bcc855a2fc7fdcf" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "72ff677776504c288f4927a6ce8d3c273ebd588d" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "72ff677776504c288f4927a6ce8d3c273ebd588d" }
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "f23e3d89507849a24543121839eea6f40b141aff" }
+reddsa = { git = "https://github.com/ZcashFoundation/reddsa.git", rev = "f711bfa4931a3b80b216e642a453426ceb727143" }
