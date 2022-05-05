@@ -42,6 +42,7 @@ use core::ops::{Add, RangeInclusive, Sub};
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
+use halo2_proofs::plonk::Assigned;
 use pasta_curves::{
     arithmetic::{CurveAffine, CurveExt},
     pallas,
@@ -115,8 +116,14 @@ impl NoteValue {
     }
 }
 
+impl From<&NoteValue> for Assigned<pallas::Base> {
+    fn from(v: &NoteValue) -> Self {
+        pallas::Base::from(v.inner()).into()
+    }
+}
+
 impl Sub for NoteValue {
-    type Output = Option<ValueSum>;
+    type Output = ValueSum;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: Self) -> Self::Output {
@@ -125,7 +132,13 @@ impl Sub for NoteValue {
         a.checked_sub(b)
             .filter(|v| VALUE_SUM_RANGE.contains(v))
             .map(ValueSum)
+            .expect("u64 - u64 result is always in VALUE_SUM_RANGE")
     }
+}
+
+pub(crate) enum Sign {
+    Positive,
+    Negative,
 }
 
 /// A sum of Orchard note values.
@@ -134,11 +147,11 @@ pub struct ValueSum(i128);
 
 impl ValueSum {
     pub(crate) fn zero() -> Self {
-        // Default for i64 is zero.
+        // Default for i128 is zero.
         Default::default()
     }
 
-    /// Creates a value sum from its raw numeric value.
+    /// Creates a value sum from a raw i64 (which is always in range for this type).
     ///
     /// This only enforces that the value is a signed 63-bit integer. We use it internally
     /// in `Bundle::binding_validating_key`, where we are converting from the user-defined
@@ -146,6 +159,20 @@ impl ValueSum {
     /// range.
     pub(crate) fn from_raw(value: i64) -> Self {
         ValueSum(value as i128)
+    }
+
+    /// Splits this value sum into its magnitude and sign.
+    pub(crate) fn magnitude_sign(&self) -> (u64, Sign) {
+        let (magnitude, sign) = if self.0.is_negative() {
+            (-self.0, Sign::Negative)
+        } else {
+            (self.0, Sign::Positive)
+        };
+        (
+            u64::try_from(magnitude)
+                .expect("ValueSum magnitude is in range for u64 by construction"),
+            sign,
+        )
     }
 }
 

@@ -4,7 +4,7 @@ use core::fmt;
 
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
-    circuit::{floor_planner, AssignedCell, Layouter},
+    circuit::{floor_planner, Layouter},
     plonk::{
         self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector,
         SingleVerifier,
@@ -16,12 +16,18 @@ use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
 use rand::RngCore;
 
-use self::commit_ivk::CommitIvkConfig;
-use self::note_commit::NoteCommitConfig;
+use self::{
+    commit_ivk::{CommitIvkChip, CommitIvkConfig},
+    gadget::{
+        add_chip::{AddChip, AddConfig},
+        assign_free_advice,
+    },
+    note_commit::{NoteCommitChip, NoteCommitConfig},
+};
 use crate::{
     constants::{
-        util::gen_const_array, NullifierK, OrchardCommitDomains, OrchardFixedBases,
-        OrchardFixedBasesFull, OrchardHashDomains, ValueCommitV, MERKLE_DEPTH_ORCHARD,
+        OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
+        MERKLE_DEPTH_ORCHARD,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
@@ -39,10 +45,10 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, FixedPointBaseField, FixedPointShort, NonIdentityPoint, Point,
+        FixedPoint, NonIdentityPoint, Point,
     },
-    poseidon::{Hash as PoseidonHash, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
-    primitives::poseidon::{self, ConstantLength},
+    poseidon::{Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    primitives::poseidon,
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{
@@ -50,7 +56,7 @@ use halo2_gadgets::{
             MerklePath,
         },
     },
-    utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
+    utilities::lookup_range_check::LookupRangeCheckConfig,
 };
 
 mod commit_ivk;
@@ -76,9 +82,8 @@ const ENABLE_OUTPUT: usize = 8;
 pub struct Config {
     primary: Column<InstanceColumn>,
     q_orchard: Selector,
-    // Selector for the field addition gate poseidon_hash(nk, rho_old) + psi_old.
-    q_add: Selector,
     advices: [Column<Advice>; 10],
+    add_config: AddConfig,
     ecc_config: EccConfig<OrchardFixedBases>,
     poseidon_config: PoseidonConfig<pallas::Base, 3, 2>,
     merkle_config_1: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
@@ -108,16 +113,12 @@ pub struct Circuit {
     pub(crate) ak: Option<SpendValidatingKey>,
     pub(crate) nk: Option<NullifierDerivingKey>,
     pub(crate) rivk: Option<CommitIvkRandomness>,
-    pub(crate) g_d_new_star: Option<[u8; 32]>,
-    pub(crate) pk_d_new_star: Option<[u8; 32]>,
+    pub(crate) g_d_new: Option<NonIdentityPallasPoint>,
+    pub(crate) pk_d_new: Option<DiversifiedTransmissionKey>,
     pub(crate) v_new: Option<NoteValue>,
     pub(crate) psi_new: Option<pallas::Base>,
     pub(crate) rcm_new: Option<NoteCommitTrapdoor>,
     pub(crate) rcv: Option<ValueCommitTrapdoor>,
-}
-
-impl UtilitiesInstructions<pallas::Base> for Circuit {
-    type Var = AssignedCell<pallas::Base, pallas::Base>;
 }
 
 impl plonk::Circuit<pallas::Base> for Circuit {
@@ -144,7 +145,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         ];
 
         // Constrain v_old - v_new = magnitude * sign
-        // Either v_old = 0, or anchor equals public input
+        // Either v_old = 0, or calculated root = anchor
         // Constrain v_old = 0 or enable_spends = 1.
         // Constrain v_new = 0 or enable_outputs = 1.
         let q_orchard = meta.selector();
@@ -155,12 +156,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let magnitude = meta.query_advice(advices[2], Rotation::cur());
             let sign = meta.query_advice(advices[3], Rotation::cur());
 
-            let anchor = meta.query_advice(advices[4], Rotation::cur());
-            let pub_input_anchor = meta.query_advice(advices[5], Rotation::cur());
+            let root = meta.query_advice(advices[4], Rotation::cur());
+            let anchor = meta.query_advice(advices[5], Rotation::cur());
+
+            let enable_spends = meta.query_advice(advices[6], Rotation::cur());
+            let enable_outputs = meta.query_advice(advices[7], Rotation::cur());
 
             let one = Expression::Constant(pallas::Base::one());
-            let not_enable_spends = one.clone() - meta.query_advice(advices[6], Rotation::cur());
-            let not_enable_outputs = one - meta.query_advice(advices[7], Rotation::cur());
 
             Constraints::with_selector(
                 q_orchard,
@@ -170,28 +172,23 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                         v_old.clone() - v_new.clone() - magnitude * sign,
                     ),
                     (
-                        "Either v_old = 0, or anchor equals public input",
-                        v_old.clone() * (anchor - pub_input_anchor),
+                        "Either v_old = 0, or root = anchor",
+                        v_old.clone() * (root - anchor),
                     ),
-                    ("v_old = 0 or enable_spends = 1", v_old * not_enable_spends),
+                    (
+                        "v_old = 0 or enable_spends = 1",
+                        v_old * (one.clone() - enable_spends),
+                    ),
                     (
                         "v_new = 0 or enable_outputs = 1",
-                        v_new * not_enable_outputs,
+                        v_new * (one - enable_outputs),
                     ),
                 ],
             )
         });
 
-        // Addition of two field elements poseidon_hash(nk, rho_old) + psi_old.
-        let q_add = meta.selector();
-        meta.create_gate("poseidon_hash(nk, rho_old) + psi_old", |meta| {
-            let q_add = meta.query_selector(q_add);
-            let sum = meta.query_advice(advices[6], Rotation::cur());
-            let hash_old = meta.query_advice(advices[7], Rotation::cur());
-            let psi_old = meta.query_advice(advices[8], Rotation::cur());
-
-            Constraints::with_selector(q_add, Some(hash_old + psi_old - sum))
-        });
+        // Addition of two field elements.
+        let add_config = AddChip::configure(meta, advices[7], advices[8], advices[6]);
 
         // Fixed columns for the Sinsemilla generator lookup table
         let table_idx = meta.lookup_table_column();
@@ -290,24 +287,23 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Configuration to handle decomposition and canonicity checking
         // for CommitIvk.
-        let commit_ivk_config =
-            CommitIvkConfig::configure(meta, advices, sinsemilla_config_1.clone());
+        let commit_ivk_config = CommitIvkChip::configure(meta, advices);
 
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_old.
         let old_note_commit_config =
-            NoteCommitConfig::configure(meta, advices, sinsemilla_config_1.clone());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_1.clone());
 
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_new.
         let new_note_commit_config =
-            NoteCommitConfig::configure(meta, advices, sinsemilla_config_2.clone());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone());
 
         Config {
             primary,
             q_orchard,
-            q_add,
             advices,
+            add_config,
             ecc_config,
             poseidon_config,
             merkle_config_1,
@@ -320,6 +316,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         }
     }
 
+    #[allow(non_snake_case)]
     fn synthesize(
         &self,
         config: Self::Config,
@@ -332,16 +329,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let ecc_chip = config.ecc_chip();
 
         // Witness private inputs that are used across multiple checks.
-        let (psi_old, rho_old, cm_old, g_d_old, ak, nk, v_old, v_new) = {
+        let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new) = {
             // Witness psi_old
-            let psi_old = self.load_private(
+            let psi_old = assign_free_advice(
                 layouter.namespace(|| "witness psi_old"),
                 config.advices[0],
                 self.psi_old,
             )?;
 
             // Witness rho_old
-            let rho_old = self.load_private(
+            let rho_old = assign_free_advice(
                 layouter.namespace(|| "witness rho_old"),
                 config.advices[0],
                 self.rho_old.map(|rho| rho.0),
@@ -361,44 +358,43 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.g_d_old.as_ref().map(|gd| gd.to_affine()),
             )?;
 
-            // Witness ak.
-            let ak: Option<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
-            let ak = NonIdentityPoint::new(
+            // Witness ak_P.
+            let ak_P: Option<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
+            let ak_P = NonIdentityPoint::new(
                 ecc_chip.clone(),
-                layouter.namespace(|| "ak"),
-                ak.map(|ak| ak.to_affine()),
+                layouter.namespace(|| "witness ak_P"),
+                ak_P.map(|ak_P| ak_P.to_affine()),
             )?;
 
             // Witness nk.
-            let nk = self.load_private(
+            let nk = assign_free_advice(
                 layouter.namespace(|| "witness nk"),
                 config.advices[0],
                 self.nk.map(|nk| nk.inner()),
             )?;
 
             // Witness v_old.
-            let v_old = self.load_private(
+            let v_old = assign_free_advice(
                 layouter.namespace(|| "witness v_old"),
                 config.advices[0],
-                self.v_old.map(|v_old| pallas::Base::from(v_old.inner())),
+                self.v_old,
             )?;
 
             // Witness v_new.
-            let v_new = self.load_private(
+            let v_new = assign_free_advice(
                 layouter.namespace(|| "witness v_new"),
                 config.advices[0],
-                self.v_new.map(|v_new| pallas::Base::from(v_new.inner())),
+                self.v_new,
             )?;
 
-            (psi_old, rho_old, cm_old, g_d_old, ak, nk, v_old, v_new)
+            (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new)
         };
 
         // Merkle path validity check.
-        let anchor = {
-            let path: Option<[pallas::Base; MERKLE_DEPTH_ORCHARD]> = self.path.map(|typed_path| {
-                // TODO: Replace with array::map once MSRV is 1.55.0.
-                gen_const_array(|i| typed_path[i].inner())
-            });
+        let root = {
+            let path = self
+                .path
+                .map(|typed_path| typed_path.map(|node| node.inner()));
             let merkle_inputs = MerklePath::construct(
                 config.merkle_chip_1(),
                 config.merkle_chip_2(),
@@ -407,39 +403,34 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 path,
             );
             let leaf = cm_old.extract_p().inner().clone();
-            merkle_inputs.calculate_root(layouter.namespace(|| "MerkleCRH"), leaf)?
+            merkle_inputs.calculate_root(layouter.namespace(|| "Merkle path"), leaf)?
         };
 
         // Value commitment integrity.
         let v_net = {
-            // v_net = v_old - v_new
+            // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net = {
-                // v_old, v_new are guaranteed to be 64-bit values. Therefore, we can
-                // move them into the base field.
-                let v_old = self.v_old.map(|v_old| pallas::Base::from(v_old.inner()));
-                let v_new = self.v_new.map(|v_new| pallas::Base::from(v_new.inner()));
+                let magnitude_sign = self.v_old.zip(self.v_new).map(|(v_old, v_new)| {
+                    let v_net = v_old - v_new;
+                    let (magnitude, sign) = v_net.magnitude_sign();
 
-                let magnitude_sign = v_old.zip(v_new).map(|(v_old, v_new)| {
-                    let is_negative = v_old < v_new;
-                    let magnitude = if is_negative {
-                        v_new - v_old
-                    } else {
-                        v_old - v_new
-                    };
-                    let sign = if is_negative {
-                        -pallas::Base::one()
-                    } else {
-                        pallas::Base::one()
-                    };
-                    (magnitude, sign)
+                    (
+                        // magnitude is guaranteed to be an unsigned 64-bit value.
+                        // Therefore, we can move it into the base field.
+                        pallas::Base::from(magnitude),
+                        match sign {
+                            crate::value::Sign::Positive => pallas::Base::one(),
+                            crate::value::Sign::Negative => -pallas::Base::one(),
+                        },
+                    )
                 });
 
-                let magnitude = self.load_private(
+                let magnitude = assign_free_advice(
                     layouter.namespace(|| "v_net magnitude"),
                     config.advices[9],
                     magnitude_sign.map(|m_s| m_s.0),
                 )?;
-                let sign = self.load_private(
+                let sign = assign_free_advice(
                     layouter.namespace(|| "v_net sign"),
                     config.advices[9],
                     magnitude_sign.map(|m_s| m_s.1),
@@ -447,25 +438,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 (magnitude, sign)
             };
 
-            // commitment = [v_net] ValueCommitV
-            let (commitment, _) = {
-                let value_commit_v = ValueCommitV;
-                let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
-                value_commit_v.mul(layouter.namespace(|| "[v_net] ValueCommitV"), v_net.clone())?
-            };
-
-            // blind = [rcv] ValueCommitR
-            let (blind, _rcv) = {
-                let rcv = self.rcv.as_ref().map(|rcv| rcv.inner());
-                let value_commit_r = OrchardFixedBasesFull::ValueCommitR;
-                let value_commit_r = FixedPoint::from_inner(ecc_chip.clone(), value_commit_r);
-
-                // [rcv] ValueCommitR
-                value_commit_r.mul(layouter.namespace(|| "[rcv] ValueCommitR"), rcv)?
-            };
-
-            // [v_net] ValueCommitV + [rcv] ValueCommitR
-            let cv_net = commitment.add(layouter.namespace(|| "cv_net"), &blind)?;
+            let cv_net = gadget::value_commit_orchard(
+                layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net)"),
+                ecc_chip.clone(),
+                v_net.clone(),
+                self.rcv.as_ref().map(|rcv| rcv.inner()),
+            )?;
 
             // Constrain cv_net to equal public input
             layouter.constrain_instance(cv_net.inner().x().cell(), config.primary, CV_NET_X)?;
@@ -476,60 +454,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Nullifier integrity
         let nf_old = {
-            // hash_old = poseidon_hash(nk, rho_old)
-            let hash_old = {
-                let poseidon_message = [nk.clone(), rho_old.clone()];
-                let poseidon_hasher =
-                    PoseidonHash::<_, _, poseidon::P128Pow5T3, ConstantLength<2>, 3, 2>::init(
-                        config.poseidon_chip(),
-                        layouter.namespace(|| "Poseidon init"),
-                    )?;
-                poseidon_hasher.hash(
-                    layouter.namespace(|| "Poseidon hash (nk, rho_old)"),
-                    poseidon_message,
-                )?
-            };
-
-            // Add hash output to psi.
-            // `scalar` = poseidon_hash(nk, rho_old) + psi_old.
-            //
-            let scalar = layouter.assign_region(
-                || " `scalar` = poseidon_hash(nk, rho_old) + psi_old",
-                |mut region| {
-                    config.q_add.enable(&mut region, 0)?;
-
-                    hash_old.copy_advice(|| "copy hash_old", &mut region, config.advices[7], 0)?;
-                    psi_old.copy_advice(|| "copy psi_old", &mut region, config.advices[8], 0)?;
-
-                    let scalar_val = hash_old
-                        .value()
-                        .zip(psi_old.value())
-                        .map(|(hash_old, psi_old)| hash_old + psi_old);
-                    region.assign_advice(
-                        || "poseidon_hash(nk, rho_old) + psi_old",
-                        config.advices[6],
-                        0,
-                        || scalar_val.ok_or(plonk::Error::Synthesis),
-                    )
-                },
+            let nf_old = gadget::derive_nullifier(
+                layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_old, cm_old)"),
+                config.poseidon_chip(),
+                config.add_chip(),
+                ecc_chip.clone(),
+                rho_old.clone(),
+                &psi_old,
+                &cm_old,
+                nk.clone(),
             )?;
-
-            // Multiply scalar by NullifierK
-            // `product` = [poseidon_hash(nk, rho_old) + psi_old] NullifierK.
-            //
-            let product = {
-                let nullifier_k = FixedPointBaseField::from_inner(ecc_chip.clone(), NullifierK);
-                nullifier_k.mul(
-                    layouter.namespace(|| "[poseidon_output + psi_old] NullifierK"),
-                    scalar,
-                )?
-            };
-
-            // Add cm_old to multiplied fixed base to get nf_old
-            // cm_old + [poseidon_output + psi_old] NullifierK
-            let nf_old = cm_old
-                .add(layouter.namespace(|| "nf_old"), &product)?
-                .extract_p();
 
             // Constrain nf_old to equal public input
             layouter.constrain_instance(nf_old.inner().cell(), config.primary, NF_OLD)?;
@@ -546,8 +480,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 spend_auth_g.mul(layouter.namespace(|| "[alpha] SpendAuthG"), self.alpha)?
             };
 
-            // [alpha] SpendAuthG + ak
-            let rk = alpha_commitment.add(layouter.namespace(|| "rk"), &ak)?;
+            // [alpha] SpendAuthG + ak_P
+            let rk = alpha_commitment.add(layouter.namespace(|| "rk"), &ak_P)?;
 
             // Constrain rk to equal public input
             layouter.constrain_instance(rk.inner().x().cell(), config.primary, RK_X)?;
@@ -556,16 +490,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Diversified address integrity.
         let pk_d_old = {
-            let commit_ivk_config = config.commit_ivk_config.clone();
-
             let ivk = {
+                let ak = ak_P.extract_p().inner().clone();
                 let rivk = self.rivk.map(|rivk| rivk.inner());
 
-                commit_ivk_config.assign_region(
+                gadget::commit_ivk(
                     config.sinsemilla_chip_1(),
                     ecc_chip.clone(),
+                    config.commit_ivk_chip(),
                     layouter.namespace(|| "CommitIvk"),
-                    ak.extract_p().inner().clone(),
+                    ak,
                     nk,
                     rivk,
                 )?
@@ -577,6 +511,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 g_d_old.mul(layouter.namespace(|| "[ivk] g_d_old"), ivk.inner())?;
 
             // Constrain derived pk_d_old to equal witnessed pk_d_old
+            //
+            // This equality constraint is technically superfluous, because the assigned
+            // value of `derived_pk_d_old` is an equivalent witness. But it's nice to see
+            // an explicit connection between circuit-synthesized values, and explicit
+            // prover witnesses. We could get the best of both worlds with a write-on-copy
+            // abstraction (https://github.com/zcash/halo2/issues/334).
             let pk_d_old = NonIdentityPoint::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "witness pk_d_old"),
@@ -590,17 +530,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Old note commitment integrity.
         {
-            let old_note_commit_config = config.old_note_commit_config.clone();
-
             let rcm_old = self.rcm_old.as_ref().map(|rcm_old| rcm_old.inner());
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let derived_cm_old = old_note_commit_config.assign_region(
+            let derived_cm_old = gadget::note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_1(),
                 config.ecc_chip(),
+                config.note_commit_chip_old(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
                 v_old.clone(),
@@ -615,13 +554,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // New note commitment integrity.
         {
-            let new_note_commit_config = config.new_note_commit_config.clone();
-
-            // Witness g_d_new_star
+            // Witness g_d_new
             let g_d_new = {
-                let g_d_new = self
-                    .g_d_new_star
-                    .map(|bytes| pallas::Affine::from_bytes(&bytes).unwrap());
+                let g_d_new = self.g_d_new.map(|g_d_new| g_d_new.to_affine());
                 NonIdentityPoint::new(
                     ecc_chip.clone(),
                     layouter.namespace(|| "witness g_d_new_star"),
@@ -629,11 +564,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 )?
             };
 
-            // Witness pk_d_new_star
+            // Witness pk_d_new
             let pk_d_new = {
-                let pk_d_new = self
-                    .pk_d_new_star
-                    .map(|bytes| pallas::Affine::from_bytes(&bytes).unwrap());
+                let pk_d_new = self.pk_d_new.map(|pk_d_new| pk_d_new.inner().to_affine());
                 NonIdentityPoint::new(
                     ecc_chip,
                     layouter.namespace(|| "witness pk_d_new"),
@@ -641,8 +574,11 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 )?
             };
 
+            // ρ^new = nf^old
+            let rho_new = nf_old.inner().clone();
+
             // Witness psi_new
-            let psi_new = self.load_private(
+            let psi_new = assign_free_advice(
                 layouter.namespace(|| "witness psi_new"),
                 config.advices[0],
                 self.psi_new,
@@ -651,16 +587,17 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let rcm_new = self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner());
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let cm_new = new_note_commit_config.assign_region(
+            let cm_new = gadget::note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_2(),
                 config.ecc_chip(),
+                config.note_commit_chip_new(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
                 v_new.clone(),
-                nf_old.inner().clone(),
+                rho_new,
                 psi_new,
                 rcm_new,
             )?;
@@ -671,10 +608,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             layouter.constrain_instance(cmx.inner().cell(), config.primary, CMX)?;
         }
 
-        // Constrain v_old - v_new = magnitude * sign
-        // Either v_old = 0, or anchor equals public input
+        // Constrain the remaining Orchard circuit checks.
         layouter.assign_region(
-            || "v_old - v_new = magnitude * sign",
+            || "Orchard circuit checks",
             |mut region| {
                 v_old.copy_advice(|| "v_old", &mut region, config.advices[0], 0)?;
                 v_new.copy_advice(|| "v_new", &mut region, config.advices[1], 0)?;
@@ -682,7 +618,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 magnitude.copy_advice(|| "v_net magnitude", &mut region, config.advices[2], 0)?;
                 sign.copy_advice(|| "v_net sign", &mut region, config.advices[3], 0)?;
 
-                anchor.copy_advice(|| "anchor", &mut region, config.advices[4], 0)?;
+                root.copy_advice(|| "calculated root", &mut region, config.advices[4], 0)?;
                 region.assign_advice_from_instance(
                     || "pub input anchor",
                     config.primary,
@@ -905,7 +841,6 @@ mod tests {
     use core::iter;
 
     use ff::Field;
-    use group::GroupEncoding;
     use halo2_proofs::dev::MockProver;
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
@@ -934,7 +869,7 @@ mod tests {
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value.unwrap(), rcv.clone());
+        let cv_net = ValueCommitment::derive(value, rcv.clone());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());
@@ -954,8 +889,8 @@ mod tests {
                 ak: Some(ak),
                 nk: Some(nk),
                 rivk: Some(rivk),
-                g_d_new_star: Some((*output_note.recipient().g_d()).to_bytes()),
-                pk_d_new_star: Some(output_note.recipient().pk_d().to_bytes()),
+                g_d_new: Some(output_note.recipient().g_d()),
+                pk_d_new: Some(*output_note.recipient().pk_d()),
                 v_new: Some(output_note.value()),
                 psi_new: Some(output_note.rseed().psi(&output_note.rho())),
                 rcm_new: Some(output_note.rseed().rcm(&output_note.rho())),
@@ -1140,8 +1075,8 @@ mod tests {
             ak: None,
             nk: None,
             rivk: None,
-            g_d_new_star: None,
-            pk_d_new_star: None,
+            g_d_new: None,
+            pk_d_new: None,
             v_new: None,
             psi_new: None,
             rcm_new: None,

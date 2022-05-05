@@ -10,37 +10,31 @@ use pasta_curves::{arithmetic::FieldExt, pallas};
 use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
 use halo2_gadgets::{
     ecc::{chip::EccChip, X},
-    sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig},
-        CommitDomain, Message, MessagePiece,
-    },
-    utilities::{bitrange_subset, bool_check},
+    sinsemilla::{chip::SinsemillaChip, CommitDomain, Message, MessagePiece},
+    utilities::{bool_check, RangeConstrained},
 };
 
 #[derive(Clone, Debug)]
 pub struct CommitIvkConfig {
     q_commit_ivk: Selector,
     advices: [Column<Advice>; 10],
-    sinsemilla_config:
-        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
 }
 
-impl CommitIvkConfig {
+#[derive(Clone, Debug)]
+pub struct CommitIvkChip {
+    config: CommitIvkConfig,
+}
+
+impl CommitIvkChip {
     pub(in crate::circuit) fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         advices: [Column<Advice>; 10],
-        sinsemilla_config: SinsemillaConfig<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-        >,
-    ) -> Self {
+    ) -> CommitIvkConfig {
         let q_commit_ivk = meta.selector();
 
-        let config = Self {
+        let config = CommitIvkConfig {
             q_commit_ivk,
             advices,
-            sinsemilla_config,
         };
 
         // <https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit>
@@ -111,10 +105,8 @@ impl CommitIvkConfig {
             // Check that d_whole is consistent with the witnessed subpieces.
             let d_decomposition_check = d_whole - (d_0.clone() + d_1.clone() * two_pow_9);
 
-            // Check `b_1` is a single-bit value
+            // Check `b_1` and `d_1` are each a single-bit value.
             let b1_bool_check = bool_check(b_1.clone());
-
-            // Check `d_1` is a single-bit value
             let d1_bool_check = bool_check(d_1.clone());
 
             // Check that ak = a (250 bits) || b_0 (4 bits) || b_1 (1 bit)
@@ -224,22 +216,37 @@ impl CommitIvkConfig {
         config
     }
 
+    pub(in crate::circuit) fn construct(config: CommitIvkConfig) -> Self {
+        Self { config }
+    }
+}
+
+pub(in crate::circuit) mod gadgets {
+    use halo2_gadgets::utilities::{lookup_range_check::LookupRangeCheckConfig, RangeConstrained};
+    use halo2_proofs::circuit::Chip;
+
+    use super::*;
+
+    /// `Commit^ivk` from [Section 5.4.8.4 Sinsemilla commitments].
+    ///
+    /// [Section 5.4.8.4 Sinsemilla commitments]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillacommit
     #[allow(non_snake_case)]
     #[allow(clippy::type_complexity)]
-    pub(in crate::circuit) fn assign_region(
-        &self,
+    pub(in crate::circuit) fn commit_ivk(
         sinsemilla_chip: SinsemillaChip<
             OrchardHashDomains,
             OrchardCommitDomains,
             OrchardFixedBases,
         >,
         ecc_chip: EccChip<OrchardFixedBases>,
+        commit_ivk_chip: CommitIvkChip,
         mut layouter: impl Layouter<pallas::Base>,
         ak: AssignedCell<pallas::Base, pallas::Base>,
         nk: AssignedCell<pallas::Base, pallas::Base>,
         rivk: Option<pallas::Scalar>,
     ) -> Result<X<pallas::Affine, EccChip<OrchardFixedBases>>, Error> {
-        // <https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit>
+        let lookup_config = sinsemilla_chip.config().lookup_config();
+
         // We need to hash `ak || nk` where each of `ak`, `nk` is a field element (255 bits).
         //
         // a = bits 0..=249 of `ak`
@@ -247,93 +254,79 @@ impl CommitIvkConfig {
         //   = (bits 250..=253 of `ak`) || (bit 254 of  `ak`) || (bits 0..=4 of  `nk`)
         // c = bits 5..=244 of `nk`
         // d = d_0||d_1` = (bits 245..=253 of `nk`) || (bit 254 of `nk`)
+        //
+        // We start by witnessing all of the individual pieces, and range-constraining
+        // the short pieces b_0, b_2, and d_0.
 
         // `a` = bits 0..=249 of `ak`
-        let a = {
-            let a = ak.value().map(|value| bitrange_subset(value, 0..250));
-            MessagePiece::from_field_elem(
-                sinsemilla_chip.clone(),
-                layouter.namespace(|| "a"),
-                a,
-                25,
-            )?
-        };
+        let a = MessagePiece::from_subpieces(
+            sinsemilla_chip.clone(),
+            layouter.namespace(|| "a"),
+            [RangeConstrained::bitrange_of(ak.value(), 0..250)],
+        )?;
 
         // `b = b_0||b_1||b_2`
         //    = (bits 250..=253 of `ak`) || (bit 254 of  `ak`) || (bits 0..=4 of  `nk`)
         let (b_0, b_1, b_2, b) = {
-            let b_0 = ak.value().map(|value| bitrange_subset(value, 250..254));
-            let b_1 = ak.value().map(|value| bitrange_subset(value, 254..255));
-            let b_2 = nk.value().map(|value| bitrange_subset(value, 0..5));
-
-            let b = b_0.zip(b_1).zip(b_2).map(|((b_0, b_1), b_2)| {
-                let b1_shifted = b_1 * pallas::Base::from(1 << 4);
-                let b2_shifted = b_2 * pallas::Base::from(1 << 5);
-                b_0 + b1_shifted + b2_shifted
-            });
-
             // Constrain b_0 to be 4 bits.
-            let b_0 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "b_0 is 4 bits"),
-                b_0,
-                4,
-            )?;
-            // Constrain b_2 to be 5 bits.
-            let b_2 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "b_2 is 5 bits"),
-                b_2,
-                5,
+            let b_0 = RangeConstrained::witness_short(
+                &lookup_config,
+                layouter.namespace(|| "b_0"),
+                ak.value(),
+                250..254,
             )?;
             // b_1 will be boolean-constrained in the custom gate.
+            let b_1 = RangeConstrained::bitrange_of(ak.value(), 254..255);
+            // Constrain b_2 to be 5 bits.
+            let b_2 = RangeConstrained::witness_short(
+                &lookup_config,
+                layouter.namespace(|| "b_2"),
+                nk.value(),
+                0..5,
+            )?;
 
-            let b = MessagePiece::from_field_elem(
+            let b = MessagePiece::from_subpieces(
                 sinsemilla_chip.clone(),
                 layouter.namespace(|| "b = b_0 || b_1 || b_2"),
-                b,
-                1,
+                [b_0.value(), b_1, b_2.value()],
             )?;
 
             (b_0, b_1, b_2, b)
         };
 
         // c = bits 5..=244 of `nk`
-        let c = {
-            let c = nk.value().map(|value| bitrange_subset(value, 5..245));
-            MessagePiece::from_field_elem(
-                sinsemilla_chip.clone(),
-                layouter.namespace(|| "c"),
-                c,
-                24,
-            )?
-        };
+        let c = MessagePiece::from_subpieces(
+            sinsemilla_chip.clone(),
+            layouter.namespace(|| "c"),
+            [RangeConstrained::bitrange_of(nk.value(), 5..245)],
+        )?;
 
         // `d = d_0||d_1` = (bits 245..=253 of `nk`) || (bit 254 of `nk`)
         let (d_0, d_1, d) = {
-            let d_0 = nk.value().map(|value| bitrange_subset(value, 245..254));
-            let d_1 = nk.value().map(|value| bitrange_subset(value, 254..255));
-
-            let d = d_0
-                .zip(d_1)
-                .map(|(d_0, d_1)| d_0 + d_1 * pallas::Base::from(1 << 9));
-
             // Constrain d_0 to be 9 bits.
-            let d_0 = self.sinsemilla_config.lookup_config().witness_short_check(
-                layouter.namespace(|| "d_0 is 9 bits"),
-                d_0,
-                9,
+            let d_0 = RangeConstrained::witness_short(
+                &lookup_config,
+                layouter.namespace(|| "d_0"),
+                nk.value(),
+                245..254,
             )?;
             // d_1 will be boolean-constrained in the custom gate.
+            let d_1 = RangeConstrained::bitrange_of(nk.value(), 254..255);
 
-            let d = MessagePiece::from_field_elem(
+            let d = MessagePiece::from_subpieces(
                 sinsemilla_chip.clone(),
                 layouter.namespace(|| "d = d_0 || d_1"),
-                d,
-                1,
+                [d_0.value(), d_1],
             )?;
 
             (d_0, d_1, d)
         };
 
+        // ivk = Commit^ivk_rivk(I2LEBSP_255(ak) || I2LEBSP_255(nk))
+        //
+        // `ivk = ⊥` is handled internally to `CommitDomain::short_commit`: incomplete
+        // addition constraints allows ⊥ to occur, and then during synthesis it detects
+        // these edge cases and raises an error (aborting proof creation).
         let (ivk, zs) = {
             let message = Message::from_pieces(
                 sinsemilla_chip.clone(),
@@ -344,17 +337,22 @@ impl CommitIvkConfig {
             domain.short_commit(layouter.namespace(|| "Hash ak||nk"), message, rivk)?
         };
 
+        // `CommitDomain::short_commit` returns the running sum for each `MessagePiece`.
+        // Grab the outputs for pieces `a` and `c` that we will need for canonicity checks
+        // on `ak` and `nk`.
         let z13_a = zs[0][13].clone();
         let z13_c = zs[2][13].clone();
 
-        let (a_prime, z13_a_prime) = self.ak_canonicity(
+        let (a_prime, z13_a_prime) = ak_canonicity(
+            &lookup_config,
             layouter.namespace(|| "ak canonicity"),
             a.inner().cell_value(),
         )?;
 
-        let (b2_c_prime, z14_b2_c_prime) = self.nk_canonicity(
+        let (b2_c_prime, z14_b2_c_prime) = nk_canonicity(
+            &lookup_config,
             layouter.namespace(|| "nk canonicity"),
-            b_2.clone(),
+            &b_2,
             c.inner().cell_value(),
         )?;
 
@@ -378,7 +376,7 @@ impl CommitIvkConfig {
             z14_b2_c_prime,
         };
 
-        self.assign_gate(
+        commit_ivk_chip.config.assign_gate(
             layouter.namespace(|| "Assign cells used in canonicity gate"),
             gate_cells,
         )?;
@@ -386,10 +384,10 @@ impl CommitIvkConfig {
         Ok(ivk)
     }
 
+    /// Witnesses and decomposes the `a'` value we need to check the canonicity of `ak`.
     #[allow(clippy::type_complexity)]
-    // Check canonicity of `ak` encoding
     fn ak_canonicity(
-        &self,
+        lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
         a: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<
@@ -413,24 +411,24 @@ impl CommitIvkConfig {
             let t_p = pallas::Base::from_u128(T_P);
             a + two_pow_130 - t_p
         });
-        let zs = self.sinsemilla_config.lookup_config().witness_check(
+        let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 130 bits of (a + 2^130 - t_P)"),
             a_prime,
             13,
             false,
         )?;
         let a_prime = zs[0].clone();
-        assert_eq!(zs.len(), 14); // [z_0, z_1, ..., z13_a]
+        assert_eq!(zs.len(), 14); // [z_0, z_1, ..., z13]
 
         Ok((a_prime, zs[13].clone()))
     }
 
+    /// Witnesses and decomposes the `b2c'` value we need to check the canonicity of `nk`.
     #[allow(clippy::type_complexity)]
-    // Check canonicity of `nk` encoding
     fn nk_canonicity(
-        &self,
+        lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
-        b_2: AssignedCell<pallas::Base, pallas::Base>,
+        b_2: &RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         c: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<
         (
@@ -450,13 +448,13 @@ impl CommitIvkConfig {
 
         // Decompose the low 140 bits of b2_c_prime = b_2 + c * 2^5 + 2^140 - t_P, and output
         // the running sum at the end of it. If b2_c_prime < 2^140, the running sum will be 0.
-        let b2_c_prime = b_2.value().zip(c.value()).map(|(b_2, c)| {
+        let b2_c_prime = b_2.inner().value().zip(c.value()).map(|(b_2, c)| {
             let two_pow_5 = pallas::Base::from(1 << 5);
             let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
             let t_p = pallas::Base::from_u128(T_P);
             b_2 + c * two_pow_5 + two_pow_140 - t_p
         });
-        let zs = self.sinsemilla_config.lookup_config().witness_check(
+        let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 140 bits of (b_2 + c * 2^5 + 2^140 - t_P)"),
             b2_c_prime,
             14,
@@ -467,8 +465,10 @@ impl CommitIvkConfig {
 
         Ok((b2_c_prime, zs[14].clone()))
     }
+}
 
-    // Assign cells for the canonicity gate.
+impl CommitIvkConfig {
+    /// Assign cells for the canonicity gate.
     /*
         The pieces are laid out in this configuration:
 
@@ -508,22 +508,28 @@ impl CommitIvkConfig {
                         .copy_advice(|| "b", &mut region, self.advices[2], offset)?;
 
                     // Copy in `b_0`
-                    gate_cells
-                        .b_0
-                        .copy_advice(|| "b_0", &mut region, self.advices[3], offset)?;
+                    gate_cells.b_0.inner().copy_advice(
+                        || "b_0",
+                        &mut region,
+                        self.advices[3],
+                        offset,
+                    )?;
 
                     // Witness `b_1`
                     region.assign_advice(
                         || "Witness b_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.b_1.ok_or(Error::Synthesis),
+                        || gate_cells.b_1.inner().ok_or(Error::Synthesis),
                     )?;
 
                     // Copy in `b_2`
-                    gate_cells
-                        .b_2
-                        .copy_advice(|| "b_2", &mut region, self.advices[5], offset)?;
+                    gate_cells.b_2.inner().copy_advice(
+                        || "b_2",
+                        &mut region,
+                        self.advices[5],
+                        offset,
+                    )?;
 
                     // Copy in z13_a
                     gate_cells.z13_a.copy_advice(
@@ -570,16 +576,19 @@ impl CommitIvkConfig {
                         .copy_advice(|| "d", &mut region, self.advices[2], offset)?;
 
                     // Copy in `d_0`
-                    gate_cells
-                        .d_0
-                        .copy_advice(|| "d_0", &mut region, self.advices[3], offset)?;
+                    gate_cells.d_0.inner().copy_advice(
+                        || "d_0",
+                        &mut region,
+                        self.advices[3],
+                        offset,
+                    )?;
 
                     // Witness `d_1`
                     region.assign_advice(
                         || "Witness d_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.d_1.ok_or(Error::Synthesis),
+                        || gate_cells.d_1.inner().ok_or(Error::Synthesis),
                     )?;
 
                     // Copy in z13_c
@@ -621,11 +630,11 @@ struct GateCells {
     d: AssignedCell<pallas::Base, pallas::Base>,
     ak: AssignedCell<pallas::Base, pallas::Base>,
     nk: AssignedCell<pallas::Base, pallas::Base>,
-    b_0: AssignedCell<pallas::Base, pallas::Base>,
-    b_1: Option<pallas::Base>,
-    b_2: AssignedCell<pallas::Base, pallas::Base>,
-    d_0: AssignedCell<pallas::Base, pallas::Base>,
-    d_1: Option<pallas::Base>,
+    b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    b_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    d_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    d_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
     z13_a: AssignedCell<pallas::Base, pallas::Base>,
     a_prime: AssignedCell<pallas::Base, pallas::Base>,
     z13_a_prime: AssignedCell<pallas::Base, pallas::Base>,
@@ -638,7 +647,7 @@ struct GateCells {
 mod tests {
     use core::iter;
 
-    use super::CommitIvkConfig;
+    use super::{gadgets, CommitIvkChip, CommitIvkConfig};
     use crate::constants::{
         fixed_bases::COMMIT_IVK_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
         OrchardHashDomains, L_ORCHARD_BASE, T_Q,
@@ -647,7 +656,7 @@ mod tests {
     use halo2_gadgets::{
         ecc::chip::{EccChip, EccConfig},
         primitives::sinsemilla::CommitDomain,
-        sinsemilla::chip::SinsemillaChip,
+        sinsemilla::chip::{SinsemillaChip, SinsemillaConfig},
         utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
     };
     use halo2_proofs::{
@@ -671,7 +680,11 @@ mod tests {
         }
 
         impl Circuit<pallas::Base> for MyCircuit {
-            type Config = (CommitIvkConfig, EccConfig<OrchardFixedBases>);
+            type Config = (
+                SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+                CommitIvkConfig,
+                EccConfig<OrchardFixedBases>,
+            );
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -730,8 +743,7 @@ mod tests {
                     range_check,
                 );
 
-                let commit_ivk_config =
-                    CommitIvkConfig::configure(meta, advices, sinsemilla_config);
+                let commit_ivk_config = CommitIvkChip::configure(meta, advices);
 
                 let ecc_config = EccChip::<OrchardFixedBases>::configure(
                     meta,
@@ -740,7 +752,7 @@ mod tests {
                     range_check,
                 );
 
-                (commit_ivk_config, ecc_config)
+                (sinsemilla_config, commit_ivk_config, ecc_config)
             }
 
             fn synthesize(
@@ -748,17 +760,18 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<pallas::Base>,
             ) -> Result<(), Error> {
-                let (commit_ivk_config, ecc_config) = config;
+                let (sinsemilla_config, commit_ivk_config, ecc_config) = config;
 
                 // Load the Sinsemilla generator lookup table used by the whole circuit.
-                SinsemillaChip::<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>::load(commit_ivk_config.sinsemilla_config.clone(), &mut layouter)?;
+                SinsemillaChip::<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>::load(sinsemilla_config.clone(), &mut layouter)?;
 
                 // Construct a Sinsemilla chip
-                let sinsemilla_chip =
-                    SinsemillaChip::construct(commit_ivk_config.sinsemilla_config.clone());
+                let sinsemilla_chip = SinsemillaChip::construct(sinsemilla_config);
 
                 // Construct an ECC chip
                 let ecc_chip = EccChip::construct(ecc_config);
+
+                let commit_ivk_chip = CommitIvkChip::construct(commit_ivk_config.clone());
 
                 // Witness ak
                 let ak = self.load_private(
@@ -777,9 +790,10 @@ mod tests {
                 // Use a random scalar for rivk
                 let rivk = pallas::Scalar::random(OsRng);
 
-                let ivk = commit_ivk_config.assign_region(
+                let ivk = gadgets::commit_ivk(
                     sinsemilla_chip,
                     ecc_chip,
+                    commit_ivk_chip,
                     layouter.namespace(|| "CommitIvk"),
                     ak,
                     nk,

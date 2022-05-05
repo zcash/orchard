@@ -4,7 +4,6 @@ use core::fmt;
 use core::iter;
 
 use ff::Field;
-use group::GroupEncoding;
 use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
@@ -125,7 +124,7 @@ impl ActionInfo {
     }
 
     /// Returns the value sum for this action.
-    fn value_sum(&self) -> Option<ValueSum> {
+    fn value_sum(&self) -> ValueSum {
         self.spend.note.value() - self.output.value
     }
 
@@ -135,7 +134,7 @@ impl ActionInfo {
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn build(self, mut rng: impl RngCore) -> (Action<SigningMetadata>, Circuit) {
-        let v_net = self.value_sum().expect("already checked this");
+        let v_net = self.value_sum();
         let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
@@ -197,8 +196,8 @@ impl ActionInfo {
                 ak: Some(ak),
                 nk: Some(*self.spend.fvk.nk()),
                 rivk: Some(self.spend.fvk.rivk(self.spend.scope)),
-                g_d_new_star: Some((*note.recipient().g_d()).to_bytes()),
-                pk_d_new_star: Some(note.recipient().pk_d().to_bytes()),
+                g_d_new: Some(note.recipient().g_d()),
+                pk_d_new: Some(*note.recipient().pk_d()),
                 v_new: Some(note.value()),
                 psi_new: Some(note.rseed().psi(&note.rho())),
                 rcm_new: Some(note.rseed().rcm(&note.rho())),
@@ -336,7 +335,7 @@ impl Builder {
         let value_balance = pre_actions
             .iter()
             .fold(Some(ValueSum::zero()), |acc, action| {
-                acc? + action.value_sum()?
+                acc? + action.value_sum()
             })
             .ok_or(OverflowError)?;
 

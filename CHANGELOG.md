@@ -13,6 +13,9 @@ and this project adheres to Rust's notion of
     `Bundle::{try_}map_authorization`.
   - `Flags::from_byte` now returns `Option<Flags>` instead of
     `io::Result<Flags>`.
+- `impl Sub for orchard::value::NoteValue` now returns `ValueSum` instead of
+  `Option<ValueSum>`, as the result is guaranteed to be within the valid range
+  of `ValueSum`.
 
 ## [0.1.0-beta.3] - 2022-04-06
 ### Added

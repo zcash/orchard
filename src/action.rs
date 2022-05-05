@@ -149,7 +149,7 @@ pub(crate) mod testing {
         ) -> Action<()> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
-                (spend_value - output_value).unwrap(),
+                spend_value - output_value,
                 ValueCommitTrapdoor::zero()
             );
             // FIXME: make a real one from the note.
@@ -180,7 +180,7 @@ pub(crate) mod testing {
         ) -> Action<redpallas::Signature<SpendAuth>> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
-                (spend_value - output_value).unwrap(),
+                spend_value - output_value,
                 ValueCommitTrapdoor::zero()
             );
 
