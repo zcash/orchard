@@ -2240,7 +2240,7 @@ mod tests {
                                         .unwrap()
                                         .to_le_bits()
                                         .iter()
-                                        .by_val()
+                                        .by_vals()
                                         .take(L_ORCHARD_BASE),
                                 )
                                 .chain(Some(lsb(self.gd_y_lsb.unwrap())))
@@ -2249,17 +2249,17 @@ mod tests {
                                         .unwrap()
                                         .to_le_bits()
                                         .iter()
-                                        .by_val()
+                                        .by_vals()
                                         .take(L_ORCHARD_BASE),
                                 )
                                 .chain(Some(lsb(self.pkd_y_lsb.unwrap())))
-                                .chain(value.to_le_bits().iter().by_val().take(L_VALUE))
+                                .chain(value.to_le_bits().iter().by_vals().take(L_VALUE))
                                 .chain(
                                     self.rho
                                         .unwrap()
                                         .to_le_bits()
                                         .iter()
-                                        .by_val()
+                                        .by_vals()
                                         .take(L_ORCHARD_BASE),
                                 )
                                 .chain(
@@ -2267,7 +2267,7 @@ mod tests {
                                         .unwrap()
                                         .to_le_bits()
                                         .iter()
-                                        .by_val()
+                                        .by_vals()
                                         .take(L_ORCHARD_BASE),
                                 ),
                             &rcm,

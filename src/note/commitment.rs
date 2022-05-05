@@ -49,11 +49,11 @@ impl NoteCommitment {
         domain
             .commit(
                 iter::empty()
-                    .chain(BitArray::<Lsb0, _>::new(g_d).iter().by_val())
-                    .chain(BitArray::<Lsb0, _>::new(pk_d).iter().by_val())
-                    .chain(v.to_le_bits().iter().by_val())
-                    .chain(rho.to_le_bits().iter().by_val().take(L_ORCHARD_BASE))
-                    .chain(psi.to_le_bits().iter().by_val().take(L_ORCHARD_BASE)),
+                    .chain(BitArray::<_, Lsb0>::new(g_d).iter().by_vals())
+                    .chain(BitArray::<_, Lsb0>::new(pk_d).iter().by_vals())
+                    .chain(v.to_le_bits().iter().by_vals())
+                    .chain(rho.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE))
+                    .chain(psi.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE)),
                 &rcm.0,
             )
             .map(NoteCommitment)
