@@ -180,11 +180,11 @@ transactions to 1-in, 2-out).</p>
 bundle of actions, where each action is both a spend and an output. This provides the same
 inherent arity-hiding as multi-JoinSplit Sprout, but using Sapling value commitments to
 balance the transaction without doubling its size.</p>
-<p>TODO: Depending on the circuit cost, we <em>may</em> switch to having an action internally
-represent either a spend or an output. Externally spends and outputs would still be
-indistinguishable, but the transaction would be larger.</p>
 <h2><a class="header" href="#memo-fields" id="memo-fields">Memo fields</a></h2>
-<p>TODO: One memo per tx vs one memo per output</p>
+<p>Each Orchard action has a memo field for its corresponding output, as with Sprout and
+Sapling. We did at one point consider having a single Orchard memo field per transaction,
+and/or having a mechanism for enabling multiple recipients to decrypt the same memo, but
+these were decided against in order to keep the overall design simpler.</p>
 
                     </main>
 
