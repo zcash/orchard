@@ -111,6 +111,7 @@ impl Flags {
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8) -> Option<Self> {
+        // TCR:bad-txns-v5-reserved-bits-nonzero
         if value & FLAGS_EXPECTED_UNSET == 0 {
             Some(Self::from_parts(
                 value & FLAG_SPENDS_ENABLED != 0,
@@ -371,6 +372,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
     /// [`Bundle::authorization`].
     pub fn binding_validating_key(&self) -> redpallas::VerificationKey<Binding> {
+        // *TCR:bad-txns-orchard-binding-signature-invalid
         (self
             .actions
             .iter()
