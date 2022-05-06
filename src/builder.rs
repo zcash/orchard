@@ -583,9 +583,7 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
         self,
         signatures: &[redpallas::Signature<SpendAuth>],
     ) -> Result<Self, Error> {
-        signatures
-            .into_iter()
-            .try_fold(self, Self::append_signature)
+        signatures.iter().try_fold(self, Self::append_signature)
     }
 
     fn append_signature(self, signature: &redpallas::Signature<SpendAuth>) -> Result<Self, Error> {
