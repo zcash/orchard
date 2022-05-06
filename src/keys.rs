@@ -739,7 +739,7 @@ impl AsRef<[u8; 32]> for OutgoingViewingKey {
 /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct DiversifiedTransmissionKey(NonIdentityPallasPoint);
 
 impl DiversifiedTransmissionKey {
@@ -769,13 +769,6 @@ impl DiversifiedTransmissionKey {
     /// $repr_P(self)$
     pub(crate) fn to_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
-    }
-}
-
-// Required for CtOption operations.
-impl Default for DiversifiedTransmissionKey {
-    fn default() -> Self {
-        DiversifiedTransmissionKey(NonIdentityPallasPoint::default())
     }
 }
 

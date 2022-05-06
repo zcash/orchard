@@ -88,8 +88,8 @@ pub(in crate::circuit) trait AddInstruction<F: FieldExt>: Chip<F> {
 /// Witnesses the given value in a standalone region.
 ///
 /// Usages of this helper are technically superfluous, as the single-cell region is only
-/// ever used in equality constraints. We could eliminate them with a write-on-copy
-/// abstraction (https://github.com/zcash/halo2/issues/334).
+/// ever used in equality constraints. We could eliminate them with a
+/// [write-on-copy abstraction](https://github.com/zcash/halo2/issues/334).
 pub(in crate::circuit) fn assign_free_advice<F: Field, V: Copy>(
     mut layouter: impl Layouter<F>,
     column: Column<Advice>,
