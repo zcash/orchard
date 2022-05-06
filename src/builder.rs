@@ -36,6 +36,11 @@ pub enum Error {
     /// An overflow error occurred while attempting to construct the value
     /// for a bundle.
     ValueSum(value::OverflowError),
+    /// External signature is not valid.
+    InvalidExternalSignature,
+    /// A signature is valid for more than one input. This should never happen if `alpha`
+    /// is sampled correctly, and indicates a critical failure in randomness generation.
+    DuplicateSignature,
 }
 
 impl From<halo2_proofs::plonk::Error> for Error {
@@ -566,6 +571,47 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
             },
             |_, partial| partial,
         )
+    }
+    /// Appends externally computed [`Signature`]s.
+    ///
+    /// Each signature will be applied to the one input for which it is valid. An error
+    /// will be returned if the signature is not valid for any inputs, or if it is valid
+    /// for more than one input.
+    ///
+    /// [`Signature`]: redpallas::Signature
+    pub fn append_signatures(
+        self,
+        signatures: &[redpallas::Signature<SpendAuth>],
+    ) -> Result<Self, Error> {
+        signatures
+            .into_iter()
+            .try_fold(self, Self::append_signature)
+    }
+
+    fn append_signature(self, signature: &redpallas::Signature<SpendAuth>) -> Result<Self, Error> {
+        let mut signature_valid_for = 0usize;
+        let bundle = self.map_authorization(
+            &mut signature_valid_for,
+            |valid_for, partial, maybe| match maybe {
+                MaybeSigned::SigningMetadata(parts) => {
+                    let rk = parts.ak.randomize(&parts.alpha);
+                    if rk.verify(&partial.sigs.sighash[..], signature).is_ok() {
+                        *valid_for += 1;
+                        MaybeSigned::Signature(signature.clone())
+                    } else {
+                        // Signature isn't for this input.
+                        MaybeSigned::SigningMetadata(parts)
+                    }
+                }
+                s => s,
+            },
+            |_, partial| partial,
+        );
+        match signature_valid_for {
+            0 => Err(Error::InvalidExternalSignature),
+            1 => Ok(bundle),
+            _ => Err(Error::DuplicateSignature),
+        }
     }
 }
 
