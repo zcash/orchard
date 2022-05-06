@@ -85,4 +85,4 @@ debug = true
 halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "72ff677776504c288f4927a6ce8d3c273ebd588d" }
 halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "72ff677776504c288f4927a6ce8d3c273ebd588d" }
 incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "f23e3d89507849a24543121839eea6f40b141aff" }
-reddsa = { git = "https://github.com/ZcashFoundation/reddsa.git", rev = "f711bfa4931a3b80b216e642a453426ceb727143" }
+reddsa = { git = "https://github.com/ZcashFoundation/reddsa.git", rev = "0e912de3000fe165daf58ad98d1a22f1a66e7f18" }
