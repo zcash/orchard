@@ -45,7 +45,7 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, NonIdentityPoint, Point,
+        FixedPoint, NonIdentityPoint, Point, ScalarVar,
     },
     poseidon::{Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
     primitives::poseidon,
@@ -504,11 +504,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     rivk,
                 )?
             };
+            let ivk =
+                ScalarVar::from_base(ecc_chip.clone(), layouter.namespace(|| "ivk"), ivk.inner())?;
 
             // [ivk] g_d_old
             // The scalar value is passed through and discarded.
             let (derived_pk_d_old, _ivk) =
-                g_d_old.mul(layouter.namespace(|| "[ivk] g_d_old"), ivk.inner())?;
+                g_d_old.mul(layouter.namespace(|| "[ivk] g_d_old"), ivk)?;
 
             // Constrain derived pk_d_old to equal witnessed pk_d_old
             //
