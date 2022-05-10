@@ -135,7 +135,7 @@ mod tests {
         sinsemilla::MERKLE_CRH_PERSONALIZATION,
     };
     use group::{ff::PrimeField, Curve};
-    use halo2_gadgets::primitives::sinsemilla::{CommitDomain, HashDomain};
+    use halo2_gadgets::sinsemilla::primitives::{CommitDomain, HashDomain};
     use halo2_proofs::arithmetic::CurveAffine;
     use halo2_proofs::pasta::pallas;
     use rand::{self, rngs::OsRng, Rng};

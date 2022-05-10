@@ -45,10 +45,9 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, NonIdentityPoint, Point, ScalarVar,
+        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
     },
-    poseidon::{Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
-    primitives::poseidon,
+    poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{
@@ -396,8 +395,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 .path
                 .map(|typed_path| typed_path.map(|node| node.inner()));
             let merkle_inputs = MerklePath::construct(
-                config.merkle_chip_1(),
-                config.merkle_chip_2(),
+                [config.merkle_chip_1(), config.merkle_chip_2()],
                 OrchardHashDomains::MerkleCrh,
                 self.pos,
                 path,
@@ -407,9 +405,9 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         };
 
         // Value commitment integrity.
-        let v_net = {
+        let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
-            let v_net = {
+            let v_net_magnitude_sign = {
                 let magnitude_sign = self.v_old.zip(self.v_new).map(|(v_old, v_new)| {
                     let v_net = v_old - v_new;
                     let (magnitude, sign) = v_net.magnitude_sign();
@@ -438,18 +436,30 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 (magnitude, sign)
             };
 
+            let v_net = ScalarFixedShort::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "v_net"),
+                v_net_magnitude_sign.clone(),
+            )?;
+            let rcv = ScalarFixed::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "rcv"),
+                self.rcv.as_ref().map(|rcv| rcv.inner()),
+            )?;
+
             let cv_net = gadget::value_commit_orchard(
                 layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net)"),
                 ecc_chip.clone(),
-                v_net.clone(),
-                self.rcv.as_ref().map(|rcv| rcv.inner()),
+                v_net,
+                rcv,
             )?;
 
             // Constrain cv_net to equal public input
             layouter.constrain_instance(cv_net.inner().x().cell(), config.primary, CV_NET_X)?;
             layouter.constrain_instance(cv_net.inner().y().cell(), config.primary, CV_NET_Y)?;
 
-            v_net
+            // Return the magnitude and sign so we can use them in the Orchard gate.
+            v_net_magnitude_sign
         };
 
         // Nullifier integrity
@@ -473,11 +483,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Spend authority
         {
+            let alpha =
+                ScalarFixed::new(ecc_chip.clone(), layouter.namespace(|| "alpha"), self.alpha)?;
+
             // alpha_commitment = [alpha] SpendAuthG
             let (alpha_commitment, _) = {
                 let spend_auth_g = OrchardFixedBasesFull::SpendAuthG;
                 let spend_auth_g = FixedPoint::from_inner(ecc_chip.clone(), spend_auth_g);
-                spend_auth_g.mul(layouter.namespace(|| "[alpha] SpendAuthG"), self.alpha)?
+                spend_auth_g.mul(layouter.namespace(|| "[alpha] SpendAuthG"), alpha)?
             };
 
             // [alpha] SpendAuthG + ak_P
@@ -492,7 +505,11 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let pk_d_old = {
             let ivk = {
                 let ak = ak_P.extract_p().inner().clone();
-                let rivk = self.rivk.map(|rivk| rivk.inner());
+                let rivk = ScalarFixed::new(
+                    ecc_chip.clone(),
+                    layouter.namespace(|| "rcv"),
+                    self.rivk.map(|rivk| rivk.inner()),
+                )?;
 
                 gadget::commit_ivk(
                     config.sinsemilla_chip_1(),
@@ -532,7 +549,11 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Old note commitment integrity.
         {
-            let rcm_old = self.rcm_old.as_ref().map(|rcm_old| rcm_old.inner());
+            let rcm_old = ScalarFixed::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "rcm_old"),
+                self.rcm_old.as_ref().map(|rcm_old| rcm_old.inner()),
+            )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
             let derived_cm_old = gadget::note_commit(
@@ -570,7 +591,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let pk_d_new = {
                 let pk_d_new = self.pk_d_new.map(|pk_d_new| pk_d_new.inner().to_affine());
                 NonIdentityPoint::new(
-                    ecc_chip,
+                    ecc_chip.clone(),
                     layouter.namespace(|| "witness pk_d_new"),
                     pk_d_new,
                 )?
@@ -586,7 +607,11 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.psi_new,
             )?;
 
-            let rcm_new = self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner());
+            let rcm_new = ScalarFixed::new(
+                ecc_chip,
+                layouter.namespace(|| "rcm_old"),
+                self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner()),
+            )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
             let cm_new = gadget::note_commit(
@@ -616,9 +641,18 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             |mut region| {
                 v_old.copy_advice(|| "v_old", &mut region, config.advices[0], 0)?;
                 v_new.copy_advice(|| "v_new", &mut region, config.advices[1], 0)?;
-                let (magnitude, sign) = v_net.clone();
-                magnitude.copy_advice(|| "v_net magnitude", &mut region, config.advices[2], 0)?;
-                sign.copy_advice(|| "v_net sign", &mut region, config.advices[3], 0)?;
+                v_net_magnitude_sign.0.copy_advice(
+                    || "v_net magnitude",
+                    &mut region,
+                    config.advices[2],
+                    0,
+                )?;
+                v_net_magnitude_sign.1.copy_advice(
+                    || "v_net sign",
+                    &mut region,
+                    config.advices[3],
+                    0,
+                )?;
 
                 root.copy_advice(|| "calculated root", &mut region, config.advices[4], 0)?;
                 region.assign_advice_from_instance(

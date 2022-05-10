@@ -14,7 +14,7 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, NonIdentityEccPoint},
-        Point,
+        Point, ScalarFixed,
     },
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
@@ -1581,7 +1581,7 @@ pub(in crate::circuit) mod gadgets {
         value: AssignedCell<NoteValue, pallas::Base>,
         rho: AssignedCell<pallas::Base, pallas::Base>,
         psi: AssignedCell<pallas::Base, pallas::Base>,
-        rcm: Option<pallas::Scalar>,
+        rcm: ScalarFixed<pallas::Affine, EccChip<OrchardFixedBases>>,
     ) -> Result<Point<pallas::Affine, EccChip<OrchardFixedBases>>, Error> {
         let lookup_config = chip.config().lookup_config();
 
@@ -2020,10 +2020,10 @@ mod tests {
     use halo2_gadgets::{
         ecc::{
             chip::{EccChip, EccConfig},
-            NonIdentityPoint,
+            NonIdentityPoint, ScalarFixed,
         },
-        primitives::sinsemilla::CommitDomain,
         sinsemilla::chip::SinsemillaChip,
+        sinsemilla::primitives::CommitDomain,
         utilities::lookup_range_check::LookupRangeCheckConfig,
     };
 
@@ -2215,6 +2215,8 @@ mod tests {
                 )?;
 
                 let rcm = pallas::Scalar::random(OsRng);
+                let rcm_gadget =
+                    ScalarFixed::new(ecc_chip.clone(), layouter.namespace(|| "rcm"), Some(rcm))?;
 
                 let cm = gadgets::note_commit(
                     layouter.namespace(|| "Hash NoteCommit pieces"),
@@ -2226,7 +2228,7 @@ mod tests {
                     value_var,
                     rho,
                     psi,
-                    Some(rcm),
+                    rcm_gadget,
                 )?;
                 let expected_cm = {
                     let domain = CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
