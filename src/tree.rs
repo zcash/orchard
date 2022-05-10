@@ -9,7 +9,8 @@ use crate::{
     },
     note::commitment::ExtractedNoteCommitment,
 };
-use halo2_gadgets::primitives::sinsemilla::HashDomain;
+
+use halo2_gadgets::sinsemilla::primitives::HashDomain;
 use incrementalmerkletree::{Altitude, Hashable};
 use pasta_curves::pallas;
 

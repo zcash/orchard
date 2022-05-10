@@ -6,7 +6,7 @@ use core::ops::Deref;
 use ff::{Field, PrimeField, PrimeFieldBits};
 use group::GroupEncoding;
 use group::{Curve, Group};
-use halo2_gadgets::primitives::{poseidon, sinsemilla};
+use halo2_gadgets::{poseidon::primitives as poseidon, sinsemilla::primitives as sinsemilla};
 use halo2_proofs::arithmetic::{CurveAffine, CurveExt, FieldExt};
 use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};

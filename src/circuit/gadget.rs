@@ -10,10 +10,13 @@ use crate::constants::{
 };
 use halo2_gadgets::{
     ecc::{
-        chip::EccChip, EccInstructions, FixedPoint, FixedPointBaseField, FixedPointShort, Point, X,
+        chip::EccChip, EccInstructions, FixedPoint, FixedPointBaseField, FixedPointShort, Point,
+        ScalarFixed, ScalarFixedShort, X,
     },
-    poseidon::{Hash as PoseidonHash, PoseidonSpongeInstructions, Pow5Chip as PoseidonChip},
-    primitives::poseidon::{self, ConstantLength},
+    poseidon::{
+        primitives::{self as poseidon, ConstantLength},
+        Hash as PoseidonHash, PoseidonSpongeInstructions, Pow5Chip as PoseidonChip,
+    },
     sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip},
 };
 use halo2_proofs::{
@@ -123,11 +126,8 @@ pub(in crate::circuit) fn value_commit_orchard<
 >(
     mut layouter: impl Layouter<pallas::Base>,
     ecc_chip: EccChip,
-    v: (
-        AssignedCell<pallas::Base, pallas::Base>,
-        AssignedCell<pallas::Base, pallas::Base>,
-    ),
-    rcv: Option<pallas::Scalar>,
+    v: ScalarFixedShort<pallas::Affine, EccChip>,
+    rcv: ScalarFixed<pallas::Affine, EccChip>,
 ) -> Result<Point<pallas::Affine, EccChip>, plonk::Error> {
     // commitment = [v] ValueCommitV
     let (commitment, _) = {

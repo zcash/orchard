@@ -9,7 +9,7 @@ use pasta_curves::{arithmetic::FieldExt, pallas};
 
 use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
 use halo2_gadgets::{
-    ecc::{chip::EccChip, X},
+    ecc::{chip::EccChip, ScalarFixed, X},
     sinsemilla::{chip::SinsemillaChip, CommitDomain, Message, MessagePiece},
     utilities::{bool_check, RangeConstrained},
 };
@@ -243,7 +243,7 @@ pub(in crate::circuit) mod gadgets {
         mut layouter: impl Layouter<pallas::Base>,
         ak: AssignedCell<pallas::Base, pallas::Base>,
         nk: AssignedCell<pallas::Base, pallas::Base>,
-        rivk: Option<pallas::Scalar>,
+        rivk: ScalarFixed<pallas::Affine, EccChip<OrchardFixedBases>>,
     ) -> Result<X<pallas::Affine, EccChip<OrchardFixedBases>>, Error> {
         let lookup_config = sinsemilla_chip.config().lookup_config();
 
@@ -654,9 +654,14 @@ mod tests {
     };
     use group::ff::{Field, PrimeFieldBits};
     use halo2_gadgets::{
-        ecc::chip::{EccChip, EccConfig},
-        primitives::sinsemilla::CommitDomain,
-        sinsemilla::chip::{SinsemillaChip, SinsemillaConfig},
+        ecc::{
+            chip::{EccChip, EccConfig},
+            ScalarFixed,
+        },
+        sinsemilla::{
+            chip::{SinsemillaChip, SinsemillaConfig},
+            primitives::CommitDomain,
+        },
         utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
     };
     use halo2_proofs::{
@@ -789,6 +794,8 @@ mod tests {
 
                 // Use a random scalar for rivk
                 let rivk = pallas::Scalar::random(OsRng);
+                let rivk_gadget =
+                    ScalarFixed::new(ecc_chip.clone(), layouter.namespace(|| "rivk"), Some(rivk))?;
 
                 let ivk = gadgets::commit_ivk(
                     sinsemilla_chip,
@@ -797,7 +804,7 @@ mod tests {
                     layouter.namespace(|| "CommitIvk"),
                     ak,
                     nk,
-                    Some(rivk),
+                    rivk_gadget,
                 )?;
 
                 let expected_ivk = {

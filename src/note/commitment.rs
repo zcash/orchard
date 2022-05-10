@@ -2,6 +2,7 @@ use core::iter;
 
 use bitvec::{array::BitArray, order::Lsb0};
 use group::ff::{PrimeField, PrimeFieldBits};
+use halo2_gadgets::sinsemilla::primitives as sinsemilla;
 use pasta_curves::pallas;
 use subtle::{ConstantTimeEq, CtOption};
 
@@ -10,7 +11,6 @@ use crate::{
     spec::extract_p,
     value::NoteValue,
 };
-use halo2_gadgets::primitives::sinsemilla;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
