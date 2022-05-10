@@ -1,7 +1,5 @@
 # orchard [![Crates.io](https://img.shields.io/crates/v/orchard.svg)](https://crates.io/crates/orchard) #
 
-**IMPORTANT**: This library is being actively developed and should not be used in production software.
-
 Requires Rust 1.56.1+.
 
 ## Documentation
@@ -11,7 +9,7 @@ Requires Rust 1.56.1+.
 
 ## License
 
-Copyright 2020-2021 The Electric Coin Company.
+Copyright 2020-2022 The Electric Coin Company.
 
 You may use this package under the Bootstrap Open Source Licence, version 1.0,
 or at your option, any later version. See the file [`COPYING`](COPYING) for
