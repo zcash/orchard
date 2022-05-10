@@ -7,7 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Changed
-- Bumped dependencies to `bitvec 1`, `ff 0.12`, `group 0.12`, `pasta_curves 0.4`.
+- Migrated to `bitvec 1`, `ff 0.12`, `group 0.12`, `incrementalmerkletree 0.3`,
+  `pasta_curves 0.4`.
 - `orchard::bundle`:
   - `Action` has been moved to `orchard::Action`.
   - `Bundle::{try_}authorize` have been renamed to

@@ -42,7 +42,7 @@ nonempty = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
 zcash_note_encryption = "0.1"
-incrementalmerkletree = "=0.3.0-beta.2"
+incrementalmerkletree = "0.3"
 
 # Developer tooling dependencies
 plotters = { version = "0.3.0", optional = true }
@@ -85,5 +85,4 @@ debug = true
 [patch.crates-io]
 halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "50921f95f7d4edf48f79ffba3b892a983d91ed7f" }
 halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "50921f95f7d4edf48f79ffba3b892a983d91ed7f" }
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "f23e3d89507849a24543121839eea6f40b141aff" }
 reddsa = { git = "https://github.com/ZcashFoundation/reddsa.git", rev = "0e912de3000fe165daf58ad98d1a22f1a66e7f18" }
