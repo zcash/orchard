@@ -152,7 +152,13 @@ impl ActionInfo {
         let rk = ak.randomize(&alpha);
         let note_type = self.spend.note.note_type();
 
-        let note = Note::new(self.output.recipient, self.output.value, note_type, nf_old, &mut rng);
+        let note = Note::new(
+            self.output.recipient,
+            self.output.value,
+            note_type,
+            nf_old,
+            &mut rng,
+        );
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 

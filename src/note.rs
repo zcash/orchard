@@ -280,10 +280,10 @@ impl fmt::Debug for TransmittedNoteCiphertext {
 pub mod testing {
     use proptest::prelude::*;
 
+    use crate::note::NoteType;
     use crate::{
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
-    use crate::note::NoteType;
 
     use super::{Note, RandomSeed};
 

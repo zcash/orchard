@@ -1,10 +1,10 @@
-use group::{ff::PrimeField};
+use group::ff::PrimeField;
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
 use subtle::CtOption;
 
-use crate:: spec::{extract_p};
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
+use crate::spec::extract_p;
 // use crate::keys::SpendValidatingKey;
 
 /// Note type identifier.
@@ -35,9 +35,7 @@ impl NoteType {
     ///
     /// [notetypes]: https://zips.z.cash/protocol/nu5.pdf#notetypes
     #[allow(non_snake_case)]
-    pub(super) fn derive(
-        asset_idx: u64
-    ) -> Self {
+    pub(super) fn derive(asset_idx: u64) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
         let V = hasher(&VALUE_COMMITMENT_V_BYTES);
 
@@ -50,7 +48,6 @@ impl NoteType {
     pub fn native() -> Self {
         Self::derive(1)
     }
-
 }
 
 /// Generators for property testing.

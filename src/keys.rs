@@ -962,12 +962,12 @@ mod tests {
         testing::{arb_diversifier_index, arb_diversifier_key, arb_esk, arb_spending_key},
         *,
     };
+    use crate::note::NoteType;
     use crate::{
         note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
         value::NoteValue,
         Note,
     };
-    use crate::note::NoteType;
 
     #[test]
     fn spend_validating_key_from_bytes() {

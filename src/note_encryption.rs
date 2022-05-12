@@ -10,6 +10,7 @@ use zcash_note_encryption::{
     OUT_PLAINTEXT_SIZE,
 };
 
+use crate::note::NoteType;
 use crate::{
     action::Action,
     keys::{
@@ -21,7 +22,6 @@ use crate::{
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
-use crate::note::NoteType;
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
 
@@ -319,6 +319,7 @@ mod tests {
     };
 
     use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
+    use crate::note::NoteType;
     use crate::{
         action::Action,
         keys::{
@@ -330,7 +331,6 @@ mod tests {
         value::{NoteValue, ValueCommitment},
         Address, Note,
     };
-    use crate::note::NoteType;
 
     #[test]
     fn test_vectors() {
