@@ -5,22 +5,40 @@ Source License, version 1.0, or at your option, any later version ("BOSL"). See
 the file ./LICENSE-BOSL for the terms of the Bootstrap Open Source Licence,
 version 1.0.
 
+In this document,
+
+- "Zcash" means the blockchain defined by the most recent agreement between
+  the Electric Coin Company and the Zcash Foundation according to section 6.2 (b)
+  of the Zcash Trademark Agreement.
+- A "Zcash Chain Fork" means a blockchain that descends from the Zcash
+  blockchain and that is or was forked within 3456 blocks of the current block
+  height of the Zcash blockchain at the time of the fork;
+- A "Zcash Technology Testnet" means a blockchain designed for the purpose of
+  testing technology potentially of use to the Zcash blockchain and not for
+  the purpose of implementing any token of economic value, where this purpose
+  and lack of such economic value are clearly communicated to its users and to
+  the general public.
+
 Only if this Original Work is included as part of the distribution of one of the
 following (each, the "Project"):
 
-- The Zcash projects published by the Electric Coin Company;
-- The Zebra project published by the Zcash Foundation;
-- A project that is designed to integrate with Zcash and provides additional
-  functionality or utility to the Zcash network and holders of the ZEC coin; or
-- A blockchain that descends from the Zcash blockchain and that is forked
-  within 100 blocks of the current block height of the Zcash blockchain at the
-  time of the code fork;
+- A project that implements Zcash;
+- A project that implements a Zcash Chain Fork;
+- A project that implements a Zcash Technology Testnet;
+- A project that is designed to integrate with Zcash (whether or not it can
+  also integrate with one or more Zcash Chain Forks), and that provides
+  additional functionality or utility to the Zcash network and holders of
+  the ZEC coin;
 
 then License is granted to use the Original Work under the BOSL as modified by
 the following clarification and special exception. This exception applies only
 to the Original Work when linked or combined with the Project and not to the
 Original Work when linked, combined, or included in or with any other software
 or project or on a standalone basis.
+
+For the avoidance of doubt, "a project that implements Zcash" includes, but is
+not limited to, the Zcash projects published by the Electric Coin Company and
+the Zebra project published by the Zcash Foundation.
 
     Under the terms of the BOSL, linking or combining this Original Work with
     the Project creates a Derivative Work based upon the Original Work and the
