@@ -1,23 +1,24 @@
 use group::ff::PrimeField;
 use halo2_proofs::arithmetic::CurveExt;
-use pasta_curves::pallas;
+use pasta_curves::{pallas};
 use subtle::CtOption;
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
+use crate::keys::SpendValidatingKey;
 use crate::spec::extract_p;
-// use crate::keys::SpendValidatingKey;
 
 /// Note type identifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NoteType(pub(crate) pallas::Base);
 
+// the hasher used to derive the assetID
+#[allow(non_snake_case)]
+fn assetID_hasher(msg: Vec<u8>) -> pallas::Base {
+    let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
+    extract_p(&hasher(msg.as_bytes())))
+}
+
 impl NoteType {
-    /*
-    /// Generates a dummy note type for use as $\rho$ in dummy spent notes.
-    pub(crate) fn dummy(rng: &mut impl RngCore) -> Self {
-    NoteType(extract_p(&pallas::Point::random(rng)))
-    }
-    */
 
     /// Deserialize the note_type from a byte array.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
@@ -35,18 +36,19 @@ impl NoteType {
     ///
     /// [notetypes]: https://zips.z.cash/protocol/nu5.pdf#notetypes
     #[allow(non_snake_case)]
-    pub(super) fn derive(asset_idx: u64) -> Self {
-        let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-        let V = hasher(&VALUE_COMMITMENT_V_BYTES);
+    pub(super) fn derive(ak: &SpendValidatingKey, assetDesc: &[u8; 64]) -> Self {
+        let mut s = vec![];
 
-        let value = pallas::Scalar::from(asset_idx);
+        s.extend_from_slice(&ak.to_bytes());
+        s.extend_from_slice(assetDesc);
 
-        NoteType(extract_p(&(V * value)))
+        NoteType(assetID_hasher(s))
     }
 
-    /// note type for the "native" token (zec)
+    /// Note type for the "native" currency (zec), maintains backward compatibility with Orchard untyped notes.
+    #[allow(non_snake_case)]
     pub fn native() -> Self {
-        Self::derive(1)
+        NoteType(assetID_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
     }
 }
 
