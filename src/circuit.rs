@@ -888,6 +888,7 @@ mod tests {
         tree::MerklePath,
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
+    use crate::note::NoteType;
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
         let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
@@ -905,7 +906,7 @@ mod tests {
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv.clone());
+        let cv_net = ValueCommitment::derive(value, rcv.clone(), NoteType::native());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());

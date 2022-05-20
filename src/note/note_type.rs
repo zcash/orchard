@@ -1,33 +1,31 @@
-use group::ff::PrimeField;
+use group::GroupEncoding;
 use halo2_proofs::arithmetic::CurveExt;
-use pasta_curves::{pallas};
+use pasta_curves::pallas;
 use subtle::CtOption;
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
 use crate::keys::SpendValidatingKey;
-use crate::spec::extract_p;
 
 /// Note type identifier.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NoteType(pub(crate) pallas::Base);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NoteType(pub(crate) pallas::Point);
 
 // the hasher used to derive the assetID
 #[allow(non_snake_case)]
-fn assetID_hasher(msg: Vec<u8>) -> pallas::Base {
-    let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-    extract_p(&hasher(msg.as_bytes())))
+fn assetID_hasher(msg: Vec<u8>) -> pallas::Point {
+    // TODO(zsa) replace personalization, will require circuit change.
+    pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION)(&msg)
 }
 
 impl NoteType {
-
     /// Deserialize the note_type from a byte array.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        pallas::Base::from_repr(*bytes).map(NoteType)
+        pallas::Point::from_bytes(bytes).map(NoteType)
     }
 
     /// Serialize the note_type to its canonical byte representation.
     pub fn to_bytes(self) -> [u8; 32] {
-        self.0.to_repr()
+        self.0.to_bytes()
     }
 
     /// $DeriveNoteType$.
@@ -63,7 +61,6 @@ pub mod testing {
     use std::convert::TryFrom;
 
     use super::NoteType;
-    use crate::spec::extract_p;
 
     prop_compose! {
         /// Generate a uniformly distributed note type
@@ -71,7 +68,7 @@ pub mod testing {
             bytes in vec(any::<u8>(), 64)
         ) -> NoteType {
             let point = pallas::Point::generator() * pallas::Scalar::from_bytes_wide(&<[u8; 64]>::try_from(bytes).unwrap());
-            NoteType(extract_p(&point))
+            NoteType(point)
         }
     }
 }

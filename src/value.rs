@@ -50,9 +50,10 @@ use pasta_curves::{
 use rand::RngCore;
 use subtle::CtOption;
 
+use crate::note::NoteType;
 use crate::{
     constants::fixed_bases::{
-        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
+        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES,
     },
     primitives::redpallas::{self, Binding},
 };
@@ -292,9 +293,8 @@ impl ValueCommitment {
     ///
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
-    pub(crate) fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
+    pub(crate) fn derive(value: ValueSum, rcv: ValueCommitTrapdoor, note_type: NoteType) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-        let V = hasher(&VALUE_COMMITMENT_V_BYTES);
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
 
@@ -304,7 +304,9 @@ impl ValueCommitment {
             pallas::Scalar::from(abs_value)
         };
 
-        ValueCommitment(V * value + R * rcv.0)
+        let V_zsa = note_type.0;
+
+        ValueCommitment(V_zsa * value + R * rcv.0)
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
@@ -407,6 +409,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::note::NoteType;
     use proptest::prelude::*;
 
     use super::{
@@ -438,9 +441,9 @@ mod tests {
 
             let bvk = (values
                 .into_iter()
-                .map(|(value, rcv)| ValueCommitment::derive(value, rcv))
+                .map(|(value, rcv)| ValueCommitment::derive(value, rcv, NoteType::native()))
                 .sum::<ValueCommitment>()
-                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
+                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), NoteType::native()))
             .into_bvk();
 
             assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);

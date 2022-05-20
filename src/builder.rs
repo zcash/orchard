@@ -23,6 +23,7 @@ use crate::{
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
 };
+use crate::note::NoteType;
 
 const MIN_ACTIONS: usize = 2;
 
@@ -140,7 +141,7 @@ impl ActionInfo {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn build(self, mut rng: impl RngCore) -> (Action<SigningMetadata>, Circuit) {
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
+        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone(), NoteType::native());
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
         let sender_address = self.spend.note.recipient();
@@ -368,7 +369,7 @@ impl Builder {
 
         // Verify that bsk and bvk are consistent.
         let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-            - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
+            - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), NoteType::native()))
         .into_bvk();
         assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
