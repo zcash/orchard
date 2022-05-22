@@ -2,6 +2,9 @@
 # See: https://circleci.com/docs/2.0/configuration-reference
 version: 2.1
 
+orbs:
+  slack: circleci/slack@4.1
+
 # Define a job to be invoked later in a workflow.
 # See: https://circleci.com/docs/2.0/configuration-reference/#jobs
 jobs:
@@ -19,6 +22,12 @@ jobs:
           command: |
             cargo version;
             cargo test --all --all-features;
+      - slack/notify:
+          event: fail
+          template: basic_fail_1
+      - slack/notify:
+          event: pass
+          template: basic_success_1
           
 
 # Invoke jobs via workflows
@@ -26,4 +35,5 @@ jobs:
 workflows:
   build-and-test:
     jobs:
-      - cargo-test
+      - cargo-test:
+          context: CI-Orchard-slack
