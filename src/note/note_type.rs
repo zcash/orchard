@@ -37,8 +37,8 @@ impl NoteType {
     pub(super) fn derive(ak: &SpendValidatingKey, assetDesc: &[u8; 64]) -> Self {
         let mut s = vec![];
 
-        s.extend_from_slice(&ak.to_bytes());
-        s.extend_from_slice(assetDesc);
+        s.extend(&ak.to_bytes());
+        s.extend(assetDesc);
 
         NoteType(assetID_hasher(s))
     }
