@@ -18,7 +18,7 @@ jobs:
           name: "cargo test"
           command: |
             cargo version;
-            cargo test;
+            cargo test --all --all-features;
           
 
 # Invoke jobs via workflows
