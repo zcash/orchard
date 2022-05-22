@@ -126,6 +126,7 @@ pub(crate) mod testing {
 
     use proptest::prelude::*;
 
+    use crate::note::NoteType;
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
@@ -137,7 +138,6 @@ pub(crate) mod testing {
         },
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
     };
-    use crate::note::NoteType;
 
     use super::Action;
 

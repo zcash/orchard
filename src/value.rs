@@ -52,9 +52,7 @@ use subtle::CtOption;
 
 use crate::note::NoteType;
 use crate::{
-    constants::fixed_bases::{
-        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES,
-    },
+    constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES},
     primitives::redpallas::{self, Binding},
 };
 

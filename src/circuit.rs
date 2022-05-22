@@ -882,13 +882,13 @@ mod tests {
     use rand::{rngs::OsRng, RngCore};
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
+    use crate::note::NoteType;
     use crate::{
         keys::SpendValidatingKey,
         note::Note,
         tree::MerklePath,
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
-    use crate::note::NoteType;
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
         let (_, fvk, spent_note) = Note::dummy(&mut rng, None);

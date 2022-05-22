@@ -8,6 +8,7 @@ use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
+use crate::note::NoteType;
 use crate::{
     action::Action,
     address::Address,
@@ -23,7 +24,6 @@ use crate::{
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
 };
-use crate::note::NoteType;
 
 const MIN_ACTIONS: usize = 2;
 
@@ -369,7 +369,11 @@ impl Builder {
 
         // Verify that bsk and bvk are consistent.
         let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-            - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), NoteType::native()))
+            - ValueCommitment::derive(
+                value_balance,
+                ValueCommitTrapdoor::zero(),
+                NoteType::native(),
+            ))
         .into_bvk();
         assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
