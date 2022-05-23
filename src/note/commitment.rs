@@ -11,6 +11,9 @@ use crate::{
     spec::extract_p,
     value::NoteValue,
 };
+use crate::note::AssetType;
+use group::GroupEncoding;
+use crate::constants::fixed_bases::NOTE_ZSA_COMMITMENT_PERSONALIZATION;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
@@ -44,16 +47,57 @@ impl NoteCommitment {
         rho: pallas::Base,
         psi: pallas::Base,
         rcm: NoteCommitTrapdoor,
+        asset_type: AssetType,
     ) -> CtOption<Self> {
-        let domain = sinsemilla::CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
+        let g_d_bits =  BitArray::<_, Lsb0>::new(g_d);
+        let pk_d_bits = BitArray::<_, Lsb0>::new(pk_d);
+        let v_bits = v.to_le_bits();
+        let rho_bits = rho.to_le_bits();
+        let psi_bits = psi.to_le_bits();
+
+        let zec_note_bits = iter::empty()
+            .chain(g_d_bits.iter().by_vals())
+            .chain(pk_d_bits.iter().by_vals())
+            .chain(v_bits.iter().by_vals())
+            .chain(rho_bits.iter().by_vals().take(L_ORCHARD_BASE))
+            .chain(psi_bits.iter().by_vals().take(L_ORCHARD_BASE));
+
+        // TODO: make this match constant-time.
+        match asset_type {
+            // Commit to ZEC notes as per the Orchard protocol.
+            AssetType::ZEC =>
+                Self::commit(
+                    NOTE_COMMITMENT_PERSONALIZATION,
+                    zec_note_bits,
+                    rcm,
+                ),
+
+            // Commit to non-ZEC notes as per the ZSA protocol.
+            AssetType::Asset(zsa_type) => {
+                // Append the asset type to the Orchard note encoding.
+                let encoded_type = BitArray::<_, Lsb0>::new(zsa_type.0.to_bytes());
+                let zsa_note_bits = zec_note_bits
+                    .chain(encoded_type.iter().by_vals());
+
+                // Commit in a different domain than Orchard notes.
+                Self::commit(
+                    NOTE_ZSA_COMMITMENT_PERSONALIZATION,
+                    zsa_note_bits,
+                    rcm,
+                )
+            },
+        }
+    }
+
+    fn commit(
+        personalization: &str,
+        bits: impl Iterator<Item = bool>,
+        rcm: NoteCommitTrapdoor,
+    ) -> CtOption<Self> {
+        let domain = sinsemilla::CommitDomain::new(personalization);
         domain
             .commit(
-                iter::empty()
-                    .chain(BitArray::<_, Lsb0>::new(g_d).iter().by_vals())
-                    .chain(BitArray::<_, Lsb0>::new(pk_d).iter().by_vals())
-                    .chain(v.to_le_bits().iter().by_vals())
-                    .chain(rho.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE))
-                    .chain(psi.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE)),
+                bits,
                 &rcm.0,
             )
             .map(NoteCommitment)

@@ -79,6 +79,28 @@ impl RandomSeed {
     }
 }
 
+/// The ID of ZEC or a ZSA asset.
+#[derive(Debug, Copy, Clone)]
+pub enum AssetType {
+    /// Represents the native asset of the protocol, a.k.a. ZEC.
+    ZEC,
+    /// Represents a user-defined asset.
+    // TODO: check the uniqueness of the encoding.
+    Asset(ZSAType),
+}
+
+impl AssetType {
+    /// Parse the encoding of a ZSA asset type.
+    pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
+        pallas::Affine::from_bytes(bytes)
+            .map(|t| AssetType::Asset(ZSAType(t)))
+    }
+}
+
+/// The ID of a ZSA asset. This type cannot represent native ZEC.
+#[derive(Debug, Copy, Clone)]
+pub struct ZSAType(pub(crate) pallas::Affine);
+
 /// A discrete amount of funds received by an address.
 #[derive(Debug, Copy, Clone)]
 pub struct Note {
@@ -95,6 +117,9 @@ pub struct Note {
     rho: Nullifier,
     /// The seed randomness for various note components.
     rseed: RandomSeed,
+    // TODO: merge with the value field to make it impossible to ignore?
+    // TODO: use a constant-time structure (like CtOption)?
+    asset_type: AssetType,
 }
 
 impl PartialEq for Note {
@@ -113,12 +138,14 @@ impl Note {
         value: NoteValue,
         rho: Nullifier,
         rseed: RandomSeed,
+        asset_type: AssetType,
     ) -> Self {
         Note {
             recipient,
             value,
             rho,
             rseed,
+            asset_type,
         }
     }
 
@@ -132,6 +159,7 @@ impl Note {
         value: NoteValue,
         rho: Nullifier,
         mut rng: impl RngCore,
+        asset_type: AssetType,
     ) -> Self {
         loop {
             let note = Note {
@@ -139,6 +167,7 @@ impl Note {
                 value,
                 rho,
                 rseed: RandomSeed::random(&mut rng, &rho),
+                asset_type,
             };
             if note.commitment_inner().is_some().into() {
                 break note;
@@ -158,12 +187,14 @@ impl Note {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
         let recipient = fvk.address_at(0u32, Scope::External);
+        let asset_type = AssetType::ZEC;
 
         let note = Note::new(
             recipient,
             NoteValue::zero(),
             rho.unwrap_or_else(|| Nullifier::dummy(rng)),
             rng,
+            asset_type,
         );
 
         (sk, fvk, note)
@@ -177,6 +208,11 @@ impl Note {
     /// Returns the value of this note.
     pub fn value(&self) -> NoteValue {
         self.value
+    }
+
+    /// Returns the asset type of this note.
+    pub fn asset_type(&self) -> AssetType {
+        self.asset_type
     }
 
     /// Returns the rseed value of this note.
@@ -223,6 +259,7 @@ impl Note {
             self.rho.0,
             self.rseed.psi(&self.rho),
             self.rseed.rcm(&self.rho),
+            self.asset_type,
         )
     }
 
@@ -269,7 +306,7 @@ pub mod testing {
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
 
-    use super::{Note, RandomSeed};
+    use super::{AssetType, Note, RandomSeed};
 
     prop_compose! {
         /// Generate an arbitrary random seed
@@ -290,6 +327,7 @@ pub mod testing {
                 value,
                 rho,
                 rseed,
+                asset_type: AssetType::ZEC,
             }
         }
     }

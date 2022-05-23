@@ -4,11 +4,7 @@ use core::fmt;
 
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
-use zcash_note_encryption::{
-    BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
-    OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE,
-    OUT_PLAINTEXT_SIZE,
-};
+use zcash_note_encryption::{BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes, OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, COMPACT_ZSA_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE, OUT_PLAINTEXT_SIZE, MEMO_SIZE};
 
 use crate::{
     action::Action,
@@ -21,6 +17,9 @@ use crate::{
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
+use crate::note::AssetType;
+use group::GroupEncoding;
+use subtle::CtOption;
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
 
@@ -57,12 +56,11 @@ fn orchard_parse_note_plaintext_without_memo<F>(
 where
     F: FnOnce(&Diversifier) -> Option<DiversifiedTransmissionKey>,
 {
-    assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
+    assert!(plaintext.len() >= COMPACT_NOTE_SIZE); // TODO: don’t panic, return None.
 
     // Check note plaintext version
-    if plaintext[0] != 0x02 {
-        return None;
-    }
+    // and parse the asset type accordingly.
+    let asset_type = parse_version_and_asset_type(plaintext)?;
 
     // The unwraps below are guaranteed to succeed by the assertion above
     let diversifier = Diversifier::from_bytes(plaintext[1..12].try_into().unwrap());
@@ -75,8 +73,21 @@ where
     let pk_d = get_validated_pk_d(&diversifier)?;
 
     let recipient = Address::from_parts(diversifier, pk_d);
-    let note = Note::from_parts(recipient, value, domain.rho, rseed);
+
+    let note = Note::from_parts(recipient, value, domain.rho, rseed, asset_type);
     Some((note, recipient))
+}
+
+fn parse_version_and_asset_type(plaintext: &[u8]) -> Option<AssetType> {
+    // TODO: make this constant-time?
+    match plaintext[0] {
+        0x02 => Some(AssetType::ZEC),
+        0x03 if plaintext.len() >= COMPACT_ZSA_NOTE_SIZE => {
+            let bytes = &plaintext[COMPACT_NOTE_SIZE..COMPACT_ZSA_NOTE_SIZE].try_into().unwrap();
+            AssetType::from_bytes(bytes).into()
+        }
+        _ => None,
+    }
 }
 
 /// Orchard-specific note encryption logic.
@@ -107,7 +118,7 @@ impl Domain for OrchardDomain {
     type ValueCommitment = ValueCommitment;
     type ExtractedCommitment = ExtractedNoteCommitment;
     type ExtractedCommitmentBytes = [u8; 32];
-    type Memo = [u8; 512]; // TODO use a more interesting type
+    type Memo = [u8; MEMO_SIZE]; // TODO use a more interesting type
 
     fn derive_esk(note: &Self::Note) -> Option<Self::EphemeralSecretKey> {
         Some(note.esk())
@@ -148,11 +159,24 @@ impl Domain for OrchardDomain {
         memo: &Self::Memo,
     ) -> NotePlaintextBytes {
         let mut np = [0; NOTE_PLAINTEXT_SIZE];
-        np[0] = 0x02;
+        np[0] = match note.asset_type() {
+            AssetType::ZEC => 0x02,
+            AssetType::Asset(_) => 0x03,
+        };
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
         np[20..52].copy_from_slice(note.rseed().as_bytes());
-        np[52..].copy_from_slice(memo);
+        match note.asset_type() {
+            AssetType::ZEC => {
+                np[52..].copy_from_slice(memo);
+            },
+            AssetType::Asset(zsa_type) => {
+                np[52..84].copy_from_slice(&zsa_type.0.to_bytes());
+                let short_memo = &memo[0..memo.len()-32];
+                np[84..].copy_from_slice(short_memo);
+                // TODO: handle full-size memo or make short_memo explicit.
+            }
+        };
         NotePlaintextBytes(np)
     }
 
@@ -327,6 +351,7 @@ mod tests {
         value::{NoteValue, ValueCommitment},
         Address, Note,
     };
+    use crate::note::AssetType;
 
     #[test]
     fn test_vectors() {
@@ -369,7 +394,8 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let note = Note::from_parts(recipient, value, rho, rseed);
+            let asset_type = AssetType::ZEC; // TODO: from data.
+            let note = Note::from_parts(recipient, value, rho, rseed, asset_type);
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(

@@ -967,6 +967,7 @@ mod tests {
         value::NoteValue,
         Note,
     };
+    use crate::note::AssetType;
 
     #[test]
     fn spend_validating_key_from_bytes() {
@@ -1049,6 +1050,7 @@ mod tests {
                 NoteValue::from_raw(tv.note_v),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
+                AssetType::ZEC,
             );
 
             let cmx: ExtractedNoteCommitment = note.commitment().into();
