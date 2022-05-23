@@ -407,7 +407,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use crate::note::NoteType;
+    use crate::note::note_type::testing::arb_note_type;
     use proptest::prelude::*;
 
     use super::{
@@ -423,7 +423,8 @@ mod tests {
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
                     prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor()), n_values)
                 )
-            )
+            ),
+            arb_note_type in arb_note_type(),
         ) {
             let value_balance = values
                 .iter()
@@ -439,9 +440,9 @@ mod tests {
 
             let bvk = (values
                 .into_iter()
-                .map(|(value, rcv)| ValueCommitment::derive(value, rcv, NoteType::native()))
+                .map(|(value, rcv)| ValueCommitment::derive(value, rcv, arb_note_type))
                 .sum::<ValueCommitment>()
-                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), NoteType::native()))
+                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), arb_note_type))
             .into_bvk();
 
             assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);

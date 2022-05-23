@@ -37,14 +37,13 @@ impl NoteType {
     pub(super) fn derive(ak: &SpendValidatingKey, assetDesc: &[u8; 64]) -> Self {
         let mut s = vec![];
 
-        s.extend(&ak.to_bytes());
+        s.extend(ak.to_bytes());
         s.extend(assetDesc);
 
         NoteType(assetID_hasher(s))
     }
 
     /// Note type for the "native" currency (zec), maintains backward compatibility with Orchard untyped notes.
-    #[allow(non_snake_case)]
     pub fn native() -> Self {
         NoteType(assetID_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
     }
@@ -54,21 +53,22 @@ impl NoteType {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use group::Group;
-    use pasta_curves::{arithmetic::FieldExt, pallas};
-    use proptest::collection::vec;
     use proptest::prelude::*;
-    use std::convert::TryFrom;
 
     use super::NoteType;
 
+    use crate::keys::{testing::arb_spending_key, FullViewingKey};
+
     prop_compose! {
         /// Generate a uniformly distributed note type
-        pub fn arb_nullifier()(
-            bytes in vec(any::<u8>(), 64)
+        pub fn arb_note_type()(
+            sk in arb_spending_key(),
+            bytes32a in prop::array::uniform32(prop::num::u8::ANY),
+            bytes32b in prop::array::uniform32(prop::num::u8::ANY),
         ) -> NoteType {
-            let point = pallas::Point::generator() * pallas::Scalar::from_bytes_wide(&<[u8; 64]>::try_from(bytes).unwrap());
-            NoteType(point)
+            let bytes64 = [bytes32a, bytes32b].concat();
+            let fvk = FullViewingKey::from(&sk);
+            NoteType::derive(&fvk.into(), &bytes64.try_into().unwrap())
         }
     }
 }

@@ -280,7 +280,7 @@ impl fmt::Debug for TransmittedNoteCiphertext {
 pub mod testing {
     use proptest::prelude::*;
 
-    use crate::note::NoteType;
+    use crate::note::note_type::testing::arb_note_type;
     use crate::{
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
@@ -300,11 +300,12 @@ pub mod testing {
             recipient in arb_address(),
             rho in arb_nullifier(),
             rseed in arb_rseed(),
+            note_type in arb_note_type(),
         ) -> Note {
             Note {
                 recipient,
                 value,
-                note_type: NoteType::native(),
+                note_type,
                 rho,
                 rseed,
             }
