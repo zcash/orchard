@@ -408,6 +408,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use crate::note::note_type::testing::arb_note_type;
+    use crate::note::NoteType;
     use proptest::prelude::*;
 
     use super::{
@@ -415,6 +416,32 @@ mod tests {
         OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum, MAX_NOTE_VALUE,
     };
     use crate::primitives::redpallas;
+
+    fn _bsk_consistent_with_bvk(
+        values: &Vec<(ValueSum, ValueCommitTrapdoor)>,
+        note_type: NoteType,
+    ) {
+        let value_balance = values
+            .iter()
+            .map(|(value, _)| value)
+            .sum::<Result<ValueSum, OverflowError>>()
+            .expect("we generate values that won't overflow");
+
+        let bsk = values
+            .iter()
+            .map(|(_, rcv)| rcv)
+            .sum::<ValueCommitTrapdoor>()
+            .into_bsk();
+
+        let bvk = (values
+            .into_iter()
+            .map(|(value, rcv)| ValueCommitment::derive(value.clone(), rcv.clone(), note_type))
+            .sum::<ValueCommitment>()
+            - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), note_type))
+        .into_bvk();
+
+        assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+    }
 
     proptest! {
         #[test]
@@ -426,26 +453,10 @@ mod tests {
             ),
             arb_note_type in arb_note_type(),
         ) {
-            let value_balance = values
-                .iter()
-                .map(|(value, _)| value)
-                .sum::<Result<ValueSum, OverflowError>>()
-                .expect("we generate values that won't overflow");
-
-            let bsk = values
-                .iter()
-                .map(|(_, rcv)| rcv)
-                .sum::<ValueCommitTrapdoor>()
-                .into_bsk();
-
-            let bvk = (values
-                .into_iter()
-                .map(|(value, rcv)| ValueCommitment::derive(value, rcv, arb_note_type))
-                .sum::<ValueCommitment>()
-                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), arb_note_type))
-            .into_bvk();
-
-            assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+            // Test with native note type (zec)
+            _bsk_consistent_with_bvk(&values, NoteType::native());
+            // Test with arbitrary note type
+            _bsk_consistent_with_bvk(&values, arb_note_type);
         }
     }
 }

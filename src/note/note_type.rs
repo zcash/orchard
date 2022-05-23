@@ -13,7 +13,7 @@ pub struct NoteType(pub(crate) pallas::Point);
 // the hasher used to derive the assetID
 #[allow(non_snake_case)]
 fn assetID_hasher(msg: Vec<u8>) -> pallas::Point {
-    // TODO(zsa) replace personalization, will require circuit change.
+    // TODO(zsa) replace personalization, will require circuit change?
     pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION)(&msg)
 }
 
