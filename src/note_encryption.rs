@@ -19,7 +19,6 @@ use crate::{
 };
 use crate::note::AssetType;
 use group::GroupEncoding;
-use subtle::CtOption;
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
 
@@ -243,6 +242,7 @@ impl Domain for OrchardDomain {
     }
 
     fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> Self::Memo {
+        // TODO: support ZSA note plaintext with short_memo.
         plaintext.0[COMPACT_NOTE_SIZE..NOTE_PLAINTEXT_SIZE]
             .try_into()
             .unwrap()
@@ -295,7 +295,7 @@ pub struct CompactAction {
     nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
     ephemeral_key: EphemeralKeyBytes,
-    enc_ciphertext: [u8; 52],
+    enc_ciphertext: [u8; COMPACT_ZSA_NOTE_SIZE],
 }
 
 impl fmt::Debug for CompactAction {
@@ -310,14 +310,14 @@ impl<T> From<&Action<T>> for CompactAction {
             nullifier: *action.nullifier(),
             cmx: *action.cmx(),
             ephemeral_key: action.ephemeral_key(),
-            enc_ciphertext: action.encrypted_note().enc_ciphertext[..52]
+            enc_ciphertext: action.encrypted_note().enc_ciphertext[..COMPACT_ZSA_NOTE_SIZE]
                 .try_into()
                 .unwrap(),
         }
     }
 }
 
-impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
+impl ShieldedOutput<OrchardDomain, COMPACT_ZSA_NOTE_SIZE> for CompactAction {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.ephemeral_key.0)
     }
@@ -326,7 +326,7 @@ impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
         self.cmx.to_bytes()
     }
 
-    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
+    fn enc_ciphertext(&self) -> &[u8; COMPACT_ZSA_NOTE_SIZE] {
         &self.enc_ciphertext
     }
 }

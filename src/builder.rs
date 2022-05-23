@@ -23,7 +23,6 @@ use crate::{
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
 };
-use crate::note::AssetType;
 
 const MIN_ACTIONS: usize = 2;
 
