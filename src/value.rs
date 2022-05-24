@@ -208,7 +208,7 @@ impl TryFrom<ValueSum> for i64 {
 }
 
 /// The blinding factor for a [`ValueCommitment`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ValueCommitTrapdoor(pallas::Scalar);
 
 impl ValueCommitTrapdoor {
@@ -418,7 +418,7 @@ mod tests {
     use crate::primitives::redpallas;
 
     fn _bsk_consistent_with_bvk(
-        values: &Vec<(ValueSum, ValueCommitTrapdoor)>,
+        values: &[(ValueSum, ValueCommitTrapdoor)],
         note_type: NoteType,
     ) {
         let value_balance = values
@@ -434,8 +434,8 @@ mod tests {
             .into_bsk();
 
         let bvk = (values
-            .into_iter()
-            .map(|(value, rcv)| ValueCommitment::derive(value.clone(), rcv.clone(), note_type))
+            .iter()
+            .map(|(value, rcv)| ValueCommitment::derive(*value, *rcv, note_type))
             .sum::<ValueCommitment>()
             - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), note_type))
         .into_bvk();

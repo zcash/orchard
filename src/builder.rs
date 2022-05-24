@@ -141,7 +141,7 @@ impl ActionInfo {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn build(self, mut rng: impl RngCore) -> (Action<SigningMetadata>, Circuit) {
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone(), NoteType::native());
+        let cv_net = ValueCommitment::derive(v_net, self.rcv, NoteType::native());
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
         let sender_address = self.spend.note.recipient();
