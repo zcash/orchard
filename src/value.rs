@@ -417,10 +417,7 @@ mod tests {
     };
     use crate::primitives::redpallas;
 
-    fn _bsk_consistent_with_bvk(
-        values: &[(ValueSum, ValueCommitTrapdoor)],
-        note_type: NoteType,
-    ) {
+    fn _bsk_consistent_with_bvk(values: &[(ValueSum, ValueCommitTrapdoor)], note_type: NoteType) {
         let value_balance = values
             .iter()
             .map(|(value, _)| value)
