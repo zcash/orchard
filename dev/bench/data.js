@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1653000031706,
+  "lastUpdate": 1653668551468,
   "repoUrl": "https://github.com/zcash/orchard",
   "entries": {
     "Orchard Benchmarks": [
@@ -359,6 +359,186 @@ window.BENCHMARK_DATA = {
             "name": "default_address",
             "value": 639203,
             "range": "± 644",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "jack@electriccoin.co",
+            "name": "str4d",
+            "username": "str4d"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "36d263fb19cf4b88200617c4bbe7a91b66bf4869",
+          "message": "Merge pull request #321 from zcash/protocol-rule-links\n\nAdd protocol rule links for the Orchard circuit constraints",
+          "timestamp": "2022-05-27T17:03:05+01:00",
+          "tree_id": "fecb70418689fa5f4048eb6b81ddc8953043125d",
+          "url": "https://github.com/zcash/orchard/commit/36d263fb19cf4b88200617c4bbe7a91b66bf4869"
+        },
+        "date": 1653668550238,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "proving/bundle/1",
+            "value": 4896161498,
+            "range": "± 116066658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/2",
+            "value": 4805659975,
+            "range": "± 46141511",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/3",
+            "value": 6993085222,
+            "range": "± 150065534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/4",
+            "value": 9011696955,
+            "range": "± 144668991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/1",
+            "value": 39795058,
+            "range": "± 3236745",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/2",
+            "value": 41072414,
+            "range": "± 2855423",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/3",
+            "value": 44114265,
+            "range": "± 1900126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/4",
+            "value": 48523751,
+            "range": "± 3452846",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/valid",
+            "value": 1304420,
+            "range": "± 42601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/invalid",
+            "value": 166162,
+            "range": "± 22043",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/compact-valid",
+            "value": 1212603,
+            "range": "± 56153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "compact-note-decryption/invalid",
+            "value": 159555070,
+            "range": "± 5375052",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/10",
+            "value": 26086218,
+            "range": "± 1052676",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/10",
+            "value": 2903194,
+            "range": "± 113691",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/10",
+            "value": 24025506,
+            "range": "± 860165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/10",
+            "value": 2818166,
+            "range": "± 139461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/50",
+            "value": 129326340,
+            "range": "± 4419376",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/50",
+            "value": 14136524,
+            "range": "± 681187",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/50",
+            "value": 121534562,
+            "range": "± 5324261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/50",
+            "value": 14262416,
+            "range": "± 1327009",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/100",
+            "value": 258332716,
+            "range": "± 7834829",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/100",
+            "value": 28180898,
+            "range": "± 1415950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/100",
+            "value": 240414860,
+            "range": "± 6799570",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/100",
+            "value": 27273424,
+            "range": "± 1337633",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "derive_fvk",
+            "value": 583931,
+            "range": "± 32798",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "default_address",
+            "value": 652253,
+            "range": "± 34360",
             "unit": "ns/iter"
           }
         ]
