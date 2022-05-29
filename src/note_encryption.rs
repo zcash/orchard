@@ -4,11 +4,10 @@ use core::fmt;
 
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
-
 use zcash_note_encryption::{
     BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
-    OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, COMPACT_ZSA_NOTE_SIZE,
-    ENC_CIPHERTEXT_SIZE, MEMO_SIZE, NOTE_PLAINTEXT_SIZE, OUT_PLAINTEXT_SIZE,
+    OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE,
+    OUT_PLAINTEXT_SIZE,
 };
 
 use crate::note::NoteType;
@@ -25,6 +24,13 @@ use crate::{
 };
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
+
+/// The size of the encoding of a ZSA asset type.
+const ZSA_TYPE_SIZE: usize = 32;
+/// The size of the ZSA variant of COMPACT_NOTE_SIZE.
+const COMPACT_ZSA_NOTE_SIZE: usize = COMPACT_NOTE_SIZE + ZSA_TYPE_SIZE;
+/// The size of the memo.
+const MEMO_SIZE: usize = 512;
 
 /// Defined in [Zcash Protocol Spec § 5.4.2: Pseudo Random Functions][concreteprfs].
 ///
@@ -339,7 +345,6 @@ impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
 #[cfg(test)]
 mod tests {
     use rand::rngs::OsRng;
-
     use zcash_note_encryption::{
         try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk,
         EphemeralKeyBytes,
