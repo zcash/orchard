@@ -83,7 +83,7 @@ impl RandomSeed {
 #[derive(Debug, Copy, Clone)]
 pub enum AssetType {
     /// Represents the native asset of the protocol, a.k.a. ZEC.
-    ZEC,
+    Native,
     /// Represents a user-defined asset.
     // TODO: check the uniqueness of the encoding.
     Asset(ZSAType),
@@ -92,8 +92,7 @@ pub enum AssetType {
 impl AssetType {
     /// Parse the encoding of a ZSA asset type.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        pallas::Affine::from_bytes(bytes)
-            .map(|t| AssetType::Asset(ZSAType(t)))
+        pallas::Affine::from_bytes(bytes).map(|t| AssetType::Asset(ZSAType(t)))
     }
 }
 
@@ -187,7 +186,7 @@ impl Note {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
         let recipient = fvk.address_at(0u32, Scope::External);
-        let asset_type = AssetType::ZEC;
+        let asset_type = AssetType::Native;
 
         let note = Note::new(
             recipient,
@@ -327,7 +326,7 @@ pub mod testing {
                 value,
                 rho,
                 rseed,
-                asset_type: AssetType::ZEC,
+                asset_type: AssetType::Native,
             }
         }
     }

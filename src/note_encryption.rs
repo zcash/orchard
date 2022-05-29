@@ -86,7 +86,7 @@ where
 fn parse_version_and_asset_type(plaintext: &[u8]) -> Option<AssetType> {
     // TODO: make this constant-time?
     match plaintext[0] {
-        0x02 => Some(AssetType::ZEC),
+        0x02 => Some(AssetType::Native),
         0x03 if plaintext.len() >= COMPACT_ZSA_NOTE_SIZE => {
             let bytes = &plaintext[COMPACT_NOTE_SIZE..COMPACT_ZSA_NOTE_SIZE]
                 .try_into()
@@ -167,14 +167,14 @@ impl Domain for OrchardDomain {
     ) -> NotePlaintextBytes {
         let mut np = [0; NOTE_PLAINTEXT_SIZE];
         np[0] = match note.asset_type() {
-            AssetType::ZEC => 0x02,
+            AssetType::Native => 0x02,
             AssetType::Asset(_) => 0x03,
         };
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
         np[20..52].copy_from_slice(note.rseed().as_bytes());
         match note.asset_type() {
-            AssetType::ZEC => {
+            AssetType::Native => {
                 np[52..].copy_from_slice(memo);
             }
             AssetType::Asset(zsa_type) => {
@@ -303,7 +303,7 @@ pub struct CompactAction {
     nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
     ephemeral_key: EphemeralKeyBytes,
-    enc_ciphertext: [u8; COMPACT_ZSA_NOTE_SIZE],
+    enc_ciphertext: [u8; COMPACT_NOTE_SIZE],
 }
 
 impl fmt::Debug for CompactAction {
@@ -318,14 +318,14 @@ impl<T> From<&Action<T>> for CompactAction {
             nullifier: *action.nullifier(),
             cmx: *action.cmx(),
             ephemeral_key: action.ephemeral_key(),
-            enc_ciphertext: action.encrypted_note().enc_ciphertext[..COMPACT_ZSA_NOTE_SIZE]
+            enc_ciphertext: action.encrypted_note().enc_ciphertext[..COMPACT_NOTE_SIZE]
                 .try_into()
                 .unwrap(),
         }
     }
 }
 
-impl ShieldedOutput<OrchardDomain, COMPACT_ZSA_NOTE_SIZE> for CompactAction {
+impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.ephemeral_key.0)
     }
@@ -334,7 +334,7 @@ impl ShieldedOutput<OrchardDomain, COMPACT_ZSA_NOTE_SIZE> for CompactAction {
         self.cmx.to_bytes()
     }
 
-    fn enc_ciphertext(&self) -> &[u8; COMPACT_ZSA_NOTE_SIZE] {
+    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
         &self.enc_ciphertext
     }
 }
@@ -402,7 +402,7 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let asset_type = AssetType::ZEC; // TODO: from data.
+            let asset_type = AssetType::Native; // TODO: from data.
             let note = Note::from_parts(recipient, value, rho, rseed, asset_type);
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 

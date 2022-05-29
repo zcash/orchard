@@ -6,14 +6,14 @@ use halo2_gadgets::sinsemilla::primitives as sinsemilla;
 use pasta_curves::pallas;
 use subtle::{ConstantTimeEq, CtOption};
 
+use crate::constants::fixed_bases::NOTE_ZSA_COMMITMENT_PERSONALIZATION;
+use crate::note::AssetType;
 use crate::{
     constants::{fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, L_ORCHARD_BASE},
     spec::extract_p,
     value::NoteValue,
 };
-use crate::note::AssetType;
 use group::GroupEncoding;
-use crate::constants::fixed_bases::NOTE_ZSA_COMMITMENT_PERSONALIZATION;
 
 #[derive(Clone, Debug)]
 pub(crate) struct NoteCommitTrapdoor(pub(super) pallas::Scalar);
@@ -49,7 +49,7 @@ impl NoteCommitment {
         rcm: NoteCommitTrapdoor,
         asset_type: AssetType,
     ) -> CtOption<Self> {
-        let g_d_bits =  BitArray::<_, Lsb0>::new(g_d);
+        let g_d_bits = BitArray::<_, Lsb0>::new(g_d);
         let pk_d_bits = BitArray::<_, Lsb0>::new(pk_d);
         let v_bits = v.to_le_bits();
         let rho_bits = rho.to_le_bits();
@@ -65,27 +65,17 @@ impl NoteCommitment {
         // TODO: make this match constant-time.
         match asset_type {
             // Commit to ZEC notes as per the Orchard protocol.
-            AssetType::ZEC =>
-                Self::commit(
-                    NOTE_COMMITMENT_PERSONALIZATION,
-                    zec_note_bits,
-                    rcm,
-                ),
+            AssetType::Native => Self::commit(NOTE_COMMITMENT_PERSONALIZATION, zec_note_bits, rcm),
 
             // Commit to non-ZEC notes as per the ZSA protocol.
             AssetType::Asset(zsa_type) => {
                 // Append the asset type to the Orchard note encoding.
                 let encoded_type = BitArray::<_, Lsb0>::new(zsa_type.0.to_bytes());
-                let zsa_note_bits = zec_note_bits
-                    .chain(encoded_type.iter().by_vals());
+                let zsa_note_bits = zec_note_bits.chain(encoded_type.iter().by_vals());
 
                 // Commit in a different domain than Orchard notes.
-                Self::commit(
-                    NOTE_ZSA_COMMITMENT_PERSONALIZATION,
-                    zsa_note_bits,
-                    rcm,
-                )
-            },
+                Self::commit(NOTE_ZSA_COMMITMENT_PERSONALIZATION, zsa_note_bits, rcm)
+            }
         }
     }
 
@@ -95,12 +85,7 @@ impl NoteCommitment {
         rcm: NoteCommitTrapdoor,
     ) -> CtOption<Self> {
         let domain = sinsemilla::CommitDomain::new(personalization);
-        domain
-            .commit(
-                bits,
-                &rcm.0,
-            )
-            .map(NoteCommitment)
+        domain.commit(bits, &rcm.0).map(NoteCommitment)
     }
 }
 
