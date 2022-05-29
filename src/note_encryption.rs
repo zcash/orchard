@@ -4,8 +4,13 @@ use core::fmt;
 
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
-use zcash_note_encryption::{BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes, OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, COMPACT_ZSA_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE, OUT_PLAINTEXT_SIZE, MEMO_SIZE};
+use zcash_note_encryption::{
+    BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
+    OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, COMPACT_ZSA_NOTE_SIZE,
+    ENC_CIPHERTEXT_SIZE, MEMO_SIZE, NOTE_PLAINTEXT_SIZE, OUT_PLAINTEXT_SIZE,
+};
 
+use crate::note::AssetType;
 use crate::{
     action::Action,
     keys::{
@@ -17,7 +22,6 @@ use crate::{
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
-use crate::note::AssetType;
 use group::GroupEncoding;
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
@@ -47,6 +51,8 @@ pub(crate) fn prf_ock_orchard(
     )
 }
 
+/// Domain-specific requirements:
+/// - If the note version is 3, the `plaintext` must contain a valid encoding of a ZSA asset type.
 fn orchard_parse_note_plaintext_without_memo<F>(
     domain: &OrchardDomain,
     plaintext: &[u8],
@@ -55,7 +61,7 @@ fn orchard_parse_note_plaintext_without_memo<F>(
 where
     F: FnOnce(&Diversifier) -> Option<DiversifiedTransmissionKey>,
 {
-    assert!(plaintext.len() >= COMPACT_NOTE_SIZE); // TODO: don’t panic, return None.
+    assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
     // Check note plaintext version
     // and parse the asset type accordingly.
@@ -82,7 +88,9 @@ fn parse_version_and_asset_type(plaintext: &[u8]) -> Option<AssetType> {
     match plaintext[0] {
         0x02 => Some(AssetType::ZEC),
         0x03 if plaintext.len() >= COMPACT_ZSA_NOTE_SIZE => {
-            let bytes = &plaintext[COMPACT_NOTE_SIZE..COMPACT_ZSA_NOTE_SIZE].try_into().unwrap();
+            let bytes = &plaintext[COMPACT_NOTE_SIZE..COMPACT_ZSA_NOTE_SIZE]
+                .try_into()
+                .unwrap();
             AssetType::from_bytes(bytes).into()
         }
         _ => None,
@@ -168,10 +176,10 @@ impl Domain for OrchardDomain {
         match note.asset_type() {
             AssetType::ZEC => {
                 np[52..].copy_from_slice(memo);
-            },
+            }
             AssetType::Asset(zsa_type) => {
                 np[52..84].copy_from_slice(&zsa_type.0.to_bytes());
-                let short_memo = &memo[0..memo.len()-32];
+                let short_memo = &memo[0..memo.len() - 32];
                 np[84..].copy_from_slice(short_memo);
                 // TODO: handle full-size memo or make short_memo explicit.
             }
@@ -340,6 +348,7 @@ mod tests {
     };
 
     use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
+    use crate::note::AssetType;
     use crate::{
         action::Action,
         keys::{
@@ -351,7 +360,6 @@ mod tests {
         value::{NoteValue, ValueCommitment},
         Address, Note,
     };
-    use crate::note::AssetType;
 
     #[test]
     fn test_vectors() {
