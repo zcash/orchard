@@ -1,19 +1,18 @@
 use group::GroupEncoding;
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
-use subtle::CtOption;
+use subtle::{Choice, ConstantTimeEq, CtOption};
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
 use crate::keys::SpendValidatingKey;
 
 /// Note type identifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NoteType(pub(crate) pallas::Point);
+pub struct NoteType(pallas::Point);
 
 // the hasher used to derive the assetID
 #[allow(non_snake_case)]
 fn assetID_hasher(msg: Vec<u8>) -> pallas::Point {
-    // TODO(zsa) replace personalization, will require circuit change?
     pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION)(&msg)
 }
 
@@ -47,6 +46,16 @@ impl NoteType {
     pub fn native() -> Self {
         NoteType(assetID_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
     }
+
+    /// The base point used in value commitments.
+    pub fn cv_base(&self) -> pallas::Point {
+        self.0
+    }
+
+    /// Whether this note represents a native or ZSA asset.
+    pub fn is_native(&self) -> Choice {
+        self.0.ct_eq(&Self::native().0)
+    }
 }
 
 /// Generators for property testing.
@@ -55,9 +64,9 @@ impl NoteType {
 pub mod testing {
     use proptest::prelude::*;
 
-    use super::NoteType;
-
     use crate::keys::{testing::arb_spending_key, FullViewingKey};
+
+    use super::NoteType;
 
     prop_compose! {
         /// Generate a uniformly distributed note type
