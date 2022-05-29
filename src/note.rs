@@ -189,7 +189,7 @@ impl Note {
         self.value
     }
 
-    /// Returns the note type
+    /// Returns the note type of this note.
     pub fn note_type(&self) -> NoteType {
         self.note_type
     }
@@ -235,6 +235,7 @@ impl Note {
             g_d.to_bytes(),
             self.recipient.pk_d().to_bytes(),
             self.value,
+            self.note_type,
             self.rho.0,
             self.rseed.psi(&self.rho),
             self.rseed.rcm(&self.rho),
