@@ -30,7 +30,9 @@ const ZSA_TYPE_SIZE: usize = 32;
 /// The size of the ZSA variant of COMPACT_NOTE_SIZE.
 const COMPACT_ZSA_NOTE_SIZE: usize = COMPACT_NOTE_SIZE + ZSA_TYPE_SIZE;
 /// The size of the memo.
-const MEMO_SIZE: usize = 512;
+const MEMO_SIZE: usize = NOTE_PLAINTEXT_SIZE - COMPACT_NOTE_SIZE;
+/// The size of the ZSA variant of the memo.
+const ZSA_MEMO_SIZE: usize = NOTE_PLAINTEXT_SIZE - COMPACT_ZSA_NOTE_SIZE;
 
 /// Defined in [Zcash Protocol Spec § 5.4.2: Pseudo Random Functions][concreteprfs].
 ///
@@ -253,10 +255,20 @@ impl Domain for OrchardDomain {
     }
 
     fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> Self::Memo {
-        // TODO: support ZSA note plaintext with short_memo.
-        plaintext.0[COMPACT_NOTE_SIZE..NOTE_PLAINTEXT_SIZE]
-            .try_into()
-            .unwrap()
+        let mut memo = [0; MEMO_SIZE];
+        match plaintext.0[0] {
+            0x02 => {
+                let full_memo = &plaintext.0[COMPACT_NOTE_SIZE..NOTE_PLAINTEXT_SIZE];
+                memo.copy_from_slice(full_memo);
+            }
+            0x03 => {
+                // ZSA note plaintext have a shorter memo.
+                let short_memo = &plaintext.0[COMPACT_ZSA_NOTE_SIZE..NOTE_PLAINTEXT_SIZE];
+                memo[..ZSA_MEMO_SIZE].copy_from_slice(short_memo);
+            }
+            _ => {}
+        };
+        memo
     }
 
     fn extract_pk_d(out_plaintext: &OutPlaintextBytes) -> Option<Self::DiversifiedTransmissionKey> {
