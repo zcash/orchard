@@ -1,13 +1,14 @@
 use group::GroupEncoding;
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
+use std::hash::{Hash, Hasher};
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
 use crate::keys::IssuerValidatingKey;
 
 /// Note type identifier.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq)]
 pub struct NoteType(pallas::Point);
 
 pub const MAX_ASSET_DESCRIPTION_SIZE: usize = 512;
@@ -62,6 +63,19 @@ impl NoteType {
     }
 }
 
+impl Hash for NoteType {
+    fn hash<H: Hasher>(&self, h: &mut H) {
+        h.write(&self.to_bytes());
+        h.finish();
+    }
+}
+
+impl PartialEq for NoteType {
+    fn eq(&self, other: &Self) -> bool {
+        bool::from(self.0.ct_eq(&other.0))
+    }
+}
+
 /// Generators for property testing.
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
@@ -81,6 +95,14 @@ pub mod testing {
             let bytes64 = [bytes32a, bytes32b].concat();
             let isk = IssuerAuthorizingKey::from(&sk);
             NoteType::derive(&IssuerValidatingKey::from(&isk), bytes64)
+        }
+    }
+
+    prop_compose! {
+        /// Generate the native note type
+        pub fn native_note_type()(_i in 0..10) -> NoteType {
+            // TODO: remove _i
+            NoteType::native()
         }
     }
 }

@@ -104,6 +104,7 @@ pub struct Circuit {
     pub(crate) g_d_old: Option<NonIdentityPallasPoint>,
     pub(crate) pk_d_old: Option<DiversifiedTransmissionKey>,
     pub(crate) v_old: Option<NoteValue>,
+    // pub(crate) split: Option<bool>,
     pub(crate) rho_old: Option<Nullifier>,
     pub(crate) psi_old: Option<pallas::Base>,
     pub(crate) rcm_old: Option<NoteCommitTrapdoor>,
@@ -891,7 +892,7 @@ mod tests {
     };
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, NoteType::native());
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -901,7 +902,7 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old));
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), NoteType::native());
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
@@ -918,6 +919,7 @@ mod tests {
                 g_d_old: Some(sender_address.g_d()),
                 pk_d_old: Some(*sender_address.pk_d()),
                 v_old: Some(spent_note.value()),
+                // split: Some(false),
                 rho_old: Some(spent_note.rho()),
                 psi_old: Some(spent_note.rseed().psi(&spent_note.rho())),
                 rcm_old: Some(spent_note.rseed().rcm(&spent_note.rho())),
@@ -1118,6 +1120,7 @@ mod tests {
             psi_new: None,
             rcm_new: None,
             rcv: None,
+            // split: None,
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
