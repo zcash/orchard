@@ -21,7 +21,7 @@ use halo2_gadgets::{
 };
 use halo2_proofs::{
     arithmetic::FieldExt,
-    circuit::{AssignedCell, Chip, Layouter},
+    circuit::{AssignedCell, Chip, Layouter, Value},
     plonk::{self, Advice, Assigned, Column},
 };
 
@@ -96,21 +96,14 @@ pub(in crate::circuit) trait AddInstruction<F: FieldExt>: Chip<F> {
 pub(in crate::circuit) fn assign_free_advice<F: Field, V: Copy>(
     mut layouter: impl Layouter<F>,
     column: Column<Advice>,
-    value: Option<V>,
+    value: Value<V>,
 ) -> Result<AssignedCell<V, F>, plonk::Error>
 where
     for<'v> Assigned<F>: From<&'v V>,
 {
     layouter.assign_region(
         || "load private",
-        |mut region| {
-            region.assign_advice(
-                || "load private",
-                column,
-                0,
-                || value.ok_or(plonk::Error::Synthesis),
-            )
-        },
+        |mut region| region.assign_advice(|| "load private", column, 0, || value),
     )
 }
 

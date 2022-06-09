@@ -1,7 +1,7 @@
 use core::iter;
 
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter},
+    circuit::{AssignedCell, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -128,8 +128,8 @@ impl DecomposeB {
         (
             NoteCommitPiece,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-            RangeConstrained<pallas::Base, Option<pallas::Base>>,
-            RangeConstrained<pallas::Base, Option<pallas::Base>>,
+            RangeConstrained<pallas::Base, Value<pallas::Base>>,
+            RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         ),
         Error,
@@ -170,7 +170,7 @@ impl DecomposeB {
         layouter: &mut impl Layouter<pallas::Base>,
         b: NoteCommitPiece,
         b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-        b_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        b_1: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
@@ -184,12 +184,7 @@ impl DecomposeB {
                     .copy_advice(|| "b", &mut region, self.col_l, 0)?;
                 b_0.inner()
                     .copy_advice(|| "b_0", &mut region, self.col_m, 0)?;
-                let b_1 = region.assign_advice(
-                    || "b_1",
-                    self.col_r,
-                    0,
-                    || b_1.inner().ok_or(Error::Synthesis),
-                )?;
+                let b_1 = region.assign_advice(|| "b_1", self.col_r, 0, || *b_1.inner())?;
 
                 b_2.inner()
                     .copy_advice(|| "b_2", &mut region, self.col_m, 1)?;
@@ -277,8 +272,8 @@ impl DecomposeD {
     ) -> Result<
         (
             NoteCommitPiece,
-            RangeConstrained<pallas::Base, Option<pallas::Base>>,
-            RangeConstrained<pallas::Base, Option<pallas::Base>>,
+            RangeConstrained<pallas::Base, Value<pallas::Base>>,
+            RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         ),
         Error,
@@ -313,7 +308,7 @@ impl DecomposeD {
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
         d: NoteCommitPiece,
-        d_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        d_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         d_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         d_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         z1_d: AssignedCell<pallas::Base, pallas::Base>,
@@ -326,12 +321,7 @@ impl DecomposeD {
                 d.inner()
                     .cell_value()
                     .copy_advice(|| "d", &mut region, self.col_l, 0)?;
-                let d_0 = region.assign_advice(
-                    || "d_0",
-                    self.col_m,
-                    0,
-                    || d_0.inner().ok_or(Error::Synthesis),
-                )?;
+                let d_0 = region.assign_advice(|| "d_0", self.col_m, 0, || *d_0.inner())?;
                 d_1.inner()
                     .copy_advice(|| "d_1", &mut region, self.col_r, 0)?;
 
@@ -529,7 +519,7 @@ impl DecomposeG {
     ) -> Result<
         (
             NoteCommitPiece,
-            RangeConstrained<pallas::Base, Option<pallas::Base>>,
+            RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         ),
         Error,
@@ -561,7 +551,7 @@ impl DecomposeG {
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
         g: NoteCommitPiece,
-        g_0: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        g_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         z1_g: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
@@ -573,12 +563,7 @@ impl DecomposeG {
                 g.inner()
                     .cell_value()
                     .copy_advice(|| "g", &mut region, self.col_l, 0)?;
-                let g_0 = region.assign_advice(
-                    || "g_0",
-                    self.col_m,
-                    0,
-                    || g_0.inner().ok_or(Error::Synthesis),
-                )?;
+                let g_0 = region.assign_advice(|| "g_0", self.col_m, 0, || *g_0.inner())?;
 
                 g_1.inner()
                     .copy_advice(|| "g_1", &mut region, self.col_l, 1)?;
@@ -656,7 +641,7 @@ impl DecomposeH {
         (
             NoteCommitPiece,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-            RangeConstrained<pallas::Base, Option<pallas::Base>>,
+            RangeConstrained<pallas::Base, Value<pallas::Base>>,
         ),
         Error,
     > {
@@ -677,7 +662,7 @@ impl DecomposeH {
             [
                 h_0.value(),
                 h_1,
-                RangeConstrained::bitrange_of(Some(&pallas::Base::zero()), 0..4),
+                RangeConstrained::bitrange_of(Value::known(&pallas::Base::zero()), 0..4),
             ],
         )?;
 
@@ -689,7 +674,7 @@ impl DecomposeH {
         layouter: &mut impl Layouter<pallas::Base>,
         h: NoteCommitPiece,
         h_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-        h_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        h_1: RangeConstrained<pallas::Base, Value<pallas::Base>>,
     ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
         layouter.assign_region(
             || "NoteCommit MessagePiece h",
@@ -701,12 +686,7 @@ impl DecomposeH {
                     .copy_advice(|| "h", &mut region, self.col_l, 0)?;
                 h_0.inner()
                     .copy_advice(|| "h_0", &mut region, self.col_m, 0)?;
-                let h_1 = region.assign_advice(
-                    || "h_1",
-                    self.col_r,
-                    0,
-                    || h_1.inner().ok_or(Error::Synthesis),
-                )?;
+                let h_1 = region.assign_advice(|| "h_1", self.col_r, 0, || *h_1.inner())?;
 
                 Ok(h_1)
             },
@@ -1357,10 +1337,10 @@ impl YCanonicity {
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
         y: AssignedCell<pallas::Base, pallas::Base>,
-        lsb: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        lsb: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         k_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         k_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-        k_3: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        k_3: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         j: AssignedCell<pallas::Base, pallas::Base>,
         z1_j: AssignedCell<pallas::Base, pallas::Base>,
         z13_j: AssignedCell<pallas::Base, pallas::Base>,
@@ -1381,12 +1361,7 @@ impl YCanonicity {
                     y.copy_advice(|| "copy y", &mut region, self.advices[5], offset)?;
                     // Witness LSB.
                     let lsb = region
-                        .assign_advice(
-                            || "witness LSB",
-                            self.advices[6],
-                            offset,
-                            || lsb.inner().ok_or(Error::Synthesis),
-                        )
+                        .assign_advice(|| "witness LSB", self.advices[6], offset, || *lsb.inner())
                         // SAFETY: This is sound because we just assigned this cell from a
                         // range-constrained value.
                         .map(|cell| RangeConstrained::unsound_unchecked(cell, lsb.num_bits()))?;
@@ -1401,7 +1376,7 @@ impl YCanonicity {
                         || "witness k_3",
                         self.advices[9],
                         offset,
-                        || k_3.inner().ok_or(Error::Synthesis),
+                        || *k_3.inner(),
                     )?;
 
                     lsb
@@ -1586,7 +1561,7 @@ impl NoteCommitChip {
 }
 
 pub(in crate::circuit) mod gadgets {
-    use halo2_proofs::circuit::Chip;
+    use halo2_proofs::circuit::{Chip, Value};
 
     use super::*;
 
@@ -1817,11 +1792,11 @@ pub(in crate::circuit) mod gadgets {
         // Decompose the low 130 bits of a_prime = a + 2^130 - t_P, and output
         // the running sum at the end of it. If a_prime < 2^130, the running sum
         // will be 0.
-        let a_prime = a.value().map(|a| {
-            let two_pow_130 = pallas::Base::from_u128(1u128 << 65).square();
-            let t_p = pallas::Base::from_u128(T_P);
-            a + two_pow_130 - t_p
-        });
+        let a_prime = {
+            let two_pow_130 = Value::known(pallas::Base::from_u128(1u128 << 65).square());
+            let t_p = Value::known(pallas::Base::from_u128(T_P));
+            a.value() + two_pow_130 - t_p
+        };
         let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 130 bits of (a + 2^130 - t_P)"),
             a_prime,
@@ -1856,12 +1831,12 @@ pub(in crate::circuit) mod gadgets {
         // Decompose the low 140 bits of b3_c_prime = b_3 + 2^4 c + 2^140 - t_P,
         // and output the running sum at the end of it.
         // If b3_c_prime < 2^140, the running sum will be 0.
-        let b3_c_prime = b_3.inner().value().zip(c.value()).map(|(b_3, c)| {
-            let two_pow_4 = pallas::Base::from(1u64 << 4);
-            let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
-            let t_p = pallas::Base::from_u128(T_P);
-            b_3 + (two_pow_4 * c) + two_pow_140 - t_p
-        });
+        let b3_c_prime = {
+            let two_pow_4 = Value::known(pallas::Base::from(1u64 << 4));
+            let two_pow_140 = Value::known(pallas::Base::from_u128(1u128 << 70).square());
+            let t_p = Value::known(pallas::Base::from_u128(T_P));
+            b_3.inner().value() + (two_pow_4 * c.value()) + two_pow_140 - t_p
+        };
 
         let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 140 bits of (b_3 + 2^4 c + 2^140 - t_P)"),
@@ -1894,12 +1869,12 @@ pub(in crate::circuit) mod gadgets {
         //       to 130 bits. z13_f == 0 is directly checked in the gate.
         // - 0 ≤ e_1 + 2^4 f + 2^140 - t_P < 2^140 (14 ten-bit lookups)
 
-        let e1_f_prime = e_1.inner().value().zip(f.value()).map(|(e_1, f)| {
-            let two_pow_4 = pallas::Base::from(1u64 << 4);
-            let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
-            let t_p = pallas::Base::from_u128(T_P);
-            e_1 + (two_pow_4 * f) + two_pow_140 - t_p
-        });
+        let e1_f_prime = {
+            let two_pow_4 = Value::known(pallas::Base::from(1u64 << 4));
+            let two_pow_140 = Value::known(pallas::Base::from_u128(1u128 << 70).square());
+            let t_p = Value::known(pallas::Base::from_u128(T_P));
+            e_1.inner().value() + (two_pow_4 * f.value()) + two_pow_140 - t_p
+        };
 
         // Decompose the low 140 bits of e1_f_prime = e_1 + 2^4 f + 2^140 - t_P,
         // and output the running sum at the end of it.
@@ -1936,12 +1911,12 @@ pub(in crate::circuit) mod gadgets {
         // Decompose the low 130 bits of g1_g2_prime = g_1 + (2^9)g_2 + 2^130 - t_P,
         // and output the running sum at the end of it.
         // If g1_g2_prime < 2^130, the running sum will be 0.
-        let g1_g2_prime = g_1.inner().value().zip(g_2.value()).map(|(g_1, g_2)| {
-            let two_pow_9 = pallas::Base::from(1u64 << 9);
-            let two_pow_130 = pallas::Base::from_u128(1u128 << 65).square();
-            let t_p = pallas::Base::from_u128(T_P);
-            g_1 + (two_pow_9 * g_2) + two_pow_130 - t_p
-        });
+        let g1_g2_prime = {
+            let two_pow_9 = Value::known(pallas::Base::from(1u64 << 9));
+            let two_pow_130 = Value::known(pallas::Base::from_u128(1u128 << 65).square());
+            let t_p = Value::known(pallas::Base::from_u128(T_P));
+            g_1.inner().value() + (two_pow_9 * g_2.value()) + two_pow_130 - t_p
+        };
 
         let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 130 bits of (g_1 + (2^9)g_2 + 2^130 - t_P)"),
@@ -1966,7 +1941,7 @@ pub(in crate::circuit) mod gadgets {
         y_canon: &YCanonicity,
         mut layouter: impl Layouter<pallas::Base>,
         y: AssignedCell<pallas::Base, pallas::Base>,
-        lsb: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+        lsb: RangeConstrained<pallas::Base, Value<pallas::Base>>,
     ) -> Result<RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>, Error>
     {
         // Decompose the field element
@@ -1997,16 +1972,11 @@ pub(in crate::circuit) mod gadgets {
 
         // Decompose j = LSB + (2)k_0 + (2^10)k_1 using 25 ten-bit lookups.
         let (j, z1_j, z13_j) = {
-            let j = lsb
-                .inner()
-                .value()
-                .zip(k_0.inner().value())
-                .zip(k_1.inner().value())
-                .map(|((lsb, k_0), k_1)| {
-                    let two = pallas::Base::from(2);
-                    let two_pow_10 = pallas::Base::from(1 << 10);
-                    lsb + two * k_0 + two_pow_10 * k_1
-                });
+            let j = {
+                let two = Value::known(pallas::Base::from(2));
+                let two_pow_10 = Value::known(pallas::Base::from(1 << 10));
+                lsb.inner().value() + two * k_0.inner().value() + two_pow_10 * k_1.inner().value()
+            };
             let zs = lookup_config.witness_check(
                 layouter.namespace(|| "Decompose j = LSB + (2)k_0 + (2^10)k_1"),
                 j,
@@ -2069,7 +2039,7 @@ mod tests {
     use ff::{Field, PrimeField, PrimeFieldBits};
     use group::Curve;
     use halo2_proofs::{
-        circuit::{Layouter, SimpleFloorPlanner},
+        circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
@@ -2084,12 +2054,12 @@ mod tests {
     fn note_commit() {
         #[derive(Default)]
         struct MyCircuit {
-            gd_x: Option<pallas::Base>,
-            gd_y_lsb: Option<pallas::Base>,
-            pkd_x: Option<pallas::Base>,
-            pkd_y_lsb: Option<pallas::Base>,
-            rho: Option<pallas::Base>,
-            psi: Option<pallas::Base>,
+            gd_x: Value<pallas::Base>,
+            gd_y_lsb: Value<pallas::Base>,
+            pkd_x: Value<pallas::Base>,
+            pkd_y_lsb: Value<pallas::Base>,
+            rho: Value<pallas::Base>,
+            psi: Value<pallas::Base>,
         }
 
         impl Circuit<pallas::Base> for MyCircuit {
@@ -2235,7 +2205,7 @@ mod tests {
                     assign_free_advice(
                         layouter.namespace(|| "witness value"),
                         note_commit_config.advices[0],
-                        Some(value),
+                        Value::known(value),
                     )?
                 };
 
@@ -2254,8 +2224,11 @@ mod tests {
                 )?;
 
                 let rcm = pallas::Scalar::random(OsRng);
-                let rcm_gadget =
-                    ScalarFixed::new(ecc_chip.clone(), layouter.namespace(|| "rcm"), Some(rcm))?;
+                let rcm_gadget = ScalarFixed::new(
+                    ecc_chip.clone(),
+                    layouter.namespace(|| "rcm"),
+                    Value::known(rcm),
+                )?;
 
                 let cm = gadgets::note_commit(
                     layouter.namespace(|| "Hash NoteCommit pieces"),
@@ -2273,53 +2246,40 @@ mod tests {
                     let domain = CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
                     // Hash g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi
                     let lsb = |y_lsb: pallas::Base| y_lsb == pallas::Base::one();
-                    let point = domain
-                        .commit(
-                            iter::empty()
-                                .chain(
-                                    self.gd_x
-                                        .unwrap()
-                                        .to_le_bits()
-                                        .iter()
-                                        .by_vals()
-                                        .take(L_ORCHARD_BASE),
+                    let point = self
+                        .gd_x
+                        .zip(self.gd_y_lsb)
+                        .zip(self.pkd_x.zip(self.pkd_y_lsb))
+                        .zip(self.rho.zip(self.psi))
+                        .map(|(((gd_x, gd_y_lsb), (pkd_x, pkd_y_lsb)), (rho, psi))| {
+                            domain
+                                .commit(
+                                    iter::empty()
+                                        .chain(
+                                            gd_x.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        )
+                                        .chain(Some(lsb(gd_y_lsb)))
+                                        .chain(
+                                            pkd_x
+                                                .to_le_bits()
+                                                .iter()
+                                                .by_vals()
+                                                .take(L_ORCHARD_BASE),
+                                        )
+                                        .chain(Some(lsb(pkd_y_lsb)))
+                                        .chain(value.to_le_bits().iter().by_vals().take(L_VALUE))
+                                        .chain(
+                                            rho.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        )
+                                        .chain(
+                                            psi.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        ),
+                                    &rcm,
                                 )
-                                .chain(Some(lsb(self.gd_y_lsb.unwrap())))
-                                .chain(
-                                    self.pkd_x
-                                        .unwrap()
-                                        .to_le_bits()
-                                        .iter()
-                                        .by_vals()
-                                        .take(L_ORCHARD_BASE),
-                                )
-                                .chain(Some(lsb(self.pkd_y_lsb.unwrap())))
-                                .chain(value.to_le_bits().iter().by_vals().take(L_VALUE))
-                                .chain(
-                                    self.rho
-                                        .unwrap()
-                                        .to_le_bits()
-                                        .iter()
-                                        .by_vals()
-                                        .take(L_ORCHARD_BASE),
-                                )
-                                .chain(
-                                    self.psi
-                                        .unwrap()
-                                        .to_le_bits()
-                                        .iter()
-                                        .by_vals()
-                                        .take(L_ORCHARD_BASE),
-                                ),
-                            &rcm,
-                        )
-                        .unwrap()
-                        .to_affine();
-                    NonIdentityPoint::new(
-                        ecc_chip,
-                        layouter.namespace(|| "witness cm"),
-                        Some(point),
-                    )?
+                                .unwrap()
+                                .to_affine()
+                        });
+                    NonIdentityPoint::new(ecc_chip, layouter.namespace(|| "witness cm"), point)?
                 };
                 cm.constrain_equal(layouter.namespace(|| "cm == expected cm"), &expected_cm)
             }
@@ -2331,66 +2291,66 @@ mod tests {
             // `gd_x` = -1, `pkd_x` = -1 (these have to be x-coordinates of curve points)
             // `rho` = 0, `psi` = 0
             MyCircuit {
-                gd_x: Some(-pallas::Base::one()),
-                gd_y_lsb: Some(pallas::Base::one()),
-                pkd_x: Some(-pallas::Base::one()),
-                pkd_y_lsb: Some(pallas::Base::one()),
-                rho: Some(pallas::Base::zero()),
-                psi: Some(pallas::Base::zero()),
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::one()),
+                rho: Value::known(pallas::Base::zero()),
+                psi: Value::known(pallas::Base::zero()),
             },
             // `rho` = T_Q - 1, `psi` = T_Q - 1
             MyCircuit {
-                gd_x: Some(-pallas::Base::one()),
-                gd_y_lsb: Some(pallas::Base::zero()),
-                pkd_x: Some(-pallas::Base::one()),
-                pkd_y_lsb: Some(pallas::Base::zero()),
-                rho: Some(pallas::Base::from_u128(T_Q - 1)),
-                psi: Some(pallas::Base::from_u128(T_Q - 1)),
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::zero()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(pallas::Base::from_u128(T_Q - 1)),
+                psi: Value::known(pallas::Base::from_u128(T_Q - 1)),
             },
             // `rho` = T_Q, `psi` = T_Q
             MyCircuit {
-                gd_x: Some(-pallas::Base::one()),
-                gd_y_lsb: Some(pallas::Base::one()),
-                pkd_x: Some(-pallas::Base::one()),
-                pkd_y_lsb: Some(pallas::Base::zero()),
-                rho: Some(pallas::Base::from_u128(T_Q)),
-                psi: Some(pallas::Base::from_u128(T_Q)),
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(pallas::Base::from_u128(T_Q)),
+                psi: Value::known(pallas::Base::from_u128(T_Q)),
             },
             // `rho` = 2^127 - 1, `psi` = 2^127 - 1
             MyCircuit {
-                gd_x: Some(-pallas::Base::one()),
-                gd_y_lsb: Some(pallas::Base::zero()),
-                pkd_x: Some(-pallas::Base::one()),
-                pkd_y_lsb: Some(pallas::Base::one()),
-                rho: Some(pallas::Base::from_u128((1 << 127) - 1)),
-                psi: Some(pallas::Base::from_u128((1 << 127) - 1)),
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::zero()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::one()),
+                rho: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
+                psi: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
             },
             // `rho` = 2^127, `psi` = 2^127
             MyCircuit {
-                gd_x: Some(-pallas::Base::one()),
-                gd_y_lsb: Some(pallas::Base::zero()),
-                pkd_x: Some(-pallas::Base::one()),
-                pkd_y_lsb: Some(pallas::Base::zero()),
-                rho: Some(pallas::Base::from_u128(1 << 127)),
-                psi: Some(pallas::Base::from_u128(1 << 127)),
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::zero()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(pallas::Base::from_u128(1 << 127)),
+                psi: Value::known(pallas::Base::from_u128(1 << 127)),
             },
             // `rho` = 2^254 - 1, `psi` = 2^254 - 1
             MyCircuit {
-                gd_x: Some(-pallas::Base::one()),
-                gd_y_lsb: Some(pallas::Base::one()),
-                pkd_x: Some(-pallas::Base::one()),
-                pkd_y_lsb: Some(pallas::Base::one()),
-                rho: Some(two_pow_254 - pallas::Base::one()),
-                psi: Some(two_pow_254 - pallas::Base::one()),
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::one()),
+                rho: Value::known(two_pow_254 - pallas::Base::one()),
+                psi: Value::known(two_pow_254 - pallas::Base::one()),
             },
             // `rho` = 2^254, `psi` = 2^254
             MyCircuit {
-                gd_x: Some(-pallas::Base::one()),
-                gd_y_lsb: Some(pallas::Base::one()),
-                pkd_x: Some(-pallas::Base::one()),
-                pkd_y_lsb: Some(pallas::Base::zero()),
-                rho: Some(two_pow_254),
-                psi: Some(two_pow_254),
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(two_pow_254),
+                psi: Value::known(two_pow_254),
             },
         ];
 
