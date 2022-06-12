@@ -356,11 +356,8 @@ impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
 
 #[cfg(test)]
 mod tests {
-    use group::{Group, GroupEncoding};
-    use pasta_curves::pallas;
     use proptest::prelude::*;
     use rand::rngs::OsRng;
-    use rand::thread_rng;
     use zcash_note_encryption::{
         try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk, Domain,
         EphemeralKeyBytes,
@@ -374,70 +371,52 @@ mod tests {
             DiversifiedTransmissionKey, Diversifier, EphemeralSecretKey, IncomingViewingKey,
             OutgoingViewingKey,
         },
-        note::{ExtractedNoteCommitment, Nullifier, RandomSeed, TransmittedNoteCiphertext},
+        note::{
+            testing::arb_note, ExtractedNoteCommitment, Nullifier, RandomSeed,
+            TransmittedNoteCiphertext,
+        },
         primitives::redpallas,
         value::{NoteValue, ValueCommitment},
         Address, Note,
     };
 
-    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
+    use super::{
+        orchard_parse_note_plaintext_without_memo, prf_ock_orchard, CompactAction, OrchardDomain,
+        OrchardNoteEncryption,
+    };
 
     proptest! {
     #[test]
     fn test_encoding_roundtrip(
+        note in arb_note(NoteValue::from_raw(10)),
         note_type in arb_note_type(),
     ) {
-        let tv = &crate::test_vectors::note_encryption::test_vectors()[0];
+        let memo = &crate::test_vectors::note_encryption::test_vectors()[0].memo;
 
-        //
-        // Load the test vector components
-        //
+        // Encode.
+        let plaintext = OrchardDomain::note_plaintext_bytes(&note, &note.recipient(), memo);
 
-        // Recipient key material
-        let ivk = IncomingViewingKey::from_bytes(&tv.incoming_viewing_key).unwrap();
-        let ovk = OutgoingViewingKey::from(tv.ovk);
-        let d = Diversifier::from_bytes(tv.default_d);
-        let pk_d = DiversifiedTransmissionKey::from_bytes(&tv.default_pk_d).unwrap();
-
-        // Received Action
-        let cv_net = ValueCommitment::from_bytes(&tv.cv_net).unwrap();
-        let rho = Nullifier::from_bytes(&tv.rho).unwrap();
-        let cmx = ExtractedNoteCommitment::from_bytes(&tv.cmx).unwrap();
-
-        let esk = EphemeralSecretKey::from_bytes(&tv.esk).unwrap();
-        let ephemeral_key = EphemeralKeyBytes(tv.ephemeral_key);
-
-        // Details about the expected note
-        let value = NoteValue::from_raw(tv.v);
-        let rseed = RandomSeed::from_bytes(tv.rseed, &rho).unwrap();
-        let shared_secret = esk.agree(&pk_d);
-        let k_enc = shared_secret.kdf_orchard(&ephemeral_key);
-        let ock = prf_ock_orchard(&ovk, &cv_net, &cmx.to_bytes(), &ephemeral_key);
-        let recipient = Address::from_parts(d, pk_d);
-
-        //let point = pallas::Point::random(&mut thread_rng());
-        //let note_type = NoteType::from_bytes(&point.to_bytes()).unwrap();
-
-        let note = Note::from_parts(recipient, value, note_type, rho, rseed);
-
-        let domain = OrchardDomain { rho };
-
-        let plaintext = OrchardDomain::note_plaintext_bytes(&note, &recipient, &tv.memo);
-
+        // Decode.
+        let domain = OrchardDomain { rho: note.rho() };
         let parsed_version = plaintext.0[0];
-        let (parsed_note, parsed_recipient) = domain
-            .parse_note_plaintext_without_memo_ivk(&ivk, &plaintext.0)
-            .expect("Plaintext parsing failed");
         let parsed_memo = domain.extract_memo(&plaintext);
 
+        let (parsed_note, parsed_recipient) = orchard_parse_note_plaintext_without_memo(&domain, &plaintext.0,
+            |diversifier| {
+                assert_eq!(diversifier, &note.recipient().diversifier());
+                Some(*note.recipient().pk_d())
+            }
+        ).expect("Plaintext parsing failed");
+
+        // Check.
         assert_eq!(parsed_note, note);
-        assert_eq!(parsed_recipient, recipient);
+        assert_eq!(parsed_recipient, note.recipient());
         if note_type.is_native().into() {
             assert_eq!(parsed_version, 0x02);
-            assert_eq!(parsed_memo, tv.memo);
+            assert_eq!(&parsed_memo, memo);
         } else {
             assert_eq!(parsed_version, 0x03);
-            let mut short_memo = tv.memo;
+            let mut short_memo = *memo;
             short_memo[512 - 32..].copy_from_slice(&[0; 32]);
             assert_eq!(parsed_memo, short_memo);
         }
@@ -530,7 +509,8 @@ mod tests {
                     assert_eq!(decrypted_note, note);
                     assert_eq!(decrypted_to, recipient);
                 }
-                None => {}, //panic!("Compact note decryption failed"), TODO: compact decryption
+                None => assert!(tv.note_type.is_some(), "Compact note decryption failed"),
+                // Ignore that ZSA notes are not detected in compact decryption.
             }
 
             match try_output_recovery_with_ovk(&domain, &ovk, &action, &cv_net, &tv.c_out) {
