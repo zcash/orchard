@@ -10,6 +10,7 @@ use zcash_note_encryption::{
     OUT_PLAINTEXT_SIZE,
 };
 
+use crate::note::NoteType;
 use crate::{
     action::Action,
     keys::{
@@ -75,7 +76,8 @@ where
     let pk_d = get_validated_pk_d(&diversifier)?;
 
     let recipient = Address::from_parts(diversifier, pk_d);
-    let note = Option::from(Note::from_parts(recipient, value, domain.rho, rseed))?;
+    // TODO: add note_type
+    let note = Option::from(Note::from_parts(recipient, value, NoteType::native(), domain.rho, rseed))?;
     Some((note, recipient))
 }
 
@@ -171,6 +173,7 @@ impl Domain for OrchardDomain {
         np[0] = 0x02;
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
+        // todo: add note_type
         np[20..52].copy_from_slice(note.rseed().as_bytes());
         np[52..].copy_from_slice(memo);
         NotePlaintextBytes(np)
@@ -358,6 +361,7 @@ mod tests {
     };
 
     use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
+    use crate::note::NoteType;
     use crate::{
         action::Action,
         keys::{
@@ -413,7 +417,7 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let note = Note::from_parts(recipient, value, rho, rseed).unwrap();
+            let note = Note::from_parts(recipient, value, NoteType::native(), rho, rseed).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(

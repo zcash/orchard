@@ -19,6 +19,9 @@ pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 pub(crate) mod nullifier;
 pub use self::nullifier::Nullifier;
 
+pub(crate) mod note_type;
+pub use self::note_type::NoteType;
+
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
 pub struct RandomSeed([u8; 32]);
@@ -90,6 +93,8 @@ pub struct Note {
     recipient: Address,
     /// The value of this note.
     value: NoteValue,
+    /// The type of this note.
+    note_type: NoteType,
     /// A unique creation ID for this note.
     ///
     /// This is set to the nullifier of the note that was spent in the [`Action`] that
@@ -129,12 +134,14 @@ impl Note {
     pub fn from_parts(
         recipient: Address,
         value: NoteValue,
+        note_type: NoteType,
         rho: Nullifier,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
         let note = Note {
             recipient,
             value,
+            note_type,
             rho,
             rseed,
         };
@@ -149,11 +156,12 @@ impl Note {
     pub(crate) fn new(
         recipient: Address,
         value: NoteValue,
+        note_type: NoteType,
         rho: Nullifier,
         mut rng: impl RngCore,
     ) -> Self {
         loop {
-            let note = Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho));
+            let note = Note::from_parts(recipient, value, note_type, rho, RandomSeed::random(&mut rng, &rho));
             if note.is_some().into() {
                 break note.unwrap();
             }
@@ -176,6 +184,7 @@ impl Note {
         let note = Note::new(
             recipient,
             NoteValue::zero(),
+            NoteType::native(),
             rho.unwrap_or_else(|| Nullifier::dummy(rng)),
             rng,
         );
@@ -191,6 +200,11 @@ impl Note {
     /// Returns the value of this note.
     pub fn value(&self) -> NoteValue {
         self.value
+    }
+
+    /// Returns the note type
+    pub fn note_type(&self) -> NoteType {
+        self.note_type
     }
 
     /// Returns the rseed value of this note.
@@ -279,6 +293,7 @@ impl fmt::Debug for TransmittedNoteCiphertext {
 pub mod testing {
     use proptest::prelude::*;
 
+    use crate::note::note_type::testing::arb_note_type;
     use crate::{
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
@@ -298,10 +313,12 @@ pub mod testing {
             recipient in arb_address(),
             rho in arb_nullifier(),
             rseed in arb_rseed(),
+            note_type in arb_note_type(),
         ) -> Note {
             Note {
                 recipient,
                 value,
+                note_type,
                 rho,
                 rseed,
             }

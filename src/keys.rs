@@ -1084,6 +1084,7 @@ mod tests {
         testing::{arb_diversifier_index, arb_diversifier_key, arb_esk, arb_spending_key},
         *,
     };
+    use crate::note::NoteType;
     use crate::{
         note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
         value::NoteValue,
@@ -1175,6 +1176,7 @@ mod tests {
             let note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),
+                NoteType::native(),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
             )
