@@ -900,6 +900,7 @@ mod tests {
     use rand::{rngs::OsRng, RngCore};
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
+    use crate::note::NoteType;
     use crate::{
         keys::SpendValidatingKey,
         note::Note,
@@ -923,7 +924,7 @@ mod tests {
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv.clone());
+        let cv_net = ValueCommitment::derive(value, rcv, NoteType::native());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());

@@ -126,6 +126,7 @@ pub(crate) mod testing {
 
     use proptest::prelude::*;
 
+    use crate::note::NoteType;
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
@@ -150,7 +151,8 @@ pub(crate) mod testing {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
                 spend_value - output_value,
-                ValueCommitTrapdoor::zero()
+                ValueCommitTrapdoor::zero(),
+                NoteType::native()
             );
             // FIXME: make a real one from the note.
             let encrypted_note = TransmittedNoteCiphertext {
@@ -181,7 +183,8 @@ pub(crate) mod testing {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
                 spend_value - output_value,
-                ValueCommitTrapdoor::zero()
+                ValueCommitTrapdoor::zero(),
+                NoteType::native()
             );
 
             // FIXME: make a real one from the note.
