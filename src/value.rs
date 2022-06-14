@@ -50,10 +50,9 @@ use pasta_curves::{
 use rand::RngCore;
 use subtle::CtOption;
 
+use crate::note::NoteType;
 use crate::{
-    constants::fixed_bases::{
-        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
-    },
+    constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES},
     primitives::redpallas::{self, Binding},
 };
 
@@ -209,7 +208,7 @@ impl TryFrom<ValueSum> for i64 {
 }
 
 /// The blinding factor for a [`ValueCommitment`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ValueCommitTrapdoor(pallas::Scalar);
 
 impl ValueCommitTrapdoor {
@@ -292,9 +291,8 @@ impl ValueCommitment {
     ///
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
-    pub(crate) fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
+    pub(crate) fn derive(value: ValueSum, rcv: ValueCommitTrapdoor, note_type: NoteType) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-        let V = hasher(&VALUE_COMMITMENT_V_BYTES);
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
 
@@ -304,7 +302,9 @@ impl ValueCommitment {
             pallas::Scalar::from(abs_value)
         };
 
-        ValueCommitment(V * value + R * rcv.0)
+        let V_zsa = note_type.0;
+
+        ValueCommitment(V_zsa * value + R * rcv.0)
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
@@ -407,6 +407,8 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use crate::note::note_type::testing::arb_note_type;
+    use crate::note::NoteType;
     use proptest::prelude::*;
 
     use super::{
@@ -415,6 +417,29 @@ mod tests {
     };
     use crate::primitives::redpallas;
 
+    fn _bsk_consistent_with_bvk(values: &[(ValueSum, ValueCommitTrapdoor)], note_type: NoteType) {
+        let value_balance = values
+            .iter()
+            .map(|(value, _)| value)
+            .sum::<Result<ValueSum, OverflowError>>()
+            .expect("we generate values that won't overflow");
+
+        let bsk = values
+            .iter()
+            .map(|(_, rcv)| rcv)
+            .sum::<ValueCommitTrapdoor>()
+            .into_bsk();
+
+        let bvk = (values
+            .iter()
+            .map(|(value, rcv)| ValueCommitment::derive(*value, *rcv, note_type))
+            .sum::<ValueCommitment>()
+            - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), note_type))
+        .into_bvk();
+
+        assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+    }
+
     proptest! {
         #[test]
         fn bsk_consistent_with_bvk(
@@ -422,28 +447,13 @@ mod tests {
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
                     prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor()), n_values)
                 )
-            )
+            ),
+            arb_note_type in arb_note_type(),
         ) {
-            let value_balance = values
-                .iter()
-                .map(|(value, _)| value)
-                .sum::<Result<ValueSum, OverflowError>>()
-                .expect("we generate values that won't overflow");
-
-            let bsk = values
-                .iter()
-                .map(|(_, rcv)| rcv)
-                .sum::<ValueCommitTrapdoor>()
-                .into_bsk();
-
-            let bvk = (values
-                .into_iter()
-                .map(|(value, rcv)| ValueCommitment::derive(value, rcv))
-                .sum::<ValueCommitment>()
-                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
-            .into_bvk();
-
-            assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+            // Test with native note type (zec)
+            _bsk_consistent_with_bvk(&values, NoteType::native());
+            // Test with arbitrary note type
+            _bsk_consistent_with_bvk(&values, arb_note_type);
         }
     }
 }
