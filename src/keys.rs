@@ -18,7 +18,7 @@ use zcash_note_encryption::EphemeralKeyBytes;
 
 use crate::{
     address::Address,
-    primitives::redpallas::{self, SpendAuth},
+    primitives::redpallas::{self, SpendAuth, VerificationKey},
     spec::{
         commit_ivk, diversify_hash, extract_p, ka_orchard, prf_nf, to_base, to_scalar,
         NonIdentityPallasPoint, NonZeroPallasBase, NonZeroPallasScalar, PrfExpand,
@@ -188,18 +188,101 @@ impl SpendValidatingKey {
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         <[u8; 32]>::try_from(bytes)
             .ok()
-            .and_then(|b| {
-                // Structural validity checks for ak_P:
-                // - The point must not be the identity
-                //   (which for Pallas is canonically encoded as all-zeroes).
-                // - The sign of the y-coordinate must be positive.
-                if b != [0; 32] && b[31] & 0x80 == 0 {
-                    <redpallas::VerificationKey<SpendAuth>>::try_from(b).ok()
-                } else {
-                    None
-                }
-            })
+            .and_then(check_structural_validity)
             .map(SpendValidatingKey)
+    }
+}
+
+/// An issuer authorizing key, used to create issuer authorization signatures.
+/// This type enforces that the corresponding public point (ik^ℙ) has ỹ = 0.
+///
+/// $\mathsf{isk}$ as defined in
+/// [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+///
+/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+#[derive(Clone, Debug)]
+pub struct IssuerAuthorizingKey(redpallas::SigningKey<SpendAuth>);
+
+impl IssuerAuthorizingKey {
+    /// Derives isk from sk. Internal use only, does not enforce all constraints.
+    fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
+        to_scalar(PrfExpand::ZsaIsk.expand(&sk.0))
+    }
+}
+
+impl From<&SpendingKey> for IssuerAuthorizingKey {
+    fn from(sk: &SpendingKey) -> Self {
+        let isk = Self::derive_inner(sk);
+        // IssuerSigningKey cannot be constructed such that this assertion would fail.
+        assert!(!bool::from(isk.is_zero()));
+        let ret = IssuerAuthorizingKey(isk.to_repr().try_into().unwrap());
+        // If the last bit of repr_P(ik) is 1, negate isk.
+        if (<[u8; 32]>::from(IssuerValidatingKey::from(&ret).0)[31] >> 7) == 1 {
+            IssuerAuthorizingKey((-isk).to_repr().try_into().unwrap())
+        } else {
+            ret
+        }
+    }
+}
+
+/// A key used to validate issuer authorization signatures.
+///
+/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// Note that this is $\mathsf{ik}^\mathbb{P}$, which by construction is equivalent to
+/// $\mathsf{ik}$ but stored here as a RedPallas verification key.
+///
+/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+#[derive(Debug, Clone, PartialOrd, Ord)]
+pub struct IssuerValidatingKey(redpallas::VerificationKey<SpendAuth>);
+impl From<&IssuerAuthorizingKey> for IssuerValidatingKey {
+    fn from(isk: &IssuerAuthorizingKey) -> Self {
+        IssuerValidatingKey((&isk.0).into())
+    }
+}
+
+impl From<&IssuerValidatingKey> for pallas::Point {
+    fn from(issuer_validating_key: &IssuerValidatingKey) -> pallas::Point {
+        pallas::Point::from_bytes(&(&issuer_validating_key.0).into()).unwrap()
+    }
+}
+
+impl PartialEq for IssuerValidatingKey {
+    fn eq(&self, other: &Self) -> bool {
+        <[u8; 32]>::from(&self.0).eq(&<[u8; 32]>::from(&other.0))
+    }
+}
+
+impl Eq for IssuerValidatingKey {}
+
+impl IssuerValidatingKey {
+    /// Converts this spend validating key to its serialized form,
+    /// I2LEOSP_256(ik).
+    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+        // This is correct because the wrapped point must have ỹ = 0, and
+        // so the point repr is the same as I2LEOSP of its x-coordinate.
+        <[u8; 32]>::from(&self.0)
+    }
+
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        <[u8; 32]>::try_from(bytes)
+            .ok()
+            .and_then(check_structural_validity)
+            .map(IssuerValidatingKey)
+    }
+}
+
+/// A function to check structural validity of the validating keys for authorizing transfers and
+/// issuing assets
+/// Structural validity checks for ik_P:
+///  - The point must not be the identity (which for Pallas is canonically encoded as all-zeroes).
+///  - The sign of the y-coordinate must be positive.
+fn check_structural_validity(
+    verification_key_bytes: [u8; 32],
+) -> Option<VerificationKey<SpendAuth>> {
+    if verification_key_bytes != [0; 32] && verification_key_bytes[31] & 0x80 == 0 {
+        <redpallas::VerificationKey<SpendAuth>>::try_from(verification_key_bytes).ok()
+    } else {
+        None
     }
 }
 
@@ -1021,8 +1104,14 @@ mod tests {
             let ask: SpendAuthorizingKey = (&sk).into();
             assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
 
+            let isk: IssuerAuthorizingKey = (&sk).into();
+            assert_eq!(<[u8; 32]>::from(&isk.0), tv.isk);
+
             let ak: SpendValidatingKey = (&ask).into();
             assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
+
+            let ik: IssuerValidatingKey = (&isk).into();
+            assert_eq!(<[u8; 32]>::from(ik.0), tv.ik);
 
             let nk: NullifierDerivingKey = (&sk).into();
             assert_eq!(nk.0.to_repr(), tv.nk);
