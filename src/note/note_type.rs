@@ -4,15 +4,18 @@ use pasta_curves::pallas;
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
-use crate::keys::SpendValidatingKey;
+use crate::keys::IssuerValidatingKey;
 
 /// Note type identifier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NoteType(pallas::Point);
 
+pub const MAX_ASSET_DESCRIPTION_SIZE: usize = 512;
+
 // the hasher used to derive the assetID
 #[allow(non_snake_case)]
 fn assetID_hasher(msg: Vec<u8>) -> pallas::Point {
+    // TODO(zsa) replace personalization
     pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION)(&msg)
 }
 
@@ -33,10 +36,11 @@ impl NoteType {
     ///
     /// [notetypes]: https://zips.z.cash/protocol/nu5.pdf#notetypes
     #[allow(non_snake_case)]
-    pub(super) fn derive(ak: &SpendValidatingKey, assetDesc: &[u8; 64]) -> Self {
-        let mut s = vec![];
+    pub fn derive(ik: &IssuerValidatingKey, assetDesc: Vec<u8>) -> Self {
+        assert!(assetDesc.len() < MAX_ASSET_DESCRIPTION_SIZE);
 
-        s.extend(ak.to_bytes());
+        let mut s = vec![];
+        s.extend(ik.to_bytes());
         s.extend(assetDesc);
 
         NoteType(assetID_hasher(s))
@@ -62,11 +66,10 @@ impl NoteType {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
+    use super::NoteType;
     use proptest::prelude::*;
 
-    use crate::keys::{testing::arb_spending_key, FullViewingKey};
-
-    use super::NoteType;
+    use crate::keys::{testing::arb_spending_key, IssuerAuthorizingKey, IssuerValidatingKey};
 
     prop_compose! {
         /// Generate a uniformly distributed note type
@@ -76,8 +79,8 @@ pub mod testing {
             bytes32b in prop::array::uniform32(prop::num::u8::ANY),
         ) -> NoteType {
             let bytes64 = [bytes32a, bytes32b].concat();
-            let fvk = FullViewingKey::from(&sk);
-            NoteType::derive(&fvk.into(), &bytes64.try_into().unwrap())
+            let isk = IssuerAuthorizingKey::from(&sk);
+            NoteType::derive(&IssuerValidatingKey::from(&isk), bytes64)
         }
     }
 }

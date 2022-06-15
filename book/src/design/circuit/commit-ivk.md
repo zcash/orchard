@@ -146,7 +146,7 @@ $\NullifierKey$).
 > - Let $x' = x + t' - t$.
 > - Enforce $0 \leq x' < t'$.
 
-### $\AuthSignPublic$ with $b_1 = 1 \implies \AuthSignPublic \geq 2^{254}$
+### $\AuthSignPublic$ with $b_1 = 1 \implies \AuthSignPublic \geq 2^{254}$ <a name="canonicity-ak">
 
 In these cases, we check that $\textsf{ak}_{0..=253} < t_\mathbb{P}$:
 
@@ -181,7 +181,7 @@ $$
 \end{array}
 $$
 
-### $\NullifierKey$ with $d_1 = 1 \implies \NullifierKey \geq 2^{254}$
+### $\NullifierKey$ with $d_1 = 1 \implies \NullifierKey \geq 2^{254}$ <a name="canonicity-nk">
 
 In these cases, we check that $\textsf{nk}_{0..=253} < t_\mathbb{P}$:
 

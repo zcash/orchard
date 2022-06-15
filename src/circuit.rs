@@ -143,10 +143,10 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             meta.advice_column(),
         ];
 
-        // Constrain v_old - v_new = magnitude * sign
-        // Either v_old = 0, or calculated root = anchor
-        // Constrain v_old = 0 or enable_spends = 1.
-        // Constrain v_new = 0 or enable_outputs = 1.
+        // Constrain v_old - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
+        // Either v_old = 0, or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
+        // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
+        // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -389,7 +389,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new)
         };
 
-        // Merkle path validity check.
+        // Merkle path validity check (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         let root = {
             let path = self
                 .path
@@ -404,7 +404,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             merkle_inputs.calculate_root(layouter.namespace(|| "Merkle path"), leaf)?
         };
 
-        // Value commitment integrity.
+        // Value commitment integrity (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net_magnitude_sign = {
@@ -462,7 +462,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             v_net_magnitude_sign
         };
 
-        // Nullifier integrity
+        // Nullifier integrity (https://p.z.cash/ZKS:action-nullifier-integrity).
         let nf_old = {
             let nf_old = gadget::derive_nullifier(
                 layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_old, cm_old)"),
@@ -481,7 +481,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             nf_old
         };
 
-        // Spend authority
+        // Spend authority (https://p.z.cash/ZKS:action-spend-authority)
         {
             let alpha =
                 ScalarFixed::new(ecc_chip.clone(), layouter.namespace(|| "alpha"), self.alpha)?;
@@ -501,7 +501,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             layouter.constrain_instance(rk.inner().y().cell(), config.primary, RK_Y)?;
         }
 
-        // Diversified address integrity.
+        // Diversified address integrity (https://p.z.cash/ZKS:action-addr-integrity?partial).
         let pk_d_old = {
             let ivk = {
                 let ak = ak_P.extract_p().inner().clone();
@@ -547,7 +547,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             pk_d_old
         };
 
-        // Old note commitment integrity.
+        // Old note commitment integrity (https://p.z.cash/ZKS:action-cm-old-integrity?partial).
         {
             let rcm_old = ScalarFixed::new(
                 ecc_chip.clone(),
@@ -575,7 +575,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             derived_cm_old.constrain_equal(layouter.namespace(|| "cm_old equality"), &cm_old)?;
         }
 
-        // New note commitment integrity.
+        // New note commitment integrity (https://p.z.cash/ZKS:action-cmx-new-integrity?partial).
         {
             // Witness g_d_new
             let g_d_new = {

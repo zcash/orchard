@@ -179,6 +179,7 @@ impl Domain for OrchardDomain {
         np[0] = if is_native { 0x02 } else { 0x03 };
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
+        // todo: add note_type
         np[20..52].copy_from_slice(note.rseed().as_bytes());
         if is_native {
             np[52..].copy_from_slice(memo);
