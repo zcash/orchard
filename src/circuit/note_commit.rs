@@ -59,6 +59,8 @@ type CanonicityBounds = (
 /// ------------------------------------
 /// |  b  | b_0 | b_1 |       1        |
 /// |     | b_2 | b_3 |       0        |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-decomposition-b?partial
 #[derive(Clone, Debug)]
 struct DecomposeB {
     q_notecommit_b: Selector,
@@ -207,6 +209,8 @@ impl DecomposeB {
 /// ------------------------------------
 /// |  d  | d_0 | d_1 |       1        |
 /// |     | d_2 | d_3 |       0        |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-decomposition-d?partial
 #[derive(Clone, Debug)]
 struct DecomposeD {
     q_notecommit_d: Selector,
@@ -346,6 +350,8 @@ impl DecomposeD {
 /// | A_6 | A_7 | A_8 | q_notecommit_e |
 /// ------------------------------------
 /// |  e  | e_0 | e_1 |       1        |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-decomposition-e?partial
 #[derive(Clone, Debug)]
 struct DecomposeE {
     q_notecommit_e: Selector,
@@ -463,6 +469,8 @@ impl DecomposeE {
 /// ------------------------------
 /// |  g  | g_0 |       1        |
 /// | g_1 | g_2 |       0        |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-decomposition-g?partial
 #[derive(Clone, Debug)]
 struct DecomposeG {
     q_notecommit_g: Selector,
@@ -588,6 +596,8 @@ impl DecomposeG {
 /// | A_6 | A_7 | A_8 | q_notecommit_h |
 /// ------------------------------------
 /// |  h  | h_0 | h_1 |       1        |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-decomposition-h?partial
 #[derive(Clone, Debug)]
 struct DecomposeH {
     q_notecommit_h: Selector,
@@ -708,6 +718,8 @@ impl DecomposeH {
 /// -----------------------------------------------------------
 /// | x(g_d) | b_0 | a       | z13_a       |        1         |
 /// |        | b_1 | a_prime | z13_a_prime |        0         |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-canonicity-g_d?partial
 #[derive(Clone, Debug)]
 struct GdCanonicity {
     q_notecommit_g_d: Selector,
@@ -823,6 +835,8 @@ impl GdCanonicity {
 /// -------------------------------------------------------------------
 /// | x(pk_d) | b_3 |    c       | z13_c          |         1         |
 /// |         | d_0 | b3_c_prime | z14_b3_c_prime |         0         |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-canonicity-pk_d?partial
 #[derive(Clone, Debug)]
 struct PkdCanonicity {
     q_notecommit_pk_d: Selector,
@@ -937,6 +951,8 @@ impl PkdCanonicity {
 /// |  A_6  | A_7 | A_8 | A_9 | q_notecommit_value |
 /// ------------------------------------------------
 /// | value | d_2 | d_3 | e_0 |          1         |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-canonicity-v?partial
 #[derive(Clone, Debug)]
 struct ValueCanonicity {
     q_notecommit_value: Selector,
@@ -1013,6 +1029,8 @@ impl ValueCanonicity {
 /// --------------------------------------------------------------
 /// | rho | e_1 |    f       | z13_f          |        1         |
 /// |     | g_0 | e1_f_prime | z14_e1_f_prime |        0         |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-canonicity-rho?partial
 #[derive(Clone, Debug)]
 struct RhoCanonicity {
     q_notecommit_rho: Selector,
@@ -1126,6 +1144,8 @@ impl RhoCanonicity {
 /// ----------------------------------------------------------------
 /// | psi | g_1 |   g_2       | z13_g           |        1         |
 /// | h_0 | h_1 | g1_g2_prime | z13_g1_g2_prime |        0         |
+///
+/// https://p.z.cash/orchard-0.1:note-commit-canonicity-psi?partial
 #[derive(Clone, Debug)]
 struct PsiCanonicity {
     q_notecommit_psi: Selector,
@@ -1296,6 +1316,7 @@ impl YCanonicity {
             let z13_j_prime = meta.query_advice(advices[9], Rotation::next());
 
             // Decomposition checks
+            // https://p.z.cash/orchard-0.1:note-commit-decomposition-y?partial
             let decomposition_checks = {
                 // Check that k_3 is boolean
                 let k3_check = bool_check(k_3.clone());
@@ -1316,6 +1337,7 @@ impl YCanonicity {
             };
 
             // Canonicity checks. These are enforced if and only if k_3 = 1.
+            // https://p.z.cash/orchard-0.1:note-commit-canonicity-y?partial
             let canonicity_checks = {
                 iter::empty()
                     .chain(Some(("k_3 = 1 => k_2 = 0", k_2)))
@@ -1652,6 +1674,9 @@ pub(in crate::circuit) mod gadgets {
         // `cm = ⊥` is handled internally to `CommitDomain::commit`: incomplete addition
         // constraints allows ⊥ to occur, and then during synthesis it detects these edge
         // cases and raises an error (aborting proof creation).
+        //
+        // https://p.z.cash/ZKS:action-cm-old-integrity?partial
+        // https://p.z.cash/ZKS:action-cmx-new-integrity?partial
         let (cm, zs) = {
             let message = Message::from_pieces(
                 chip.clone(),
@@ -1774,6 +1799,10 @@ pub(in crate::circuit) mod gadgets {
     }
 
     /// A canonicity check helper used in checking x(g_d), y(g_d), and y(pk_d).
+    ///
+    /// Specifications:
+    /// - [`g_d` canonicity](https://p.z.cash/orchard-0.1:note-commit-canonicity-g_d?partial)
+    /// - [`y` canonicity](https://p.z.cash/orchard-0.1:note-commit-canonicity-y?partial)
     fn canon_bitshift_130(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1806,6 +1835,8 @@ pub(in crate::circuit) mod gadgets {
     }
 
     /// Check canonicity of `x(pk_d)` encoding.
+    ///
+    /// [Specification](https://p.z.cash/orchard-0.1:note-commit-canonicity-pk_d?partial).
     fn pkd_x_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1845,6 +1876,8 @@ pub(in crate::circuit) mod gadgets {
     }
 
     /// Check canonicity of `rho` encoding.
+    ///
+    /// [Specification](https://p.z.cash/orchard-0.1:note-commit-canonicity-rho?partial).
     fn rho_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1884,6 +1917,8 @@ pub(in crate::circuit) mod gadgets {
     }
 
     /// Check canonicity of `psi` encoding.
+    ///
+    /// [Specification](https://p.z.cash/orchard-0.1:note-commit-canonicity-psi?partial).
     fn psi_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         mut layouter: impl Layouter<pallas::Base>,
@@ -1922,6 +1957,10 @@ pub(in crate::circuit) mod gadgets {
 
     /// Check canonicity of y-coordinate given its LSB as a value.
     /// Also, witness the LSB and return the witnessed cell.
+    ///
+    /// Specifications:
+    /// - [`y` decomposition](https://p.z.cash/orchard-0.1:note-commit-decomposition-y?partial)
+    /// - [`y` canonicity](https://p.z.cash/orchard-0.1:note-commit-canonicity-y?partial)
     fn y_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
         y_canon: &YCanonicity,

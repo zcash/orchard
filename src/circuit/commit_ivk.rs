@@ -52,6 +52,8 @@ impl CommitIvkChip {
         //   - c: 240 bits,
         //   - d: 10 bits
         //
+        // https://p.z.cash/orchard-0.1:commit-ivk-decompositions
+        // https://p.z.cash/orchard-0.1:commit-ivk-region-layout?partial
         /*
             The pieces are laid out in this configuration:
 
@@ -106,6 +108,7 @@ impl CommitIvkChip {
             let d_decomposition_check = d_whole - (d_0.clone() + d_1.clone() * two_pow_9);
 
             // Check `b_1` and `d_1` are each a single-bit value.
+            // https://p.z.cash/orchard-0.1:commit-ivk-bit-lengths?partial
             let b1_bool_check = bool_check(b_1.clone());
             let d1_bool_check = bool_check(d_1.clone());
 
@@ -126,6 +129,7 @@ impl CommitIvkChip {
 
             // ak = a (250 bits) || b_0 (4 bits) || b_1 (1 bit)
             // The `ak` canonicity checks are enforced if and only if `b_1` = 1.
+            // https://p.z.cash/orchard-0.1:commit-ivk-canonicity-ak?partial
             let ak_canonicity_checks = {
                 // b_1 = 1 => b_0 = 0
                 let b0_canon_check = b_1.clone() * b_0;
@@ -163,6 +167,7 @@ impl CommitIvkChip {
 
             // nk = b_2 (5 bits) || c (240 bits) || d_0 (9 bits) || d_1 (1 bit)
             // The `nk` canonicity checks are enforced if and only if `d_1` = 1.
+            // https://p.z.cash/orchard-0.1:commit-ivk-canonicity-nk?partial
             let nk_canonicity_checks = {
                 // d_1 = 1 => d_0 = 0
                 let c0_canon_check = d_1.clone() * d_0;
@@ -257,6 +262,8 @@ pub(in crate::circuit) mod gadgets {
         //
         // We start by witnessing all of the individual pieces, and range-constraining
         // the short pieces b_0, b_2, and d_0.
+        //
+        // https://p.z.cash/orchard-0.1:commit-ivk-bit-lengths?partial
 
         // `a` = bits 0..=249 of `ak`
         let a = MessagePiece::from_subpieces(
@@ -327,6 +334,8 @@ pub(in crate::circuit) mod gadgets {
         // `ivk = ⊥` is handled internally to `CommitDomain::short_commit`: incomplete
         // addition constraints allows ⊥ to occur, and then during synthesis it detects
         // these edge cases and raises an error (aborting proof creation).
+        //
+        // https://p.z.cash/ZKS:action-addr-integrity?partial
         let (ivk, zs) = {
             let message = Message::from_pieces(
                 sinsemilla_chip.clone(),
@@ -385,6 +394,8 @@ pub(in crate::circuit) mod gadgets {
     }
 
     /// Witnesses and decomposes the `a'` value we need to check the canonicity of `ak`.
+    ///
+    /// [Specification](https://p.z.cash/orchard-0.1:commit-ivk-canonicity-ak?partial).
     #[allow(clippy::type_complexity)]
     fn ak_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
@@ -424,6 +435,8 @@ pub(in crate::circuit) mod gadgets {
     }
 
     /// Witnesses and decomposes the `b2c'` value we need to check the canonicity of `nk`.
+    ///
+    /// [Specification](https://p.z.cash/orchard-0.1:commit-ivk-canonicity-nk?partial).
     #[allow(clippy::type_complexity)]
     fn nk_canonicity(
         lookup_config: &LookupRangeCheckConfig<pallas::Base, 10>,
@@ -468,7 +481,9 @@ pub(in crate::circuit) mod gadgets {
 }
 
 impl CommitIvkConfig {
-    /// Assign cells for the canonicity gate.
+    /// Assign cells for the [canonicity gate].
+    ///
+    /// [canonicity gate]: https://p.z.cash/orchard-0.1:commit-ivk-region-layout?partial
     /*
         The pieces are laid out in this configuration:
 
