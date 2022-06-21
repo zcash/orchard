@@ -6,8 +6,8 @@ use group::{Curve, GroupEncoding};
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
     plonk::{
-        self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector,
-        SingleVerifier,
+        self, Advice, BatchVerifier, Column, Constraints, Expression, Instance as InstanceColumn,
+        Selector, SingleVerifier,
     },
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
@@ -690,8 +690,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 /// The verifying key for the Orchard Action circuit.
 #[derive(Debug)]
 pub struct VerifyingKey {
-    params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
-    vk: plonk::VerifyingKey<vesta::Affine>,
+    pub(crate) params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
+    pub(crate) vk: plonk::VerifyingKey<vesta::Affine>,
 }
 
 impl VerifyingKey {
@@ -864,6 +864,24 @@ impl Proof {
         let strategy = SingleVerifier::new(&vk.params);
         let mut transcript = Blake2bRead::init(&self.0[..]);
         plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
+    }
+
+    pub(crate) fn add_to_batch(
+        &self,
+        batch: &mut BatchVerifier<vesta::Affine>,
+        instances: Vec<Instance>,
+    ) {
+        let instances = instances
+            .iter()
+            .map(|i| {
+                i.to_halo2_instance()
+                    .into_iter()
+                    .map(|c| c.into_iter().collect())
+                    .collect()
+            })
+            .collect();
+
+        batch.add_proof(instances, self.0.clone());
     }
 
     /// Constructs a new Proof value.
