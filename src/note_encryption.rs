@@ -94,7 +94,7 @@ impl OrchardDomain {
     }
 
     /// Constructs a domain from a nullifier.
-    pub fn for_nullifier<T>(nullifier: Nullifier) -> Self {
+    pub fn for_nullifier(nullifier: Nullifier) -> Self {
         OrchardDomain { rho: nullifier }
     }
 }
