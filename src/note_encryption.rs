@@ -327,6 +327,11 @@ impl CompactAction {
             enc_ciphertext,
         }
     }
+
+    ///Returns the nullifier of the note being spent.
+    pub fn nullifier(&self) -> Nullifier {
+        self.nullifier
+    }
 }
 
 #[cfg(test)]
