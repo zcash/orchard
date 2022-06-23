@@ -69,6 +69,8 @@ impl BatchValidator {
     pub fn validate<R: RngCore + CryptoRng>(self, vk: &VerifyingKey, rng: R) -> bool {
         if self.signatures.is_empty() {
             // An empty batch is always valid, but is not free to run; skip it.
+            // Note that a transaction has at least a binding signature, so if
+            // there are no signatures, there are also no proofs.
             return true;
         }
 
