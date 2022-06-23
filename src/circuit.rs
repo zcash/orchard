@@ -4,7 +4,7 @@ use core::fmt;
 
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
-    circuit::{floor_planner, Layouter},
+    circuit::{floor_planner, Layouter, Value},
     plonk::{
         self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector,
         SingleVerifier,
@@ -99,25 +99,25 @@ pub struct Config {
 /// The Orchard Action circuit.
 #[derive(Clone, Debug, Default)]
 pub struct Circuit {
-    pub(crate) path: Option<[MerkleHashOrchard; MERKLE_DEPTH_ORCHARD]>,
-    pub(crate) pos: Option<u32>,
-    pub(crate) g_d_old: Option<NonIdentityPallasPoint>,
-    pub(crate) pk_d_old: Option<DiversifiedTransmissionKey>,
-    pub(crate) v_old: Option<NoteValue>,
-    pub(crate) rho_old: Option<Nullifier>,
-    pub(crate) psi_old: Option<pallas::Base>,
-    pub(crate) rcm_old: Option<NoteCommitTrapdoor>,
-    pub(crate) cm_old: Option<NoteCommitment>,
-    pub(crate) alpha: Option<pallas::Scalar>,
-    pub(crate) ak: Option<SpendValidatingKey>,
-    pub(crate) nk: Option<NullifierDerivingKey>,
-    pub(crate) rivk: Option<CommitIvkRandomness>,
-    pub(crate) g_d_new: Option<NonIdentityPallasPoint>,
-    pub(crate) pk_d_new: Option<DiversifiedTransmissionKey>,
-    pub(crate) v_new: Option<NoteValue>,
-    pub(crate) psi_new: Option<pallas::Base>,
-    pub(crate) rcm_new: Option<NoteCommitTrapdoor>,
-    pub(crate) rcv: Option<ValueCommitTrapdoor>,
+    pub(crate) path: Value<[MerkleHashOrchard; MERKLE_DEPTH_ORCHARD]>,
+    pub(crate) pos: Value<u32>,
+    pub(crate) g_d_old: Value<NonIdentityPallasPoint>,
+    pub(crate) pk_d_old: Value<DiversifiedTransmissionKey>,
+    pub(crate) v_old: Value<NoteValue>,
+    pub(crate) rho_old: Value<Nullifier>,
+    pub(crate) psi_old: Value<pallas::Base>,
+    pub(crate) rcm_old: Value<NoteCommitTrapdoor>,
+    pub(crate) cm_old: Value<NoteCommitment>,
+    pub(crate) alpha: Value<pallas::Scalar>,
+    pub(crate) ak: Value<SpendValidatingKey>,
+    pub(crate) nk: Value<NullifierDerivingKey>,
+    pub(crate) rivk: Value<CommitIvkRandomness>,
+    pub(crate) g_d_new: Value<NonIdentityPallasPoint>,
+    pub(crate) pk_d_new: Value<DiversifiedTransmissionKey>,
+    pub(crate) v_new: Value<NoteValue>,
+    pub(crate) psi_new: Value<pallas::Base>,
+    pub(crate) rcm_new: Value<NoteCommitTrapdoor>,
+    pub(crate) rcv: Value<ValueCommitTrapdoor>,
 }
 
 impl plonk::Circuit<pallas::Base> for Circuit {
@@ -358,7 +358,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             )?;
 
             // Witness ak_P.
-            let ak_P: Option<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
+            let ak_P: Value<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
             let ak_P = NonIdentityPoint::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "witness ak_P"),
@@ -408,8 +408,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net_magnitude_sign = {
-                let magnitude_sign = self.v_old.zip(self.v_new).map(|(v_old, v_new)| {
-                    let v_net = v_old - v_new;
+                let v_net = self.v_old - self.v_new;
+                let magnitude_sign = v_net.map(|v_net| {
                     let (magnitude, sign) = v_net.magnitude_sign();
 
                     (
@@ -877,7 +877,7 @@ mod tests {
     use core::iter;
 
     use ff::Field;
-    use halo2_proofs::dev::MockProver;
+    use halo2_proofs::{circuit::Value, dev::MockProver};
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
@@ -912,25 +912,25 @@ mod tests {
 
         (
             Circuit {
-                path: Some(path.auth_path()),
-                pos: Some(path.position()),
-                g_d_old: Some(sender_address.g_d()),
-                pk_d_old: Some(*sender_address.pk_d()),
-                v_old: Some(spent_note.value()),
-                rho_old: Some(spent_note.rho()),
-                psi_old: Some(spent_note.rseed().psi(&spent_note.rho())),
-                rcm_old: Some(spent_note.rseed().rcm(&spent_note.rho())),
-                cm_old: Some(spent_note.commitment()),
-                alpha: Some(alpha),
-                ak: Some(ak),
-                nk: Some(nk),
-                rivk: Some(rivk),
-                g_d_new: Some(output_note.recipient().g_d()),
-                pk_d_new: Some(*output_note.recipient().pk_d()),
-                v_new: Some(output_note.value()),
-                psi_new: Some(output_note.rseed().psi(&output_note.rho())),
-                rcm_new: Some(output_note.rseed().rcm(&output_note.rho())),
-                rcv: Some(rcv),
+                path: Value::known(path.auth_path()),
+                pos: Value::known(path.position()),
+                g_d_old: Value::known(sender_address.g_d()),
+                pk_d_old: Value::known(*sender_address.pk_d()),
+                v_old: Value::known(spent_note.value()),
+                rho_old: Value::known(spent_note.rho()),
+                psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
+                rcm_old: Value::known(spent_note.rseed().rcm(&spent_note.rho())),
+                cm_old: Value::known(spent_note.commitment()),
+                alpha: Value::known(alpha),
+                ak: Value::known(ak),
+                nk: Value::known(nk),
+                rivk: Value::known(rivk),
+                g_d_new: Value::known(output_note.recipient().g_d()),
+                pk_d_new: Value::known(*output_note.recipient().pk_d()),
+                v_new: Value::known(output_note.value()),
+                psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
+                rcm_new: Value::known(output_note.rseed().rcm(&output_note.rho())),
+                rcv: Value::known(rcv),
             },
             Instance {
                 anchor,
@@ -1098,25 +1098,25 @@ mod tests {
             .unwrap();
 
         let circuit = Circuit {
-            path: None,
-            pos: None,
-            g_d_old: None,
-            pk_d_old: None,
-            v_old: None,
-            rho_old: None,
-            psi_old: None,
-            rcm_old: None,
-            cm_old: None,
-            alpha: None,
-            ak: None,
-            nk: None,
-            rivk: None,
-            g_d_new: None,
-            pk_d_new: None,
-            v_new: None,
-            psi_new: None,
-            rcm_new: None,
-            rcv: None,
+            path: Value::unknown(),
+            pos: Value::unknown(),
+            g_d_old: Value::unknown(),
+            pk_d_old: Value::unknown(),
+            v_old: Value::unknown(),
+            rho_old: Value::unknown(),
+            psi_old: Value::unknown(),
+            rcm_old: Value::unknown(),
+            cm_old: Value::unknown(),
+            alpha: Value::unknown(),
+            ak: Value::unknown(),
+            nk: Value::unknown(),
+            rivk: Value::unknown(),
+            g_d_new: Value::unknown(),
+            pk_d_new: Value::unknown(),
+            v_new: Value::unknown(),
+            psi_new: Value::unknown(),
+            rcm_new: Value::unknown(),
+            rcv: Value::unknown(),
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)

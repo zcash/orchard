@@ -1,7 +1,7 @@
 use core::iter;
 
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter},
+    circuit::{AssignedCell, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
     poly::Rotation,
 };
@@ -417,11 +417,11 @@ pub(in crate::circuit) mod gadgets {
         // Decompose the low 130 bits of a_prime = a + 2^130 - t_P, and output
         // the running sum at the end of it. If a_prime < 2^130, the running sum
         // will be 0.
-        let a_prime = a.value().map(|a| {
-            let two_pow_130 = pallas::Base::from_u128(1u128 << 65).square();
-            let t_p = pallas::Base::from_u128(T_P);
-            a + two_pow_130 - t_p
-        });
+        let a_prime = {
+            let two_pow_130 = Value::known(pallas::Base::from_u128(1u128 << 65).square());
+            let t_p = Value::known(pallas::Base::from_u128(T_P));
+            a.value() + two_pow_130 - t_p
+        };
         let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 130 bits of (a + 2^130 - t_P)"),
             a_prime,
@@ -461,12 +461,12 @@ pub(in crate::circuit) mod gadgets {
 
         // Decompose the low 140 bits of b2_c_prime = b_2 + c * 2^5 + 2^140 - t_P, and output
         // the running sum at the end of it. If b2_c_prime < 2^140, the running sum will be 0.
-        let b2_c_prime = b_2.inner().value().zip(c.value()).map(|(b_2, c)| {
-            let two_pow_5 = pallas::Base::from(1 << 5);
-            let two_pow_140 = pallas::Base::from_u128(1u128 << 70).square();
-            let t_p = pallas::Base::from_u128(T_P);
-            b_2 + c * two_pow_5 + two_pow_140 - t_p
-        });
+        let b2_c_prime = {
+            let two_pow_5 = Value::known(pallas::Base::from(1 << 5));
+            let two_pow_140 = Value::known(pallas::Base::from_u128(1u128 << 70).square());
+            let t_p = Value::known(pallas::Base::from_u128(T_P));
+            b_2.inner().value() + c.value() * two_pow_5 + two_pow_140 - t_p
+        };
         let zs = lookup_config.witness_check(
             layouter.namespace(|| "Decompose low 140 bits of (b_2 + c * 2^5 + 2^140 - t_P)"),
             b2_c_prime,
@@ -535,7 +535,7 @@ impl CommitIvkConfig {
                         || "Witness b_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.b_1.inner().ok_or(Error::Synthesis),
+                        || *gate_cells.b_1.inner(),
                     )?;
 
                     // Copy in `b_2`
@@ -603,7 +603,7 @@ impl CommitIvkConfig {
                         || "Witness d_1",
                         self.advices[4],
                         offset,
-                        || gate_cells.d_1.inner().ok_or(Error::Synthesis),
+                        || *gate_cells.d_1.inner(),
                     )?;
 
                     // Copy in z13_c
@@ -646,10 +646,10 @@ struct GateCells {
     ak: AssignedCell<pallas::Base, pallas::Base>,
     nk: AssignedCell<pallas::Base, pallas::Base>,
     b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    b_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    b_1: RangeConstrained<pallas::Base, Value<pallas::Base>>,
     b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     d_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    d_1: RangeConstrained<pallas::Base, Option<pallas::Base>>,
+    d_1: RangeConstrained<pallas::Base, Value<pallas::Base>>,
     z13_a: AssignedCell<pallas::Base, pallas::Base>,
     a_prime: AssignedCell<pallas::Base, pallas::Base>,
     z13_a_prime: AssignedCell<pallas::Base, pallas::Base>,
@@ -680,7 +680,7 @@ mod tests {
         utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
     };
     use halo2_proofs::{
-        circuit::{AssignedCell, Layouter, SimpleFloorPlanner},
+        circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
@@ -691,8 +691,8 @@ mod tests {
     fn commit_ivk() {
         #[derive(Default)]
         struct MyCircuit {
-            ak: Option<pallas::Base>,
-            nk: Option<pallas::Base>,
+            ak: Value<pallas::Base>,
+            nk: Value<pallas::Base>,
         }
 
         impl UtilitiesInstructions<pallas::Base> for MyCircuit {
@@ -809,8 +809,11 @@ mod tests {
 
                 // Use a random scalar for rivk
                 let rivk = pallas::Scalar::random(OsRng);
-                let rivk_gadget =
-                    ScalarFixed::new(ecc_chip.clone(), layouter.namespace(|| "rivk"), Some(rivk))?;
+                let rivk_gadget = ScalarFixed::new(
+                    ecc_chip.clone(),
+                    layouter.namespace(|| "rivk"),
+                    Value::known(rivk),
+                )?;
 
                 let ivk = gadgets::commit_ivk(
                     sinsemilla_chip,
@@ -822,34 +825,29 @@ mod tests {
                     rivk_gadget,
                 )?;
 
-                let expected_ivk = {
-                    let domain = CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
-                    // Hash ak || nk
-                    domain
-                        .short_commit(
-                            iter::empty()
-                                .chain(
-                                    self.ak
-                                        .unwrap()
-                                        .to_le_bits()
-                                        .iter()
-                                        .by_vals()
-                                        .take(L_ORCHARD_BASE),
+                self.ak
+                    .zip(self.nk)
+                    .zip(ivk.inner().value())
+                    .assert_if_known(|((ak, nk), ivk)| {
+                        let expected_ivk = {
+                            let domain = CommitDomain::new(COMMIT_IVK_PERSONALIZATION);
+                            // Hash ak || nk
+                            domain
+                                .short_commit(
+                                    iter::empty()
+                                        .chain(
+                                            ak.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        )
+                                        .chain(
+                                            nk.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        ),
+                                    &rivk,
                                 )
-                                .chain(
-                                    self.nk
-                                        .unwrap()
-                                        .to_le_bits()
-                                        .iter()
-                                        .by_vals()
-                                        .take(L_ORCHARD_BASE),
-                                ),
-                            &rivk,
-                        )
-                        .unwrap()
-                };
+                                .unwrap()
+                        };
 
-                assert_eq!(&expected_ivk, ivk.inner().value().unwrap());
+                        &&expected_ivk == ivk
+                    });
 
                 Ok(())
             }
@@ -860,38 +858,38 @@ mod tests {
         let circuits = [
             // `ak` = 0, `nk` = 0
             MyCircuit {
-                ak: Some(pallas::Base::zero()),
-                nk: Some(pallas::Base::zero()),
+                ak: Value::known(pallas::Base::zero()),
+                nk: Value::known(pallas::Base::zero()),
             },
             // `ak` = T_Q - 1, `nk` = T_Q - 1
             MyCircuit {
-                ak: Some(pallas::Base::from_u128(T_Q - 1)),
-                nk: Some(pallas::Base::from_u128(T_Q - 1)),
+                ak: Value::known(pallas::Base::from_u128(T_Q - 1)),
+                nk: Value::known(pallas::Base::from_u128(T_Q - 1)),
             },
             // `ak` = T_Q, `nk` = T_Q
             MyCircuit {
-                ak: Some(pallas::Base::from_u128(T_Q)),
-                nk: Some(pallas::Base::from_u128(T_Q)),
+                ak: Value::known(pallas::Base::from_u128(T_Q)),
+                nk: Value::known(pallas::Base::from_u128(T_Q)),
             },
             // `ak` = 2^127 - 1, `nk` = 2^127 - 1
             MyCircuit {
-                ak: Some(pallas::Base::from_u128((1 << 127) - 1)),
-                nk: Some(pallas::Base::from_u128((1 << 127) - 1)),
+                ak: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
+                nk: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
             },
             // `ak` = 2^127, `nk` = 2^127
             MyCircuit {
-                ak: Some(pallas::Base::from_u128(1 << 127)),
-                nk: Some(pallas::Base::from_u128(1 << 127)),
+                ak: Value::known(pallas::Base::from_u128(1 << 127)),
+                nk: Value::known(pallas::Base::from_u128(1 << 127)),
             },
             // `ak` = 2^254 - 1, `nk` = 2^254 - 1
             MyCircuit {
-                ak: Some(two_pow_254 - pallas::Base::one()),
-                nk: Some(two_pow_254 - pallas::Base::one()),
+                ak: Value::known(two_pow_254 - pallas::Base::one()),
+                nk: Value::known(two_pow_254 - pallas::Base::one()),
             },
             // `ak` = 2^254, `nk` = 2^254
             MyCircuit {
-                ak: Some(two_pow_254),
-                nk: Some(two_pow_254),
+                ak: Value::known(two_pow_254),
+                nk: Value::known(two_pow_254),
             },
         ];
 
