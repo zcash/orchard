@@ -236,8 +236,16 @@ impl Builder {
 
     /// Adds a note to be spent in this transaction.
     ///
+    /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`] using the
+    ///   [`zcash_note_encryption`] crate instantiated with [`OrchardDomain`].
+    /// - `merkle_path` can be obtained using the [`incrementalmerkletree`] crate
+    ///   instantiated with [`MerkleHashOrchard`].
+    ///
     /// Returns an error if the given Merkle path does not have the required anchor for
     /// the given note.
+    ///
+    /// [`OrchardDomain`]: crate::note_encryption::OrchardDomain
+    /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
     pub fn add_spend(
         &mut self,
         fvk: FullViewingKey,
