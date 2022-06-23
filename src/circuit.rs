@@ -507,7 +507,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 let ak = ak_P.extract_p().inner().clone();
                 let rivk = ScalarFixed::new(
                     ecc_chip.clone(),
-                    layouter.namespace(|| "rcv"),
+                    layouter.namespace(|| "rivk"),
                     self.rivk.map(|rivk| rivk.inner()),
                 )?;
 
@@ -609,7 +609,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
             let rcm_new = ScalarFixed::new(
                 ecc_chip,
-                layouter.namespace(|| "rcm_old"),
+                layouter.namespace(|| "rcm_new"),
                 self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner()),
             )?;
 
