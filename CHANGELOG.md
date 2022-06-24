@@ -6,8 +6,14 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.2.0] - 2022-06-24
 ### Added
 - `orchard::bundle::BatchValidator`
+- `orchard::note_encryption`:
+  - `CompactAction::from_parts`
+  - `CompactAction::nullifier`
+  - `OrchardDomain::for_nullifier`
 
 ### Changed
 - Migrated to `halo2_proofs 0.2`.
