@@ -11,9 +11,9 @@ In this document,
   the Electric Coin Company and the Zcash Foundation according to section 6.2 (b)
   of the Zcash Trademark Agreement.
 - A "Zcash Chain Fork" means a blockchain that descends from the Zcash
-  blockchain and that activates its first change to the consensus rules relative to Zcash at a block 
-  height that is or was within 3456 blocks of the current height of the Zcash
-  chain at the time of activation.
+  blockchain and that activates its first change to the consensus rules 
+  relative to Zcash at a block height that is or was within 3456 blocks 
+  of the current height of the Zcash chain at the time of activation.
 - A "Zcash Technology Testnet" means a blockchain designed for the purpose of
   testing technology potentially of use to the Zcash blockchain and not for
   the purpose of implementing any token of economic value, where this purpose
