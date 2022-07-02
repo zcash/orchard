@@ -26,6 +26,7 @@ use halo2_proofs::{
 };
 
 pub(in crate::circuit) mod add_chip;
+pub(in crate::circuit) mod mux_chip;
 
 impl super::Config {
     pub(super) fn add_chip(&self) -> add_chip::AddChip {
