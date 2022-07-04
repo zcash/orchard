@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `orchard::Proof::add_to_batch`
 
 ## [0.2.0] - 2022-06-24
 ### Added

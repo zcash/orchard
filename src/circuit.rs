@@ -866,11 +866,13 @@ impl Proof {
         plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
     }
 
-    pub(crate) fn add_to_batch(
-        &self,
-        batch: &mut BatchVerifier<vesta::Affine>,
-        instances: Vec<Instance>,
-    ) {
+    /// Adds this proof to the given batch for verification with the given instances.
+    ///
+    /// Use this API if you want more control over how proof batches are processed. If you
+    /// just want to batch-validate Orchard bundles, use [`bundle::BatchValidator`].
+    ///
+    /// [`bundle::BatchValidator`]: crate::bundle::BatchValidator
+    pub fn add_to_batch(&self, batch: &mut BatchVerifier<vesta::Affine>, instances: Vec<Instance>) {
         let instances = instances
             .iter()
             .map(|i| {
