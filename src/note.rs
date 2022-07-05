@@ -21,7 +21,7 @@ pub use self::nullifier::Nullifier;
 
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct RandomSeed([u8; 32]);
+pub struct RandomSeed([u8; 32]);
 
 impl RandomSeed {
     pub(crate) fn random(rng: &mut impl RngCore, rho: &Nullifier) -> Self {
@@ -35,13 +35,16 @@ impl RandomSeed {
         }
     }
 
-    pub(crate) fn from_bytes(rseed: [u8; 32], rho: &Nullifier) -> CtOption<Self> {
+    ///Read a note's random seed from bytes, given the note's nullifier.
+    ///Returns None if the nullifier is not for the same note as the seed.
+    pub fn from_bytes(rseed: [u8; 32], rho: &Nullifier) -> CtOption<Self> {
         let rseed = RandomSeed(rseed);
         let esk = rseed.esk_inner(rho);
         CtOption::new(rseed, esk.is_some())
     }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+    /// Returns the byte array corresponding to this seed.
+    pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
@@ -108,7 +111,8 @@ impl PartialEq for Note {
 impl Eq for Note {}
 
 impl Note {
-    pub(crate) fn from_parts(
+    ///Create a Note from its component parts.
+    pub fn from_parts(
         recipient: Address,
         value: NoteValue,
         rho: Nullifier,

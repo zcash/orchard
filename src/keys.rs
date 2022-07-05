@@ -552,7 +552,8 @@ impl DiversifierKey {
 pub struct Diversifier([u8; 11]);
 
 impl Diversifier {
-    pub(crate) fn from_bytes(d: [u8; 11]) -> Self {
+    ///Read a diversifier from a byte array.
+    pub fn from_bytes(d: [u8; 11]) -> Self {
         Diversifier(d)
     }
 
