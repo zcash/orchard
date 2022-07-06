@@ -1,6 +1,5 @@
 use group::{ff::PrimeField, Group};
-use halo2_proofs::arithmetic::CurveExt;
-use pasta_curves::pallas;
+use pasta_curves::{arithmetic::CurveExt, pallas};
 use rand::RngCore;
 use subtle::CtOption;
 

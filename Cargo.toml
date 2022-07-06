@@ -23,29 +23,29 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 
 [dependencies]
-aes = "0.7"
-bitvec = "1"
-blake2b_simd = "1"
-ff = "0.12"
-fpe = "0.5"
-group = "0.12"
+aes = { version = "0.7", default-features = false }
+bitvec = { version = "1", default-features = false }
+blake2b_simd = { version = "1", default-features = false }
+ff = { version = "0.12", default-features = false, features = ["bits"] }
+fpe = { version = "0.5", default-features = false, features = ["alloc"] }
+group = { version = "0.12", default-features = false }
 halo2_gadgets = "0.2"
-halo2_proofs = "0.2"
-hex = "0.4"
-lazy_static = "1"
-memuse = { version = "0.2", features = ["nonempty"] }
-pasta_curves = "0.4"
+halo2_proofs = { version = "0.2", optional = true }
+hex = { version = "0.4", default-features = false }
+lazy_static = { version = "1", optional = true }
+memuse = { version = "0.2", optional = true, features = ["nonempty"] }
+pasta_curves = { version = "0.4", default-features = false, features = ["alloc", "bits"] }
 proptest = { version = "1.0.0", optional = true }
-rand = "0.8"
-reddsa = "0.3"
-nonempty = "0.7"
-serde = { version = "1.0", features = ["derive"] }
-subtle = "2.3"
-zcash_note_encryption = "0.1"
-incrementalmerkletree = "0.3"
+rand = { version = "0.8", default-features = false }
+reddsa = { version = "0.3", default-features = false }
+nonempty = { version = "0.7", optional = true }
+serde = { version = "1.0", optional = true, features = ["derive"] }
+subtle = { version = "2.3", default-features = false }
+zcash_note_encryption = { version = "0.1", default-features = false }
+incrementalmerkletree = { version = "0.3", optional = true }
 
 # Logging
-tracing = "0.1"
+tracing = { version = "0.1", optional = true }
 
 # Developer tooling dependencies
 plotters = { version = "0.3.0", optional = true }
@@ -64,8 +64,21 @@ pprof = { version = "0.9", features = ["criterion", "flamegraph"] } # MSRV 1.56
 bench = false
 
 [features]
-dev-graph = ["halo2_proofs/dev-graph", "plotters"]
-test-dependencies = ["proptest"]
+dev-graph = ["halo2_proofs/dev-graph", "plotters", "std"]
+test-dependencies = ["std", "proptest"]
+default = ["std"]
+std = [
+    "blake2b_simd/std", # to preserve some gpu optimizations
+    "lazy_static",
+    "memuse",
+    "reddsa/std",
+    "nonempty",
+    "serde",
+    "halo2_proofs",
+    "incrementalmerkletree",
+    "zcash_note_encryption/alloc",
+    "tracing",
+]
 
 [[bench]]
 name = "note_decryption"

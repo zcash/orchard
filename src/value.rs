@@ -42,6 +42,7 @@ use core::ops::{Add, RangeInclusive, Sub};
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
+#[cfg(feature = "std")]
 use halo2_proofs::plonk::Assigned;
 use pasta_curves::{
     arithmetic::{CurveAffine, CurveExt},
@@ -78,6 +79,7 @@ impl fmt::Display for OverflowError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for OverflowError {}
 
 /// The non-negative value of an individual Orchard note.
@@ -116,6 +118,7 @@ impl NoteValue {
     }
 }
 
+#[cfg(feature = "std")]
 impl From<&NoteValue> for Assigned<pallas::Base> {
     fn from(v: &NoteValue) -> Self {
         pallas::Base::from(v.inner()).into()

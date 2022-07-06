@@ -1,3 +1,4 @@
+#[cfg(feature = "std")]
 use memuse::DynamicUsage;
 
 use crate::{
@@ -105,6 +106,7 @@ impl<T> Action<T> {
     }
 }
 
+#[cfg(feature = "std")]
 impl DynamicUsage for Action<redpallas::Signature<SpendAuth>> {
     #[inline(always)]
     fn dynamic_usage(&self) -> usize {

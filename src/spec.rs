@@ -6,9 +6,12 @@ use core::ops::Deref;
 use ff::{Field, PrimeField, PrimeFieldBits};
 use group::GroupEncoding;
 use group::{Curve, Group};
+
 use halo2_gadgets::{poseidon::primitives as poseidon, sinsemilla::primitives as sinsemilla};
-use halo2_proofs::arithmetic::{CurveAffine, CurveExt, FieldExt};
-use pasta_curves::pallas;
+use pasta_curves::{
+    arithmetic::{CurveAffine, CurveExt, FieldExt},
+    pallas,
+};
 use subtle::{ConditionallySelectable, CtOption};
 
 use crate::constants::{
@@ -273,8 +276,7 @@ mod tests {
     use super::{i2lebsp, lebs2ip};
 
     use group::Group;
-    use halo2_proofs::arithmetic::CurveExt;
-    use pasta_curves::pallas;
+    use pasta_curves::{arithmetic::CurveExt, pallas};
     use rand::{rngs::OsRng, RngCore};
 
     #[test]

@@ -3,7 +3,9 @@ pub mod fixed_bases;
 pub mod sinsemilla;
 pub mod util;
 
+#[cfg(feature = "std")]
 pub use fixed_bases::{NullifierK, OrchardFixedBases, OrchardFixedBasesFull, ValueCommitV, H};
+#[cfg(feature = "std")]
 pub use sinsemilla::{OrchardCommitDomains, OrchardHashDomains};
 
 /// $\mathsf{MerkleDepth^{Orchard}}$

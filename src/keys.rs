@@ -1,14 +1,16 @@
 //! Key structures for Orchard.
 
 use core::mem;
+#[cfg(feature = "std")]
 use std::io::{self, Read, Write};
 
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
+#[cfg(feature = "std")]
+use group::prime::PrimeCurveAffine;
 use group::{
     ff::{Field, PrimeField},
-    prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
 use pasta_curves::pallas;
@@ -395,6 +397,7 @@ impl FullViewingKey {
     /// Serializes the full viewing key as specified in [Zcash Protocol Spec § 5.6.4.4: Orchard Raw Full Viewing Keys][orchardrawfullviewingkeys]
     ///
     /// [orchardrawfullviewingkeys]: https://zips.z.cash/protocol/protocol.pdf#orchardfullviewingkeyencoding
+    #[cfg(feature = "std")]
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         writer.write_all(&self.to_bytes())
     }
@@ -402,6 +405,7 @@ impl FullViewingKey {
     /// Parses a full viewing key from its "raw" encoding as specified in [Zcash Protocol Spec § 5.6.4.4: Orchard Raw Full Viewing Keys][orchardrawfullviewingkeys]
     ///
     /// [orchardrawfullviewingkeys]: https://zips.z.cash/protocol/protocol.pdf#orchardfullviewingkeyencoding
+    #[cfg(feature = "std")]
     pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
         let mut data = [0u8; 96];
         reader.read_exact(&mut data)?;
@@ -856,6 +860,7 @@ impl SharedSecret {
     }
 
     /// Only for use in batched note encryption.
+    #[cfg(feature = "std")]
     pub(crate) fn batch_to_affine(
         shared_secrets: Vec<Option<Self>>,
     ) -> impl Iterator<Item = Option<pallas::Affine>> {

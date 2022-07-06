@@ -1,21 +1,31 @@
 //! Orchard fixed bases.
+#[cfg(feature = "std")]
 use super::{L_ORCHARD_SCALAR, L_VALUE};
+#[cfg(feature = "std")]
 use halo2_gadgets::ecc::{
     chip::{BaseFieldElem, FixedPoint, FullScalar, ShortScalar},
     FixedPoints,
 };
 
+#[cfg(feature = "std")]
 use pasta_curves::pallas;
 
+#[cfg(feature = "std")]
 pub mod commit_ivk_r;
+#[cfg(feature = "std")]
 pub mod note_commit_r;
+#[cfg(feature = "std")]
 pub mod nullifier_k;
+#[cfg(feature = "std")]
 pub mod spend_auth_g;
+#[cfg(feature = "std")]
 pub mod value_commit_r;
+#[cfg(feature = "std")]
 pub mod value_commit_v;
 
 /// SWU hash-to-curve personalization for the spending key base point and
 /// the nullifier base point K^Orchard
+#[cfg(feature = "std")]
 pub const ORCHARD_PERSONALIZATION: &str = "z.cash:Orchard";
 
 /// SWU hash-to-curve personalization for the value commitment generator
@@ -34,40 +44,48 @@ pub const NOTE_COMMITMENT_PERSONALIZATION: &str = "z.cash:Orchard-NoteCommit";
 pub const COMMIT_IVK_PERSONALIZATION: &str = "z.cash:Orchard-CommitIvk";
 
 /// Window size for fixed-base scalar multiplication
+#[cfg(feature = "std")]
 pub const FIXED_BASE_WINDOW_SIZE: usize = 3;
 
 /// $2^{`FIXED_BASE_WINDOW_SIZE`}$
+#[cfg(feature = "std")]
 pub const H: usize = 1 << FIXED_BASE_WINDOW_SIZE;
 
 /// Number of windows for a full-width scalar
+#[cfg(feature = "std")]
 pub const NUM_WINDOWS: usize =
     (L_ORCHARD_SCALAR + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
 
 /// Number of windows for a short signed scalar
+#[cfg(feature = "std")]
 pub const NUM_WINDOWS_SHORT: usize =
     (L_VALUE + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 // A sum type for both full-width and short bases. This enables us to use the
 // shared functionality of full-width and short fixed-base scalar multiplication.
+#[cfg(feature = "std")]
 pub enum OrchardFixedBases {
     Full(OrchardFixedBasesFull),
     NullifierK,
     ValueCommitV,
 }
 
+#[cfg(feature = "std")]
 impl From<OrchardFixedBasesFull> for OrchardFixedBases {
     fn from(full_width_base: OrchardFixedBasesFull) -> Self {
         Self::Full(full_width_base)
     }
 }
 
+#[cfg(feature = "std")]
 impl From<ValueCommitV> for OrchardFixedBases {
     fn from(_value_commit_v: ValueCommitV) -> Self {
         Self::ValueCommitV
     }
 }
 
+#[cfg(feature = "std")]
 impl From<NullifierK> for OrchardFixedBases {
     fn from(_nullifier_k: NullifierK) -> Self {
         Self::NullifierK
@@ -75,6 +93,7 @@ impl From<NullifierK> for OrchardFixedBases {
 }
 
 /// The Orchard fixed bases used in scalar mul with full-width scalars.
+#[cfg(feature = "std")]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OrchardFixedBasesFull {
     CommitIvkR,
@@ -91,12 +110,14 @@ pub struct NullifierK;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ValueCommitV;
 
+#[cfg(feature = "std")]
 impl FixedPoints<pallas::Affine> for OrchardFixedBases {
     type FullScalar = OrchardFixedBasesFull;
     type Base = NullifierK;
     type ShortScalar = ValueCommitV;
 }
 
+#[cfg(feature = "std")]
 impl FixedPoint<pallas::Affine> for OrchardFixedBasesFull {
     type FixedScalarKind = FullScalar;
 
@@ -128,6 +149,7 @@ impl FixedPoint<pallas::Affine> for OrchardFixedBasesFull {
     }
 }
 
+#[cfg(feature = "std")]
 impl FixedPoint<pallas::Affine> for NullifierK {
     type FixedScalarKind = BaseFieldElem;
 
@@ -144,6 +166,7 @@ impl FixedPoint<pallas::Affine> for NullifierK {
     }
 }
 
+#[cfg(feature = "std")]
 impl FixedPoint<pallas::Affine> for ValueCommitV {
     type FixedScalarKind = ShortScalar;
 

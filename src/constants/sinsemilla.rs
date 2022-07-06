@@ -1,9 +1,13 @@
 //! Sinsemilla generators
+#[cfg(feature = "std")]
 use super::{OrchardFixedBases, OrchardFixedBasesFull};
 use crate::spec::i2lebsp;
+#[cfg(feature = "std")]
 use halo2_gadgets::sinsemilla::{CommitDomains, HashDomains};
 
+#[cfg(feature = "std")]
 use group::ff::PrimeField;
+#[cfg(feature = "std")]
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 /// Number of bits of each message piece in $\mathsf{SinsemillaHashToPoint}$
@@ -75,6 +79,7 @@ pub(crate) fn i2lebsp_k(int: usize) -> [bool; K] {
     i2lebsp(int as u64)
 }
 
+#[cfg(feature = "std")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrchardHashDomains {
     NoteCommit,
@@ -82,6 +87,7 @@ pub enum OrchardHashDomains {
     MerkleCrh,
 }
 
+#[cfg(feature = "std")]
 #[allow(non_snake_case)]
 impl HashDomains<pallas::Affine> for OrchardHashDomains {
     fn Q(&self) -> pallas::Affine {
@@ -111,6 +117,7 @@ pub enum OrchardCommitDomains {
     CommitIvk,
 }
 
+#[cfg(feature = "std")]
 impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for OrchardCommitDomains {
     fn r(&self) -> OrchardFixedBasesFull {
         match self {
@@ -136,8 +143,8 @@ mod tests {
     };
     use group::{ff::PrimeField, Curve};
     use halo2_gadgets::sinsemilla::primitives::{CommitDomain, HashDomain};
-    use halo2_proofs::arithmetic::CurveAffine;
-    use halo2_proofs::pasta::pallas;
+    use pasta_curves::arithmetic::CurveAffine;
+    use pasta_curves::pallas;
     use rand::{self, rngs::OsRng, Rng};
 
     #[test]

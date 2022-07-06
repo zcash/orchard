@@ -4,9 +4,11 @@ use core::fmt;
 
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
+#[cfg(feature = "std")]
+use zcash_note_encryption::BatchDomain;
 use zcash_note_encryption::{
-    BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
-    OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE,
+    Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes, OutgoingCipherKey,
+    ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE,
     OUT_PLAINTEXT_SIZE,
 };
 
@@ -239,6 +241,7 @@ impl Domain for OrchardDomain {
     }
 }
 
+#[cfg(feature = "std")]
 impl BatchDomain for OrchardDomain {
     fn batch_kdf<'a>(
         items: impl Iterator<Item = (Option<Self::SharedSecret>, &'a EphemeralKeyBytes)>,
