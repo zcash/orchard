@@ -126,6 +126,11 @@ impl Note {
         }
     }
 
+    ///Get the seed randomness used by the note
+    pub fn random_seed(&self) -> &RandomSeed {
+        &self.rseed
+    }
+
     /// Generates a new note.
     ///
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
