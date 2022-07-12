@@ -552,7 +552,7 @@ impl DiversifierKey {
 pub struct Diversifier([u8; 11]);
 
 impl Diversifier {
-    ///Read a diversifier from a byte array.
+    /// Reads a diversifier from a byte array.
     pub fn from_bytes(d: [u8; 11]) -> Self {
         Diversifier(d)
     }
@@ -1050,7 +1050,8 @@ mod tests {
                 NoteValue::from_raw(tv.note_v),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
-            );
+            )
+            .unwrap();
 
             let cmx: ExtractedNoteCommitment = note.commitment().into();
             assert_eq!(cmx.to_bytes(), tv.note_cmx);

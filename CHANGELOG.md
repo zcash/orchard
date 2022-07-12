@@ -6,12 +6,12 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Changed
-- `note`:
-  - `RandomSeed` and its functions `from_bytes` and `as_bytes` now public
-  -  `Note::from_parts` now public
-  - added pub fn `random_seed`
-- `keys::Diversifier::from_bytes` now public
+### Added
+- `orchard::address::Address::diversifier`
+- `orchard::keys::Diversifier::from_bytes`
+- `orchard::note`:
+  - `RandomSeed`
+  - `Note::{from_parts, rseed}`
 
 ## [0.2.0] - 2022-06-24
 ### Added

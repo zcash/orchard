@@ -30,7 +30,8 @@ impl Address {
         Address { d, pk_d }
     }
 
-    pub(crate) fn diversifier(&self) -> Diversifier {
+    /// Returns the [`Diversifier`] for this `Address`.
+    pub fn diversifier(&self) -> Diversifier {
         self.d
     }
 
