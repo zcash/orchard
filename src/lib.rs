@@ -30,6 +30,7 @@ mod spec;
 pub mod tree;
 pub mod value;
 pub mod zip32;
+pub mod issuance;
 
 #[cfg(test)]
 mod test_vectors;
