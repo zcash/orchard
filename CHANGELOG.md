@@ -7,6 +7,17 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.2.0] - 2022-06-24
+### Added
+- `orchard::bundle::BatchValidator`
+- `orchard::note_encryption`:
+  - `CompactAction::from_parts`
+  - `CompactAction::nullifier`
+  - `OrchardDomain::for_nullifier`
+
+### Changed
+- Migrated to `halo2_proofs 0.2`.
+
 ## [0.1.0] - 2022-05-10
 ### Changed
 - Migrated to `bitvec 1`, `ff 0.12`, `group 0.12`, `incrementalmerkletree 0.3`,

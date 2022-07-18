@@ -5,6 +5,7 @@ use core::iter;
 use std::collections::HashMap;
 
 use ff::Field;
+use halo2_proofs::circuit::Value;
 use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
@@ -181,6 +182,7 @@ impl ActionInfo {
         let ak: SpendValidatingKey = self.spend.fvk.clone().into();
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
+        let note_type = self.spend.note.note_type();
 
         let note = Note::new(
             self.output.recipient,
@@ -225,26 +227,25 @@ impl ActionInfo {
                 },
             ),
             Circuit {
-                path: Some(self.spend.merkle_path.auth_path()),
-                pos: Some(self.spend.merkle_path.position()),
-                g_d_old: Some(sender_address.g_d()),
-                pk_d_old: Some(*sender_address.pk_d()),
-                v_old: Some(self.spend.note.value()),
-                //split: Some(self.spend.split_flag),
-                rho_old: Some(rho_old),
-                psi_old: Some(psi_old),
-                rcm_old: Some(rcm_old),
-                cm_old: Some(self.spend.note.commitment()),
-                alpha: Some(alpha),
-                ak: Some(ak),
-                nk: Some(*self.spend.fvk.nk()),
-                rivk: Some(self.spend.fvk.rivk(self.spend.scope)),
-                g_d_new: Some(note.recipient().g_d()),
-                pk_d_new: Some(*note.recipient().pk_d()),
-                v_new: Some(note.value()),
-                psi_new: Some(note.rseed().psi(&note.rho())),
-                rcm_new: Some(note.rseed().rcm(&note.rho())),
-                rcv: Some(self.rcv),
+                path: Value::known(self.spend.merkle_path.auth_path()),
+                pos: Value::known(self.spend.merkle_path.position()),
+                g_d_old: Value::known(sender_address.g_d()),
+                pk_d_old: Value::known(*sender_address.pk_d()),
+                v_old: Value::known(self.spend.note.value()),
+                rho_old: Value::known(rho_old),
+                psi_old: Value::known(psi_old),
+                rcm_old: Value::known(rcm_old),
+                cm_old: Value::known(self.spend.note.commitment()),
+                alpha: Value::known(alpha),
+                ak: Value::known(ak),
+                nk: Value::known(*self.spend.fvk.nk()),
+                rivk: Value::known(self.spend.fvk.rivk(self.spend.scope)),
+                g_d_new: Value::known(note.recipient().g_d()),
+                pk_d_new: Value::known(*note.recipient().pk_d()),
+                v_new: Value::known(note.value()),
+                psi_new: Value::known(note.rseed().psi(&note.rho())),
+                rcm_new: Value::known(note.rseed().rcm(&note.rho())),
+                rcv: Value::known(self.rcv),
             },
         )
     }
@@ -273,8 +274,16 @@ impl Builder {
 
     /// Adds a note to be spent in this transaction.
     ///
+    /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`] using the
+    ///   [`zcash_note_encryption`] crate instantiated with [`OrchardDomain`].
+    /// - `merkle_path` can be obtained using the [`incrementalmerkletree`] crate
+    ///   instantiated with [`MerkleHashOrchard`].
+    ///
     /// Returns an error if the given Merkle path does not have the required anchor for
     /// the given note.
+    ///
+    /// [`OrchardDomain`]: crate::note_encryption::OrchardDomain
+    /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
     pub fn add_spend(
         &mut self,
         fvk: FullViewingKey,

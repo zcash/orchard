@@ -246,7 +246,8 @@ The $\mathit{Commit}^{\mathsf{nf}}$ variants were considered to avoid directly d
 $\mathsf{cm}$ (which in its native type is a base field element, not a group element). We
 decided instead to follow Sapling by defining an intermediate representation of
 $\mathsf{cm}$ as a group element, that is only used in nullifier computation. The circuit
-already needs to compute $\mathsf{cm}$, so this improves performance by removing
+already needs to compute $\mathsf{cm}$, so this improves performance by removing an
+additional commitment calculation from the circuit.
 
 We also considered variants that used a choice of fixed bases $\mathcal{G_v}$ to provide
 domain separation for zero-valued notes. The most performant design (similar to the chosen

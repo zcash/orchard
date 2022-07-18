@@ -118,6 +118,11 @@ impl OrchardDomain {
             rho: *act.nullifier(),
         }
     }
+
+    /// Constructs a domain from a nullifier.
+    pub fn for_nullifier(nullifier: Nullifier) -> Self {
+        OrchardDomain { rho: nullifier }
+    }
 }
 
 impl Domain for OrchardDomain {
@@ -355,6 +360,28 @@ impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
     }
 }
 
+impl CompactAction {
+    /// Create a CompactAction from its constituent parts
+    pub fn from_parts(
+        nullifier: Nullifier,
+        cmx: ExtractedNoteCommitment,
+        ephemeral_key: EphemeralKeyBytes,
+        enc_ciphertext: [u8; 52],
+    ) -> Self {
+        Self {
+            nullifier,
+            cmx,
+            ephemeral_key,
+            enc_ciphertext,
+        }
+    }
+
+    ///Returns the nullifier of the note being spent.
+    pub fn nullifier(&self) -> Nullifier {
+        self.nullifier
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use proptest::prelude::*;
@@ -364,6 +391,7 @@ mod tests {
         EphemeralKeyBytes,
     };
 
+    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
     use crate::note::note_type::testing::arb_note_type;
     use crate::note::NoteType;
     use crate::{
@@ -381,10 +409,7 @@ mod tests {
         Address, Note,
     };
 
-    use super::{
-        orchard_parse_note_plaintext_without_memo, prf_ock_orchard, CompactAction, OrchardDomain,
-        OrchardNoteEncryption,
-    };
+    use super::orchard_parse_note_plaintext_without_memo;
 
     proptest! {
     #[test]
@@ -472,6 +497,7 @@ mod tests {
             };
 
             let note = Note::from_parts(recipient, value, note_type, rho, rseed);
+
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(

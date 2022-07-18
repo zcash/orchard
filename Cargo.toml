@@ -1,6 +1,6 @@
 [package]
 name = "orchard"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Jack Grigg <jack@electriccoin.co>",
@@ -29,8 +29,8 @@ blake2b_simd = "1"
 ff = "0.12"
 fpe = "0.5"
 group = "0.12"
-halo2_gadgets = "0.1"
-halo2_proofs = "0.1"
+halo2_gadgets = "0.2"
+halo2_proofs = "0.2"
 hex = "0.4"
 lazy_static = "1"
 memuse = { version = "0.2", features = ["nonempty"] }
@@ -44,18 +44,21 @@ subtle = "2.3"
 zcash_note_encryption = "0.1"
 incrementalmerkletree = "0.3"
 
+# Logging
+tracing = "0.1"
+
 # Developer tooling dependencies
 plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
-halo2_gadgets = { version = "0.1", features = ["test-dependencies"] }
+halo2_gadgets = { version = "0.2", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1.0.0"
 zcash_note_encryption = { version = "0.1", features = ["pre-zip-212"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-pprof = { version = "0.8", features = ["criterion", "flamegraph"] } # MSRV 1.56
+pprof = { version = "0.9", features = ["criterion", "flamegraph"] } # MSRV 1.56
 
 [lib]
 bench = false

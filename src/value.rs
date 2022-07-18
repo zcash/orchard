@@ -421,6 +421,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use crate::note::note_type::testing::{arb_note_type, native_note_type};
+
     use crate::note::NoteType;
     use proptest::prelude::*;
 
@@ -499,8 +500,8 @@ mod tests {
                 ), prop::collection::vec(arb_trapdoor(), n_values))
             ),
         ) {
-            // Test with native and arbitrary note types
-            _bsk_consistent_with_bvk(&native_values, &arb_values, &neg_trapdoors);
+            // Test with native note type (zec)
+             _bsk_consistent_with_bvk(&native_values, &arb_values, &neg_trapdoors);
         }
     }
 }
