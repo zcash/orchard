@@ -1,8 +1,7 @@
 //! In-band secret distribution for Orchard bundles.
 
-use core::fmt;
-
 use blake2b_simd::{Hash, Params};
+use core::fmt;
 use group::ff::PrimeField;
 use zcash_note_encryption::{
     BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
@@ -24,6 +23,15 @@ use crate::{
 };
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
+
+/// The size of the encoding of a ZSA asset type.
+const ZSA_TYPE_SIZE: usize = 32;
+/// The size of the ZSA variant of COMPACT_NOTE_SIZE.
+const COMPACT_ZSA_NOTE_SIZE: usize = COMPACT_NOTE_SIZE + ZSA_TYPE_SIZE;
+/// The size of the memo.
+const MEMO_SIZE: usize = NOTE_PLAINTEXT_SIZE - COMPACT_NOTE_SIZE;
+/// The size of the ZSA variant of the memo.
+const ZSA_MEMO_SIZE: usize = NOTE_PLAINTEXT_SIZE - COMPACT_ZSA_NOTE_SIZE;
 
 /// Defined in [Zcash Protocol Spec § 5.4.2: Pseudo Random Functions][concreteprfs].
 ///
@@ -50,6 +58,8 @@ pub(crate) fn prf_ock_orchard(
     )
 }
 
+/// Domain-specific requirements:
+/// - If the note version is 3, the `plaintext` must contain a valid encoding of a ZSA asset type.
 fn orchard_parse_note_plaintext_without_memo<F>(
     domain: &OrchardDomain,
     plaintext: &[u8],
@@ -61,9 +71,8 @@ where
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
     // Check note plaintext version
-    if plaintext[0] != 0x02 {
-        return None;
-    }
+    // and parse the asset type accordingly.
+    let note_type = parse_version_and_asset_type(plaintext)?;
 
     // The unwraps below are guaranteed to succeed by the assertion above
     let diversifier = Diversifier::from_bytes(plaintext[1..12].try_into().unwrap());
@@ -76,9 +85,23 @@ where
     let pk_d = get_validated_pk_d(&diversifier)?;
 
     let recipient = Address::from_parts(diversifier, pk_d);
-    // TODO: add note_type
-    let note = Note::from_parts(recipient, value, NoteType::native(), domain.rho, rseed);
+
+    let note = Note::from_parts(recipient, value, note_type, domain.rho, rseed);
     Some((note, recipient))
+}
+
+fn parse_version_and_asset_type(plaintext: &[u8]) -> Option<NoteType> {
+    // TODO: make this constant-time?
+    match plaintext[0] {
+        0x02 => Some(NoteType::native()),
+        0x03 if plaintext.len() >= COMPACT_ZSA_NOTE_SIZE => {
+            let bytes = &plaintext[COMPACT_NOTE_SIZE..COMPACT_ZSA_NOTE_SIZE]
+                .try_into()
+                .unwrap();
+            NoteType::from_bytes(bytes).into()
+        }
+        _ => None,
+    }
 }
 
 /// Orchard-specific note encryption logic.
@@ -114,7 +137,7 @@ impl Domain for OrchardDomain {
     type ValueCommitment = ValueCommitment;
     type ExtractedCommitment = ExtractedNoteCommitment;
     type ExtractedCommitmentBytes = [u8; 32];
-    type Memo = [u8; 512]; // TODO use a more interesting type
+    type Memo = [u8; MEMO_SIZE]; // TODO use a more interesting type
 
     fn derive_esk(note: &Self::Note) -> Option<Self::EphemeralSecretKey> {
         Some(note.esk())
@@ -154,13 +177,23 @@ impl Domain for OrchardDomain {
         _: &Self::Recipient,
         memo: &Self::Memo,
     ) -> NotePlaintextBytes {
+        let is_native: bool = note.note_type().is_native().into();
+
         let mut np = [0; NOTE_PLAINTEXT_SIZE];
-        np[0] = 0x02;
+        np[0] = if is_native { 0x02 } else { 0x03 };
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
         // todo: add note_type
         np[20..52].copy_from_slice(note.rseed().as_bytes());
-        np[52..].copy_from_slice(memo);
+        if is_native {
+            np[52..].copy_from_slice(memo);
+        } else {
+            let zsa_type = note.note_type().to_bytes();
+            np[52..84].copy_from_slice(&zsa_type);
+            let short_memo = &memo[0..memo.len() - ZSA_TYPE_SIZE];
+            np[84..].copy_from_slice(short_memo);
+            // TODO: handle full-size memo or make short_memo explicit.
+        };
         NotePlaintextBytes(np)
     }
 
@@ -227,9 +260,20 @@ impl Domain for OrchardDomain {
     }
 
     fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> Self::Memo {
-        plaintext.0[COMPACT_NOTE_SIZE..NOTE_PLAINTEXT_SIZE]
-            .try_into()
-            .unwrap()
+        let mut memo = [0; MEMO_SIZE];
+        match get_note_version(plaintext) {
+            0x02 => {
+                let full_memo = &plaintext.0[COMPACT_NOTE_SIZE..NOTE_PLAINTEXT_SIZE];
+                memo.copy_from_slice(full_memo);
+            }
+            0x03 => {
+                // ZSA note plaintext have a shorter memo.
+                let short_memo = &plaintext.0[COMPACT_ZSA_NOTE_SIZE..NOTE_PLAINTEXT_SIZE];
+                memo[..ZSA_MEMO_SIZE].copy_from_slice(short_memo);
+            }
+            _ => {}
+        };
+        memo
     }
 
     fn extract_pk_d(out_plaintext: &OutPlaintextBytes) -> Option<Self::DiversifiedTransmissionKey> {
@@ -257,6 +301,10 @@ impl BatchDomain for OrchardDomain {
     }
 }
 
+fn get_note_version(plaintext: &NotePlaintextBytes) -> u8 {
+    plaintext.0[0]
+}
+
 /// Implementation of in-band secret distribution for Orchard bundles.
 pub type OrchardNoteEncryption = zcash_note_encryption::NoteEncryption<OrchardDomain>;
 
@@ -279,7 +327,7 @@ pub struct CompactAction {
     nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
     ephemeral_key: EphemeralKeyBytes,
-    enc_ciphertext: [u8; 52],
+    enc_ciphertext: [u8; COMPACT_NOTE_SIZE],
 }
 
 impl fmt::Debug for CompactAction {
@@ -294,7 +342,7 @@ impl<T> From<&Action<T>> for CompactAction {
             nullifier: *action.nullifier(),
             cmx: *action.cmx(),
             ephemeral_key: action.ephemeral_key(),
-            enc_ciphertext: action.encrypted_note().enc_ciphertext[..52]
+            enc_ciphertext: action.encrypted_note().enc_ciphertext[..COMPACT_NOTE_SIZE]
                 .try_into()
                 .unwrap(),
         }
@@ -339,13 +387,13 @@ impl CompactAction {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use rand::rngs::OsRng;
     use zcash_note_encryption::{
-        try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk,
+        try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk, Domain,
         EphemeralKeyBytes,
     };
 
-    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
     use crate::note::NoteType;
     use crate::{
         action::Action,
@@ -353,11 +401,54 @@ mod tests {
             DiversifiedTransmissionKey, Diversifier, EphemeralSecretKey, IncomingViewingKey,
             OutgoingViewingKey,
         },
-        note::{ExtractedNoteCommitment, Nullifier, RandomSeed, TransmittedNoteCiphertext},
+        note::{
+            testing::arb_note, ExtractedNoteCommitment, Nullifier, RandomSeed,
+            TransmittedNoteCiphertext,
+        },
         primitives::redpallas,
         value::{NoteValue, ValueCommitment},
         Address, Note,
     };
+
+    use super::{get_note_version, orchard_parse_note_plaintext_without_memo};
+    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
+
+    proptest! {
+    #[test]
+    fn test_encoding_roundtrip(
+        note in arb_note(NoteValue::from_raw(10)),
+    ) {
+        let memo = &crate::test_vectors::note_encryption::test_vectors()[0].memo;
+
+        // Encode.
+        let plaintext = OrchardDomain::note_plaintext_bytes(&note, &note.recipient(), memo);
+
+        // Decode.
+        let domain = OrchardDomain { rho: note.rho() };
+        let parsed_version = get_note_version(&plaintext);
+        let parsed_memo = domain.extract_memo(&plaintext);
+
+        let (parsed_note, parsed_recipient) = orchard_parse_note_plaintext_without_memo(&domain, &plaintext.0,
+            |diversifier| {
+                assert_eq!(diversifier, &note.recipient().diversifier());
+                Some(*note.recipient().pk_d())
+            }
+        ).expect("Plaintext parsing failed");
+
+        // Check.
+        assert_eq!(parsed_note, note);
+        assert_eq!(parsed_recipient, note.recipient());
+        if parsed_note.note_type().is_native().into() {
+            assert_eq!(parsed_version, 0x02);
+            assert_eq!(&parsed_memo, memo);
+        } else {
+            assert_eq!(parsed_version, 0x03);
+            let mut short_memo = *memo;
+            short_memo[512 - 32..].copy_from_slice(&[0; 32]);
+            assert_eq!(parsed_memo, short_memo);
+        }
+    }
+    }
 
     #[test]
     fn test_vectors() {
@@ -400,7 +491,13 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let note = Note::from_parts(recipient, value, NoteType::native(), rho, rseed);
+
+            let note_type = match tv.note_type {
+                None => NoteType::native(),
+                Some(type_bytes) => NoteType::from_bytes(&type_bytes).unwrap(),
+            };
+
+            let note = Note::from_parts(recipient, value, note_type, rho, rseed);
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(
@@ -439,7 +536,8 @@ mod tests {
                     assert_eq!(decrypted_note, note);
                     assert_eq!(decrypted_to, recipient);
                 }
-                None => panic!("Compact note decryption failed"),
+                None => assert!(tv.note_type.is_some(), "Compact note decryption failed"),
+                // Ignore that ZSA notes are not detected in compact decryption.
             }
 
             match try_output_recovery_with_ovk(&domain, &ovk, &action, &cv_net, &tv.c_out) {

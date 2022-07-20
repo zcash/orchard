@@ -235,6 +235,7 @@ impl Note {
             g_d.to_bytes(),
             self.recipient.pk_d().to_bytes(),
             self.value,
+            self.note_type,
             self.rho.0,
             self.rseed.psi(&self.rho),
             self.rseed.rcm(&self.rho),

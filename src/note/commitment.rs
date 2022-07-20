@@ -7,7 +7,11 @@ use pasta_curves::pallas;
 use subtle::{ConstantTimeEq, CtOption};
 
 use crate::{
-    constants::{fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, L_ORCHARD_BASE},
+    constants::{
+        fixed_bases::{NOTE_COMMITMENT_PERSONALIZATION, NOTE_ZSA_COMMITMENT_PERSONALIZATION},
+        L_ORCHARD_BASE,
+    },
+    note::note_type::NoteType,
     spec::extract_p,
     value::NoteValue,
 };
@@ -41,22 +45,46 @@ impl NoteCommitment {
         g_d: [u8; 32],
         pk_d: [u8; 32],
         v: NoteValue,
+        note_type: NoteType,
         rho: pallas::Base,
         psi: pallas::Base,
         rcm: NoteCommitTrapdoor,
     ) -> CtOption<Self> {
-        let domain = sinsemilla::CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
-        domain
-            .commit(
-                iter::empty()
-                    .chain(BitArray::<_, Lsb0>::new(g_d).iter().by_vals())
-                    .chain(BitArray::<_, Lsb0>::new(pk_d).iter().by_vals())
-                    .chain(v.to_le_bits().iter().by_vals())
-                    .chain(rho.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE))
-                    .chain(psi.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE)),
-                &rcm.0,
-            )
-            .map(NoteCommitment)
+        let g_d_bits = BitArray::<_, Lsb0>::new(g_d);
+        let pk_d_bits = BitArray::<_, Lsb0>::new(pk_d);
+        let v_bits = v.to_le_bits();
+        let rho_bits = rho.to_le_bits();
+        let psi_bits = psi.to_le_bits();
+
+        let zec_note_bits = iter::empty()
+            .chain(g_d_bits.iter().by_vals())
+            .chain(pk_d_bits.iter().by_vals())
+            .chain(v_bits.iter().by_vals())
+            .chain(rho_bits.iter().by_vals().take(L_ORCHARD_BASE))
+            .chain(psi_bits.iter().by_vals().take(L_ORCHARD_BASE));
+
+        // TODO: make this constant-time.
+        if note_type.is_native().into() {
+            // Commit to ZEC notes as per the Orchard protocol.
+            Self::commit(NOTE_COMMITMENT_PERSONALIZATION, zec_note_bits, rcm)
+        } else {
+            // Commit to non-ZEC notes as per the ZSA protocol.
+            // Append the note type to the Orchard note encoding.
+            let type_bits = BitArray::<_, Lsb0>::new(note_type.to_bytes());
+            let zsa_note_bits = zec_note_bits.chain(type_bits.iter().by_vals());
+
+            // Commit in a different domain than Orchard notes.
+            Self::commit(NOTE_ZSA_COMMITMENT_PERSONALIZATION, zsa_note_bits, rcm)
+        }
+    }
+
+    fn commit(
+        personalization: &str,
+        bits: impl Iterator<Item = bool>,
+        rcm: NoteCommitTrapdoor,
+    ) -> CtOption<Self> {
+        let domain = sinsemilla::CommitDomain::new(personalization);
+        domain.commit(bits, &rcm.0).map(NoteCommitment)
     }
 }
 

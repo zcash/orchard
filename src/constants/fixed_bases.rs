@@ -34,6 +34,9 @@ pub const VALUE_COMMITMENT_R_BYTES: [u8; 1] = *b"r";
 /// SWU hash-to-curve personalization for the note commitment generator
 pub const NOTE_COMMITMENT_PERSONALIZATION: &str = "z.cash:Orchard-NoteCommit";
 
+/// SWU hash-to-curve personalization for the ZSA note commitment generator
+pub const NOTE_ZSA_COMMITMENT_PERSONALIZATION: &str = "z.cash:ZSA-NoteCommit";
+
 /// SWU hash-to-curve personalization for the IVK commitment generator
 pub const COMMIT_IVK_PERSONALIZATION: &str = "z.cash:Orchard-CommitIvk";
 
