@@ -1,7 +1,7 @@
 use group::GroupEncoding;
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
-use subtle::CtOption;
+use subtle::{Choice, ConstantTimeEq, CtOption};
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
 use crate::keys::IssuerValidatingKey;
@@ -15,7 +15,7 @@ const MAX_ASSET_DESCRIPTION_SIZE: usize = 512;
 // the hasher used to derive the assetID
 #[allow(non_snake_case)]
 fn assetID_hasher(msg: Vec<u8>) -> pallas::Point {
-    // TODO(zsa) replace personalization, will require circuit change?
+    // TODO(zsa) replace personalization
     pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION)(&msg)
 }
 
@@ -50,6 +50,16 @@ impl NoteType {
     pub fn native() -> Self {
         NoteType(assetID_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
     }
+
+    /// The base point used in value commitments.
+    pub fn cv_base(&self) -> pallas::Point {
+        self.0
+    }
+
+    /// Whether this note represents a native or ZSA asset.
+    pub fn is_native(&self) -> Choice {
+        self.0.ct_eq(&Self::native().0)
+    }
 }
 
 /// Generators for property testing.
@@ -58,20 +68,25 @@ impl NoteType {
 pub mod testing {
     use proptest::prelude::*;
 
-    use super::NoteType;
-
     use crate::keys::{testing::arb_spending_key, IssuerAuthorizingKey, IssuerValidatingKey};
+
+    use super::NoteType;
 
     prop_compose! {
         /// Generate a uniformly distributed note type
         pub fn arb_note_type()(
+            is_native in prop::bool::ANY,
             sk in arb_spending_key(),
             bytes32a in prop::array::uniform32(prop::num::u8::ANY),
             bytes32b in prop::array::uniform32(prop::num::u8::ANY),
         ) -> NoteType {
-            let bytes64 = [bytes32a, bytes32b].concat();
-            let isk = IssuerAuthorizingKey::from(&sk);
-            NoteType::derive(&IssuerValidatingKey::from(&isk), bytes64)
+            if is_native {
+                NoteType::native()
+            } else {
+                let bytes64 = [bytes32a, bytes32b].concat();
+                let isk = IssuerAuthorizingKey::from(&sk);
+                NoteType::derive(&IssuerValidatingKey::from(&isk), bytes64)
+            }
         }
     }
 }

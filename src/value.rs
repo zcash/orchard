@@ -318,7 +318,7 @@ impl ValueCommitment {
             pallas::Scalar::from(abs_value)
         };
 
-        let V_zsa = note_type.0;
+        let V_zsa = note_type.cv_base();
 
         ValueCommitment(V_zsa * value + R * rcv.0)
     }
