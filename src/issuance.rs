@@ -1,37 +1,23 @@
+use core::fmt;
 use memuse::DynamicUsage;
+use nonempty::NonEmpty;
 
-use crate::{
-    note::{ExtractedNoteCommitment, TransmittedNoteCiphertext},
-    primitives::redpallas::{self, SpendAuth},
-};
-
-/// An issue action applied to the global ledger.
-///
-/// Externally, this creates a zsa note (adding a commitment to the global ledger).
-#[derive(Debug, Clone)]
-pub struct IssueAction<A> {
-    /// The issuer key for the note being created.
-    ik: redpallas::VerificationKey<SpendAuth>,
-    /// A commitment to the new note being created.
-    cmx: ExtractedNoteCommitment,
-    /// The transmitted note ciphertext.
-    encrypted_note: TransmittedNoteCiphertext,
-    /// The authorization for this action.
-    authorization: A,
-}
+use crate::{note::{ExtractedNoteCommitment, TransmittedNoteCiphertext}, Note, primitives::redpallas::{self, SpendAuth}};
+use crate::bundle::Authorization;
+use crate::note::NoteType;
 
 impl<T> IssueAction<T> {
     /// Constructs an `IssueAction` from its constituent parts.
     pub fn from_parts(
         ik: redpallas::VerificationKey<SpendAuth>,
         cmx: ExtractedNoteCommitment,
-        encrypted_note: TransmittedNoteCiphertext,
+        note: Note,
         authorization: T,
     ) -> Self {
         IssueAction {
             ik,
             cmx,
-            encrypted_note,
+            note,
             authorization,
         }
     }
@@ -46,9 +32,9 @@ impl<T> IssueAction<T> {
         &self.cmx
     }
 
-    /// Returns the encrypted note ciphertext.
-    pub fn encrypted_note(&self) -> &TransmittedNoteCiphertext {
-        &self.encrypted_note
+    /// Returns the issued note. ciphertext.
+    pub fn note(&self) -> &Note {
+        &self.note
     }
 
     /// Returns the authorization for this action.
@@ -61,7 +47,7 @@ impl<T> IssueAction<T> {
         IssueAction {
             ik: self.ik,
             cmx: self.cmx,
-            encrypted_note: self.encrypted_note,
+            note: self.note,
             authorization: step(self.authorization),
         }
     }
@@ -71,7 +57,7 @@ impl<T> IssueAction<T> {
         Ok(IssueAction {
             ik: self.ik,
             cmx: self.cmx,
-            encrypted_note: self.encrypted_note,
+            note: self.note,
             authorization: step(self.authorization)?,
         })
     }
@@ -163,3 +149,54 @@ pub(crate) mod testing {
         }
     }
 }
+
+
+/// An issue action applied to the global ledger.
+///
+/// Externally, this creates a zsa note (adding a commitment to the global ledger).
+#[derive(Debug, Clone)]
+pub struct IssueAction<A> {
+    /// The issuer key for the note being created.
+    ik: redpallas::VerificationKey<SpendAuth>,
+    // Asset description for verification.
+    asset_desc: Vec<u8>,
+    /// A commitment to the new note being created.
+    cmx: ExtractedNoteCommitment,
+    /// the newly issued note.
+    note: Note, //TODO: serialize using note_encryption::note_plaintext_bytes()
+
+    /// The authorization for this action.
+    authorization: A,
+}
+
+/// An issue action applied to the global ledger.
+///
+/// Externally, this creates a zsa note (adding a commitment to the global ledger).
+#[derive(Debug, Clone)]
+pub struct FinalizeIssueAction<A> {
+    /// The issuer key for the note being created.
+    ik: redpallas::VerificationKey<SpendAuth>,
+    /// The type of this note.
+    note_type: NoteType,
+    /// The authorization for this action.
+    authorization: A,
+}
+
+// /// Defines the authorization type of an Orchard bundle.
+// pub trait Authorization: fmt::Debug {
+//     /// The authorization type of an Orchard action.
+//     type SpendAuth: fmt::Debug;
+// }
+
+/// A bundle of actions to be applied to the ledger.
+#[derive(Clone)]
+pub struct IssueBundle<T: Authorization> {
+    /// The list of issue actions that make up this bundle.
+    actions: NonEmpty<IssueAction<T::SpendAuth>>,
+    /// The list of finalization actions that make up this bundle.
+    finalizations: NonEmpty<FinalizeIssueAction<T::SpendAuth>>,
+    /// The authorization for this bundle.
+    authorization: T,
+}
+
+
