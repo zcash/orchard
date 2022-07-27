@@ -4,7 +4,8 @@ use memuse::DynamicUsage;
 use nonempty::NonEmpty;
 
 use crate::bundle::Authorization;
-use crate::{primitives::redpallas::{self, SpendAuth},
+use crate::{
+    primitives::redpallas::{self, SpendAuth},
     Note,
 };
 
