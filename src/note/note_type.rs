@@ -2,6 +2,7 @@ use group::GroupEncoding;
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
 use std::hash::{Hash, Hasher};
+
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
@@ -81,20 +82,27 @@ impl PartialEq for NoteType {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use super::NoteType;
+
     use proptest::prelude::*;
 
     use crate::keys::{testing::arb_spending_key, IssuerAuthorizingKey, IssuerValidatingKey};
 
+
     prop_compose! {
         /// Generate a uniformly distributed note type
         pub fn arb_note_type()(
+            is_native in prop::bool::ANY,
             sk in arb_spending_key(),
             bytes32a in prop::array::uniform32(prop::num::u8::ANY),
             bytes32b in prop::array::uniform32(prop::num::u8::ANY),
         ) -> NoteType {
-            let bytes64 = [bytes32a, bytes32b].concat();
-            let isk = IssuerAuthorizingKey::from(&sk);
-            NoteType::derive(&IssuerValidatingKey::from(&isk), bytes64)
+            if is_native {
+                NoteType::native()
+            } else {
+                let bytes64 = [bytes32a, bytes32b].concat();
+                let isk = IssuerAuthorizingKey::from(&sk);
+                NoteType::derive(&IssuerValidatingKey::from(&isk), bytes64)
+            }
         }
     }
 

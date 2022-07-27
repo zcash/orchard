@@ -1,8 +1,7 @@
 //! In-band secret distribution for Orchard bundles.
 
-use core::fmt;
-
 use blake2b_simd::{Hash, Params};
+use core::fmt;
 use group::ff::PrimeField;
 use zcash_note_encryption::{
     BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
@@ -191,7 +190,7 @@ impl Domain for OrchardDomain {
         } else {
             let zsa_type = note.note_type().to_bytes();
             np[52..84].copy_from_slice(&zsa_type);
-            let short_memo = &memo[0..memo.len() - 32];
+            let short_memo = &memo[0..memo.len() - ZSA_TYPE_SIZE];
             np[84..].copy_from_slice(short_memo);
             // TODO: handle full-size memo or make short_memo explicit.
         };
@@ -262,7 +261,7 @@ impl Domain for OrchardDomain {
 
     fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> Self::Memo {
         let mut memo = [0; MEMO_SIZE];
-        match plaintext.0[0] {
+        match get_note_version(plaintext) {
             0x02 => {
                 let full_memo = &plaintext.0[COMPACT_NOTE_SIZE..NOTE_PLAINTEXT_SIZE];
                 memo.copy_from_slice(full_memo);
@@ -300,6 +299,10 @@ impl BatchDomain for OrchardDomain {
             })
             .collect()
     }
+}
+
+fn get_note_version(plaintext: &NotePlaintextBytes) -> u8 {
+    plaintext.0[0]
 }
 
 /// Implementation of in-band secret distribution for Orchard bundles.
@@ -392,7 +395,6 @@ mod tests {
     };
 
     use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
-    use crate::note::note_type::testing::arb_note_type;
     use crate::note::NoteType;
     use crate::{
         action::Action,
@@ -409,13 +411,12 @@ mod tests {
         Address, Note,
     };
 
-    use super::orchard_parse_note_plaintext_without_memo;
+    use super::{get_note_version, orchard_parse_note_plaintext_without_memo};
 
     proptest! {
     #[test]
     fn test_encoding_roundtrip(
         note in arb_note(NoteValue::from_raw(10)),
-        note_type in arb_note_type(),
     ) {
         let memo = &crate::test_vectors::note_encryption::test_vectors()[0].memo;
 
@@ -424,7 +425,7 @@ mod tests {
 
         // Decode.
         let domain = OrchardDomain { rho: note.rho() };
-        let parsed_version = plaintext.0[0];
+        let parsed_version = get_note_version(&plaintext);
         let parsed_memo = domain.extract_memo(&plaintext);
 
         let (parsed_note, parsed_recipient) = orchard_parse_note_plaintext_without_memo(&domain, &plaintext.0,
@@ -437,7 +438,8 @@ mod tests {
         // Check.
         assert_eq!(parsed_note, note);
         assert_eq!(parsed_recipient, note.recipient());
-        if note_type.is_native().into() {
+
+        if parsed_note.note_type().is_native().into() {
             assert_eq!(parsed_version, 0x02);
             assert_eq!(&parsed_memo, memo);
         } else {
@@ -497,7 +499,6 @@ mod tests {
             };
 
             let note = Note::from_parts(recipient, value, note_type, rho, rseed);
-
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(
