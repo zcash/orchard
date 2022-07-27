@@ -232,6 +232,7 @@ impl ActionInfo {
                 g_d_old: Value::known(sender_address.g_d()),
                 pk_d_old: Value::known(*sender_address.pk_d()),
                 v_old: Value::known(self.spend.note.value()),
+                // split_flag: Value::known(self.spend.split_flag),
                 rho_old: Value::known(rho_old),
                 psi_old: Value::known(psi_old),
                 rcm_old: Value::known(rcm_old),
@@ -897,29 +898,6 @@ mod tests {
                 None,
             )
             .unwrap();
-        //
-        // builder
-        //     .add_recipient(
-        //         None,
-        //         recipient,
-        //         NoteValue::from_raw(3),
-        //         NoteType::native(),
-        //         None,
-        //     )
-        //     .unwrap();
-        //
-        //
-        // let isk = IssuerAuthorizingKey::from(&sk);
-        //
-        // builder
-        //     .add_recipient(
-        //         None,
-        //         recipient,
-        //         NoteValue::from_raw(5),
-        //         NoteType::derive(&IssuerValidatingKey::from(&isk), Vec::new()),
-        //         None,
-        //     )
-        //     .unwrap();
 
         let bundle: Bundle<Authorized, i64> = builder
             .build(&mut rng)
