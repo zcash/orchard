@@ -812,7 +812,6 @@ pub mod testing {
                 arb_address().prop_flat_map(move |a| {
                     arb_positive_note_value(MAX_NOTE_VALUE / n_recipients as u64)
                         .prop_map(move |v| {
-                            // replace note type with arb_note_type
                             (a,v, NoteType::native())
                         })
                 }),
