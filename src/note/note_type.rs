@@ -87,7 +87,6 @@ pub mod testing {
 
     use crate::keys::{testing::arb_spending_key, IssuerAuthorizingKey, IssuerValidatingKey};
 
-
     prop_compose! {
         /// Generate a uniformly distributed note type
         pub fn arb_note_type()(
