@@ -174,6 +174,15 @@ impl ValueSum {
             sign,
         )
     }
+
+    /// Commits this value with the corresponding trapdoor `rcv` by $ValueCommit^Orchard$
+    ///
+    /// Defined in [Zcash Protocol Spec § 5.4.8.3: Homomorphic Pedersen commitments (Sapling and Orchard)][concretehomomorphiccommit].
+    ///
+    /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
+    pub fn commit(self, rcv: ValueCommitTrapdoor) -> ValueCommitment {
+        ValueCommitment::derive(self, rcv)
+    }
 }
 
 impl Add for ValueSum {
