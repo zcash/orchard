@@ -218,6 +218,11 @@ impl ValueCommitTrapdoor {
     pub(crate) fn inner(&self) -> pallas::Scalar {
         self.0
     }
+
+    /// Constructs `ValueCommitTrapdoor` from the byte reprsentation of a scalar
+    pub fn from_bytes(bytes: [u8; 32]) -> CtOption<Self> {
+        pallas::Scalar::from_repr(bytes).map(ValueCommitTrapdoor)
+    }
 }
 
 impl Add<&ValueCommitTrapdoor> for ValueCommitTrapdoor {
