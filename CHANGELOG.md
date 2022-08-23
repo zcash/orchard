@@ -10,6 +10,7 @@ and this project adheres to Rust's notion of
 ## [0.2.0] - 2022-06-24
 ### Added
 - `orchard::bundle::BatchValidator`
+- `orchard::builder::Builder::value_balance`
 - `orchard::note_encryption`:
   - `CompactAction::from_parts`
   - `CompactAction::nullifier`
