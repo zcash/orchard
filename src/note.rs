@@ -160,6 +160,7 @@ impl Note {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
+    /// TODO zsa: remove note_type
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Nullifier>,

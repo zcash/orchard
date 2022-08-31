@@ -12,7 +12,7 @@ use group::{
     Curve, GroupEncoding,
 };
 use pasta_curves::pallas;
-use rand::RngCore;
+use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
 
@@ -207,6 +207,13 @@ impl IssuerAuthorizingKey {
     /// Derives isk from sk. Internal use only, does not enforce all constraints.
     fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
         to_scalar(PrfExpand::ZsaIsk.expand(&sk.0))
+    }
+
+    /// RXXXX
+    ///
+    /// XXXXX
+    pub fn sign(&self, rng: &mut (impl RngCore + CryptoRng), msg: &[u8]) -> redpallas::Signature<SpendAuth> {
+        self.0.sign(rng, msg)
     }
 }
 
