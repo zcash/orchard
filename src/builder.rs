@@ -863,7 +863,6 @@ mod tests {
     use rand::rngs::OsRng;
 
     use super::Builder;
-    // use crate::keys::{IssuerAuthorizingKey, IssuerValidatingKey};
     use crate::note::NoteType;
     use crate::{
         bundle::{Authorized, Bundle, Flags},

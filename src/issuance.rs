@@ -115,7 +115,6 @@ pub(crate) mod testing {
     use nonempty::NonEmpty;
     use proptest::prelude::*;
     use rand::{rngs::StdRng, SeedableRng};
-    use reddsa::orchard::SpendAuth;
 
     use crate::{note::testing::arb_note, value::NoteValue};
 
@@ -228,13 +227,13 @@ impl IssueBundle<Unauthorized> {
     }
 }
 
+impl Default for IssueBundle<Unauthorized> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: IssueAuth> IssueBundle<T> {
-    // /// Constructs a new `IssueBundle`.
-    // pub fn new() -> IssueBundle<Unauthorized> {
-    //     IssueBundle {
-    //         actions: Vec::new(),
-    //     }
-    // }
 
     /// Return the actions for a given `IssueBundle`.
     pub fn actions(&self) -> &Vec<IssueAction<T>> {
@@ -276,6 +275,7 @@ impl IssueBundle<Unauthorized> {
         asset_desc: String,
         recipient: Address,
         value: NoteValue,
+        finalize: bool,
         // memo: Option<[u8; 512]>,
         mut rng: impl RngCore,
     ) -> Result<NoteType, Error> {
@@ -297,15 +297,17 @@ impl IssueBundle<Unauthorized> {
             .find(|issue_action| issue_action.ik.eq(&ik) && issue_action.asset_desc.eq(&asset_desc))
         {
             // Append to an existing IssueAction.
-            Some(issue_action) => {
-                if issue_action.finalize {
+            Some(action) => {
+                if action.finalize {
                     return Err(Error::IssueActionAlreadyFinalized);
                 };
-                issue_action.notes.push(note);
+                action.notes.push(note);
+                finalize.then(|| action.finalize = true);
             }
             // Insert a new IssueAction.
             None => {
-                let action = IssueAction::new(ik.clone(), asset_desc, &note);
+                let mut action = IssueAction::new(ik.clone(), asset_desc, &note);
+                finalize.then(|| action.finalize = true);
                 self.actions.push(action);
             }
         }
@@ -340,26 +342,6 @@ impl IssueBundle<Unauthorized> {
 
         Ok(())
     }
-
-    /// Finalizes a given `IssueAction` using a `NoteType`
-    ///
-    /// # Panics
-    ///
-    /// Panics if `asset_desc` is empty or longer than 512 bytes.
-    pub fn finalize_action_by_type(&mut self, note_type: NoteType) -> Result<(), Error> {
-        match self.actions.iter_mut().find(|issue_action| {
-            NoteType::derive(&issue_action.ik, &issue_action.asset_desc).eq(&note_type)
-        }) {
-            Some(issue_action) => {
-                issue_action.finalize = true;
-            }
-            None => {
-                return Err(Error::IssueActionNotFound);
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Errors produced during the issuance process
@@ -371,14 +353,14 @@ pub enum Error {
     IssueActionNotFound,
 }
 
+#[cfg(test)]
 mod tests {
+    use super::IssueBundle;
     use crate::issuance::Error::{IssueActionAlreadyFinalized, IssueActionNotFound};
-    use crate::issuance::IssueBundle;
     use crate::keys::{
         FullViewingKey, IssuerAuthorizingKey, IssuerValidatingKey, Scope, SpendingKey,
     };
     use crate::value::NoteValue;
-    use aes::cipher::generic_array::typenum::private::IsEqualPrivate;
     use rand::rngs::OsRng;
 
     #[test]
@@ -402,6 +384,7 @@ mod tests {
                 str.clone(),
                 recipient,
                 NoteValue::from_raw(5),
+                false,
                 rng,
             )
             .unwrap();
@@ -409,9 +392,10 @@ mod tests {
         let another_note_type = bundle
             .add_recipient(
                 ik.clone(),
-                str.clone(),
+                str,
                 recipient,
                 NoteValue::from_raw(10),
+                false,
                 rng,
             )
             .unwrap();
@@ -423,6 +407,7 @@ mod tests {
                 str2.clone(),
                 recipient,
                 NoteValue::from_raw(15),
+                false,
                 rng,
             )
             .unwrap();
@@ -441,7 +426,7 @@ mod tests {
         assert_eq!(action.notes.tail().first().unwrap().note_type(), note_type);
         assert_eq!(action.notes.tail().first().unwrap().recipient(), recipient);
 
-        let action2 = bundle.get_action(ik.clone(), str2).unwrap();
+        let action2 = bundle.get_action(ik, str2).unwrap();
         assert_eq!(action2.notes.len(), 1);
         assert_eq!(action2.notes().first().value().inner(), 15);
         assert_eq!(action2.notes().first().note_type(), third_note_type);
@@ -459,22 +444,19 @@ mod tests {
 
         let mut bundle = IssueBundle::new();
 
-        let note_type = bundle
+        bundle
             .add_recipient(
                 ik.clone(),
                 String::from("Precious NFT"),
                 recipient,
                 NoteValue::from_raw(u64::MIN),
+                false,
                 rng,
             )
-            .unwrap();
+            .expect("Should properly add recipient");
 
         bundle
             .finalize_action(ik.clone(), String::from("Precious NFT"))
-            .expect("Should finalize properly");
-
-        bundle
-            .finalize_action_by_type(note_type)
             .expect("Should finalize properly");
 
         assert_eq!(
@@ -484,6 +466,7 @@ mod tests {
                     String::from("Precious NFT"),
                     recipient,
                     NoteValue::from_raw(u64::MIN),
+                    false,
                     rng,
                 )
                 .unwrap_err(),
@@ -495,6 +478,31 @@ mod tests {
                 .finalize_action(ik.clone(), String::from("Another precious NFT"))
                 .unwrap_err(),
             IssueActionNotFound
+        );
+
+        bundle
+            .add_recipient(
+                ik.clone(),
+                String::from("Another precious NFT"),
+                recipient,
+                NoteValue::from_raw(u64::MIN),
+                true,
+                rng,
+            )
+            .expect("should add and finalize");
+
+        assert_eq!(
+            bundle
+                .add_recipient(
+                    ik,
+                    String::from("Another precious NFT"),
+                    recipient,
+                    NoteValue::from_raw(u64::MIN),
+                    true,
+                    rng,
+                )
+                .unwrap_err(),
+            IssueActionAlreadyFinalized
         );
     }
 }
