@@ -221,6 +221,7 @@ pub struct Builder {
     recipients: Vec<RecipientInfo>,
     flags: Flags,
     anchor: Anchor,
+    value_balance: i64,
 }
 
 impl Builder {
@@ -231,7 +232,13 @@ impl Builder {
             recipients: vec![],
             flags,
             anchor,
+            value_balance: 0,
         }
+    }
+
+    /// Returns the net value represented by the spends and outputs added to this builder.
+    pub fn value_balance(&self) -> i64 {
+        self.value_balance
     }
 
     /// Adds a note to be spent in this transaction.
@@ -277,6 +284,8 @@ impl Builder {
             merkle_path,
         });
 
+        self.value_balance += note.value().inner() as i64;
+
         Ok(())
     }
 
@@ -298,6 +307,8 @@ impl Builder {
             value,
             memo,
         });
+
+        self.value_balance -= value.inner() as i64;
 
         Ok(())
     }
