@@ -2,7 +2,7 @@
 
 use memuse::DynamicUsage;
 use nonempty::NonEmpty;
-use rand::RngCore;
+use rand::{CryptoRng, RngCore};
 use std::fmt;
 
 use crate::keys::IssuerValidatingKey;
@@ -27,6 +27,17 @@ impl IssueAction<Unauthorized> {
             finalize: false,
             authorization: Unauthorized,
         }
+    }
+
+    /// inject the `sighash` for signature into the bundle.
+    pub fn prepare(self, sighash: [u8; 32]) -> IssueAction<Prepared> {
+        return IssueAction {
+            ik: self.ik,
+            asset_desc: self.asset_desc,
+            notes: self.notes,
+            finalize: self.finalize,
+            authorization: Prepared { sighash },
+        };
     }
 }
 
@@ -234,7 +245,6 @@ impl Default for IssueBundle<Unauthorized> {
 }
 
 impl<T: IssueAuth> IssueBundle<T> {
-
     /// Return the actions for a given `IssueBundle`.
     pub fn actions(&self) -> &Vec<IssueAction<T>> {
         &self.actions
@@ -341,6 +351,22 @@ impl IssueBundle<Unauthorized> {
         }
 
         Ok(())
+    }
+
+    /// Loads the sighash into this bundle, preparing it for signing.
+    ///
+    /// This API ensures that all signatures are created over the same sighash.
+    /// pub fn prepare<R: RngCore + CryptoRng>(
+    //         self,
+    //         mut rng: R,
+    pub fn prepare(self, sighash: [u8; 32]) -> IssueBundle<Prepared> {
+        IssueBundle {
+            actions: self
+                .actions
+                .into_iter()
+                .map(|a| a.prepare(sighash))
+                .collect(),
+        }
     }
 }
 
@@ -504,6 +530,39 @@ mod tests {
                 .unwrap_err(),
             IssueActionAlreadyFinalized
         );
+    }
+
+    #[test]
+    fn issue_bundle_prepare() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let isk: IssuerAuthorizingKey = (&sk).into();
+        let ik: IssuerValidatingKey = (&isk).into();
+
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let mut bundle = IssueBundle::new();
+
+        bundle
+            .add_recipient(
+                ik.clone(),
+                String::from("Frost"),
+                recipient,
+                NoteValue::from_raw(5),
+                false,
+                rng,
+            )
+            .unwrap();
+
+        let fake_sighash = [1; 32];
+        let prepared = bundle.prepare(fake_sighash);
+
+        let action = prepared
+            .get_action(ik.clone(), String::from("Frost"))
+            .unwrap();
+        let auth = action.authorization();
+        assert_eq!(auth.sighash, fake_sighash);
     }
 }
 

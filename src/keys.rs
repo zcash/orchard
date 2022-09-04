@@ -212,7 +212,11 @@ impl IssuerAuthorizingKey {
     /// RXXXX
     ///
     /// XXXXX
-    pub fn sign(&self, rng: &mut (impl RngCore + CryptoRng), msg: &[u8]) -> redpallas::Signature<SpendAuth> {
+    pub fn sign(
+        &self,
+        rng: &mut (impl RngCore + CryptoRng),
+        msg: &[u8],
+    ) -> redpallas::Signature<SpendAuth> {
         self.0.sign(rng, msg)
     }
 }

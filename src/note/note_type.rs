@@ -92,17 +92,13 @@ pub mod testing {
         pub fn arb_note_type()(
             is_native in prop::bool::ANY,
             sk in arb_spending_key(),
-            // bytes32a in prop::array::uniform32(prop::num::u8::ANY),
-            // bytes32b in prop::array::uniform32(prop::num::u8::ANY),
-            vec in prop::collection::vec(any::<u8>(), 0..=255),
+            str in "[A-Za-z]{255}",
         ) -> NoteType {
             if is_native {
                 NoteType::native()
             } else {
-                //let bytes64 = [bytes32a, bytes32b].concat();
-                let asset_desc = String::from_utf8(vec).unwrap();
                 let isk = IssuerAuthorizingKey::from(&sk);
-                NoteType::derive(&IssuerValidatingKey::from(&isk), asset_desc.as_str())
+                NoteType::derive(&IssuerValidatingKey::from(&isk), &str)
             }
         }
     }
