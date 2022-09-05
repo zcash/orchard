@@ -209,9 +209,7 @@ impl IssuerAuthorizingKey {
         to_scalar(PrfExpand::ZsaIsk.expand(&sk.0))
     }
 
-    /// RXXXX
-    ///
-    /// XXXXX
+    /// Sign the provided message using the `IssuerAuthorizingKey`.
     pub fn sign(
         &self,
         rng: &mut (impl RngCore + CryptoRng),
@@ -279,6 +277,15 @@ impl IssuerValidatingKey {
             .ok()
             .and_then(check_structural_validity)
             .map(IssuerValidatingKey)
+    }
+
+    /// Verifies a purported `signature` over `msg` made by this verification key.
+    pub fn verify(
+        &self,
+        msg: &[u8],
+        signature: &redpallas::Signature<SpendAuth>,
+    ) -> Result<(), reddsa::Error> {
+        self.0.verify(msg, signature)
     }
 }
 

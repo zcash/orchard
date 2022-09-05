@@ -5,7 +5,7 @@ use nonempty::NonEmpty;
 use rand::{CryptoRng, RngCore};
 use std::fmt;
 
-use crate::keys::IssuerValidatingKey;
+use crate::keys::{IssuerAuthorizingKey, IssuerValidatingKey};
 use crate::note::note_type::MAX_ASSET_DESCRIPTION_SIZE;
 use crate::note::{NoteType, Nullifier};
 use crate::value::NoteValue;
@@ -31,13 +31,39 @@ impl IssueAction<Unauthorized> {
 
     /// inject the `sighash` for signature into the bundle.
     pub fn prepare(self, sighash: [u8; 32]) -> IssueAction<Prepared> {
-        return IssueAction {
+        IssueAction {
             ik: self.ik,
             asset_desc: self.asset_desc,
             notes: self.notes,
             finalize: self.finalize,
             authorization: Prepared { sighash },
-        };
+        }
+    }
+}
+
+impl IssueAction<Prepared> {
+    /// Sign the sighash using the provided `IssuerValidatingKey`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided `IssuerAuthorizingKey` does not match the action's `IssuerValidatingKey`.
+    pub fn sign<R: RngCore + CryptoRng>(
+        self,
+        mut rng: R,
+        isk: &IssuerAuthorizingKey,
+    ) -> IssueAction<Signed> {
+        let expected_ik: IssuerValidatingKey = (isk).into();
+        assert_eq!(expected_ik, self.ik);
+
+        IssueAction {
+            ik: self.ik,
+            asset_desc: self.asset_desc,
+            notes: self.notes,
+            finalize: self.finalize,
+            authorization: Signed {
+                signature: isk.sign(&mut rng, &self.authorization.sighash),
+            },
+        }
     }
 }
 
@@ -353,18 +379,31 @@ impl IssueBundle<Unauthorized> {
         Ok(())
     }
 
-    /// Loads the sighash into this bundle, preparing it for signing.
-    ///
-    /// This API ensures that all signatures are created over the same sighash.
-    /// pub fn prepare<R: RngCore + CryptoRng>(
-    //         self,
-    //         mut rng: R,
+    /// Loads the sighash into each action in the bundle, as preparation for signing.
     pub fn prepare(self, sighash: [u8; 32]) -> IssueBundle<Prepared> {
         IssueBundle {
             actions: self
                 .actions
                 .into_iter()
                 .map(|a| a.prepare(sighash))
+                .collect(),
+        }
+    }
+}
+
+impl IssueBundle<Prepared> {
+    /// Sign all the relevant actions
+    pub fn sign<R: RngCore + CryptoRng>(
+        self,
+        mut rng: R,
+        isk: &IssuerAuthorizingKey,
+    ) -> IssueBundle<Signed> {
+        // todo: check ik fits isk
+        IssueBundle {
+            actions: self
+                .actions
+                .into_iter()
+                .map(|a| a.sign(&mut rng, isk))
                 .collect(),
         }
     }
@@ -388,6 +427,7 @@ mod tests {
     };
     use crate::value::NoteValue;
     use rand::rngs::OsRng;
+    use rand::RngCore;
 
     #[test]
     fn issue_bundle_basic() {
@@ -555,69 +595,48 @@ mod tests {
             )
             .unwrap();
 
-        let fake_sighash = [1; 32];
+        let mut fake_sighash = [0; 32];
+        rng.fill_bytes(&mut fake_sighash);
+
         let prepared = bundle.prepare(fake_sighash);
 
-        let action = prepared
+        let action = prepared.get_action(ik, String::from("Frost")).unwrap();
+        assert_eq!(action.authorization().sighash, fake_sighash);
+    }
+
+    #[test]
+    fn issue_bundle_sign() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let isk: IssuerAuthorizingKey = (&sk).into();
+        let ik: IssuerValidatingKey = (&isk).into();
+
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let mut bundle = IssueBundle::new();
+
+        bundle
+            .add_recipient(
+                ik.clone(),
+                String::from("Frost"),
+                recipient,
+                NoteValue::from_raw(5),
+                false,
+                rng,
+            )
+            .unwrap();
+
+        let mut rnd_sighash = [0; 32];
+        rng.fill_bytes(&mut rnd_sighash);
+
+        let signed = bundle.prepare(rnd_sighash).sign(rng, &isk);
+
+        let action = signed
             .get_action(ik.clone(), String::from("Frost"))
             .unwrap();
-        let auth = action.authorization();
-        assert_eq!(auth.sighash, fake_sighash);
+
+        ik.verify(&rnd_sighash, &action.authorization.signature)
+            .expect("signature should be valid");
     }
 }
-
-// mod tests {
-//     use rand::rngs::OsRng;
-//
-//     use super::Builder;
-//     // use crate::keys::{IssuerAuthorizingKey, IssuerValidatingKey};
-//     use crate::note::NoteType;
-//     use crate::{
-//         bundle::{Authorized, Bundle, Flags},
-//         circuit::ProvingKey,
-//         constants::MERKLE_DEPTH_ORCHARD,
-//         keys::{FullViewingKey, Scope, SpendingKey},
-//         tree::EMPTY_ROOTS,
-//         value::NoteValue,
-//     };
-//     use crate::builder::Builder;
-//
-//     #[test]
-//     fn shielding_bundle() {
-//         let pk = ProvingKey::build();
-//         let mut rng = OsRng;
-//
-//         let sk = SpendingKey::random(&mut rng);
-//         let fvk = FullViewingKey::from(&sk);
-//         let recipient = fvk.address_at(0u32, Scope::External);
-//
-//         let mut builder = Builder::new(
-//             Flags::from_parts(true, true),
-//             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-//         );
-//
-//         builder
-//             .add_recipient(
-//                 None,
-//                 recipient,
-//                 NoteValue::from_raw(5000),
-//                 NoteType::native(),
-//                 None,
-//             )
-//             .unwrap();
-//
-//
-//         let bundle: Bundle<Authorized, i64> = builder
-//             .build(&mut rng)
-//             .unwrap()
-//             .create_proof(&pk, &mut rng)
-//             .unwrap()
-//             .prepare(&mut rng, [0; 32])
-//             .sign()
-//             .finalize()
-//             .unwrap();
-//         assert_eq!(bundle.value_balance(), &(-5000));
-//
-//         verify_bundle(&bundle, &vk)
-//     }
-// }
