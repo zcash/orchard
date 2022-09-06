@@ -1,6 +1,4 @@
 //! Structs related to issuance bundles and the associated logic.
-
-use memuse::DynamicUsage;
 use nonempty::NonEmpty;
 use rand::{CryptoRng, RngCore};
 use std::fmt;
@@ -14,7 +12,7 @@ use crate::{
     Address, Note,
 };
 
-impl IssueAction<Unauthorized> {
+impl IssueAction {
     /// Constructs a new `IssueAction`.
     pub fn new(ik: IssuerValidatingKey, asset_desc: String, note: &Note) -> Self {
         IssueAction {
@@ -25,63 +23,21 @@ impl IssueAction<Unauthorized> {
                 tail: vec![],
             },
             finalize: false,
-            authorization: Unauthorized,
         }
     }
 
-    /// inject the `sighash` for signature into the bundle.
-    pub fn prepare(self, sighash: [u8; 32]) -> IssueAction<Prepared> {
-        IssueAction {
-            ik: self.ik,
-            asset_desc: self.asset_desc,
-            notes: self.notes,
-            finalize: self.finalize,
-            authorization: Prepared { sighash },
-        }
-    }
-}
-
-impl IssueAction<Prepared> {
-    /// Sign the sighash using the provided `IssuerValidatingKey`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the provided `IssuerAuthorizingKey` does not match the action's `IssuerValidatingKey`.
-    pub fn sign<R: RngCore + CryptoRng>(
-        self,
-        mut rng: R,
-        isk: &IssuerAuthorizingKey,
-    ) -> IssueAction<Signed> {
-        let expected_ik: IssuerValidatingKey = (isk).into();
-        assert_eq!(expected_ik, self.ik);
-
-        IssueAction {
-            ik: self.ik,
-            asset_desc: self.asset_desc,
-            notes: self.notes,
-            finalize: self.finalize,
-            authorization: Signed {
-                signature: isk.sign(&mut rng, &self.authorization.sighash),
-            },
-        }
-    }
-}
-
-impl<T: IssueAuth> IssueAction<T> {
     /// Constructs an `IssueAction` from its constituent parts.
     pub fn from_parts(
         ik: IssuerValidatingKey,
         asset_desc: String,
         notes: NonEmpty<Note>,
         finalize: bool,
-        authorization: T,
     ) -> Self {
         IssueAction {
             ik,
             asset_desc,
             notes,
             finalize,
-            authorization,
         }
     }
 
@@ -100,48 +56,9 @@ impl<T: IssueAuth> IssueAction<T> {
         &self.notes
     }
 
-    /// Returns the authorization for this action.
-    pub fn authorization(&self) -> &T {
-        &self.authorization
-    }
-
     /// Returns whether the asset type was finalized in this action.
     pub fn is_finalized(&self) -> bool {
         self.finalize
-    }
-
-    /// Transitions this issue action from one authorization state to another.
-    pub fn map<U>(self, step: impl FnOnce(T) -> U) -> IssueAction<U> {
-        IssueAction {
-            ik: self.ik,
-            asset_desc: self.asset_desc,
-            notes: self.notes,
-            finalize: self.finalize,
-            authorization: step(self.authorization),
-        }
-    }
-
-    /// Transitions this issue action from one authorization state to another.
-    pub fn try_map<U, E>(self, step: impl FnOnce(T) -> Result<U, E>) -> Result<IssueAction<U>, E> {
-        Ok(IssueAction {
-            ik: self.ik,
-            asset_desc: self.asset_desc,
-            notes: self.notes,
-            finalize: self.finalize,
-            authorization: step(self.authorization)?,
-        })
-    }
-}
-
-impl DynamicUsage for IssueAction<redpallas::Signature<SpendAuth>> {
-    #[inline(always)]
-    fn dynamic_usage(&self) -> usize {
-        0
-    }
-
-    #[inline(always)]
-    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
-        (0, Some(0))
     }
 }
 
@@ -149,13 +66,10 @@ impl DynamicUsage for IssueAction<redpallas::Signature<SpendAuth>> {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub(crate) mod testing {
+    use super::IssueAction;
+    use crate::{note::testing::arb_note, value::NoteValue};
     use nonempty::NonEmpty;
     use proptest::prelude::*;
-    use rand::{rngs::StdRng, SeedableRng};
-
-    use crate::{note::testing::arb_note, value::NoteValue};
-
-    use super::{IssueAction, Signed};
 
     use crate::keys::{testing::arb_spending_key, IssuerAuthorizingKey, IssuerValidatingKey};
 
@@ -165,7 +79,7 @@ pub(crate) mod testing {
             sk in arb_spending_key(),
             vec in prop::collection::vec(any::<u8>(), 0..=255),
             note in arb_note(output_value),
-        ) -> IssueAction<()> {
+        ) -> IssueAction {
             let isk: IssuerAuthorizingKey = (&sk).into();
             let ik: IssuerValidatingKey = (&isk).into();
             let asset_desc = String::from_utf8(vec).unwrap();
@@ -175,45 +89,40 @@ pub(crate) mod testing {
                 asset_desc,
                 notes:NonEmpty::new(note), //todo: replace note type
                 finalize: false,
-                authorization: (),
             }
         }
     }
 
-    prop_compose! {
-        /// Generate an issue action with invalid (random) authorization data.
-        pub fn arb_issue_action(output_value: NoteValue)(
-            sk in arb_spending_key(),
-            vec in prop::collection::vec(any::<u8>(), 0..=255),
-            note in arb_note(output_value),
-            rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-            fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
-        ) -> IssueAction<Signed> {
-
-            let mut rng = StdRng::from_seed(rng_seed);
-            let isk: IssuerAuthorizingKey = (&sk).into();
-            let ik: IssuerValidatingKey = (&isk).into();
-
-            IssueAction {
-                ik,
-                asset_desc: String::from_utf8(vec).unwrap(),
-                notes: NonEmpty::new(note), //todo: replace note type
-                finalize: false,
-                authorization: Signed {
-                    signature: isk.sign(&mut rng, &fake_sighash),
-                }
-            }
-        }
-    }
+    // prop_compose! {
+    //     /// Generate an issue action with invalid (random) authorization data.
+    //     pub fn arb_issue_action(output_value: NoteValue)(
+    //         sk in arb_spending_key(),
+    //         vec in prop::collection::vec(any::<u8>(), 0..=255),
+    //         note in arb_note(output_value),
+    //         rng_seed in prop::array::uniform32(prop::num::u8::ANY),
+    //         fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
+    //     ) -> IssueAction {
+    //
+    //         let mut rng = StdRng::from_seed(rng_seed);
+    //         let isk: IssuerAuthorizingKey = (&sk).into();
+    //         let ik: IssuerValidatingKey = (&isk).into();
+    //
+    //         IssueAction {
+    //             ik,
+    //             asset_desc: String::from_utf8(vec).unwrap(),
+    //             notes: NonEmpty::new(note), //todo: replace note type
+    //             finalize: false,
+    //         }
+    //     }
+    // }
 }
 
 /// An issue action applied to the global ledger.
 ///
 /// Externally, this creates new zsa notes (adding a commitment to the global ledger).
 #[derive(Debug, Clone)]
-pub struct IssueAction<A> {
+pub struct IssueAction {
     /// The issuer key for the note being created.
-    //ik: redpallas::VerificationKey<SpendAuth>,
     ik: IssuerValidatingKey,
     /// Asset description for verification.
     asset_desc: String,
@@ -221,15 +130,15 @@ pub struct IssueAction<A> {
     notes: NonEmpty<Note>,
     /// Finalize will prevent further issuance of the same asset.
     finalize: bool,
-    /// The authorization for this action.
-    authorization: A,
 }
 
 /// A bundle of actions to be applied to the ledger.
 #[derive(Debug)]
 pub struct IssueBundle<T: IssueAuth> {
     /// The list of issue actions that make up this bundle.
-    actions: Vec<IssueAction<T>>,
+    actions: Vec<IssueAction>,
+    /// The authorization for this action.
+    authorization: T,
 }
 
 /// Defines the authorization type of an Issue bundle.
@@ -255,15 +164,6 @@ impl IssueAuth for Unauthorized {}
 impl IssueAuth for Prepared {}
 impl IssueAuth for Signed {}
 
-impl IssueBundle<Unauthorized> {
-    /// Constructs a new `IssueBundle`.
-    pub fn new() -> IssueBundle<Unauthorized> {
-        IssueBundle {
-            actions: Vec::new(),
-        }
-    }
-}
-
 impl Default for IssueBundle<Unauthorized> {
     fn default() -> Self {
         Self::new()
@@ -272,23 +172,24 @@ impl Default for IssueBundle<Unauthorized> {
 
 impl<T: IssueAuth> IssueBundle<T> {
     /// Return the actions for a given `IssueBundle`.
-    pub fn actions(&self) -> &Vec<IssueAction<T>> {
+    pub fn actions(&self) -> &Vec<IssueAction> {
         &self.actions
     }
 
+    /// Returns the authorization for this action.
+    pub fn authorization(&self) -> &T {
+        &self.authorization
+    }
+
     /// Find an action by `ik` and `asset_desc` for a given `IssueBundle`.
-    pub fn get_action(
-        &self,
-        ik: IssuerValidatingKey,
-        asset_desc: String,
-    ) -> Option<&IssueAction<T>> {
+    pub fn get_action(&self, ik: IssuerValidatingKey, asset_desc: String) -> Option<&IssueAction> {
         self.actions
             .iter()
             .find(|a| a.ik.eq(&ik) && a.asset_desc.eq(&asset_desc))
     }
 
     /// Find an action by `note_type` for a given `IssueBundle`.
-    pub fn get_action_by_type(&self, note_type: NoteType) -> Option<&IssueAction<T>> {
+    pub fn get_action_by_type(&self, note_type: NoteType) -> Option<&IssueAction> {
         let action = self
             .actions
             .iter()
@@ -298,6 +199,14 @@ impl<T: IssueAuth> IssueBundle<T> {
 }
 
 impl IssueBundle<Unauthorized> {
+    /// Constructs a new `IssueBundle`.
+    pub fn new() -> IssueBundle<Unauthorized> {
+        IssueBundle {
+            actions: Vec::new(),
+            authorization: Unauthorized,
+        }
+    }
+
     /// Add a new note to the `IssueBundle`.
     ///
     /// Rho will be randomly sampled, similar to dummy note generation.
@@ -312,7 +221,6 @@ impl IssueBundle<Unauthorized> {
         recipient: Address,
         value: NoteValue,
         finalize: bool,
-        // memo: Option<[u8; 512]>,
         mut rng: impl RngCore,
     ) -> Result<NoteType, Error> {
         assert!(!asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE);
@@ -379,14 +287,11 @@ impl IssueBundle<Unauthorized> {
         Ok(())
     }
 
-    /// Loads the sighash into each action in the bundle, as preparation for signing.
+    /// Loads the sighash into the bundle, as preparation for signing.
     pub fn prepare(self, sighash: [u8; 32]) -> IssueBundle<Prepared> {
         IssueBundle {
-            actions: self
-                .actions
-                .into_iter()
-                .map(|a| a.prepare(sighash))
-                .collect(),
+            actions: self.actions,
+            authorization: Prepared { sighash },
         }
     }
 }
@@ -398,13 +303,14 @@ impl IssueBundle<Prepared> {
         mut rng: R,
         isk: &IssuerAuthorizingKey,
     ) -> IssueBundle<Signed> {
+        //let expected_ik: IssuerValidatingKey = (isk).into();
         // todo: check ik fits isk
+        // assert_eq!(expected_ik, self.ik);
         IssueBundle {
-            actions: self
-                .actions
-                .into_iter()
-                .map(|a| a.sign(&mut rng, isk))
-                .collect(),
+            actions: self.actions,
+            authorization: Signed {
+                signature: isk.sign(&mut rng, &self.authorization.sighash),
+            },
         }
     }
 }
@@ -426,11 +332,11 @@ mod tests {
         FullViewingKey, IssuerAuthorizingKey, IssuerValidatingKey, Scope, SpendingKey,
     };
     use crate::value::NoteValue;
+    use crate::Address;
     use rand::rngs::OsRng;
     use rand::RngCore;
 
-    #[test]
-    fn issue_bundle_basic() {
+    fn setup_keys() -> (OsRng, IssuerAuthorizingKey, IssuerValidatingKey, Address) {
         let mut rng = OsRng;
         let sk = SpendingKey::random(&mut rng);
         let isk: IssuerAuthorizingKey = (&sk).into();
@@ -438,6 +344,12 @@ mod tests {
 
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
+        (rng, isk, ik, recipient)
+    }
+
+    #[test]
+    fn issue_bundle_basic() {
+        let (rng, _, ik, recipient) = setup_keys();
 
         let mut bundle = IssueBundle::new();
 
@@ -500,13 +412,7 @@ mod tests {
 
     #[test]
     fn issue_bundle_finalize_asset() {
-        let mut rng = OsRng;
-        let sk = SpendingKey::random(&mut rng);
-        let isk: IssuerAuthorizingKey = (&sk).into();
-        let ik: IssuerValidatingKey = (&isk).into();
-
-        let fvk = FullViewingKey::from(&sk);
-        let recipient = fvk.address_at(0u32, Scope::External);
+        let (rng, _, ik, recipient) = setup_keys();
 
         let mut bundle = IssueBundle::new();
 
@@ -531,7 +437,7 @@ mod tests {
                     ik.clone(),
                     String::from("Precious NFT"),
                     recipient,
-                    NoteValue::from_raw(u64::MIN),
+                    NoteValue::from_raw(u64::MIN), //todo: create NoteValue wrapper
                     false,
                     rng,
                 )
@@ -574,19 +480,13 @@ mod tests {
 
     #[test]
     fn issue_bundle_prepare() {
-        let mut rng = OsRng;
-        let sk = SpendingKey::random(&mut rng);
-        let isk: IssuerAuthorizingKey = (&sk).into();
-        let ik: IssuerValidatingKey = (&isk).into();
-
-        let fvk = FullViewingKey::from(&sk);
-        let recipient = fvk.address_at(0u32, Scope::External);
+        let (mut rng, _, ik, recipient) = setup_keys();
 
         let mut bundle = IssueBundle::new();
 
         bundle
             .add_recipient(
-                ik.clone(),
+                ik,
                 String::from("Frost"),
                 recipient,
                 NoteValue::from_raw(5),
@@ -599,20 +499,12 @@ mod tests {
         rng.fill_bytes(&mut fake_sighash);
 
         let prepared = bundle.prepare(fake_sighash);
-
-        let action = prepared.get_action(ik, String::from("Frost")).unwrap();
-        assert_eq!(action.authorization().sighash, fake_sighash);
+        assert_eq!(prepared.authorization().sighash, fake_sighash);
     }
 
     #[test]
     fn issue_bundle_sign() {
-        let mut rng = OsRng;
-        let sk = SpendingKey::random(&mut rng);
-        let isk: IssuerAuthorizingKey = (&sk).into();
-        let ik: IssuerValidatingKey = (&isk).into();
-
-        let fvk = FullViewingKey::from(&sk);
-        let recipient = fvk.address_at(0u32, Scope::External);
+        let (mut rng, isk, ik, recipient) = setup_keys();
 
         let mut bundle = IssueBundle::new();
 
@@ -632,11 +524,7 @@ mod tests {
 
         let signed = bundle.prepare(rnd_sighash).sign(rng, &isk);
 
-        let action = signed
-            .get_action(ik.clone(), String::from("Frost"))
-            .unwrap();
-
-        ik.verify(&rnd_sighash, &action.authorization.signature)
+        ik.verify(&rnd_sighash, &signed.authorization.signature)
             .expect("signature should be valid");
     }
 }
