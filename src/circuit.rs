@@ -893,6 +893,7 @@ impl Proof {
 #[cfg(test)]
 mod tests {
     use core::iter;
+    use std::fs;
 
     use ff::Field;
     use halo2_proofs::{circuit::Value, dev::MockProver};
@@ -1096,7 +1097,7 @@ mod tests {
 
         // Parse the hardcoded proof test case.
         let (instance, proof) = {
-            let test_case_bytes = include_bytes!("circuit_proof_test_case.bin");
+            let test_case_bytes = fs::read("circuit_proof_test_case.bin").unwrap();
             read_test_case(&test_case_bytes[..]).expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
