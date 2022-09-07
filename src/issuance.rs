@@ -14,9 +14,8 @@ use crate::{
 
 impl IssueAction {
     /// Constructs a new `IssueAction`.
-    pub fn new(ik: IssuerValidatingKey, asset_desc: String, note: &Note) -> Self {
+    pub fn new(asset_desc: String, note: &Note) -> Self {
         IssueAction {
-            ik,
             asset_desc,
             notes: NonEmpty {
                 head: *note,
@@ -27,23 +26,12 @@ impl IssueAction {
     }
 
     /// Constructs an `IssueAction` from its constituent parts.
-    pub fn from_parts(
-        ik: IssuerValidatingKey,
-        asset_desc: String,
-        notes: NonEmpty<Note>,
-        finalize: bool,
-    ) -> Self {
+    pub fn from_parts(asset_desc: String, notes: NonEmpty<Note>, finalize: bool) -> Self {
         IssueAction {
-            ik,
             asset_desc,
             notes,
             finalize,
         }
-    }
-
-    /// Returns the issuer verification key for the note being created.
-    pub fn ik(&self) -> &IssuerValidatingKey {
-        &self.ik
     }
 
     /// Returns the asset description for the note being created.
@@ -59,6 +47,14 @@ impl IssueAction {
     /// Returns whether the asset type was finalized in this action.
     pub fn is_finalized(&self) -> bool {
         self.finalize
+    }
+
+    /// Returns `true` if the provided `ik` is used to derive the `note_type` for all internal notes.
+    fn is_ik_match_note_type(&self, ik: &IssuerValidatingKey) -> bool {
+        self.notes.iter().all(|note| {
+            note.note_type()
+                .eq(&NoteType::derive(&ik, &self.asset_desc))
+        })
     }
 }
 
@@ -80,14 +76,13 @@ pub(crate) mod testing {
             vec in prop::collection::vec(any::<u8>(), 0..=255),
             note in arb_note(output_value),
         ) -> IssueAction {
-            let isk: IssuerAuthorizingKey = (&sk).into();
-            let ik: IssuerValidatingKey = (&isk).into();
+            // let isk: IssuerAuthorizingKey = (&sk).into();
+            // let ik: IssuerValidatingKey = (&isk).into();
             let asset_desc = String::from_utf8(vec).unwrap();
 
             IssueAction {
-                ik,
                 asset_desc,
-                notes:NonEmpty::new(note), //todo: replace note type
+                notes: NonEmpty::new(note), //todo: replace note type
                 finalize: false,
             }
         }
@@ -108,7 +103,6 @@ pub(crate) mod testing {
     //         let ik: IssuerValidatingKey = (&isk).into();
     //
     //         IssueAction {
-    //             ik,
     //             asset_desc: String::from_utf8(vec).unwrap(),
     //             notes: NonEmpty::new(note), //todo: replace note type
     //             finalize: false,
@@ -122,8 +116,6 @@ pub(crate) mod testing {
 /// Externally, this creates new zsa notes (adding a commitment to the global ledger).
 #[derive(Debug, Clone)]
 pub struct IssueAction {
-    /// The issuer key for the note being created.
-    ik: IssuerValidatingKey,
     /// Asset description for verification.
     asset_desc: String,
     /// The newly issued notes.
@@ -135,6 +127,8 @@ pub struct IssueAction {
 /// A bundle of actions to be applied to the ledger.
 #[derive(Debug)]
 pub struct IssueBundle<T: IssueAuth> {
+    /// The issuer key for the note being created.
+    ik: IssuerValidatingKey,
     /// The list of issue actions that make up this bundle.
     actions: Vec<IssueAction>,
     /// The authorization for this action.
@@ -164,13 +158,11 @@ impl IssueAuth for Unauthorized {}
 impl IssueAuth for Prepared {}
 impl IssueAuth for Signed {}
 
-impl Default for IssueBundle<Unauthorized> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl<T: IssueAuth> IssueBundle<T> {
+    /// Returns the issuer verification key for the bundle.
+    pub fn ik(&self) -> &IssuerValidatingKey {
+        &self.ik
+    }
     /// Return the actions for a given `IssueBundle`.
     pub fn actions(&self) -> &Vec<IssueAction> {
         &self.actions
@@ -182,10 +174,8 @@ impl<T: IssueAuth> IssueBundle<T> {
     }
 
     /// Find an action by `ik` and `asset_desc` for a given `IssueBundle`.
-    pub fn get_action(&self, ik: IssuerValidatingKey, asset_desc: String) -> Option<&IssueAction> {
-        self.actions
-            .iter()
-            .find(|a| a.ik.eq(&ik) && a.asset_desc.eq(&asset_desc))
+    pub fn get_action(&self, asset_desc: String) -> Option<&IssueAction> {
+        self.actions.iter().find(|a| a.asset_desc.eq(&asset_desc))
     }
 
     /// Find an action by `note_type` for a given `IssueBundle`.
@@ -193,15 +183,16 @@ impl<T: IssueAuth> IssueBundle<T> {
         let action = self
             .actions
             .iter()
-            .find(|a| NoteType::derive(&a.ik, &a.asset_desc).eq(&note_type));
+            .find(|a| NoteType::derive(&self.ik, &a.asset_desc).eq(&note_type));
         action
     }
 }
 
 impl IssueBundle<Unauthorized> {
     /// Constructs a new `IssueBundle`.
-    pub fn new() -> IssueBundle<Unauthorized> {
+    pub fn new(ik: IssuerValidatingKey) -> IssueBundle<Unauthorized> {
         IssueBundle {
+            ik,
             actions: Vec::new(),
             authorization: Unauthorized,
         }
@@ -216,7 +207,6 @@ impl IssueBundle<Unauthorized> {
     /// Panics if `asset_desc` is empty or longer than 512 bytes.
     pub fn add_recipient(
         &mut self,
-        ik: IssuerValidatingKey,
         asset_desc: String,
         recipient: Address,
         value: NoteValue,
@@ -225,7 +215,7 @@ impl IssueBundle<Unauthorized> {
     ) -> Result<NoteType, Error> {
         assert!(!asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE);
 
-        let note_type = NoteType::derive(&ik, &asset_desc);
+        let note_type = NoteType::derive(&self.ik, &asset_desc);
 
         let note = Note::new(
             recipient,
@@ -238,7 +228,7 @@ impl IssueBundle<Unauthorized> {
         match self
             .actions
             .iter_mut()
-            .find(|issue_action| issue_action.ik.eq(&ik) && issue_action.asset_desc.eq(&asset_desc))
+            .find(|issue_action| issue_action.asset_desc.eq(&asset_desc))
         {
             // Append to an existing IssueAction.
             Some(action) => {
@@ -250,7 +240,7 @@ impl IssueBundle<Unauthorized> {
             }
             // Insert a new IssueAction.
             None => {
-                let mut action = IssueAction::new(ik.clone(), asset_desc, &note);
+                let mut action = IssueAction::new(asset_desc, &note);
                 finalize.then(|| action.finalize = true);
                 self.actions.push(action);
             }
@@ -264,17 +254,13 @@ impl IssueBundle<Unauthorized> {
     /// # Panics
     ///
     /// Panics if `asset_desc` is empty or longer than 512 bytes.
-    pub fn finalize_action(
-        &mut self,
-        ik: IssuerValidatingKey,
-        asset_desc: String,
-    ) -> Result<(), Error> {
+    pub fn finalize_action(&mut self, asset_desc: String) -> Result<(), Error> {
         assert!(!asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE);
 
         match self
             .actions
             .iter_mut()
-            .find(|issue_action| issue_action.ik.eq(&ik) && issue_action.asset_desc.eq(&asset_desc))
+            .find(|issue_action| issue_action.asset_desc.eq(&asset_desc))
         {
             Some(issue_action) => {
                 issue_action.finalize = true;
@@ -290,6 +276,7 @@ impl IssueBundle<Unauthorized> {
     /// Loads the sighash into the bundle, as preparation for signing.
     pub fn prepare(self, sighash: [u8; 32]) -> IssueBundle<Prepared> {
         IssueBundle {
+            ik: self.ik,
             actions: self.actions,
             authorization: Prepared { sighash },
         }
@@ -298,20 +285,30 @@ impl IssueBundle<Unauthorized> {
 
 impl IssueBundle<Prepared> {
     /// Sign all the relevant actions
+    /// The call makes sure that the provided `isk` matches the `ik` and `note_type` for each note in the bundle.
     pub fn sign<R: RngCore + CryptoRng>(
         self,
         mut rng: R,
         isk: &IssuerAuthorizingKey,
-    ) -> IssueBundle<Signed> {
-        //let expected_ik: IssuerValidatingKey = (isk).into();
-        // todo: check ik fits isk
-        // assert_eq!(expected_ik, self.ik);
-        IssueBundle {
+    ) -> Result<IssueBundle<Signed>, Error> {
+        let expected_ik: IssuerValidatingKey = (isk).into();
+
+        // make sure the `expected_ik` matches the note type for all notes.
+        if !self
+            .actions
+            .iter()
+            .all(|action| action.is_ik_match_note_type(&expected_ik))
+        {
+            return Err(Error::IssueBundleIkMismatchNoteType);
+        }
+
+        Ok(IssueBundle {
+            ik: self.ik,
             actions: self.actions,
             authorization: Signed {
                 signature: isk.sign(&mut rng, &self.authorization.sighash),
             },
-        }
+        })
     }
 }
 
@@ -322,12 +319,16 @@ pub enum Error {
     IssueActionAlreadyFinalized,
     /// The requested IssueAction not exists in the bundle.
     IssueActionNotFound,
+    /// The provided `isk` and the driven `ik` does not match at least one note type.
+    IssueBundleIkMismatchNoteType,
 }
 
 #[cfg(test)]
 mod tests {
     use super::IssueBundle;
-    use crate::issuance::Error::{IssueActionAlreadyFinalized, IssueActionNotFound};
+    use crate::issuance::Error::{
+        IssueActionAlreadyFinalized, IssueActionNotFound, IssueBundleIkMismatchNoteType,
+    };
     use crate::keys::{
         FullViewingKey, IssuerAuthorizingKey, IssuerValidatingKey, Scope, SpendingKey,
     };
@@ -351,43 +352,22 @@ mod tests {
     fn issue_bundle_basic() {
         let (rng, _, ik, recipient) = setup_keys();
 
-        let mut bundle = IssueBundle::new();
+        let mut bundle = IssueBundle::new(ik);
 
         let str = String::from("Halo");
         let str2 = String::from("Halo2");
 
         let note_type = bundle
-            .add_recipient(
-                ik.clone(),
-                str.clone(),
-                recipient,
-                NoteValue::from_raw(5),
-                false,
-                rng,
-            )
+            .add_recipient(str.clone(), recipient, NoteValue::from_raw(5), false, rng)
             .unwrap();
 
         let another_note_type = bundle
-            .add_recipient(
-                ik.clone(),
-                str,
-                recipient,
-                NoteValue::from_raw(10),
-                false,
-                rng,
-            )
+            .add_recipient(str, recipient, NoteValue::from_raw(10), false, rng)
             .unwrap();
         assert_eq!(note_type, another_note_type);
 
         let third_note_type = bundle
-            .add_recipient(
-                ik.clone(),
-                str2.clone(),
-                recipient,
-                NoteValue::from_raw(15),
-                false,
-                rng,
-            )
+            .add_recipient(str2.clone(), recipient, NoteValue::from_raw(15), false, rng)
             .unwrap();
         assert_ne!(note_type, third_note_type);
 
@@ -404,7 +384,7 @@ mod tests {
         assert_eq!(action.notes.tail().first().unwrap().note_type(), note_type);
         assert_eq!(action.notes.tail().first().unwrap().recipient(), recipient);
 
-        let action2 = bundle.get_action(ik, str2).unwrap();
+        let action2 = bundle.get_action(str2).unwrap();
         assert_eq!(action2.notes.len(), 1);
         assert_eq!(action2.notes().first().value().inner(), 15);
         assert_eq!(action2.notes().first().note_type(), third_note_type);
@@ -414,11 +394,10 @@ mod tests {
     fn issue_bundle_finalize_asset() {
         let (rng, _, ik, recipient) = setup_keys();
 
-        let mut bundle = IssueBundle::new();
+        let mut bundle = IssueBundle::new(ik);
 
         bundle
             .add_recipient(
-                ik.clone(),
                 String::from("Precious NFT"),
                 recipient,
                 NoteValue::from_raw(u64::MIN),
@@ -428,13 +407,12 @@ mod tests {
             .expect("Should properly add recipient");
 
         bundle
-            .finalize_action(ik.clone(), String::from("Precious NFT"))
+            .finalize_action(String::from("Precious NFT"))
             .expect("Should finalize properly");
 
         assert_eq!(
             bundle
                 .add_recipient(
-                    ik.clone(),
                     String::from("Precious NFT"),
                     recipient,
                     NoteValue::from_raw(u64::MIN), //todo: create NoteValue wrapper
@@ -447,14 +425,13 @@ mod tests {
 
         assert_eq!(
             bundle
-                .finalize_action(ik.clone(), String::from("Another precious NFT"))
+                .finalize_action(String::from("Another precious NFT"))
                 .unwrap_err(),
             IssueActionNotFound
         );
 
         bundle
             .add_recipient(
-                ik.clone(),
                 String::from("Another precious NFT"),
                 recipient,
                 NoteValue::from_raw(u64::MIN),
@@ -466,7 +443,6 @@ mod tests {
         assert_eq!(
             bundle
                 .add_recipient(
-                    ik,
                     String::from("Another precious NFT"),
                     recipient,
                     NoteValue::from_raw(u64::MIN),
@@ -482,11 +458,10 @@ mod tests {
     fn issue_bundle_prepare() {
         let (mut rng, _, ik, recipient) = setup_keys();
 
-        let mut bundle = IssueBundle::new();
+        let mut bundle = IssueBundle::new(ik);
 
         bundle
             .add_recipient(
-                ik,
                 String::from("Frost"),
                 recipient,
                 NoteValue::from_raw(5),
@@ -506,12 +481,11 @@ mod tests {
     fn issue_bundle_sign() {
         let (mut rng, isk, ik, recipient) = setup_keys();
 
-        let mut bundle = IssueBundle::new();
+        let mut bundle = IssueBundle::new(ik.clone());
 
         bundle
             .add_recipient(
-                ik.clone(),
-                String::from("Frost"),
+                String::from("Sign"),
                 recipient,
                 NoteValue::from_raw(5),
                 false,
@@ -522,9 +496,38 @@ mod tests {
         let mut rnd_sighash = [0; 32];
         rng.fill_bytes(&mut rnd_sighash);
 
-        let signed = bundle.prepare(rnd_sighash).sign(rng, &isk);
+        let signed = bundle.prepare(rnd_sighash).sign(rng, &isk).unwrap();
 
         ik.verify(&rnd_sighash, &signed.authorization.signature)
             .expect("signature should be valid");
+    }
+
+    #[test]
+    fn issue_bundle_invalid_isk_for_signature() {
+        let (mut rng, _, ik, recipient) = setup_keys();
+
+        let mut bundle = IssueBundle::new(ik.clone());
+
+        bundle
+            .add_recipient(
+                String::from("IssueBundle"),
+                recipient,
+                NoteValue::from_raw(5),
+                false,
+                rng,
+            )
+            .unwrap();
+
+        let mut rnd_sighash = [0; 32];
+        rng.fill_bytes(&mut rnd_sighash);
+
+        let wrong_isk: IssuerAuthorizingKey = (&SpendingKey::random(&mut OsRng)).into();
+
+        let err = bundle
+            .prepare(rnd_sighash)
+            .sign(rng, &wrong_isk)
+            .expect_err("should not be able to sign");
+
+        assert_eq!(err, IssueBundleIkMismatchNoteType);
     }
 }
