@@ -51,10 +51,9 @@ impl IssueAction {
 
     /// Returns `true` if the provided `ik` is used to derive the `note_type` for all internal notes.
     fn is_ik_match_note_type(&self, ik: &IssuerValidatingKey) -> bool {
-        self.notes.iter().all(|note| {
-            note.note_type()
-                .eq(&NoteType::derive(&ik, &self.asset_desc))
-        })
+        self.notes
+            .iter()
+            .all(|note| note.note_type().eq(&NoteType::derive(ik, &self.asset_desc)))
     }
 }
 
@@ -67,12 +66,12 @@ pub(crate) mod testing {
     use nonempty::NonEmpty;
     use proptest::prelude::*;
 
-    use crate::keys::{testing::arb_spending_key, IssuerAuthorizingKey, IssuerValidatingKey};
+    use crate::keys::testing::arb_spending_key;
 
     prop_compose! {
         /// Generate an issue action with a single note and without authorization data.
         pub fn arb_unauthorized_issue_action(output_value: NoteValue)(
-            sk in arb_spending_key(),
+            _sk in arb_spending_key(),
             vec in prop::collection::vec(any::<u8>(), 0..=255),
             note in arb_note(output_value),
         ) -> IssueAction {
@@ -506,7 +505,7 @@ mod tests {
     fn issue_bundle_invalid_isk_for_signature() {
         let (mut rng, _, ik, recipient) = setup_keys();
 
-        let mut bundle = IssueBundle::new(ik.clone());
+        let mut bundle = IssueBundle::new(ik);
 
         bundle
             .add_recipient(
