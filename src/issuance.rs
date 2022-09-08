@@ -212,7 +212,9 @@ impl IssueBundle<Unauthorized> {
         finalize: bool,
         mut rng: impl RngCore,
     ) -> Result<NoteType, Error> {
-        assert!(!asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE);
+        if !is_asset_desc_valid(&asset_desc) {
+            return Err(Error::WrongAssetDescSize);
+        }
 
         let note_type = NoteType::derive(&self.ik, &asset_desc);
 
@@ -254,7 +256,9 @@ impl IssueBundle<Unauthorized> {
     ///
     /// Panics if `asset_desc` is empty or longer than 512 bytes.
     pub fn finalize_action(&mut self, asset_desc: String) -> Result<(), Error> {
-        assert!(!asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE);
+        if !is_asset_desc_valid(&asset_desc) {
+            return Err(Error::WrongAssetDescSize);
+        }
 
         match self
             .actions
@@ -311,6 +315,10 @@ impl IssueBundle<Prepared> {
     }
 }
 
+fn is_asset_desc_valid(asset_desc: &str) -> bool {
+    !asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE
+}
+
 /// Errors produced during the issuance process
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -320,6 +328,8 @@ pub enum Error {
     IssueActionNotFound,
     /// The provided `isk` and the driven `ik` does not match at least one note type.
     IssueBundleIkMismatchNoteType,
+    /// `asset_desc` should be between 1 and 512 bytes.
+    WrongAssetDescSize,
 }
 
 #[cfg(test)]
@@ -327,6 +337,7 @@ mod tests {
     use super::IssueBundle;
     use crate::issuance::Error::{
         IssueActionAlreadyFinalized, IssueActionNotFound, IssueBundleIkMismatchNoteType,
+        WrongAssetDescSize,
     };
     use crate::keys::{
         FullViewingKey, IssuerAuthorizingKey, IssuerValidatingKey, Scope, SpendingKey,
@@ -355,6 +366,19 @@ mod tests {
 
         let str = String::from("Halo");
         let str2 = String::from("Halo2");
+
+        assert_eq!(
+            bundle
+                .add_recipient(
+                    String::from_utf8(vec![b'X'; 513]).unwrap(),
+                    recipient,
+                    NoteValue::unsplittable(),
+                    true,
+                    rng,
+                )
+                .unwrap_err(),
+            WrongAssetDescSize
+        );
 
         let note_type = bundle
             .add_recipient(str.clone(), recipient, NoteValue::from_raw(5), false, rng)
@@ -414,7 +438,7 @@ mod tests {
                 .add_recipient(
                     String::from("Precious NFT"),
                     recipient,
-                    NoteValue::from_raw(u64::MIN), //todo: create NoteValue wrapper
+                    NoteValue::unsplittable(),
                     false,
                     rng,
                 )
@@ -429,11 +453,18 @@ mod tests {
             IssueActionNotFound
         );
 
+        assert_eq!(
+            bundle
+                .finalize_action(String::from_utf8(vec![b'X'; 513]).unwrap())
+                .unwrap_err(),
+            WrongAssetDescSize
+        );
+
         bundle
             .add_recipient(
                 String::from("Another precious NFT"),
                 recipient,
-                NoteValue::from_raw(u64::MIN),
+                NoteValue::unsplittable(),
                 true,
                 rng,
             )
@@ -444,7 +475,7 @@ mod tests {
                 .add_recipient(
                     String::from("Another precious NFT"),
                     recipient,
-                    NoteValue::from_raw(u64::MIN),
+                    NoteValue::unsplittable(),
                     true,
                     rng,
                 )
@@ -503,7 +534,7 @@ mod tests {
 
     #[test]
     fn issue_bundle_invalid_isk_for_signature() {
-        let (mut rng, _, ik, recipient) = setup_keys();
+        let (rng, _, ik, recipient) = setup_keys();
 
         let mut bundle = IssueBundle::new(ik);
 
@@ -517,13 +548,10 @@ mod tests {
             )
             .unwrap();
 
-        let mut rnd_sighash = [0; 32];
-        rng.fill_bytes(&mut rnd_sighash);
-
         let wrong_isk: IssuerAuthorizingKey = (&SpendingKey::random(&mut OsRng)).into();
 
         let err = bundle
-            .prepare(rnd_sighash)
+            .prepare([0; 32])
             .sign(rng, &wrong_isk)
             .expect_err("should not be able to sign");
 

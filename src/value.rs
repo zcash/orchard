@@ -114,6 +114,11 @@ impl NoteValue {
     pub(crate) fn to_le_bits(self) -> BitArray<[u8; 8], Lsb0> {
         BitArray::<_, Lsb0>::new(self.0.to_le_bytes())
     }
+
+    /// The minimum, greater than zero, note value that can not be split further.
+    pub fn unsplittable() -> Self {
+        NoteValue(1u64)
+    }
 }
 
 impl From<&NoteValue> for Assigned<pallas::Base> {
