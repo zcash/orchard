@@ -299,11 +299,11 @@ fn is_asset_desc_valid(asset_desc: &str) -> bool {
 ///     * `NoteType` for the `IssueAction` has not been previously finalized.
 /// * For each `Note` inside an `IssueAction`:
 ///     * All notes have the same, correct `NoteType`
-pub fn verify_issue_bundle(
+pub fn verify_issue_bundle<'a>(
     bundle: &IssueBundle<Signed>,
     sighash: [u8; 32],
-    previously_finalized: HashSet<NoteType>,
-) -> Result<HashSet<NoteType>, Error> {
+    previously_finalized: &'a mut HashSet<NoteType>,
+) -> Result<&'a mut HashSet<NoteType>, Error> {
     if let Err(e) = bundle.ik.verify(&sighash, &bundle.authorization.signature) {
         return Err(IssueBundleInvalidSignature(e));
     };
@@ -311,7 +311,7 @@ pub fn verify_issue_bundle(
     bundle
         .actions()
         .iter()
-        .try_fold(previously_finalized, |mut acc, a| {
+        .try_fold(previously_finalized, |acc, a| {
             if !is_asset_desc_valid(a.asset_desc()) {
                 return Err(Error::WrongAssetDescSize);
             }
@@ -626,7 +626,9 @@ mod tests {
 
         let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
-        let finalized = verify_issue_bundle(&signed, sighash, HashSet::new());
+        let prev_finalized = &mut HashSet::new();
+
+        let finalized = verify_issue_bundle(&signed, sighash, prev_finalized);
         assert!(finalized.unwrap().is_empty());
     }
 
@@ -647,7 +649,7 @@ mod tests {
             .unwrap();
 
         let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
-        let mut prev_finalized = HashSet::new();
+        let prev_finalized = &mut HashSet::new();
 
         let final_type = NoteType::derive(&ik, &String::from("already final"));
 
