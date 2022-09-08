@@ -378,11 +378,11 @@ pub enum Error {
 #[cfg(test)]
 mod tests {
     use super::IssueBundle;
-    use crate::issuance::verify_issue_bundle;
     use crate::issuance::Error::{
         IssueActionAlreadyFinalized, IssueActionNotFound, IssueActionPreviouslyFinalizedNoteType,
         IssueBundleIkMismatchNoteType, WrongAssetDescSize,
     };
+    use crate::issuance::{verify_issue_bundle, Error, Signed};
     use crate::keys::{
         FullViewingKey, IssuerAuthorizingKey, IssuerValidatingKey, Scope, SpendingKey,
     };
@@ -633,6 +633,34 @@ mod tests {
     }
 
     #[test]
+    fn issue_bundle_verify_with_finalize() {
+        let (rng, isk, ik, recipient, sighash) = setup_params();
+
+        let mut bundle = IssueBundle::new(ik.clone());
+
+        bundle
+            .add_recipient(
+                String::from("verify_with_finalize"),
+                recipient,
+                NoteValue::from_raw(7),
+                true,
+                rng,
+            )
+            .unwrap();
+
+        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+
+        let prev_finalized = &mut HashSet::new();
+
+        let finalized = verify_issue_bundle(&signed, sighash, prev_finalized).unwrap();
+        assert!(finalized.contains(&NoteType::derive(
+            &ik,
+            &String::from("verify_with_finalize")
+        )));
+        assert_eq!(finalized.len(), 1);
+    }
+
+    #[test]
     fn issue_bundle_verify_fail_previously_finalized() {
         let (rng, isk, ik, recipient, sighash) = setup_params();
 
@@ -659,6 +687,45 @@ mod tests {
         assert_eq!(
             finalized.unwrap_err(),
             IssueActionPreviouslyFinalizedNoteType(final_type)
+        );
+    }
+
+    // we want to inject "bad" signatures for test purposes.
+    impl IssueBundle<Signed> {
+        pub fn set_authorization(&mut self, authorization: Signed) {
+            self.authorization = authorization;
+        }
+    }
+
+    #[test]
+    fn issue_bundle_verify_fail_bad_signature() {
+        let (mut rng, isk, ik, recipient, sighash) = setup_params();
+
+        let mut bundle = IssueBundle::new(ik);
+
+        bundle
+            .add_recipient(
+                String::from("bad sig"),
+                recipient,
+                NoteValue::from_raw(5),
+                false,
+                rng,
+            )
+            .unwrap();
+
+        let wrong_isk: IssuerAuthorizingKey = (&SpendingKey::random(&mut rng)).into();
+
+        let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+
+        signed.set_authorization(Signed {
+            signature: wrong_isk.sign(&mut rng, &sighash),
+        });
+
+        let prev_finalized = &mut HashSet::new();
+
+        assert_eq!(
+            verify_issue_bundle(&signed, sighash, prev_finalized).unwrap_err(),
+            Error::IssueBundleInvalidSignature(reddsa::Error::InvalidSignature)
         );
     }
 }
