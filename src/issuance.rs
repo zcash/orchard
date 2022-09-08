@@ -380,12 +380,13 @@ mod tests {
     use super::IssueBundle;
     use crate::issuance::verify_issue_bundle;
     use crate::issuance::Error::{
-        IssueActionAlreadyFinalized, IssueActionNotFound, IssueBundleIkMismatchNoteType,
-        WrongAssetDescSize,
+        IssueActionAlreadyFinalized, IssueActionNotFound, IssueActionPreviouslyFinalizedNoteType,
+        IssueBundleIkMismatchNoteType, WrongAssetDescSize,
     };
     use crate::keys::{
         FullViewingKey, IssuerAuthorizingKey, IssuerValidatingKey, Scope, SpendingKey,
     };
+    use crate::note::NoteType;
     use crate::value::NoteValue;
     use crate::Address;
     use rand::rngs::OsRng;
@@ -626,7 +627,36 @@ mod tests {
         let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
         let finalized = verify_issue_bundle(&signed, sighash, HashSet::new());
-        assert!(finalized.is_ok());
         assert!(finalized.unwrap().is_empty());
+    }
+
+    #[test]
+    fn issue_bundle_verify_fail_previously_finalized() {
+        let (rng, isk, ik, recipient, sighash) = setup_params();
+
+        let mut bundle = IssueBundle::new(ik.clone());
+
+        bundle
+            .add_recipient(
+                String::from("already final"),
+                recipient,
+                NoteValue::from_raw(5),
+                false,
+                rng,
+            )
+            .unwrap();
+
+        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let mut prev_finalized = HashSet::new();
+
+        let final_type = NoteType::derive(&ik, &String::from("already final"));
+
+        prev_finalized.insert(final_type);
+
+        let finalized = verify_issue_bundle(&signed, sighash, prev_finalized);
+        assert_eq!(
+            finalized.unwrap_err(),
+            IssueActionPreviouslyFinalizedNoteType(final_type)
+        );
     }
 }
