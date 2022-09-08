@@ -1,8 +1,10 @@
 //! Structs related to issuance bundles and the associated logic.
 use nonempty::NonEmpty;
 use rand::{CryptoRng, RngCore};
+use std::collections::HashSet;
 use std::fmt;
 
+use crate::issuance::Error::{IssueActionPreviouslyFinalizedNoteType, IssueBundleInvalidSignature};
 use crate::keys::{IssuerAuthorizingKey, IssuerValidatingKey};
 use crate::note::note_type::MAX_ASSET_DESCRIPTION_SIZE;
 use crate::note::{NoteType, Nullifier};
@@ -49,11 +51,28 @@ impl IssueAction {
         self.finalize
     }
 
-    /// Returns `true` if the provided `ik` is used to derive the `note_type` for all internal notes.
-    fn is_ik_match_note_type(&self, ik: &IssuerValidatingKey) -> bool {
-        self.notes
+    /// Return the `NoteType` if the provided `ik` is used to derive the `note_type` for all internal notes.
+    //fn correctly_derived_note_type(
+    fn are_note_types_derived_correctly(
+        &self,
+        ik: &IssuerValidatingKey,
+    ) -> Result<NoteType, Error> {
+        match self
+            .notes
             .iter()
-            .all(|note| note.note_type().eq(&NoteType::derive(ik, &self.asset_desc)))
+            .try_fold(self.notes().head.note_type(), |note_type, &n| {
+                // check all note types are equal
+                n.note_type()
+                    .eq(&note_type)
+                    .then(|| note_type)
+                    .ok_or(Error::IssueActionIncorrectNoteType)
+            }) {
+            Ok(note_type) => note_type // check note type was properly derived
+                .eq(&NoteType::derive(ik, &self.asset_desc))
+                .then(|| note_type)
+                .ok_or(Error::IssueBundleIkMismatchNoteType),
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -297,13 +316,13 @@ impl IssueBundle<Prepared> {
         let expected_ik: IssuerValidatingKey = (isk).into();
 
         // make sure the `expected_ik` matches the note type for all notes.
-        if !self
-            .actions
-            .iter()
-            .all(|action| action.is_ik_match_note_type(&expected_ik))
-        {
-            return Err(Error::IssueBundleIkMismatchNoteType);
-        }
+        if let Err(e) = self.actions.iter().try_for_each(|action| {
+            action
+                .are_note_types_derived_correctly(&expected_ik)
+                .map(|_| ()) // transform Result<NoteType,Error> into Result<(),Error)>
+        }) {
+            return Err(e);
+        };
 
         Ok(IssueBundle {
             ik: self.ik,
@@ -319,6 +338,59 @@ fn is_asset_desc_valid(asset_desc: &str) -> bool {
     !asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE
 }
 
+/// Validation for Orchard IssueBundles
+///
+/// A set of previously finalized asset types must be provided.
+/// In case of success, the `Result` will contain a set of the provided **and** the newly finalized `NoteType`s
+///
+/// The following checks are performed:
+/// * For the `IssueBundle`:
+///     * the Signature on top of the provided `sighash` verifies correctly.
+/// * For each `IssueAction`:
+///     * Asset description size is collect.
+///     * The derived `NoteType` has not been previously finalized.
+///     * `NoteType` for the `IssueAction` has not been previously finalized.
+/// * For each `Note` inside an `IssueAction`:
+///     * All notes have the same, correct `NoteType`
+pub fn verify_issue_bundle(
+    bundle: &IssueBundle<Signed>,
+    sighash: [u8; 32],
+    previously_finalized: HashSet<NoteType>,
+) -> Result<HashSet<NoteType>, Error> {
+    if let Err(e) = bundle.ik.verify(&sighash, &bundle.authorization.signature) {
+        return Err(IssueBundleInvalidSignature(e));
+    };
+
+    bundle
+        .actions()
+        .iter()
+        .try_fold(previously_finalized, |mut acc, a| {
+            if !is_asset_desc_valid(a.asset_desc()) {
+                return Err(Error::WrongAssetDescSize);
+            }
+
+            let note_type = a.are_note_types_derived_correctly(bundle.ik())?;
+
+            if acc.contains(&note_type) {
+                return Err(IssueActionPreviouslyFinalizedNoteType(note_type));
+            }
+
+            if a.is_finalized() {
+                acc.insert(note_type);
+            }
+
+            Ok(acc)
+        })
+
+    // for action: Asset description size
+    // for action: check not in previously finalized
+    // for action: collect finalized action
+
+    // for note: Note type properly generated
+
+    // Sig on sighash
+}
+
 /// Errors produced during the issuance process
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -326,15 +398,35 @@ pub enum Error {
     IssueActionAlreadyFinalized,
     /// The requested IssueAction not exists in the bundle.
     IssueActionNotFound,
+    /// Not all `NoteType`s are the same inside the action.
+    IssueActionIncorrectNoteType,
     /// The provided `isk` and the driven `ik` does not match at least one note type.
     IssueBundleIkMismatchNoteType,
     /// `asset_desc` should be between 1 and 512 bytes.
     WrongAssetDescSize,
+
+    /// Verification errors:
+    /// Invalid signature
+    IssueBundleInvalidSignature(reddsa::Error),
+    /// Invalid signature
+    IssueActionPreviouslyFinalizedNoteType(NoteType),
 }
+
+// impl std::error::Error for Error {}
+//
+// impl fmt::Display for Error {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             //Self::MalformedSigningKey => write!(f, "Malformed signing key encoding."),
+//
+//         }
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
     use super::IssueBundle;
+    use crate::issuance::verify_issue_bundle;
     use crate::issuance::Error::{
         IssueActionAlreadyFinalized, IssueActionNotFound, IssueBundleIkMismatchNoteType,
         WrongAssetDescSize,
@@ -346,6 +438,7 @@ mod tests {
     use crate::Address;
     use rand::rngs::OsRng;
     use rand::RngCore;
+    use std::collections::HashSet;
 
     fn setup_keys() -> (OsRng, IssuerAuthorizingKey, IssuerValidatingKey, Address) {
         let mut rng = OsRng;
@@ -556,5 +649,31 @@ mod tests {
             .expect_err("should not be able to sign");
 
         assert_eq!(err, IssueBundleIkMismatchNoteType);
+    }
+
+    #[test]
+    fn issue_bundle_verify() {
+        let (mut rng, isk, ik, recipient) = setup_keys();
+
+        let mut bundle = IssueBundle::new(ik);
+
+        bundle
+            .add_recipient(
+                String::from("Verify"),
+                recipient,
+                NoteValue::from_raw(5),
+                false,
+                rng,
+            )
+            .unwrap();
+
+        let mut rnd_sighash = [0; 32];
+        rng.fill_bytes(&mut rnd_sighash);
+
+        let signed = bundle.prepare(rnd_sighash).sign(rng, &isk).unwrap();
+
+        let finalized = verify_issue_bundle(&signed, rnd_sighash, HashSet::new());
+        assert!(finalized.is_ok());
+        assert!(finalized.unwrap().is_empty());
     }
 }
