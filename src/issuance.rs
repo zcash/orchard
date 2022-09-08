@@ -76,59 +76,6 @@ impl IssueAction {
     }
 }
 
-/// Generators for property testing.
-#[cfg(any(test, feature = "test-dependencies"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
-pub(crate) mod testing {
-    use super::IssueAction;
-    use crate::{note::testing::arb_note, value::NoteValue};
-    use nonempty::NonEmpty;
-    use proptest::prelude::*;
-
-    use crate::keys::testing::arb_spending_key;
-
-    prop_compose! {
-        /// Generate an issue action with a single note and without authorization data.
-        pub fn arb_unauthorized_issue_action(output_value: NoteValue)(
-            _sk in arb_spending_key(),
-            vec in prop::collection::vec(any::<u8>(), 0..=255),
-            note in arb_note(output_value),
-        ) -> IssueAction {
-            // let isk: IssuerAuthorizingKey = (&sk).into();
-            // let ik: IssuerValidatingKey = (&isk).into();
-            let asset_desc = String::from_utf8(vec).unwrap();
-
-            IssueAction {
-                asset_desc,
-                notes: NonEmpty::new(note), //todo: replace note type
-                finalize: false,
-            }
-        }
-    }
-
-    // prop_compose! {
-    //     /// Generate an issue action with invalid (random) authorization data.
-    //     pub fn arb_issue_action(output_value: NoteValue)(
-    //         sk in arb_spending_key(),
-    //         vec in prop::collection::vec(any::<u8>(), 0..=255),
-    //         note in arb_note(output_value),
-    //         rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-    //         fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
-    //     ) -> IssueAction {
-    //
-    //         let mut rng = StdRng::from_seed(rng_seed);
-    //         let isk: IssuerAuthorizingKey = (&sk).into();
-    //         let ik: IssuerValidatingKey = (&isk).into();
-    //
-    //         IssueAction {
-    //             asset_desc: String::from_utf8(vec).unwrap(),
-    //             notes: NonEmpty::new(note), //todo: replace note type
-    //             finalize: false,
-    //         }
-    //     }
-    // }
-}
-
 /// An issue action applied to the global ledger.
 ///
 /// Externally, this creates new zsa notes (adding a commitment to the global ledger).
@@ -406,9 +353,9 @@ pub enum Error {
     WrongAssetDescSize,
 
     /// Verification errors:
-    /// Invalid signature
+    /// Invalid signature.
     IssueBundleInvalidSignature(reddsa::Error),
-    /// Invalid signature
+    /// The provided `NoteType` has been previously finalized.
     IssueActionPreviouslyFinalizedNoteType(NoteType),
 }
 
@@ -417,8 +364,13 @@ pub enum Error {
 // impl fmt::Display for Error {
 //     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 //         match self {
-//             //Self::MalformedSigningKey => write!(f, "Malformed signing key encoding."),
-//
+//             Error::IssueActionAlreadyFinalized => {write!(f, "unable to add note to the IssueAction since it has already been finalized")}
+//             Error::IssueActionNotFound => {}
+//             Error::IssueActionIncorrectNoteType => {}
+//             Error::IssueBundleIkMismatchNoteType => {}
+//             Error::WrongAssetDescSize => {}
+//             IssueBundleInvalidSignature(_) => {}
+//             IssueActionPreviouslyFinalizedNoteType(_) => {}
 //         }
 //     }
 // }
