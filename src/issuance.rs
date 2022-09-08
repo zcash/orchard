@@ -14,6 +14,30 @@ use crate::{
     Address, Note,
 };
 
+/// A bundle of actions to be applied to the ledger.
+#[derive(Debug)]
+pub struct IssueBundle<T: IssueAuth> {
+    /// The issuer key for the note being created.
+    ik: IssuerValidatingKey,
+    /// The list of issue actions that make up this bundle.
+    actions: Vec<IssueAction>,
+    /// The authorization for this action.
+    authorization: T,
+}
+
+/// An issue action applied to the global ledger.
+///
+/// Externally, this creates new zsa notes (adding a commitment to the global ledger).
+#[derive(Debug, Clone)]
+pub struct IssueAction {
+    /// Asset description for verification.
+    asset_desc: String,
+    /// The newly issued notes.
+    notes: NonEmpty<Note>,
+    /// `finalize` will prevent further issuance of the same asset type.
+    finalize: bool,
+}
+
 impl IssueAction {
     /// Constructs a new `IssueAction`.
     pub fn new(asset_desc: String, note: &Note) -> Self {
@@ -74,30 +98,6 @@ impl IssueAction {
             Err(e) => Err(e),
         }
     }
-}
-
-/// An issue action applied to the global ledger.
-///
-/// Externally, this creates new zsa notes (adding a commitment to the global ledger).
-#[derive(Debug, Clone)]
-pub struct IssueAction {
-    /// Asset description for verification.
-    asset_desc: String,
-    /// The newly issued notes.
-    notes: NonEmpty<Note>,
-    /// Finalize will prevent further issuance of the same asset.
-    finalize: bool,
-}
-
-/// A bundle of actions to be applied to the ledger.
-#[derive(Debug)]
-pub struct IssueBundle<T: IssueAuth> {
-    /// The issuer key for the note being created.
-    ik: IssuerValidatingKey,
-    /// The list of issue actions that make up this bundle.
-    actions: Vec<IssueAction>,
-    /// The authorization for this action.
-    authorization: T,
 }
 
 /// Defines the authorization type of an Issue bundle.
@@ -392,7 +392,13 @@ mod tests {
     use rand::RngCore;
     use std::collections::HashSet;
 
-    fn setup_keys() -> (OsRng, IssuerAuthorizingKey, IssuerValidatingKey, Address) {
+    fn setup_params() -> (
+        OsRng,
+        IssuerAuthorizingKey,
+        IssuerValidatingKey,
+        Address,
+        [u8; 32],
+    ) {
         let mut rng = OsRng;
         let sk = SpendingKey::random(&mut rng);
         let isk: IssuerAuthorizingKey = (&sk).into();
@@ -400,12 +406,16 @@ mod tests {
 
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
-        (rng, isk, ik, recipient)
+
+        let mut sighash = [0u8; 32];
+        rng.fill_bytes(&mut sighash);
+
+        (rng, isk, ik, recipient, sighash)
     }
 
     #[test]
     fn issue_bundle_basic() {
-        let (rng, _, ik, recipient) = setup_keys();
+        let (rng, _, ik, recipient, _) = setup_params();
 
         let mut bundle = IssueBundle::new(ik);
 
@@ -460,7 +470,7 @@ mod tests {
 
     #[test]
     fn issue_bundle_finalize_asset() {
-        let (rng, _, ik, recipient) = setup_keys();
+        let (rng, _, ik, recipient, _) = setup_params();
 
         let mut bundle = IssueBundle::new(ik);
 
@@ -531,7 +541,7 @@ mod tests {
 
     #[test]
     fn issue_bundle_prepare() {
-        let (mut rng, _, ik, recipient) = setup_keys();
+        let (rng, _, ik, recipient, sighash) = setup_params();
 
         let mut bundle = IssueBundle::new(ik);
 
@@ -545,16 +555,13 @@ mod tests {
             )
             .unwrap();
 
-        let mut fake_sighash = [0; 32];
-        rng.fill_bytes(&mut fake_sighash);
-
-        let prepared = bundle.prepare(fake_sighash);
-        assert_eq!(prepared.authorization().sighash, fake_sighash);
+        let prepared = bundle.prepare(sighash);
+        assert_eq!(prepared.authorization().sighash, sighash);
     }
 
     #[test]
     fn issue_bundle_sign() {
-        let (mut rng, isk, ik, recipient) = setup_keys();
+        let (rng, isk, ik, recipient, sighash) = setup_params();
 
         let mut bundle = IssueBundle::new(ik.clone());
 
@@ -568,18 +575,15 @@ mod tests {
             )
             .unwrap();
 
-        let mut rnd_sighash = [0; 32];
-        rng.fill_bytes(&mut rnd_sighash);
+        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
-        let signed = bundle.prepare(rnd_sighash).sign(rng, &isk).unwrap();
-
-        ik.verify(&rnd_sighash, &signed.authorization.signature)
+        ik.verify(&sighash, &signed.authorization.signature)
             .expect("signature should be valid");
     }
 
     #[test]
     fn issue_bundle_invalid_isk_for_signature() {
-        let (rng, _, ik, recipient) = setup_keys();
+        let (rng, _, ik, recipient, _) = setup_params();
 
         let mut bundle = IssueBundle::new(ik);
 
@@ -605,7 +609,7 @@ mod tests {
 
     #[test]
     fn issue_bundle_verify() {
-        let (mut rng, isk, ik, recipient) = setup_keys();
+        let (rng, isk, ik, recipient, sighash) = setup_params();
 
         let mut bundle = IssueBundle::new(ik);
 
@@ -619,12 +623,9 @@ mod tests {
             )
             .unwrap();
 
-        let mut rnd_sighash = [0; 32];
-        rng.fill_bytes(&mut rnd_sighash);
+        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
-        let signed = bundle.prepare(rnd_sighash).sign(rng, &isk).unwrap();
-
-        let finalized = verify_issue_bundle(&signed, rnd_sighash, HashSet::new());
+        let finalized = verify_issue_bundle(&signed, sighash, HashSet::new());
         assert!(finalized.is_ok());
         assert!(finalized.unwrap().is_empty());
     }
