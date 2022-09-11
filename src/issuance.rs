@@ -75,8 +75,7 @@ impl IssueAction {
         self.finalize
     }
 
-    /// Return the `NoteType` if the provided `ik` is used to derive the `note_type` for all internal notes.
-    //fn correctly_derived_note_type(
+    /// Return the `NoteType` if the provided `ik` is used to derive the `note_type` for **all** internal notes.
     fn are_note_types_derived_correctly(
         &self,
         ik: &IssuerValidatingKey,
@@ -84,14 +83,14 @@ impl IssueAction {
         match self
             .notes
             .iter()
-            .try_fold(self.notes().head.note_type(), |note_type, &n| {
-                // check all note types are equal
-                n.note_type()
+            .try_fold(self.notes().head.note_type(), |note_type, &note| {
+                // Fail if not all note types are equal
+                note.note_type()
                     .eq(&note_type)
                     .then(|| note_type)
                     .ok_or(Error::IssueActionIncorrectNoteType)
             }) {
-            Ok(note_type) => note_type // check note type was properly derived
+            Ok(note_type) => note_type // check that the note_type was properly derived.
                 .eq(&NoteType::derive(ik, &self.asset_desc))
                 .then(|| note_type)
                 .ok_or(Error::IssueBundleIkMismatchNoteType),
@@ -302,32 +301,39 @@ fn is_asset_desc_valid(asset_desc: &str) -> bool {
 pub fn verify_issue_bundle<'a>(
     bundle: &IssueBundle<Signed>,
     sighash: [u8; 32],
-    previously_finalized: &'a mut HashSet<NoteType>,
+    previously_finalized: &'a mut HashSet<NoteType>, // The current note_type finalization set.
 ) -> Result<&'a mut HashSet<NoteType>, Error> {
     if let Err(e) = bundle.ik.verify(&sighash, &bundle.authorization.signature) {
         return Err(IssueBundleInvalidSignature(e));
     };
 
+    // Any IssueAction can have just one properly derived NoteType.
     bundle
         .actions()
         .iter()
-        .try_fold(previously_finalized, |acc, a| {
-            if !is_asset_desc_valid(a.asset_desc()) {
+        .try_fold(previously_finalized, |acc, action| {
+            if !is_asset_desc_valid(action.asset_desc()) {
                 return Err(Error::WrongAssetDescSize);
             }
 
-            let note_type = a.are_note_types_derived_correctly(bundle.ik())?;
+            // Fail if any note in the IssueAction has incorrect note type.
+            let note_type = action.are_note_types_derived_correctly(bundle.ik())?;
 
+            // Fail if the current note_type was previously finalized.
             if acc.contains(&note_type) {
                 return Err(IssueActionPreviouslyFinalizedNoteType(note_type));
             }
 
-            if a.is_finalized() {
+            // Add to finalization set, if needed.
+            if action.is_finalized() {
                 acc.insert(note_type);
             }
 
+            // Proceed with the new accumulated note_type finalization set.
             Ok(acc)
         })
+
+    // The iterator will return the the new accumulated note_type finalization set or the reason to fail.
 
     // for action: Asset description size
     // for action: check not in previously finalized
@@ -690,15 +696,16 @@ mod tests {
         );
     }
 
-    // we want to inject "bad" signatures for test purposes.
-    impl IssueBundle<Signed> {
-        pub fn set_authorization(&mut self, authorization: Signed) {
-            self.authorization = authorization;
-        }
-    }
-
     #[test]
     fn issue_bundle_verify_fail_bad_signature() {
+
+        // we want to inject "bad" signatures for test purposes.
+        impl IssueBundle<Signed> {
+            pub fn set_authorization(&mut self, authorization: Signed) {
+                self.authorization = authorization;
+            }
+        }
+
         let (mut rng, isk, ik, recipient, sighash) = setup_params();
 
         let mut bundle = IssueBundle::new(ik);
