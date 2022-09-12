@@ -252,8 +252,8 @@ impl IssueBundle<Unauthorized> {
 }
 
 impl IssueBundle<Prepared> {
-    /// Sign all the relevant actions
-    /// The call makes sure that the provided `isk` matches the `ik` and `note_type` for each note in the bundle.
+    /// Sign the `IssueBundle`.
+    /// The call makes sure that the provided `isk` matches the `ik` and the driven `note_type` for each note in the bundle.
     pub fn sign<R: RngCore + CryptoRng>(
         self,
         mut rng: R,
@@ -261,11 +261,11 @@ impl IssueBundle<Prepared> {
     ) -> Result<IssueBundle<Signed>, Error> {
         let expected_ik: IssuerValidatingKey = (isk).into();
 
-        // make sure the `expected_ik` matches the note type for all notes.
+        // Make sure the `expected_ik` matches the note_type for all notes.
         if let Err(e) = self.actions.iter().try_for_each(|action| {
             action
                 .are_note_types_derived_correctly(&expected_ik)
-                .map(|_| ()) // transform Result<NoteType,Error> into Result<(),Error)>
+                .map(|_| ()) // Transform Result<NoteType,Error> into Result<(),Error)>.
         }) {
             return Err(e);
         };
@@ -294,7 +294,6 @@ fn is_asset_desc_valid(asset_desc: &str) -> bool {
 ///     * the Signature on top of the provided `sighash` verifies correctly.
 /// * For each `IssueAction`:
 ///     * Asset description size is collect.
-///     * The derived `NoteType` has not been previously finalized.
 ///     * `NoteType` for the `IssueAction` has not been previously finalized.
 /// * For each `Note` inside an `IssueAction`:
 ///     * All notes have the same, correct `NoteType`
@@ -307,7 +306,7 @@ pub fn verify_issue_bundle<'a>(
         return Err(IssueBundleInvalidSignature(e));
     };
 
-    // Any IssueAction can have just one properly derived NoteType.
+    // Any IssueAction could have just one properly derived NoteType.
     bundle
         .actions()
         .iter()
@@ -698,7 +697,6 @@ mod tests {
 
     #[test]
     fn issue_bundle_verify_fail_bad_signature() {
-
         // we want to inject "bad" signatures for test purposes.
         impl IssueBundle<Signed> {
             pub fn set_authorization(&mut self, authorization: Signed) {
