@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1656088854288,
+  "lastUpdate": 1663210390542,
   "repoUrl": "https://github.com/zcash/orchard",
   "entries": {
     "Orchard Benchmarks": [
@@ -1619,6 +1619,186 @@ window.BENCHMARK_DATA = {
             "name": "default_address",
             "value": 638128,
             "range": "± 1849",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "daira@jacaranda.org",
+            "name": "Daira Hopwood",
+            "username": "daira"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "33f1c1141e50adb68715f3359bd75378b4756cca",
+          "message": "Merge pull request #357 from daira/prepare-epks-and-ivks\n\nDummy implementation of Domain API change for prepared ivk and epk",
+          "timestamp": "2022-09-15T03:35:10+01:00",
+          "tree_id": "baba707b8bbdedc5205db31a72a517b84dfe1e42",
+          "url": "https://github.com/zcash/orchard/commit/33f1c1141e50adb68715f3359bd75378b4756cca"
+        },
+        "date": 1663210388829,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "proving/bundle/1",
+            "value": 4597524901,
+            "range": "± 42105257",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/2",
+            "value": 4617153789,
+            "range": "± 56604914",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/3",
+            "value": 6571402211,
+            "range": "± 60506294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/4",
+            "value": 8559436670,
+            "range": "± 109387726",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/1",
+            "value": 36442979,
+            "range": "± 1171091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/2",
+            "value": 35374408,
+            "range": "± 1218836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/3",
+            "value": 40529387,
+            "range": "± 1334391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/4",
+            "value": 44787487,
+            "range": "± 2033491",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/valid",
+            "value": 1214788,
+            "range": "± 39747",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/invalid",
+            "value": 157083,
+            "range": "± 3227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/compact-valid",
+            "value": 1233943,
+            "range": "± 33991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "compact-note-decryption/invalid",
+            "value": 155983013,
+            "range": "± 2689080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/10",
+            "value": 13401008,
+            "range": "± 340189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/10",
+            "value": 2797446,
+            "range": "± 48034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/10",
+            "value": 13461009,
+            "range": "± 253710",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/10",
+            "value": 2712345,
+            "range": "± 55665",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/50",
+            "value": 66052428,
+            "range": "± 1648969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/50",
+            "value": 13716689,
+            "range": "± 333589",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/50",
+            "value": 68243465,
+            "range": "± 732283",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/50",
+            "value": 13495424,
+            "range": "± 283188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/100",
+            "value": 135519922,
+            "range": "± 2277543",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/100",
+            "value": 27493780,
+            "range": "± 531790",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/100",
+            "value": 135008360,
+            "range": "± 1951955",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/100",
+            "value": 27382679,
+            "range": "± 321322",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "derive_fvk",
+            "value": 582644,
+            "range": "± 11873",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "default_address",
+            "value": 632666,
+            "range": "± 25404",
             "unit": "ns/iter"
           }
         ]
