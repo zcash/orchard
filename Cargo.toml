@@ -84,3 +84,7 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "515b0a40ec06eb640fffa65b745166511bf56ecc" }
+group = { git = "https://github.com/zkcrypto/group.git", rev = "a7f3ceb2373e9fe536996f7b4d55c797f3e667f0" }

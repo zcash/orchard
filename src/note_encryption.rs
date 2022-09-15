@@ -75,7 +75,7 @@ where
     let pk_d = get_validated_pk_d(&diversifier)?;
 
     let recipient = Address::from_parts(diversifier, pk_d);
-    let note = Note::from_parts(recipient, value, domain.rho, rseed);
+    let note = Option::from(Note::from_parts(recipient, value, domain.rho, rseed))?;
     Some((note, recipient))
 }
 
@@ -102,6 +102,7 @@ impl OrchardDomain {
 impl Domain for OrchardDomain {
     type EphemeralSecretKey = EphemeralSecretKey;
     type EphemeralPublicKey = EphemeralPublicKey;
+    type PreparedEphemeralPublicKey = EphemeralPublicKey;
     type SharedSecret = SharedSecret;
     type SymmetricKey = Hash;
     type Note = Note;
@@ -122,6 +123,10 @@ impl Domain for OrchardDomain {
         *note.recipient().pk_d()
     }
 
+    fn prepare_epk(epk: Self::EphemeralPublicKey) -> Self::PreparedEphemeralPublicKey {
+        epk
+    }
+
     fn ka_derive_public(
         note: &Self::Note,
         esk: &Self::EphemeralSecretKey,
@@ -138,7 +143,7 @@ impl Domain for OrchardDomain {
 
     fn ka_agree_dec(
         ivk: &Self::IncomingViewingKey,
-        epk: &Self::EphemeralPublicKey,
+        epk: &Self::PreparedEphemeralPublicKey,
     ) -> Self::SharedSecret {
         epk.agree(ivk)
     }
@@ -396,7 +401,7 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let note = Note::from_parts(recipient, value, rho, rseed);
+            let note = Note::from_parts(recipient, value, rho, rseed).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(

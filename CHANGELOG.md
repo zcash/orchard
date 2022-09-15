@@ -8,6 +8,11 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 ### Added
 - `orchard::Proof::add_to_batch`
+- `orchard::address::Address::diversifier`
+- `orchard::keys::Diversifier::from_bytes`
+- `orchard::note`:
+  - `RandomSeed`
+  - `Note::{from_parts, rseed}`
 
 ## [0.2.0] - 2022-06-24
 ### Added
