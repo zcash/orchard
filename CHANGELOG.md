@@ -7,6 +7,7 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Added
+- `orchard::Proof::add_to_batch`
 - `orchard::address::Address::diversifier`
 - `orchard::keys::Diversifier::from_bytes`
 - `orchard::note`:
