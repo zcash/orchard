@@ -102,6 +102,7 @@ impl OrchardDomain {
 impl Domain for OrchardDomain {
     type EphemeralSecretKey = EphemeralSecretKey;
     type EphemeralPublicKey = EphemeralPublicKey;
+    type PreparedEphemeralPublicKey = EphemeralPublicKey;
     type SharedSecret = SharedSecret;
     type SymmetricKey = Hash;
     type Note = Note;
@@ -122,6 +123,10 @@ impl Domain for OrchardDomain {
         *note.recipient().pk_d()
     }
 
+    fn prepare_epk(epk: Self::EphemeralPublicKey) -> Self::PreparedEphemeralPublicKey {
+        epk
+    }
+
     fn ka_derive_public(
         note: &Self::Note,
         esk: &Self::EphemeralSecretKey,
@@ -138,7 +143,7 @@ impl Domain for OrchardDomain {
 
     fn ka_agree_dec(
         ivk: &Self::IncomingViewingKey,
-        epk: &Self::EphemeralPublicKey,
+        epk: &Self::PreparedEphemeralPublicKey,
     ) -> Self::SharedSecret {
         epk.agree(ivk)
     }
