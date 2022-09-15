@@ -21,7 +21,7 @@ pub use self::nullifier::Nullifier;
 
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct RandomSeed([u8; 32]);
+pub struct RandomSeed([u8; 32]);
 
 impl RandomSeed {
     pub(crate) fn random(rng: &mut impl RngCore, rho: &Nullifier) -> Self {
@@ -35,13 +35,17 @@ impl RandomSeed {
         }
     }
 
-    pub(crate) fn from_bytes(rseed: [u8; 32], rho: &Nullifier) -> CtOption<Self> {
+    /// Reads a note's random seed from bytes, given the note's nullifier.
+    ///
+    /// Returns `None` if the nullifier is not for the same note as the seed.
+    pub fn from_bytes(rseed: [u8; 32], rho: &Nullifier) -> CtOption<Self> {
         let rseed = RandomSeed(rseed);
         let esk = rseed.esk_inner(rho);
         CtOption::new(rseed, esk.is_some())
     }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 32] {
+    /// Returns the byte array corresponding to this seed.
+    pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
@@ -108,18 +112,33 @@ impl PartialEq for Note {
 impl Eq for Note {}
 
 impl Note {
-    pub(crate) fn from_parts(
+    /// Creates a `Note` from its component parts.
+    ///
+    /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
+    ///
+    /// # Caveats
+    ///
+    /// This low-level constructor enforces that the provided arguments produce an
+    /// internally valid `Note`. However, it allows notes to be constructed in a way that
+    /// violates required security checks for note decryption, as specified in
+    /// [Section 4.19] of the Zcash Protocol Specification. Users of this constructor
+    /// should only call it with note components that have been fully validated by
+    /// decrypting a received note according to [Section 4.19].
+    ///
+    /// [Section 4.19]: https://zips.z.cash/protocol/protocol.pdf#saplingandorchardinband
+    pub fn from_parts(
         recipient: Address,
         value: NoteValue,
         rho: Nullifier,
         rseed: RandomSeed,
-    ) -> Self {
-        Note {
+    ) -> CtOption<Self> {
+        let note = Note {
             recipient,
             value,
             rho,
             rseed,
-        }
+        };
+        CtOption::new(note, note.commitment_inner().is_some())
     }
 
     /// Generates a new note.
@@ -134,14 +153,9 @@ impl Note {
         mut rng: impl RngCore,
     ) -> Self {
         loop {
-            let note = Note {
-                recipient,
-                value,
-                rho,
-                rseed: RandomSeed::random(&mut rng, &rho),
-            };
-            if note.commitment_inner().is_some().into() {
-                break note;
+            let note = Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho));
+            if note.is_some().into() {
+                break note.unwrap();
             }
         }
     }
@@ -180,7 +194,7 @@ impl Note {
     }
 
     /// Returns the rseed value of this note.
-    pub(crate) fn rseed(&self) -> &RandomSeed {
+    pub fn rseed(&self) -> &RandomSeed {
         &self.rseed
     }
 
