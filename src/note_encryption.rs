@@ -5,9 +5,9 @@ use core::fmt;
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
 use zcash_note_encryption::{
-    BatchDomain, Domain, EphemeralKeyBytes, NotePlaintextBytes, OutPlaintextBytes,
-    OutgoingCipherKey, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE, NOTE_PLAINTEXT_SIZE,
-    OUT_PLAINTEXT_SIZE,
+    BatchDomain, Domain, EphemeralKeyBytes, KeyedOutput, NotePlaintextBytes, OutPlaintextBytes,
+    OutgoingCipherKey, RecoverableOutput, ShieldedOutput, COMPACT_NOTE_SIZE, ENC_CIPHERTEXT_SIZE,
+    NOTE_PLAINTEXT_SIZE, OUT_CIPHERTEXT_SIZE, OUT_PLAINTEXT_SIZE,
 };
 
 use crate::{
@@ -15,11 +15,15 @@ use crate::{
     keys::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
+        KDF_ORCHARD_PERSONALIZATION,
     },
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
+
+#[cfg(feature = "encrypt-to-recipient")]
+use zcash_note_encryption::PayloadEncryptionDomain;
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
 
@@ -245,16 +249,44 @@ impl BatchDomain for OrchardDomain {
         SharedSecret::batch_to_affine(shared_secrets)
             .zip(ephemeral_keys.into_iter())
             .map(|(secret, ephemeral_key)| {
-                secret.map(|dhsecret| SharedSecret::kdf_orchard_inner(dhsecret, ephemeral_key))
+                secret.map(|dhsecret| {
+                    SharedSecret::kdf_orchard_inner(
+                        KDF_ORCHARD_PERSONALIZATION,
+                        dhsecret,
+                        ephemeral_key,
+                    )
+                })
             })
             .collect()
+    }
+}
+
+#[cfg(feature = "encrypt-to-recipient")]
+const ORCHARD_ASSOC_KEY_KDF_PERS_PREFIX: &[u8; 8] = b"ZcashOAK";
+
+/// This implementation of `PayloadEncryptionDomain` permits the use of an 8-byte personalization
+/// suffix. The personalization prefix is fixed to `b"ZcashOAK"` to ensure that no collision with
+/// key personalization used for note encryption or with Sapling associated keys is possible.
+#[cfg(feature = "encrypt-to-recipient")]
+impl PayloadEncryptionDomain for OrchardDomain {
+    type KdfPersonalization = [u8; 8];
+
+    fn kdf_personalized(
+        personalization: &Self::KdfPersonalization,
+        secret: Self::SharedSecret,
+        ephemeral_key: &EphemeralKeyBytes,
+    ) -> Self::SymmetricKey {
+        let mut oak_pers = [0u8; 16];
+        oak_pers[..8].copy_from_slice(ORCHARD_ASSOC_KEY_KDF_PERS_PREFIX);
+        oak_pers[8..].copy_from_slice(personalization);
+        secret.kdf_orchard_personalized(&oak_pers, ephemeral_key)
     }
 }
 
 /// Implementation of in-band secret distribution for Orchard bundles.
 pub type OrchardNoteEncryption = zcash_note_encryption::NoteEncryption<OrchardDomain>;
 
-impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
+impl<T> KeyedOutput<OrchardDomain> for Action<T> {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.encrypted_note().epk_bytes)
     }
@@ -262,9 +294,21 @@ impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
     fn cmstar_bytes(&self) -> [u8; 32] {
         self.cmx().to_bytes()
     }
+}
 
+impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
     fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
         &self.encrypted_note().enc_ciphertext
+    }
+}
+
+impl<T> RecoverableOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
+    fn cv(&self) -> &ValueCommitment {
+        self.cv_net()
+    }
+
+    fn out_ciphertext(&self) -> &[u8; OUT_CIPHERTEXT_SIZE] {
+        &self.encrypted_note().out_ciphertext
     }
 }
 
@@ -295,7 +339,7 @@ impl<T> From<&Action<T>> for CompactAction {
     }
 }
 
-impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
+impl KeyedOutput<OrchardDomain> for CompactAction {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.ephemeral_key.0)
     }
@@ -303,7 +347,9 @@ impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
     fn cmstar_bytes(&self) -> [u8; 32] {
         self.cmx.to_bytes()
     }
+}
 
+impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
     fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
         &self.enc_ciphertext
     }
@@ -437,7 +483,7 @@ mod tests {
                 None => panic!("Compact note decryption failed"),
             }
 
-            match try_output_recovery_with_ovk(&domain, &ovk, &action, &cv_net, &tv.c_out) {
+            match try_output_recovery_with_ovk(&domain, &ovk, &action) {
                 Some((decrypted_note, decrypted_to, decrypted_memo)) => {
                     assert_eq!(decrypted_note, note);
                     assert_eq!(decrypted_to, recipient);

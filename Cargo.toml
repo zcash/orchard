@@ -72,6 +72,7 @@ default = ["multicore"]
 multicore = ["halo2_proofs/multicore"]
 dev-graph = ["halo2_proofs/dev-graph", "image", "plotters"]
 test-dependencies = ["proptest"]
+encrypt-to-recipient = ["zcash_note_encryption/encrypt-to-recipient"]
 
 [[bench]]
 name = "note_decryption"
@@ -90,3 +91,6 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "353c306e06416a9a0d15f9d1208cc0bac77e1bb6" }

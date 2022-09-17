@@ -27,7 +27,7 @@ use crate::{
     zip32::{self, ChildIndex, ExtendedSpendingKey},
 };
 
-const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
+pub(crate) const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
 
 /// A spending key, from which all key material is derived.
@@ -919,17 +919,26 @@ impl SharedSecret {
     ///
     /// [concreteorchardkdf]: https://zips.z.cash/protocol/nu5.pdf#concreteorchardkdf
     pub(crate) fn kdf_orchard(self, ephemeral_key: &EphemeralKeyBytes) -> Blake2bHash {
-        Self::kdf_orchard_inner(self.0.to_affine(), ephemeral_key)
+        self.kdf_orchard_personalized(KDF_ORCHARD_PERSONALIZATION, ephemeral_key)
+    }
+
+    pub(crate) fn kdf_orchard_personalized(
+        self,
+        personalization: &[u8; 16],
+        ephemeral_key: &EphemeralKeyBytes,
+    ) -> Blake2bHash {
+        Self::kdf_orchard_inner(personalization, self.0.to_affine(), ephemeral_key)
     }
 
     /// Only for direct use in batched note encryption.
     pub(crate) fn kdf_orchard_inner(
+        personalization: &[u8; 16],
         secret: pallas::Affine,
         ephemeral_key: &EphemeralKeyBytes,
     ) -> Blake2bHash {
         Params::new()
             .hash_length(32)
-            .personal(KDF_ORCHARD_PERSONALIZATION)
+            .personal(personalization)
             .to_state()
             .update(&secret.to_bytes())
             .update(&ephemeral_key.0)

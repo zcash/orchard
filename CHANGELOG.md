@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- Feature `encrypt-to-recipient`:
+  - an implementation of the `zcash_note_encryption::PayloadEncryptionDomain`
+    trait for `OrchardDomain`.
+
 ## [0.5.0] - 2023-06-06
 ### Changed
 - Migrated to `zcash_note_encryption 0.4`, `incrementalmerkletree 0.4`, `bridgetree 0.3`.

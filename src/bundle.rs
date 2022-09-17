@@ -330,14 +330,8 @@ impl<T: Authorization, V> Bundle<T, V> {
             .filter_map(|(idx, action)| {
                 let domain = OrchardDomain::for_action(action);
                 keys.iter().find_map(move |key| {
-                    try_output_recovery_with_ovk(
-                        &domain,
-                        key,
-                        action,
-                        action.cv_net(),
-                        &action.encrypted_note().out_ciphertext,
-                    )
-                    .map(|(n, a, m)| (idx, key.clone(), n, a, m))
+                    try_output_recovery_with_ovk(&domain, key, action)
+                        .map(|(n, a, m)| (idx, key.clone(), n, a, m))
                 })
             })
             .collect()
@@ -353,13 +347,7 @@ impl<T: Authorization, V> Bundle<T, V> {
     ) -> Option<(Note, Address, [u8; 512])> {
         self.actions.get(action_idx).and_then(move |action| {
             let domain = OrchardDomain::for_action(action);
-            try_output_recovery_with_ovk(
-                &domain,
-                key,
-                action,
-                action.cv_net(),
-                &action.encrypted_note().out_ciphertext,
-            )
+            try_output_recovery_with_ovk(&domain, key, action)
         })
     }
 }
