@@ -832,6 +832,9 @@ mod tests {
         builder
             .add_recipient(None, recipient, NoteValue::from_raw(5000), None)
             .unwrap();
+        let balance: i64 = builder.value_balance().unwrap();
+        assert_eq!(balance, -5000);
+
         let bundle: Bundle<Authorized, i64> = builder
             .build(&mut rng)
             .unwrap()
