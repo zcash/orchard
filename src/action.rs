@@ -126,7 +126,7 @@ pub(crate) mod testing {
 
     use proptest::prelude::*;
 
-    use crate::note::NoteType;
+    use crate::note::note_type::testing::arb_note_type;
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
@@ -147,12 +147,13 @@ pub(crate) mod testing {
             nf in arb_nullifier(),
             rk in arb_spendauth_verification_key(),
             note in arb_note(output_value),
+            note_type in arb_note_type()
         ) -> Action<()> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
                 spend_value - output_value,
                 ValueCommitTrapdoor::zero(),
-                NoteType::native()
+                note_type
             );
             // FIXME: make a real one from the note.
             let encrypted_note = TransmittedNoteCiphertext {
@@ -179,12 +180,13 @@ pub(crate) mod testing {
             note in arb_note(output_value),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
+            note_type in arb_note_type()
         ) -> Action<redpallas::Signature<SpendAuth>> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
                 spend_value - output_value,
                 ValueCommitTrapdoor::zero(),
-                NoteType::native()
+                note_type
             );
 
             // FIXME: make a real one from the note.

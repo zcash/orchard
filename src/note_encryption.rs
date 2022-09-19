@@ -394,6 +394,7 @@ mod tests {
         EphemeralKeyBytes,
     };
 
+    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
     use crate::note::NoteType;
     use crate::{
         action::Action,
@@ -411,7 +412,6 @@ mod tests {
     };
 
     use super::{get_note_version, orchard_parse_note_plaintext_without_memo};
-    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
 
     proptest! {
     #[test]
@@ -438,6 +438,7 @@ mod tests {
         // Check.
         assert_eq!(parsed_note, note);
         assert_eq!(parsed_recipient, note.recipient());
+
         if parsed_note.note_type().is_native().into() {
             assert_eq!(parsed_version, 0x02);
             assert_eq!(&parsed_memo, memo);

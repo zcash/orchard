@@ -77,7 +77,7 @@ impl Anchor {
 
 /// The Merkle path from a leaf of the note commitment tree
 /// to its anchor.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MerklePath {
     position: u32,
     auth_path: [MerkleHashOrchard; MERKLE_DEPTH_ORCHARD],

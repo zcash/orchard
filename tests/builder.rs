@@ -1,4 +1,5 @@
 use incrementalmerkletree::{bridgetree::BridgeTree, Hashable, Tree};
+use orchard::note::NoteType;
 use orchard::{
     builder::Builder,
     bundle::{Authorized, Flags},
@@ -43,7 +44,13 @@ fn bundle_chain() {
 
         let mut builder = Builder::new(Flags::from_parts(false, true), anchor);
         assert_eq!(
-            builder.add_recipient(None, recipient, NoteValue::from_raw(5000), None),
+            builder.add_recipient(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                NoteType::native(),
+                None
+            ),
             Ok(())
         );
         let unauthorized = builder.build(&mut rng).unwrap();
@@ -85,7 +92,13 @@ fn bundle_chain() {
         let mut builder = Builder::new(Flags::from_parts(true, true), anchor);
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
-            builder.add_recipient(None, recipient, NoteValue::from_raw(5000), None),
+            builder.add_recipient(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                NoteType::native(),
+                None
+            ),
             Ok(())
         );
         let unauthorized = builder.build(&mut rng).unwrap();
