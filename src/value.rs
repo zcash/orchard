@@ -40,6 +40,7 @@
 use core::fmt::{self, Debug};
 use core::iter::Sum;
 use core::ops::{Add, RangeInclusive, Sub};
+use std::ops::Neg;
 
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
@@ -184,6 +185,18 @@ impl Add for ValueSum {
     fn add(self, rhs: Self) -> Self::Output {
         self.0
             .checked_add(rhs.0)
+            .filter(|v| VALUE_SUM_RANGE.contains(v))
+            .map(ValueSum)
+    }
+}
+
+impl Neg for ValueSum {
+    type Output = Option<ValueSum>;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn neg(self) -> Self::Output {
+        self.0
+            .checked_neg()
             .filter(|v| VALUE_SUM_RANGE.contains(v))
             .map(ValueSum)
     }
@@ -423,7 +436,8 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use crate::note::note_type::testing::arb_note_type;
+    use crate::note::note_type::testing::{arb_note_type, native_note_type};
+
     use crate::note::NoteType;
     use proptest::prelude::*;
 
@@ -433,24 +447,42 @@ mod tests {
     };
     use crate::primitives::redpallas;
 
-    fn _bsk_consistent_with_bvk(values: &[(ValueSum, ValueCommitTrapdoor)], note_type: NoteType) {
-        let value_balance = values
+    fn _bsk_consistent_with_bvk(
+        native_values: &[(ValueSum, ValueCommitTrapdoor, NoteType)],
+        arb_values: &[(ValueSum, ValueCommitTrapdoor, NoteType)],
+        neg_trapdoors: &[ValueCommitTrapdoor],
+    ) {
+        // for each arb value, create a negative value with a different trapdoor
+        let neg_arb_values: Vec<_> = arb_values
             .iter()
-            .map(|(value, _)| value)
+            .cloned()
+            .zip(neg_trapdoors.iter().cloned())
+            .map(|((value, _, note_type), rcv)| ((-value).unwrap(), rcv, note_type))
+            .collect();
+
+        let native_value_balance = native_values
+            .iter()
+            .map(|(value, _, _)| value)
             .sum::<Result<ValueSum, OverflowError>>()
             .expect("we generate values that won't overflow");
 
+        let values = [native_values, arb_values, &neg_arb_values].concat();
+
         let bsk = values
             .iter()
-            .map(|(_, rcv)| rcv)
+            .map(|(_, rcv, _)| rcv)
             .sum::<ValueCommitTrapdoor>()
             .into_bsk();
 
         let bvk = (values
             .iter()
-            .map(|(value, rcv)| ValueCommitment::derive(*value, *rcv, note_type))
+            .map(|(value, rcv, note_type)| ValueCommitment::derive(*value, *rcv, *note_type))
             .sum::<ValueCommitment>()
-            - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero(), note_type))
+            - ValueCommitment::derive(
+                native_value_balance,
+                ValueCommitTrapdoor::zero(),
+                NoteType::native(),
+            ))
         .into_bvk();
 
         assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
@@ -458,18 +490,34 @@ mod tests {
 
     proptest! {
         #[test]
-        fn bsk_consistent_with_bvk(
-            values in (1usize..10).prop_flat_map(|n_values|
+        fn bsk_consistent_with_bvk_native_only(
+            native_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor()), n_values)
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_note_type()), n_values)
                 )
             ),
-            arb_note_type in arb_note_type(),
+        ) {
+            // Test with native note type (zec) only
+            _bsk_consistent_with_bvk(&native_values, &[], &[]);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn bsk_consistent_with_bvk(
+            native_values in (1usize..10).prop_flat_map(|n_values|
+                arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_note_type()), n_values)
+                )
+            ),
+            (arb_values,neg_trapdoors) in (1usize..10).prop_flat_map(|n_values|
+                (arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_note_type()), n_values)
+                ), prop::collection::vec(arb_trapdoor(), n_values))
+            ),
         ) {
             // Test with native note type (zec)
-            _bsk_consistent_with_bvk(&values, NoteType::native());
-            // Test with arbitrary note type
-            _bsk_consistent_with_bvk(&values, arb_note_type);
+             _bsk_consistent_with_bvk(&native_values, &arb_values, &neg_trapdoors);
         }
     }
 }

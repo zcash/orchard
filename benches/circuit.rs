@@ -6,6 +6,7 @@ use criterion::{BenchmarkId, Criterion};
 #[cfg(unix)]
 use pprof::criterion::{Output, PProfProfiler};
 
+use orchard::note::NoteType;
 use orchard::{
     builder::Builder,
     bundle::Flags,
@@ -32,7 +33,13 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
         for _ in 0..num_recipients {
             builder
-                .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+                .add_recipient(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(10),
+                    NoteType::native(),
+                    None,
+                )
                 .unwrap();
         }
         let bundle: Bundle<_, i64> = builder.build(rng).unwrap();

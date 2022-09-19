@@ -176,6 +176,7 @@ impl Note {
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Nullifier>,
+        note_type: NoteType,
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
@@ -184,7 +185,7 @@ impl Note {
         let note = Note::new(
             recipient,
             NoteValue::zero(),
-            NoteType::native(),
+            note_type,
             rho.unwrap_or_else(|| Nullifier::dummy(rng)),
             rng,
         );
@@ -202,7 +203,7 @@ impl Note {
         self.value
     }
 
-    /// Returns the note type
+    /// Returns the note type of this note.
     pub fn note_type(&self) -> NoteType {
         self.note_type
     }
@@ -309,7 +310,7 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an action without authorization data.
+        /// Generate an arbitrary note
         pub fn arb_note(value: NoteValue)(
             recipient in arb_address(),
             rho in arb_nullifier(),

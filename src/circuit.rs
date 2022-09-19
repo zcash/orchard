@@ -977,7 +977,7 @@ mod tests {
     };
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, NoteType::native());
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -987,7 +987,7 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old));
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), NoteType::native());
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();

@@ -409,6 +409,7 @@ mod tests {
         EphemeralKeyBytes,
     };
 
+    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
     use crate::note::NoteType;
     use crate::{
         action::Action,
@@ -426,7 +427,6 @@ mod tests {
     };
 
     use super::{get_note_version, orchard_parse_note_plaintext_without_memo};
-    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
 
     proptest! {
     #[test]
@@ -453,6 +453,7 @@ mod tests {
         // Check.
         assert_eq!(parsed_note, note);
         assert_eq!(parsed_recipient, note.recipient());
+
         if parsed_note.note_type().is_native().into() {
             assert_eq!(parsed_version, 0x02);
             assert_eq!(&parsed_memo, memo);
@@ -508,17 +509,13 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-<<<<<<< HEAD
-            let note = Note::from_parts(recipient, value, NoteType::native(), rho, rseed).unwrap();
-=======
 
             let note_type = match tv.note_type {
                 None => NoteType::native(),
                 Some(type_bytes) => NoteType::from_bytes(&type_bytes).unwrap(),
             };
 
-            let note = Note::from_parts(recipient, value, note_type, rho, rseed);
->>>>>>> ZSA note encryption in Orchard crate (#3)
+            let note = Note::from_parts(recipient, value, note_type, rho, rseed).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(
