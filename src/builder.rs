@@ -302,6 +302,26 @@ impl Builder {
         Ok(())
     }
 
+    /// The net value of the bundle to be built. The value of all spends,
+    /// minus the value of all outputs.
+    ///
+    /// Useful for balancing a transaction, as the value balance of an individual bundle
+    /// can be non-zero, but a transaction may not have a positive total value balance.  
+    pub fn value_balance<V: TryFrom<i64>>(&self) -> Result<V, value::OverflowError> {
+        let value_balance = self
+            .spends
+            .iter()
+            .map(|spend| spend.note.value() - NoteValue::zero())
+            .chain(
+                self.recipients
+                    .iter()
+                    .map(|recipient| NoteValue::zero() - recipient.value),
+            )
+            .fold(Some(ValueSum::zero()), |acc, note_value| acc? + note_value)
+            .ok_or(OverflowError)?;
+        i64::try_from(value_balance).and_then(|i| V::try_from(i).map_err(|_| value::OverflowError))
+    }
+
     /// Builds a bundle containing the given spent notes and recipients.
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
