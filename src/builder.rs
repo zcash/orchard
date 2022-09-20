@@ -4,7 +4,6 @@ use core::fmt;
 use core::iter;
 
 use ff::Field;
-use halo2_proofs::circuit::Value;
 use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
@@ -58,15 +57,35 @@ impl From<value::OverflowError> for Error {
 
 /// Information about a specific note to be spent in an [`Action`].
 #[derive(Debug)]
-struct SpendInfo {
-    dummy_sk: Option<SpendingKey>,
-    fvk: FullViewingKey,
-    scope: Scope,
-    note: Note,
-    merkle_path: MerklePath,
+pub struct SpendInfo {
+    pub(crate) dummy_sk: Option<SpendingKey>,
+    pub(crate) fvk: FullViewingKey,
+    pub(crate) scope: Scope,
+    pub(crate) note: Note,
+    pub(crate) merkle_path: MerklePath,
 }
 
 impl SpendInfo {
+    /// This constructor is public to enable creation of custom builders.
+    /// If you are not creating a custom builder, use [`Builder::add_spend`] instead.
+    ///
+    /// Creates a `SpendInfo` from note, full viewing key owning the note,
+    /// and merkle path witness of the note.
+    ///
+    /// Returns `None` if the `fvk` does not own the `note`.
+    ///
+    /// [`Builder::add_spend`]: Builder::add_spend
+    pub fn new(fvk: FullViewingKey, note: Note, merkle_path: MerklePath) -> Option<Self> {
+        let scope = fvk.scope_for_address(&note.recipient())?;
+        Some(SpendInfo {
+            dummy_sk: None,
+            fvk,
+            scope,
+            note,
+            merkle_path,
+        })
+    }
+
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
@@ -144,10 +163,6 @@ impl ActionInfo {
         let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
-        let sender_address = self.spend.note.recipient();
-        let rho_old = self.spend.note.rho();
-        let psi_old = self.spend.note.rseed().psi(&rho_old);
-        let rcm_old = self.spend.note.rseed().rcm(&rho_old);
         let ak: SpendValidatingKey = self.spend.fvk.clone().into();
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
@@ -182,33 +197,10 @@ impl ActionInfo {
                 cv_net,
                 SigningMetadata {
                     dummy_ask: self.spend.dummy_sk.as_ref().map(SpendAuthorizingKey::from),
-                    parts: SigningParts {
-                        ak: ak.clone(),
-                        alpha,
-                    },
+                    parts: SigningParts { ak, alpha },
                 },
             ),
-            Circuit {
-                path: Value::known(self.spend.merkle_path.auth_path()),
-                pos: Value::known(self.spend.merkle_path.position()),
-                g_d_old: Value::known(sender_address.g_d()),
-                pk_d_old: Value::known(*sender_address.pk_d()),
-                v_old: Value::known(self.spend.note.value()),
-                rho_old: Value::known(rho_old),
-                psi_old: Value::known(psi_old),
-                rcm_old: Value::known(rcm_old),
-                cm_old: Value::known(self.spend.note.commitment()),
-                alpha: Value::known(alpha),
-                ak: Value::known(ak),
-                nk: Value::known(*self.spend.fvk.nk()),
-                rivk: Value::known(self.spend.fvk.rivk(self.spend.scope)),
-                g_d_new: Value::known(note.recipient().g_d()),
-                pk_d_new: Value::known(*note.recipient().pk_d()),
-                v_new: Value::known(note.value()),
-                psi_new: Value::known(note.rseed().psi(&note.rho())),
-                rcm_new: Value::known(note.rseed().rcm(&note.rho())),
-                rcv: Value::known(self.rcv),
-            },
+            Circuit::from_action_context_unchecked(self.spend, note, alpha, self.rcv),
         )
     }
 }

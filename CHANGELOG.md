@@ -13,6 +13,8 @@ and this project adheres to Rust's notion of
 - `orchard::note`:
   - `RandomSeed`
   - `Note::{from_parts, rseed}`
+- `orchard::builder::SpendInfo::new`
+- `orchard::circuit::Circuit::from_action_context`
 
 ## [0.2.0] - 2022-06-24
 ### Added
