@@ -110,4 +110,15 @@ pub mod testing {
             NoteType::native()
         }
     }
+
+    prop_compose! {
+        /// Generate the ZSA note type
+        pub fn zsa_note_type()(
+            sk in arb_spending_key(),
+            str in "[A-Za-z]{255}"
+        ) -> NoteType {
+            let isk = IssuerAuthorizingKey::from(&sk);
+            NoteType::derive(&IssuerValidatingKey::from(&isk), &str)
+        }
+    }
 }
