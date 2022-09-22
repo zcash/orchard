@@ -379,15 +379,7 @@ pub fn verify_issue_bundle<'a>(
             Ok(acc)
         })
 
-    // The iterator will return the the new accumulated note_type finalization set or the reason to fail.
-
-    // for action: Asset description size
-    // for action: check not in previously finalized
-    // for action: collect finalized action
-
-    // for note: Note type properly generated
-
-    // Sig on sighash
+    // The iterator will return the the new accumulated note_type finalization set or fail.
 }
 
 /// Errors produced during the issuance process
