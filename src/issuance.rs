@@ -281,13 +281,11 @@ impl IssueBundle<Prepared> {
         let expected_ik: IssuerValidatingKey = (isk).into();
 
         // Make sure the `expected_ik` matches the note_type for all notes.
-        if let Err(e) = self.actions.iter().try_for_each(|action| {
+        self.actions.iter().try_for_each(|action| {
             action
                 .are_note_types_derived_correctly(&expected_ik)
                 .map(|_| ()) // Transform Result<NoteType,Error> into Result<(),Error)>.
-        }) {
-            return Err(e);
-        };
+        })?;
 
         Ok(IssueBundle {
             ik: self.ik,
