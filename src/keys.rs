@@ -12,7 +12,7 @@ use group::{
     Curve, GroupEncoding,
 };
 use pasta_curves::pallas;
-use rand::RngCore;
+use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
 
@@ -209,6 +209,15 @@ impl IssuerAuthorizingKey {
     fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
         to_scalar(PrfExpand::ZsaIsk.expand(&sk.0))
     }
+
+    /// Sign the provided message using the `IssuerAuthorizingKey`.
+    pub fn sign(
+        &self,
+        rng: &mut (impl RngCore + CryptoRng),
+        msg: &[u8],
+    ) -> redpallas::Signature<SpendAuth> {
+        self.0.sign(rng, msg)
+    }
 }
 
 impl From<&SpendingKey> for IssuerAuthorizingKey {
@@ -269,6 +278,15 @@ impl IssuerValidatingKey {
             .ok()
             .and_then(check_structural_validity)
             .map(IssuerValidatingKey)
+    }
+
+    /// Verifies a purported `signature` over `msg` made by this verification key.
+    pub fn verify(
+        &self,
+        msg: &[u8],
+        signature: &redpallas::Signature<SpendAuth>,
+    ) -> Result<(), reddsa::Error> {
+        self.0.verify(msg, signature)
     }
 }
 
@@ -1024,9 +1042,12 @@ impl SharedSecret {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
+    use super::{
+        DiversifierIndex, DiversifierKey, EphemeralSecretKey, IssuerAuthorizingKey,
+        IssuerValidatingKey, SpendingKey,
+    };
     use proptest::prelude::*;
-
-    use super::{DiversifierIndex, DiversifierKey, EphemeralSecretKey, SpendingKey};
+    use rand::{rngs::StdRng, SeedableRng};
 
     prop_compose! {
         /// Generate a uniformly distributed Orchard spending key.
@@ -1071,6 +1092,21 @@ pub mod testing {
             d_bytes in prop::array::uniform11(prop::num::u8::ANY)
         ) -> DiversifierIndex {
             DiversifierIndex::from(d_bytes)
+        }
+    }
+
+    prop_compose! {
+        /// Generate a uniformly distributed RedDSA issuer authorizing key.
+        pub fn arb_issuer_authorizing_key()(rng_seed in prop::array::uniform32(prop::num::u8::ANY)) -> IssuerAuthorizingKey {
+            let mut rng = StdRng::from_seed(rng_seed);
+            IssuerAuthorizingKey::from(&SpendingKey::random(&mut rng))
+        }
+    }
+
+    prop_compose! {
+        /// Generate a uniformly distributed RedDSA issuer validating key.
+        pub fn arb_issuer_validating_key()(isk in arb_issuer_authorizing_key()) -> IssuerValidatingKey {
+            IssuerValidatingKey::from(&isk)
         }
     }
 }

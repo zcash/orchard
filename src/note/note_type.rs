@@ -38,12 +38,12 @@ impl NoteType {
     ///
     /// [notetypes]: https://zips.z.cash/protocol/nu5.pdf#notetypes
     #[allow(non_snake_case)]
-    pub fn derive(ik: &IssuerValidatingKey, assetDesc: Vec<u8>) -> Self {
-        assert!(assetDesc.len() < MAX_ASSET_DESCRIPTION_SIZE);
+    pub fn derive(ik: &IssuerValidatingKey, asset_desc: &str) -> Self {
+        assert!(!asset_desc.is_empty() && asset_desc.len() <= MAX_ASSET_DESCRIPTION_SIZE);
 
         let mut s = vec![];
         s.extend(ik.to_bytes());
-        s.extend(assetDesc);
+        s.extend(asset_desc.as_bytes());
 
         NoteType(assetID_hasher(s))
     }
@@ -92,15 +92,13 @@ pub mod testing {
         pub fn arb_note_type()(
             is_native in prop::bool::ANY,
             sk in arb_spending_key(),
-            bytes32a in prop::array::uniform32(prop::num::u8::ANY),
-            bytes32b in prop::array::uniform32(prop::num::u8::ANY),
+            str in "[A-Za-z]{255}",
         ) -> NoteType {
             if is_native {
                 NoteType::native()
             } else {
-                let bytes64 = [bytes32a, bytes32b].concat();
                 let isk = IssuerAuthorizingKey::from(&sk);
-                NoteType::derive(&IssuerValidatingKey::from(&isk), bytes64)
+                NoteType::derive(&IssuerValidatingKey::from(&isk), &str)
             }
         }
     }
@@ -110,6 +108,17 @@ pub mod testing {
         pub fn native_note_type()(_i in 0..10) -> NoteType {
             // TODO: remove _i
             NoteType::native()
+        }
+    }
+
+    prop_compose! {
+        /// Generate the ZSA note type
+        pub fn zsa_note_type()(
+            sk in arb_spending_key(),
+            str in "[A-Za-z]{255}"
+        ) -> NoteType {
+            let isk = IssuerAuthorizingKey::from(&sk);
+            NoteType::derive(&IssuerValidatingKey::from(&isk), &str)
         }
     }
 }

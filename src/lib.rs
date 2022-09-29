@@ -22,6 +22,7 @@ pub mod builder;
 pub mod bundle;
 pub mod circuit;
 mod constants;
+pub mod issuance;
 pub mod keys;
 pub mod note;
 pub mod note_encryption;
