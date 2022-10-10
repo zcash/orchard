@@ -298,7 +298,12 @@ impl Builder {
     /// minus the value of all outputs.
     ///
     /// Useful for balancing a transaction, as the value balance of an individual bundle
-    /// can be non-zero, but a transaction may not have a positive total value balance.  
+    /// can be non-zero. Each bundle's value balance is [added] to the transparent
+    /// transaction value pool, which [must not have a negative value]. (If it were
+    /// negative, the transaction would output more value than it receives in inputs.)
+    ///
+    /// [added]: https://zips.z.cash/protocol/protocol.pdf#orchardbalance
+    /// [must not have a negative value]: https://zips.z.cash/protocol/protocol.pdf#transactions
     pub fn value_balance<V: TryFrom<i64>>(&self) -> Result<V, value::OverflowError> {
         let value_balance = self
             .spends
@@ -819,6 +824,9 @@ mod tests {
         builder
             .add_recipient(None, recipient, NoteValue::from_raw(5000), None)
             .unwrap();
+        let balance: i64 = builder.value_balance().unwrap();
+        assert_eq!(balance, -5000);
+
         let bundle: Bundle<Authorized, i64> = builder
             .build(&mut rng)
             .unwrap()
