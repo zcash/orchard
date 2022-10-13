@@ -16,6 +16,9 @@ and this project adheres to Rust's notion of
 - `orchard::builder::SpendInfo::new`
 - `orchard::circuit::Circuit::from_action_context`
 
+### Changed
+- Migrated to `zcash_note_encryption 0.2`.
+
 ## [0.2.0] - 2022-06-24
 ### Added
 - `orchard::bundle::BatchValidator`
