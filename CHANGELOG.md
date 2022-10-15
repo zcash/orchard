@@ -9,7 +9,10 @@ and this project adheres to Rust's notion of
 ### Added
 - `orchard::Proof::add_to_batch`
 - `orchard::address::Address::diversifier`
-- `orchard::keys::Diversifier::from_bytes`
+- `orchard::keys:`:
+  - `Diversifier::from_bytes`
+  - `PreparedEphemeralPublicKey`
+  - `PreparedIncomingViewingKey`
 - `orchard::note`:
   - `RandomSeed`
   - `Note::{from_parts, rseed}`
