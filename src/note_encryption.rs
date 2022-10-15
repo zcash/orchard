@@ -85,6 +85,16 @@ pub struct OrchardDomain {
     rho: Nullifier,
 }
 
+impl memuse::DynamicUsage for OrchardDomain {
+    fn dynamic_usage(&self) -> usize {
+        self.rho.dynamic_usage()
+    }
+
+    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+        self.rho.dynamic_usage_bounds()
+    }
+}
+
 impl OrchardDomain {
     /// Constructs a domain that can be used to trial-decrypt this action's output note.
     pub fn for_action<T>(act: &Action<T>) -> Self {

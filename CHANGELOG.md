@@ -16,6 +16,9 @@ and this project adheres to Rust's notion of
 - `orchard::note`:
   - `RandomSeed`
   - `Note::{from_parts, rseed}`
+  - `impl memuse::DynamicUsage for Nullifier`
+- `orchard::note_encryption`:
+  - `impl memuse::DynamicUsage for OrchardDomain`
 - `orchard::builder::SpendInfo::new`
 - `orchard::circuit::Circuit::from_action_context`
 

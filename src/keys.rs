@@ -710,6 +710,16 @@ impl IncomingViewingKey {
 #[derive(Clone, Debug)]
 pub struct PreparedIncomingViewingKey(PreparedNonZeroScalar);
 
+impl memuse::DynamicUsage for PreparedIncomingViewingKey {
+    fn dynamic_usage(&self) -> usize {
+        self.0.dynamic_usage()
+    }
+
+    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+        self.0.dynamic_usage_bounds()
+    }
+}
+
 impl PreparedIncomingViewingKey {
     /// Performs the necessary precomputations to use an `IncomingViewingKey` for note
     /// decryption.

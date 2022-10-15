@@ -7,6 +7,7 @@ use ff::{Field, PrimeField, PrimeFieldBits};
 use group::{Curve, Group, GroupEncoding, WnafBase, WnafScalar};
 use halo2_gadgets::{poseidon::primitives as poseidon, sinsemilla::primitives as sinsemilla};
 use halo2_proofs::arithmetic::{CurveAffine, CurveExt, FieldExt};
+use memuse::DynamicUsage;
 use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};
 
@@ -152,6 +153,16 @@ impl PreparedNonIdentityBase {
 
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedNonZeroScalar(WnafScalar<pallas::Scalar, PREPARED_WINDOW_SIZE>);
+
+impl DynamicUsage for PreparedNonZeroScalar {
+    fn dynamic_usage(&self) -> usize {
+        self.0.dynamic_usage()
+    }
+
+    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+        self.0.dynamic_usage_bounds()
+    }
+}
 
 impl PreparedNonZeroScalar {
     pub(crate) fn new(scalar: &NonZeroPallasScalar) -> Self {
