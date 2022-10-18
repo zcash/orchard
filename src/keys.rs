@@ -628,7 +628,7 @@ impl KeyAgreementPrivateKey {
 
     /// Returns the payment address for this key corresponding to the given diversifier.
     fn address(&self, d: Diversifier) -> Address {
-        let prepared_ivk = PreparedIncomingViewingKey::new_inner(&self);
+        let prepared_ivk = PreparedIncomingViewingKey::new_inner(self);
         let pk_d = DiversifiedTransmissionKey::derive(&prepared_ivk, &d);
         Address::from_parts(d, pk_d)
     }
