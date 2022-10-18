@@ -32,10 +32,10 @@ fn bench_note_decryption(c: &mut Criterion) {
     //
     // Our fixed (action, invalid ivk) tuple will always fall into a specific rejection
     // case. In order to reflect the real behaviour in the benchmarks, we trial-decrypt
-    // with 1000 invalid ivks (each of which will result in a different uniformly-random
-    // plaintext); this is equivalent to trial-decrypting 1000 different actions with the
+    // with 10240 invalid ivks (each of which will result in a different uniformly-random
+    // plaintext); this is equivalent to trial-decrypting 10240 different actions with the
     // same ivk, but is faster to set up.
-    let invalid_ivks: Vec<_> = (0u32..1000)
+    let invalid_ivks: Vec<_> = (0u32..10240)
         .map(|i| {
             let mut sk = [0; 32];
             sk[..4].copy_from_slice(&i.to_le_bytes());
