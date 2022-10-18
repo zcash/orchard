@@ -218,6 +218,20 @@ impl ValueCommitTrapdoor {
     pub(crate) fn inner(&self) -> pallas::Scalar {
         self.0
     }
+
+    /// Constructs `ValueCommitTrapdoor` from the byte representation of a scalar.
+    /// Returns a `None` [`CtOption`] if `bytes` is not a canonical representation
+    /// of a Pallas scalar.
+    ///
+    /// This is a low-level API, requiring a detailed understanding of the
+    /// [use of value commitment trapdoors][orchardbalance] in the Zcash protocol
+    /// to use correctly and securely. It is intended to be used in combination
+    /// with [`ValueCommitment::derive`].
+    ///
+    /// [orchardbalance]: https://zips.z.cash/protocol/protocol.pdf#orchardbalance
+    pub fn from_bytes(bytes: [u8; 32]) -> CtOption<Self> {
+        pallas::Scalar::from_repr(bytes).map(ValueCommitTrapdoor)
+    }
 }
 
 impl Add<&ValueCommitTrapdoor> for ValueCommitTrapdoor {

@@ -27,6 +27,12 @@ and this project adheres to Rust's notion of
   - `CompactAction::from_parts`
   - `CompactAction::nullifier`
   - `OrchardDomain::for_nullifier`
+- Low-level APIs in `orchard::value` for handling `ValueCommitment`s.
+  These are useful in code that constructs proof witnesses itself, but
+  note that doing so requires a detailed knowledge of the Zcash protocol
+  to avoid privacy and correctness pitfalls.
+  - `ValueCommitTrapdoor`
+  - `ValueCommitment::derive`
 
 ### Changed
 - Migrated to `halo2_proofs 0.2`.
