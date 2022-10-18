@@ -284,15 +284,18 @@ impl<T: Authorization, V> Bundle<T, V> {
         &self,
         keys: &[IncomingViewingKey],
     ) -> Vec<(usize, IncomingViewingKey, Note, Address, [u8; 512])> {
+        let prepared_keys: Vec<_> = keys
+            .iter()
+            .map(|ivk| (ivk, PreparedIncomingViewingKey::new(ivk)))
+            .collect();
         self.actions
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
                 let domain = OrchardDomain::for_action(action);
-                keys.iter().find_map(move |ivk| {
-                    let prepared_ivk = PreparedIncomingViewingKey::new(ivk);
-                    try_note_decryption(&domain, &prepared_ivk, action)
-                        .map(|(n, a, m)| (idx, ivk.clone(), n, a, m))
+                prepared_keys.iter().find_map(|(ivk, prepared_ivk)| {
+                    try_note_decryption(&domain, prepared_ivk, action)
+                        .map(|(n, a, m)| (idx, (*ivk).clone(), n, a, m))
                 })
             })
             .collect()
