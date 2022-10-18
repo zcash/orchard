@@ -288,13 +288,13 @@ impl<'a> Sum<&'a ValueCommitment> for ValueCommitment {
 }
 
 impl ValueCommitment {
-    /// $ValueCommit^Orchard$.
+    /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{Orchard}}$.
     ///
     /// Defined in [Zcash Protocol Spec § 5.4.8.3: Homomorphic Pedersen commitments (Sapling and Orchard)][concretehomomorphiccommit].
     ///
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
-    pub(crate) fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
+    pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
         let V = hasher(&VALUE_COMMITMENT_V_BYTES);
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
