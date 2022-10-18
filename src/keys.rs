@@ -865,7 +865,7 @@ impl EphemeralPublicKey {
     }
 }
 
-/// A Sapling ephemeral public key that has been precomputed for trial decryption.
+/// An Orchard ephemeral public key that has been precomputed for trial decryption.
 #[derive(Clone, Debug)]
 pub struct PreparedEphemeralPublicKey(PreparedNonIdentityBase);
 
