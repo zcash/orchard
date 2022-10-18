@@ -65,7 +65,7 @@ impl FvkTag {
 }
 
 /// A hardened child index for a derived key.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct ChildIndex(u32);
 
 impl TryFrom<u32> for ChildIndex {

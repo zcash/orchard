@@ -21,6 +21,9 @@ and this project adheres to Rust's notion of
   - `impl memuse::DynamicUsage for OrchardDomain`
 - `orchard::builder::SpendInfo::new`
 - `orchard::circuit::Circuit::from_action_context`
+- impls of `Eq` for:
+  - `orchard::zip32::ChildIndex`
+  - `orchard::value::ValueSum`
 
 ### Changed
 - Migrated to `zcash_note_encryption 0.2`.

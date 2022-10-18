@@ -144,7 +144,7 @@ pub(crate) enum Sign {
 }
 
 /// A sum of Orchard note values.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ValueSum(i128);
 
 impl ValueSum {
