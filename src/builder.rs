@@ -379,11 +379,13 @@ impl Builder {
                 .cloned()
                 .unwrap();
 
+            // TODO: uncomment once the circuit is ready.
             // use the first spend to create split spend(s) or create a dummy if empty.
-            let dummy_spend = spends.first().map_or_else(
-                || SpendInfo::dummy(note_type, &mut rng),
-                |s| s.create_split_spend(),
-            );
+            // let dummy_spend = spends.first().map_or_else(
+            //     || SpendInfo::dummy(note_type, &mut rng),
+            //     |s| s.create_split_spend(),
+            // );
+            let dummy_spend = SpendInfo::dummy(note_type, &mut rng);
 
             // Extend the spends and recipients with dummy values.
             spends.extend(iter::repeat_with(|| dummy_spend.clone()).take(num_actions - num_spends));

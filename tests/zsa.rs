@@ -254,8 +254,8 @@ fn build_and_verify_bundle(
         build_and_sign_bundle(builder, rng, keys.pk(), keys.sk())
     };
 
-    // Verify the shielded bundle
-    verify_bundle(&shielded_bundle, &keys.vk);
+    // Verify the shielded bundle, currently without the proof.
+    verify_bundle(&shielded_bundle, &keys.vk, false);
     assert_eq!(shielded_bundle.actions().len(), expected_num_actions);
 }
 

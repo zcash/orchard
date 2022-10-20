@@ -14,8 +14,10 @@ use orchard::{
 use rand::rngs::OsRng;
 use zcash_note_encryption::try_note_decryption;
 
-pub fn verify_bundle(bundle: &Bundle<Authorized, i64>, _vk: &VerifyingKey) {
-    // TODO uncomment when circuit can work with split flag - assert!(matches!(bundle.verify_proof(vk), Ok(())));
+pub fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, verify_proof: bool) {
+    if verify_proof {
+        assert!(matches!(bundle.verify_proof(vk), Ok(())));
+    }
     let sighash: [u8; 32] = bundle.commitment().into();
     let bvk = bundle.binding_validating_key();
     for action in bundle.actions() {
@@ -78,7 +80,7 @@ fn bundle_chain() {
     };
 
     // Verify the shielding bundle.
-    verify_bundle(&shielding_bundle, &vk);
+    verify_bundle(&shielding_bundle, &vk, true);
 
     // Create a shielded bundle spending the previous output.
     let shielded_bundle: Bundle<_, i64> = {
@@ -115,5 +117,5 @@ fn bundle_chain() {
     };
 
     // Verify the shielded bundle.
-    verify_bundle(&shielded_bundle, &vk);
+    verify_bundle(&shielded_bundle, &vk, true);
 }
