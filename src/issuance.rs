@@ -144,6 +144,13 @@ impl<T: IssueAuth> IssueBundle<T> {
     pub fn actions(&self) -> &Vec<IssueAction> {
         &self.actions
     }
+    /// Return the notes from all actions for a given `IssueBundle`.
+    pub fn get_all_notes(&self) -> Vec<Note> {
+        self.actions
+            .iter()
+            .flat_map(|action| action.notes.clone().into_iter())
+            .collect()
+    }
 
     /// Returns the authorization for this action.
     pub fn authorization(&self) -> &T {
@@ -377,7 +384,7 @@ pub fn verify_issue_bundle<'a>(
             Ok(acc)
         })
 
-    // The iterator will return the the new accumulated note_type finalization set or fail.
+    // The iterator will return the new finalization set or will fail.
 }
 
 /// Errors produced during the issuance process

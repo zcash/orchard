@@ -75,7 +75,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: tarpaulin
-          args: --all-features --timeout 600 --out Xml
+          args: --all-features --timeout 1200 --out Xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v1
         with:
