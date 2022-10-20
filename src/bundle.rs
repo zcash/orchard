@@ -17,7 +17,7 @@ use crate::{
     address::Address,
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     circuit::{Instance, Proof, VerifyingKey},
-    keys::{IncomingViewingKey, OutgoingViewingKey},
+    keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::Note,
     note_encryption::OrchardDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
@@ -284,14 +284,18 @@ impl<T: Authorization, V> Bundle<T, V> {
         &self,
         keys: &[IncomingViewingKey],
     ) -> Vec<(usize, IncomingViewingKey, Note, Address, [u8; 512])> {
+        let prepared_keys: Vec<_> = keys
+            .iter()
+            .map(|ivk| (ivk, PreparedIncomingViewingKey::new(ivk)))
+            .collect();
         self.actions
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
                 let domain = OrchardDomain::for_action(action);
-                keys.iter().find_map(move |ivk| {
-                    try_note_decryption(&domain, ivk, action)
-                        .map(|(n, a, m)| (idx, ivk.clone(), n, a, m))
+                prepared_keys.iter().find_map(|(ivk, prepared_ivk)| {
+                    try_note_decryption(&domain, prepared_ivk, action)
+                        .map(|(n, a, m)| (idx, (*ivk).clone(), n, a, m))
                 })
             })
             .collect()
@@ -305,9 +309,10 @@ impl<T: Authorization, V> Bundle<T, V> {
         action_idx: usize,
         key: &IncomingViewingKey,
     ) -> Option<(Note, Address, [u8; 512])> {
+        let prepared_ivk = PreparedIncomingViewingKey::new(key);
         self.actions.get(action_idx).and_then(move |action| {
             let domain = OrchardDomain::for_action(action);
-            try_note_decryption(&domain, key, action)
+            try_note_decryption(&domain, &prepared_ivk, action)
         })
     }
 

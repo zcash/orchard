@@ -4,10 +4,10 @@ use core::iter;
 use core::ops::Deref;
 
 use ff::{Field, PrimeField, PrimeFieldBits};
-use group::GroupEncoding;
-use group::{Curve, Group};
+use group::{Curve, Group, GroupEncoding, WnafBase, WnafScalar};
 use halo2_gadgets::{poseidon::primitives as poseidon, sinsemilla::primitives as sinsemilla};
 use halo2_proofs::arithmetic::{CurveAffine, CurveExt, FieldExt};
+use memuse::DynamicUsage;
 use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};
 
@@ -140,6 +140,36 @@ impl Deref for NonZeroPallasScalar {
     }
 }
 
+const PREPARED_WINDOW_SIZE: usize = 4;
+
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedNonIdentityBase(WnafBase<pallas::Point, PREPARED_WINDOW_SIZE>);
+
+impl PreparedNonIdentityBase {
+    pub(crate) fn new(base: NonIdentityPallasPoint) -> Self {
+        PreparedNonIdentityBase(WnafBase::new(base.0))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedNonZeroScalar(WnafScalar<pallas::Scalar, PREPARED_WINDOW_SIZE>);
+
+impl DynamicUsage for PreparedNonZeroScalar {
+    fn dynamic_usage(&self) -> usize {
+        self.0.dynamic_usage()
+    }
+
+    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+        self.0.dynamic_usage_bounds()
+    }
+}
+
+impl PreparedNonZeroScalar {
+    pub(crate) fn new(scalar: &NonZeroPallasScalar) -> Self {
+        PreparedNonZeroScalar(WnafScalar::new(scalar))
+    }
+}
+
 /// $\mathsf{ToBase}^\mathsf{Orchard}(x) := LEOS2IP_{\ell_\mathsf{PRFexpand}}(x) (mod q_P)$
 ///
 /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
@@ -213,8 +243,20 @@ pub(crate) fn ka_orchard(
     sk: &NonZeroPallasScalar,
     b: &NonIdentityPallasPoint,
 ) -> NonIdentityPallasPoint {
-    let mut wnaf = group::Wnaf::new();
-    NonIdentityPallasPoint(wnaf.scalar(sk.deref()).base(*b.deref()))
+    ka_orchard_prepared(
+        &PreparedNonZeroScalar::new(sk),
+        &PreparedNonIdentityBase::new(*b),
+    )
+}
+
+/// Defined in [Zcash Protocol Spec § 5.4.5.5: Orchard Key Agreement][concreteorchardkeyagreement].
+///
+/// [concreteorchardkeyagreement]: https://zips.z.cash/protocol/nu5.pdf#concreteorchardkeyagreement
+pub(crate) fn ka_orchard_prepared(
+    sk: &PreparedNonZeroScalar,
+    b: &PreparedNonIdentityBase,
+) -> NonIdentityPallasPoint {
+    NonIdentityPallasPoint(&b.0 * &sk.0)
 }
 
 /// Coordinate extractor for Pallas.
