@@ -5,7 +5,7 @@ use incrementalmerkletree::bridgetree::BridgeTree;
 use incrementalmerkletree::{Hashable, Tree};
 use orchard::bundle::Authorized;
 use orchard::issuance::{verify_issue_bundle, IssueBundle, Signed, Unauthorized};
-use orchard::keys::{IssuerAuthorizingKey, IssuerValidatingKey};
+use orchard::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use orchard::note::{ExtractedNoteCommitment, NoteType};
 use orchard::note_encryption::OrchardDomain;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
@@ -27,8 +27,8 @@ struct Keychain {
     vk: VerifyingKey,
     sk: SpendingKey,
     fvk: FullViewingKey,
-    isk: IssuerAuthorizingKey,
-    ik: IssuerValidatingKey,
+    isk: IssuanceAuthorizingKey,
+    ik: IssuanceValidatingKey,
     recipient: Address,
 }
 
@@ -42,10 +42,10 @@ impl Keychain {
     fn fvk(&self) -> &FullViewingKey {
         &self.fvk
     }
-    fn isk(&self) -> &IssuerAuthorizingKey {
+    fn isk(&self) -> &IssuanceAuthorizingKey {
         &self.isk
     }
-    fn ik(&self) -> &IssuerValidatingKey {
+    fn ik(&self) -> &IssuanceValidatingKey {
         &self.ik
     }
 }
@@ -58,8 +58,8 @@ fn prepare_keys() -> Keychain {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let isk = IssuerAuthorizingKey::from(&sk);
-    let ik = IssuerValidatingKey::from(&isk);
+    let isk = IssuanceAuthorizingKey::from(&sk);
+    let ik = IssuanceValidatingKey::from(&isk);
     Keychain {
         pk,
         vk,
@@ -74,7 +74,7 @@ fn prepare_keys() -> Keychain {
 fn sign_issue_bundle(
     unauthorized: IssueBundle<Unauthorized>,
     mut rng: OsRng,
-    isk: IssuerAuthorizingKey,
+    isk: IssuanceAuthorizingKey,
 ) -> IssueBundle<Signed> {
     let sighash = unauthorized.commitment().into();
     let proven = unauthorized.prepare(sighash);

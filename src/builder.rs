@@ -370,7 +370,9 @@ impl Builder {
         let mut pre_actions: Vec<_> = Vec::new();
 
         // Pair up the spends and recipients, extending with dummy values as necessary.
-        for (note_type, (mut spends, mut recipients)) in partition(&self.spends, &self.recipients) {
+        for (note_type, (mut spends, mut recipients)) in
+            partition_by_asset(&self.spends, &self.recipients)
+        {
             let num_spends = spends.len();
             let num_recipients = recipients.len();
             let num_actions = [num_spends, num_recipients, MIN_ACTIONS]
@@ -460,20 +462,20 @@ impl Builder {
 }
 
 /// partition a list of spends and recipients by note types.
-fn partition(
+fn partition_by_asset(
     spends: &[SpendInfo],
     recipients: &[RecipientInfo],
 ) -> HashMap<NoteType, (Vec<SpendInfo>, Vec<RecipientInfo>)> {
     let mut hm = HashMap::new();
 
-    for s in spends.iter() {
+    for s in spends {
         hm.entry(s.note.note_type())
             .or_insert((vec![], vec![]))
             .0
             .push(s.clone());
     }
 
-    for r in recipients.iter() {
+    for r in recipients {
         hm.entry(r.note_type)
             .or_insert((vec![], vec![]))
             .1

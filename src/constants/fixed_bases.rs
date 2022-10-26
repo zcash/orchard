@@ -19,7 +19,6 @@ pub mod value_commit_v;
 pub const ORCHARD_PERSONALIZATION: &str = "z.cash:Orchard";
 
 /// SWU hash-to-curve personalization for the value commitment generator
-/// TODO: should we change to "NOTE_TYPE_PERSONALIZATION"?
 pub const VALUE_COMMITMENT_PERSONALIZATION: &str = "z.cash:Orchard-cv";
 
 /// SWU hash-to-curve personalization for the note type generator

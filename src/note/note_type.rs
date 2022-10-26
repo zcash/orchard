@@ -6,7 +6,7 @@ use std::hash::{Hash, Hasher};
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
 use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_V_BYTES};
-use crate::keys::IssuerValidatingKey;
+use crate::keys::IssuanceValidatingKey;
 
 /// Note type identifier.
 #[derive(Clone, Copy, Debug, Eq)]
@@ -15,8 +15,7 @@ pub struct NoteType(pallas::Point);
 pub const MAX_ASSET_DESCRIPTION_SIZE: usize = 512;
 
 // the hasher used to derive the assetID
-#[allow(non_snake_case)]
-fn assetID_hasher(msg: Vec<u8>) -> pallas::Point {
+fn asset_id_hasher(msg: Vec<u8>) -> pallas::Point {
     // TODO(zsa) replace personalization
     pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION)(&msg)
 }
@@ -32,25 +31,29 @@ impl NoteType {
         self.0.to_bytes()
     }
 
-    /// $DeriveNoteType$.
+    /// Note type derivation$.
     ///
-    /// Defined in [Zcash Protocol Spec § TBD: Note Types][notetypes].
+    /// Defined in [Transfer and Burn of Zcash Shielded Assets][notetypes].
     ///
-    /// [notetypes]: https://zips.z.cash/protocol/nu5.pdf#notetypes
+    /// [notetypes]: https://qed-it.github.io/zips/draft-ZIP-0226.html#asset-types
+    ///
+    /// # Panics
+    ///
+    /// Panics if `asset_desc` is empty or greater than `MAX_ASSET_DESCRIPTION_SIZE`.
     #[allow(non_snake_case)]
-    pub fn derive(ik: &IssuerValidatingKey, asset_desc: &str) -> Self {
+    pub fn derive(ik: &IssuanceValidatingKey, asset_desc: &str) -> Self {
         assert!(!asset_desc.is_empty() && asset_desc.len() <= MAX_ASSET_DESCRIPTION_SIZE);
 
         let mut s = vec![];
         s.extend(ik.to_bytes());
         s.extend(asset_desc.as_bytes());
 
-        NoteType(assetID_hasher(s))
+        NoteType(asset_id_hasher(s))
     }
 
     /// Note type for the "native" currency (zec), maintains backward compatibility with Orchard untyped notes.
     pub fn native() -> Self {
-        NoteType(assetID_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
+        NoteType(asset_id_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
     }
 
     /// The base point used in value commitments.
@@ -85,7 +88,7 @@ pub mod testing {
 
     use proptest::prelude::*;
 
-    use crate::keys::{testing::arb_spending_key, IssuerAuthorizingKey, IssuerValidatingKey};
+    use crate::keys::{testing::arb_spending_key, IssuanceAuthorizingKey, IssuanceValidatingKey};
 
     prop_compose! {
         /// Generate a uniformly distributed note type
@@ -97,8 +100,8 @@ pub mod testing {
             if is_native {
                 NoteType::native()
             } else {
-                let isk = IssuerAuthorizingKey::from(&sk);
-                NoteType::derive(&IssuerValidatingKey::from(&isk), &str)
+                let isk = IssuanceAuthorizingKey::from(&sk);
+                NoteType::derive(&IssuanceValidatingKey::from(&isk), &str)
             }
         }
     }
@@ -117,8 +120,8 @@ pub mod testing {
             sk in arb_spending_key(),
             str in "[A-Za-z]{255}"
         ) -> NoteType {
-            let isk = IssuerAuthorizingKey::from(&sk);
-            NoteType::derive(&IssuerValidatingKey::from(&isk), &str)
+            let isk = IssuanceAuthorizingKey::from(&sk);
+            NoteType::derive(&IssuanceValidatingKey::from(&isk), &str)
         }
     }
 }

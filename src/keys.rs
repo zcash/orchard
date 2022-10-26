@@ -178,7 +178,7 @@ impl SpendValidatingKey {
         self.0.randomize(randomizer)
     }
 
-    /// Converts this spend validating key to its serialized form,
+    /// Converts this issuance validating key to its serialized form,
     /// I2LEOSP_256(ak).
     pub(crate) fn to_bytes(&self) -> [u8; 32] {
         // This is correct because the wrapped point must have ỹ = 0, and
@@ -194,23 +194,23 @@ impl SpendValidatingKey {
     }
 }
 
-/// An issuer authorizing key, used to create issuer authorization signatures.
+/// An issuance authorizing key, used to create issuance authorization signatures.
 /// This type enforces that the corresponding public point (ik^ℙ) has ỹ = 0.
 ///
 /// $\mathsf{isk}$ as defined in
-/// [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// [Issuance of Zcash Shielded Assets ZIP-0227 § Asset Identifier Generation (DRAFT ZIP)][IssuanceZSA].
 ///
-/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+/// [IssuanceZSA]: https://qed-it.github.io/zips/draft-ZIP-0227.html#asset-identifier-generation
 #[derive(Clone, Debug)]
-pub struct IssuerAuthorizingKey(redpallas::SigningKey<SpendAuth>);
+pub struct IssuanceAuthorizingKey(redpallas::SigningKey<SpendAuth>);
 
-impl IssuerAuthorizingKey {
+impl IssuanceAuthorizingKey {
     /// Derives isk from sk. Internal use only, does not enforce all constraints.
     fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
         to_scalar(PrfExpand::ZsaIsk.expand(&sk.0))
     }
 
-    /// Sign the provided message using the `IssuerAuthorizingKey`.
+    /// Sign the provided message using the `IssuanceAuthorizingKey`.
     pub fn sign(
         &self,
         rng: &mut (impl RngCore + CryptoRng),
@@ -220,51 +220,51 @@ impl IssuerAuthorizingKey {
     }
 }
 
-impl From<&SpendingKey> for IssuerAuthorizingKey {
+impl From<&SpendingKey> for IssuanceAuthorizingKey {
     fn from(sk: &SpendingKey) -> Self {
         let isk = Self::derive_inner(sk);
-        // IssuerSigningKey cannot be constructed such that this assertion would fail.
+        // IssuanceSigningKey cannot be constructed such that this assertion would fail.
         assert!(!bool::from(isk.is_zero()));
-        let ret = IssuerAuthorizingKey(isk.to_repr().try_into().unwrap());
+        let ret = IssuanceAuthorizingKey(isk.to_repr().try_into().unwrap());
         // If the last bit of repr_P(ik) is 1, negate isk.
-        if (<[u8; 32]>::from(IssuerValidatingKey::from(&ret).0)[31] >> 7) == 1 {
-            IssuerAuthorizingKey((-isk).to_repr().try_into().unwrap())
+        if (<[u8; 32]>::from(IssuanceValidatingKey::from(&ret).0)[31] >> 7) == 1 {
+            IssuanceAuthorizingKey((-isk).to_repr().try_into().unwrap())
         } else {
             ret
         }
     }
 }
 
-/// A key used to validate issuer authorization signatures.
+/// A key used to validate issuance authorization signatures.
 ///
-/// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// Defined in [Issuance of Zcash Shielded Assets ZIP-0227 § Asset Identifier Generation (DRAFT PR)][IssuanceZSA].
 /// Note that this is $\mathsf{ik}^\mathbb{P}$, which by construction is equivalent to
 /// $\mathsf{ik}$ but stored here as a RedPallas verification key.
 ///
-/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+/// [IssuanceZSA]: https://qed-it.github.io/zips/draft-ZIP-0227.html#asset-identifier-generation
 #[derive(Debug, Clone, PartialOrd, Ord)]
-pub struct IssuerValidatingKey(redpallas::VerificationKey<SpendAuth>);
-impl From<&IssuerAuthorizingKey> for IssuerValidatingKey {
-    fn from(isk: &IssuerAuthorizingKey) -> Self {
-        IssuerValidatingKey((&isk.0).into())
+pub struct IssuanceValidatingKey(redpallas::VerificationKey<SpendAuth>);
+impl From<&IssuanceAuthorizingKey> for IssuanceValidatingKey {
+    fn from(isk: &IssuanceAuthorizingKey) -> Self {
+        IssuanceValidatingKey((&isk.0).into())
     }
 }
 
-impl From<&IssuerValidatingKey> for pallas::Point {
-    fn from(issuer_validating_key: &IssuerValidatingKey) -> pallas::Point {
-        pallas::Point::from_bytes(&(&issuer_validating_key.0).into()).unwrap()
+impl From<&IssuanceValidatingKey> for pallas::Point {
+    fn from(issuance_validating_key: &IssuanceValidatingKey) -> pallas::Point {
+        pallas::Point::from_bytes(&(&issuance_validating_key.0).into()).unwrap()
     }
 }
 
-impl PartialEq for IssuerValidatingKey {
+impl PartialEq for IssuanceValidatingKey {
     fn eq(&self, other: &Self) -> bool {
         <[u8; 32]>::from(&self.0).eq(&<[u8; 32]>::from(&other.0))
     }
 }
 
-impl Eq for IssuerValidatingKey {}
+impl Eq for IssuanceValidatingKey {}
 
-impl IssuerValidatingKey {
+impl IssuanceValidatingKey {
     /// Converts this spend validating key to its serialized form,
     /// I2LEOSP_256(ik).
     pub(crate) fn to_bytes(&self) -> [u8; 32] {
@@ -277,7 +277,7 @@ impl IssuerValidatingKey {
         <[u8; 32]>::try_from(bytes)
             .ok()
             .and_then(check_structural_validity)
-            .map(IssuerValidatingKey)
+            .map(IssuanceValidatingKey)
     }
 
     /// Verifies a purported `signature` over `msg` made by this verification key.
@@ -292,9 +292,9 @@ impl IssuerValidatingKey {
 
 /// A function to check structural validity of the validating keys for authorizing transfers and
 /// issuing assets
-/// Structural validity checks for ik_P:
+/// Structural validity checks for ak_P or ik_P:
 ///  - The point must not be the identity (which for Pallas is canonically encoded as all-zeroes).
-///  - The sign of the y-coordinate must be positive.
+///  - The compressed y-coordinate bit must be 0.
 fn check_structural_validity(
     verification_key_bytes: [u8; 32],
 ) -> Option<VerificationKey<SpendAuth>> {
@@ -1043,8 +1043,8 @@ impl SharedSecret {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use super::{
-        DiversifierIndex, DiversifierKey, EphemeralSecretKey, IssuerAuthorizingKey,
-        IssuerValidatingKey, SpendingKey,
+        DiversifierIndex, DiversifierKey, EphemeralSecretKey, IssuanceAuthorizingKey,
+        IssuanceValidatingKey, SpendingKey,
     };
     use proptest::prelude::*;
     use rand::{rngs::StdRng, SeedableRng};
@@ -1096,17 +1096,17 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate a uniformly distributed RedDSA issuer authorizing key.
-        pub fn arb_issuer_authorizing_key()(rng_seed in prop::array::uniform32(prop::num::u8::ANY)) -> IssuerAuthorizingKey {
+        /// Generate a uniformly distributed RedDSA issuance authorizing key.
+        pub fn arb_issuance_authorizing_key()(rng_seed in prop::array::uniform32(prop::num::u8::ANY)) -> IssuanceAuthorizingKey {
             let mut rng = StdRng::from_seed(rng_seed);
-            IssuerAuthorizingKey::from(&SpendingKey::random(&mut rng))
+            IssuanceAuthorizingKey::from(&SpendingKey::random(&mut rng))
         }
     }
 
     prop_compose! {
-        /// Generate a uniformly distributed RedDSA issuer validating key.
-        pub fn arb_issuer_validating_key()(isk in arb_issuer_authorizing_key()) -> IssuerValidatingKey {
-            IssuerValidatingKey::from(&isk)
+        /// Generate a uniformly distributed RedDSA issuance validating key.
+        pub fn arb_issuance_validating_key()(isk in arb_issuance_authorizing_key()) -> IssuanceValidatingKey {
+            IssuanceValidatingKey::from(&isk)
         }
     }
 }
@@ -1180,13 +1180,13 @@ mod tests {
             let ask: SpendAuthorizingKey = (&sk).into();
             assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
 
-            let isk: IssuerAuthorizingKey = (&sk).into();
+            let isk: IssuanceAuthorizingKey = (&sk).into();
             assert_eq!(<[u8; 32]>::from(&isk.0), tv.isk);
 
             let ak: SpendValidatingKey = (&ask).into();
             assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
 
-            let ik: IssuerValidatingKey = (&isk).into();
+            let ik: IssuanceValidatingKey = (&isk).into();
             assert_eq!(<[u8; 32]>::from(ik.0), tv.ik);
 
             let nk: NullifierDerivingKey = (&sk).into();

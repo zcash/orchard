@@ -11,7 +11,7 @@ use crate::issuance::Error::{
     IssueActionPreviouslyFinalizedNoteType, IssueBundleIkMismatchNoteType,
     IssueBundleInvalidSignature, WrongAssetDescSize,
 };
-use crate::keys::{IssuerAuthorizingKey, IssuerValidatingKey};
+use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use crate::note::note_type::MAX_ASSET_DESCRIPTION_SIZE;
 use crate::note::{NoteType, Nullifier};
 use crate::value::NoteValue;
@@ -24,7 +24,7 @@ use crate::{
 #[derive(Debug)]
 pub struct IssueBundle<T: IssueAuth> {
     /// The issuer key for the note being created.
-    ik: IssuerValidatingKey,
+    ik: IssuanceValidatingKey,
     /// The list of issue actions that make up this bundle.
     actions: Vec<IssueAction>,
     /// The authorization for this action.
@@ -84,7 +84,7 @@ impl IssueAction {
     /// Return the `NoteType` if the provided `ik` is used to derive the `note_type` for **all** internal notes.
     fn are_note_types_derived_correctly(
         &self,
-        ik: &IssuerValidatingKey,
+        ik: &IssuanceValidatingKey,
     ) -> Result<NoteType, Error> {
         match self
             .notes
@@ -137,7 +137,7 @@ impl IssueAuth for Signed {}
 
 impl<T: IssueAuth> IssueBundle<T> {
     /// Returns the issuer verification key for the bundle.
-    pub fn ik(&self) -> &IssuerValidatingKey {
+    pub fn ik(&self) -> &IssuanceValidatingKey {
         &self.ik
     }
     /// Return the actions for a given `IssueBundle`.
@@ -180,7 +180,7 @@ impl<T: IssueAuth> IssueBundle<T> {
 
 impl IssueBundle<Unauthorized> {
     /// Constructs a new `IssueBundle`.
-    pub fn new(ik: IssuerValidatingKey) -> IssueBundle<Unauthorized> {
+    pub fn new(ik: IssuanceValidatingKey) -> IssueBundle<Unauthorized> {
         IssueBundle {
             ik,
             actions: Vec::new(),
@@ -283,9 +283,9 @@ impl IssueBundle<Prepared> {
     pub fn sign<R: RngCore + CryptoRng>(
         self,
         mut rng: R,
-        isk: &IssuerAuthorizingKey,
+        isk: &IssuanceAuthorizingKey,
     ) -> Result<IssueBundle<Signed>, Error> {
-        let expected_ik: IssuerValidatingKey = (isk).into();
+        let expected_ik: IssuanceValidatingKey = (isk).into();
 
         // Make sure the `expected_ik` matches the note_type for all notes.
         self.actions.iter().try_for_each(|action| {
@@ -454,7 +454,7 @@ mod tests {
     };
     use crate::issuance::{verify_issue_bundle, IssueAction, Signed};
     use crate::keys::{
-        FullViewingKey, IssuerAuthorizingKey, IssuerValidatingKey, Scope, SpendingKey,
+        FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
     };
     use crate::note::{NoteType, Nullifier};
     use crate::value::NoteValue;
@@ -468,15 +468,15 @@ mod tests {
 
     fn setup_params() -> (
         OsRng,
-        IssuerAuthorizingKey,
-        IssuerValidatingKey,
+        IssuanceAuthorizingKey,
+        IssuanceValidatingKey,
         Address,
         [u8; 32],
     ) {
         let mut rng = OsRng;
         let sk = SpendingKey::random(&mut rng);
-        let isk: IssuerAuthorizingKey = (&sk).into();
-        let ik: IssuerValidatingKey = (&isk).into();
+        let isk: IssuanceAuthorizingKey = (&sk).into();
+        let ik: IssuanceValidatingKey = (&isk).into();
 
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
@@ -689,7 +689,7 @@ mod tests {
             )
             .unwrap();
 
-        let wrong_isk: IssuerAuthorizingKey = (&SpendingKey::random(&mut OsRng)).into();
+        let wrong_isk: IssuanceAuthorizingKey = (&SpendingKey::random(&mut OsRng)).into();
 
         let err = bundle
             .prepare([0; 32])
@@ -845,7 +845,7 @@ mod tests {
             )
             .unwrap();
 
-        let wrong_isk: IssuerAuthorizingKey = (&SpendingKey::random(&mut rng)).into();
+        let wrong_isk: IssuanceAuthorizingKey = (&SpendingKey::random(&mut rng)).into();
 
         let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
@@ -951,8 +951,8 @@ mod tests {
         let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
         let incorrect_sk = SpendingKey::random(&mut rng);
-        let incorrect_isk: IssuerAuthorizingKey = (&incorrect_sk).into();
-        let incorrect_ik: IssuerValidatingKey = (&incorrect_isk).into();
+        let incorrect_isk: IssuanceAuthorizingKey = (&incorrect_sk).into();
+        let incorrect_ik: IssuanceValidatingKey = (&incorrect_isk).into();
 
         // Add "bad" note
         let note = Note::new(
@@ -1024,7 +1024,7 @@ mod tests {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use crate::issuance::{IssueAction, IssueBundle, Prepared, Signed, Unauthorized};
-    use crate::keys::testing::{arb_issuer_authorizing_key, arb_issuer_validating_key};
+    use crate::keys::testing::{arb_issuance_authorizing_key, arb_issuance_validating_key};
     use crate::note::testing::arb_zsa_note;
     use proptest::collection::vec;
     use proptest::prelude::*;
@@ -1049,7 +1049,7 @@ pub mod testing {
         pub fn arb_unathorized_issue_bundle(n_actions: usize)
         (
             actions in vec(arb_issue_action(), n_actions),
-            ik in arb_issuer_validating_key()
+            ik in arb_issuance_validating_key()
         ) -> IssueBundle<Unauthorized> {
             IssueBundle {
                 ik,
@@ -1066,7 +1066,7 @@ pub mod testing {
         pub fn arb_prepared_issue_bundle(n_actions: usize)
         (
             actions in vec(arb_issue_action(), n_actions),
-            ik in arb_issuer_validating_key(),
+            ik in arb_issuance_validating_key(),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY)
         ) -> IssueBundle<Prepared> {
             IssueBundle {
@@ -1084,8 +1084,8 @@ pub mod testing {
         pub fn arb_signed_issue_bundle(n_actions: usize)
         (
             actions in vec(arb_issue_action(), n_actions),
-            ik in arb_issuer_validating_key(),
-            isk in arb_issuer_authorizing_key(),
+            ik in arb_issuance_validating_key(),
+            isk in arb_issuance_authorizing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY)
         ) -> IssueBundle<Signed> {
