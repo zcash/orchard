@@ -11,7 +11,7 @@ use crate::{
         fixed_bases::{NOTE_COMMITMENT_PERSONALIZATION, NOTE_ZSA_COMMITMENT_PERSONALIZATION},
         L_ORCHARD_BASE,
     },
-    note::note_type::NoteType,
+    note::asset_id::AssetId,
     spec::extract_p,
     value::NoteValue,
 };
@@ -45,7 +45,7 @@ impl NoteCommitment {
         g_d: [u8; 32],
         pk_d: [u8; 32],
         v: NoteValue,
-        note_type: NoteType,
+        asset: AssetId,
         rho: pallas::Base,
         psi: pallas::Base,
         rcm: NoteCommitTrapdoor,
@@ -64,13 +64,13 @@ impl NoteCommitment {
             .chain(psi_bits.iter().by_vals().take(L_ORCHARD_BASE));
 
         // TODO: make this constant-time.
-        if note_type.is_native().into() {
+        if asset.is_native().into() {
             // Commit to ZEC notes as per the Orchard protocol.
             Self::commit(NOTE_COMMITMENT_PERSONALIZATION, zec_note_bits, rcm)
         } else {
             // Commit to non-ZEC notes as per the ZSA protocol.
             // Append the note type to the Orchard note encoding.
-            let type_bits = BitArray::<_, Lsb0>::new(note_type.to_bytes());
+            let type_bits = BitArray::<_, Lsb0>::new(asset.to_bytes());
             let zsa_note_bits = zec_note_bits.chain(type_bits.iter().by_vals());
 
             // Commit in a different domain than Orchard notes.

@@ -6,7 +6,7 @@ use criterion::{BenchmarkId, Criterion};
 #[cfg(unix)]
 use pprof::criterion::{Output, PProfProfiler};
 
-use orchard::note::NoteType;
+use orchard::note::AssetId;
 use orchard::{
     builder::Builder,
     bundle::Flags,
@@ -37,7 +37,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     None,
                     recipient,
                     NoteValue::from_raw(10),
-                    NoteType::native(),
+                    AssetId::native(),
                     None,
                 )
                 .unwrap();

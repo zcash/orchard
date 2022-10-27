@@ -10,7 +10,7 @@ use crate::keys::IssuanceValidatingKey;
 
 /// Note type identifier.
 #[derive(Clone, Copy, Debug, Eq)]
-pub struct NoteType(pallas::Point);
+pub struct AssetId(pallas::Point);
 
 pub const MAX_ASSET_DESCRIPTION_SIZE: usize = 512;
 
@@ -20,13 +20,13 @@ fn asset_id_hasher(msg: Vec<u8>) -> pallas::Point {
     pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION)(&msg)
 }
 
-impl NoteType {
-    /// Deserialize the note_type from a byte array.
+impl AssetId {
+    /// Deserialize the asset_id from a byte array.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
-        pallas::Point::from_bytes(bytes).map(NoteType)
+        pallas::Point::from_bytes(bytes).map(AssetId)
     }
 
-    /// Serialize the note_type to its canonical byte representation.
+    /// Serialize the asset_id to its canonical byte representation.
     pub fn to_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
@@ -42,18 +42,18 @@ impl NoteType {
     /// Panics if `asset_desc` is empty or greater than `MAX_ASSET_DESCRIPTION_SIZE`.
     #[allow(non_snake_case)]
     pub fn derive(ik: &IssuanceValidatingKey, asset_desc: &str) -> Self {
-        assert!(!asset_desc.is_empty() && asset_desc.len() <= MAX_ASSET_DESCRIPTION_SIZE);
+        assert!(is_asset_desc_of_valid_size(asset_desc));
 
         let mut s = vec![];
         s.extend(ik.to_bytes());
         s.extend(asset_desc.as_bytes());
 
-        NoteType(asset_id_hasher(s))
+        AssetId(asset_id_hasher(s))
     }
 
     /// Note type for the "native" currency (zec), maintains backward compatibility with Orchard untyped notes.
     pub fn native() -> Self {
-        NoteType(asset_id_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
+        AssetId(asset_id_hasher(VALUE_COMMITMENT_V_BYTES.to_vec()))
     }
 
     /// The base point used in value commitments.
@@ -67,14 +67,19 @@ impl NoteType {
     }
 }
 
-impl Hash for NoteType {
+impl Hash for AssetId {
     fn hash<H: Hasher>(&self, h: &mut H) {
         h.write(&self.to_bytes());
         h.finish();
     }
 }
 
-impl PartialEq for NoteType {
+/// Check that `asset_desc` is of valid size.
+pub fn is_asset_desc_of_valid_size(asset_desc: &str) -> bool {
+    !asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE
+}
+
+impl PartialEq for AssetId {
     fn eq(&self, other: &Self) -> bool {
         bool::from(self.0.ct_eq(&other.0))
     }
@@ -84,7 +89,7 @@ impl PartialEq for NoteType {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use super::NoteType;
+    use super::AssetId;
 
     use proptest::prelude::*;
 
@@ -92,36 +97,36 @@ pub mod testing {
 
     prop_compose! {
         /// Generate a uniformly distributed note type
-        pub fn arb_note_type()(
+        pub fn arb_asset_id()(
             is_native in prop::bool::ANY,
             sk in arb_spending_key(),
             str in "[A-Za-z]{255}",
-        ) -> NoteType {
+        ) -> AssetId {
             if is_native {
-                NoteType::native()
+                AssetId::native()
             } else {
                 let isk = IssuanceAuthorizingKey::from(&sk);
-                NoteType::derive(&IssuanceValidatingKey::from(&isk), &str)
+                AssetId::derive(&IssuanceValidatingKey::from(&isk), &str)
             }
         }
     }
 
     prop_compose! {
         /// Generate the native note type
-        pub fn native_note_type()(_i in 0..10) -> NoteType {
+        pub fn native_asset_id()(_i in 0..10) -> AssetId {
             // TODO: remove _i
-            NoteType::native()
+            AssetId::native()
         }
     }
 
     prop_compose! {
         /// Generate the ZSA note type
-        pub fn zsa_note_type()(
+        pub fn zsa_asset_id()(
             sk in arb_spending_key(),
             str in "[A-Za-z]{255}"
-        ) -> NoteType {
+        ) -> AssetId {
             let isk = IssuanceAuthorizingKey::from(&sk);
-            NoteType::derive(&IssuanceValidatingKey::from(&isk), &str)
+            AssetId::derive(&IssuanceValidatingKey::from(&isk), &str)
         }
     }
 }

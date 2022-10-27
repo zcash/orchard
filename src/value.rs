@@ -53,7 +53,7 @@ use pasta_curves::{
 use rand::RngCore;
 use subtle::CtOption;
 
-use crate::note::NoteType;
+use crate::note::AssetId;
 use crate::{
     constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES},
     primitives::redpallas::{self, Binding},
@@ -325,7 +325,7 @@ impl ValueCommitment {
     ///
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
-    pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor, note_type: NoteType) -> Self {
+    pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor, asset: AssetId) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
@@ -336,7 +336,7 @@ impl ValueCommitment {
             pallas::Scalar::from(abs_value)
         };
 
-        let V_zsa = note_type.cv_base();
+        let V_zsa = asset.cv_base();
 
         ValueCommitment(V_zsa * value + R * rcv.0)
     }
@@ -441,9 +441,9 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use crate::note::note_type::testing::{arb_note_type, native_note_type};
+    use crate::note::asset_id::testing::{arb_asset_id, native_asset_id};
 
-    use crate::note::NoteType;
+    use crate::note::AssetId;
     use proptest::prelude::*;
 
     use super::{
@@ -453,8 +453,8 @@ mod tests {
     use crate::primitives::redpallas;
 
     fn _bsk_consistent_with_bvk(
-        native_values: &[(ValueSum, ValueCommitTrapdoor, NoteType)],
-        arb_values: &[(ValueSum, ValueCommitTrapdoor, NoteType)],
+        native_values: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
+        arb_values: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
         neg_trapdoors: &[ValueCommitTrapdoor],
     ) {
         // for each arb value, create a negative value with a different trapdoor
@@ -462,7 +462,7 @@ mod tests {
             .iter()
             .cloned()
             .zip(neg_trapdoors.iter().cloned())
-            .map(|((value, _, note_type), rcv)| ((-value).unwrap(), rcv, note_type))
+            .map(|((value, _, asset), rcv)| ((-value).unwrap(), rcv, asset))
             .collect();
 
         let native_value_balance = native_values
@@ -481,12 +481,12 @@ mod tests {
 
         let bvk = (values
             .iter()
-            .map(|(value, rcv, note_type)| ValueCommitment::derive(*value, *rcv, *note_type))
+            .map(|(value, rcv, asset)| ValueCommitment::derive(*value, *rcv, *asset))
             .sum::<ValueCommitment>()
             - ValueCommitment::derive(
                 native_value_balance,
                 ValueCommitTrapdoor::zero(),
-                NoteType::native(),
+                AssetId::native(),
             ))
         .into_bvk();
 
@@ -498,7 +498,7 @@ mod tests {
         fn bsk_consistent_with_bvk_native_only(
             native_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_note_type()), n_values)
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_asset_id()), n_values)
                 )
             ),
         ) {
@@ -512,12 +512,12 @@ mod tests {
         fn bsk_consistent_with_bvk(
             native_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_note_type()), n_values)
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_asset_id()), n_values)
                 )
             ),
             (arb_values,neg_trapdoors) in (1usize..10).prop_flat_map(|n_values|
                 (arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_note_type()), n_values)
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_id()), n_values)
                 ), prop::collection::vec(arb_trapdoor(), n_values))
             ),
         ) {

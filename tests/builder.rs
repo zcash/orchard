@@ -1,5 +1,5 @@
 use incrementalmerkletree::{bridgetree::BridgeTree, Hashable, Tree};
-use orchard::note::NoteType;
+use orchard::note::AssetId;
 use orchard::{
     builder::Builder,
     bundle::{Authorized, Flags},
@@ -68,7 +68,7 @@ fn bundle_chain() {
                 None,
                 recipient,
                 NoteValue::from_raw(5000),
-                NoteType::native(),
+                AssetId::native(),
                 None
             ),
             Ok(())
@@ -103,7 +103,7 @@ fn bundle_chain() {
                 None,
                 recipient,
                 NoteValue::from_raw(5000),
-                NoteType::native(),
+                AssetId::native(),
                 None
             ),
             Ok(())

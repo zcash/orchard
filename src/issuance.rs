@@ -12,8 +12,8 @@ use crate::issuance::Error::{
     IssueBundleInvalidSignature, WrongAssetDescSize,
 };
 use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
-use crate::note::note_type::MAX_ASSET_DESCRIPTION_SIZE;
-use crate::note::{NoteType, Nullifier};
+use crate::note::asset_id::is_asset_desc_of_valid_size;
+use crate::note::{AssetId, Nullifier};
 use crate::value::NoteValue;
 use crate::{
     primitives::redpallas::{self, SpendAuth},
@@ -81,24 +81,24 @@ impl IssueAction {
         self.finalize
     }
 
-    /// Return the `NoteType` if the provided `ik` is used to derive the `note_type` for **all** internal notes.
-    fn are_note_types_derived_correctly(
+    /// Return the `AssetId` if the provided `ik` is used to derive the `asset_id` for **all** internal notes.
+    fn are_note_asset_ids_derived_correctly(
         &self,
         ik: &IssuanceValidatingKey,
-    ) -> Result<NoteType, Error> {
+    ) -> Result<AssetId, Error> {
         match self
             .notes
             .iter()
-            .try_fold(self.notes().head.note_type(), |note_type, &note| {
+            .try_fold(self.notes().head.asset(), |asset, &note| {
                 // Fail if not all note types are equal
-                note.note_type()
-                    .eq(&note_type)
-                    .then(|| note_type)
+                note.asset()
+                    .eq(&asset)
+                    .then(|| asset)
                     .ok_or(IssueActionIncorrectNoteType)
             }) {
-            Ok(note_type) => note_type // check that the note_type was properly derived.
-                .eq(&NoteType::derive(ik, &self.asset_desc))
-                .then(|| note_type)
+            Ok(asset) => asset // check that the asset was properly derived.
+                .eq(&AssetId::derive(ik, &self.asset_desc))
+                .then(|| asset)
                 .ok_or(IssueBundleIkMismatchNoteType),
             Err(e) => Err(e),
         }
@@ -162,12 +162,12 @@ impl<T: IssueAuth> IssueBundle<T> {
         self.actions.iter().find(|a| a.asset_desc.eq(&asset_desc))
     }
 
-    /// Find an action by `note_type` for a given `IssueBundle`.
-    pub fn get_action_by_type(&self, note_type: NoteType) -> Option<&IssueAction> {
+    /// Find an action by `asset` for a given `IssueBundle`.
+    pub fn get_action_by_type(&self, asset: AssetId) -> Option<&IssueAction> {
         let action = self
             .actions
             .iter()
-            .find(|a| NoteType::derive(&self.ik, &a.asset_desc).eq(&note_type));
+            .find(|a| AssetId::derive(&self.ik, &a.asset_desc).eq(&asset));
         action
     }
 
@@ -202,17 +202,17 @@ impl IssueBundle<Unauthorized> {
         value: NoteValue,
         finalize: bool,
         mut rng: impl RngCore,
-    ) -> Result<NoteType, Error> {
-        if !is_asset_desc_valid(&asset_desc) {
+    ) -> Result<AssetId, Error> {
+        if !is_asset_desc_of_valid_size(&asset_desc) {
             return Err(WrongAssetDescSize);
         }
 
-        let note_type = NoteType::derive(&self.ik, &asset_desc);
+        let asset = AssetId::derive(&self.ik, &asset_desc);
 
         let note = Note::new(
             recipient,
             value,
-            note_type,
+            asset,
             Nullifier::dummy(&mut rng),
             &mut rng,
         );
@@ -238,7 +238,7 @@ impl IssueBundle<Unauthorized> {
             }
         }
 
-        Ok(note_type)
+        Ok(asset)
     }
 
     /// Finalizes a given `IssueAction`
@@ -247,7 +247,7 @@ impl IssueBundle<Unauthorized> {
     ///
     /// Panics if `asset_desc` is empty or longer than 512 bytes.
     pub fn finalize_action(&mut self, asset_desc: String) -> Result<(), Error> {
-        if !is_asset_desc_valid(&asset_desc) {
+        if !is_asset_desc_of_valid_size(&asset_desc) {
             return Err(WrongAssetDescSize);
         }
 
@@ -279,7 +279,7 @@ impl IssueBundle<Unauthorized> {
 
 impl IssueBundle<Prepared> {
     /// Sign the `IssueBundle`.
-    /// The call makes sure that the provided `isk` matches the `ik` and the driven `note_type` for each note in the bundle.
+    /// The call makes sure that the provided `isk` matches the `ik` and the driven `asset` for each note in the bundle.
     pub fn sign<R: RngCore + CryptoRng>(
         self,
         mut rng: R,
@@ -287,10 +287,10 @@ impl IssueBundle<Prepared> {
     ) -> Result<IssueBundle<Signed>, Error> {
         let expected_ik: IssuanceValidatingKey = (isk).into();
 
-        // Make sure the `expected_ik` matches the note_type for all notes.
+        // Make sure the `expected_ik` matches the `asset` for all notes.
         self.actions.iter().try_for_each(|action| {
             action
-                .are_note_types_derived_correctly(&expected_ik)
+                .are_note_asset_ids_derived_correctly(&expected_ik)
                 .map(|_| ()) // Transform Result<NoteType,Error> into Result<(),Error)>.
         })?;
 
@@ -332,14 +332,10 @@ impl IssueBundle<Signed> {
     }
 }
 
-fn is_asset_desc_valid(asset_desc: &str) -> bool {
-    !asset_desc.is_empty() && asset_desc.bytes().len() <= MAX_ASSET_DESCRIPTION_SIZE
-}
-
 /// Validation for Orchard IssueBundles
 ///
 /// A set of previously finalized asset types must be provided.
-/// In case of success, the `Result` will contain a set of the provided **and** the newly finalized `NoteType`s
+/// In case of success, `finalized` will contain a set of the provided **and** the newly finalized `NoteType`s
 ///
 /// The following checks are performed:
 /// * For the `IssueBundle`:
@@ -348,43 +344,46 @@ fn is_asset_desc_valid(asset_desc: &str) -> bool {
 ///     * Asset description size is collect.
 ///     * `NoteType` for the `IssueAction` has not been previously finalized.
 /// * For each `Note` inside an `IssueAction`:
-///     * All notes have the same, correct `NoteType`
-pub fn verify_issue_bundle<'a>(
+///     * All notes have the same, correct `NoteType`.
+pub fn verify_issue_bundle(
     bundle: &IssueBundle<Signed>,
     sighash: [u8; 32],
-    previously_finalized: &'a mut HashSet<NoteType>, // The current note_type finalization set.
-) -> Result<&'a mut HashSet<NoteType>, Error> {
+    finalized: &mut HashSet<AssetId>, // The current finalization set.
+) -> Result<(), Error> {
     if let Err(e) = bundle.ik.verify(&sighash, &bundle.authorization.signature) {
         return Err(IssueBundleInvalidSignature(e));
     };
 
+    let currently_finalized: &mut HashSet<AssetId> = &mut HashSet::new();
+
     // Any IssueAction could have just one properly derived NoteType.
-    bundle
+    let res = bundle
         .actions()
         .iter()
-        .try_fold(previously_finalized, |acc, action| {
-            if !is_asset_desc_valid(action.asset_desc()) {
+        .try_fold(currently_finalized, |acc, action| {
+            if !is_asset_desc_of_valid_size(action.asset_desc()) {
                 return Err(WrongAssetDescSize);
             }
 
             // Fail if any note in the IssueAction has incorrect note type.
-            let note_type = action.are_note_types_derived_correctly(bundle.ik())?;
+            let asset = action.are_note_asset_ids_derived_correctly(bundle.ik())?;
 
-            // Fail if the current note_type was previously finalized.
-            if acc.contains(&note_type) {
-                return Err(IssueActionPreviouslyFinalizedNoteType(note_type));
+            // Fail if the current asset was previously finalized.
+            if finalized.contains(&asset) || acc.contains(&asset) {
+                return Err(IssueActionPreviouslyFinalizedNoteType(asset));
             }
 
             // Add to finalization set, if needed.
             if action.is_finalized() {
-                acc.insert(note_type);
+                acc.insert(asset);
             }
 
-            // Proceed with the new accumulated note_type finalization set.
+            // Proceed with the new asset finalization set.
             Ok(acc)
-        })
+        })?;
 
-    // The iterator will return the new finalization set or will fail.
+    finalized.extend(res.iter());
+    Ok(())
 }
 
 /// Errors produced during the issuance process
@@ -405,7 +404,7 @@ pub enum Error {
     /// Invalid signature.
     IssueBundleInvalidSignature(reddsa::Error),
     /// The provided `NoteType` has been previously finalized.
-    IssueActionPreviouslyFinalizedNoteType(NoteType),
+    IssueActionPreviouslyFinalizedNoteType(AssetId),
 }
 
 impl std::error::Error for Error {}
@@ -456,7 +455,7 @@ mod tests {
     use crate::keys::{
         FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
     };
-    use crate::note::{NoteType, Nullifier};
+    use crate::note::{AssetId, Nullifier};
     use crate::value::NoteValue;
     use crate::{Address, Note};
     use nonempty::NonEmpty;
@@ -522,37 +521,37 @@ mod tests {
             WrongAssetDescSize
         );
 
-        let note_type = bundle
+        let asset = bundle
             .add_recipient(str.clone(), recipient, NoteValue::from_raw(5), false, rng)
             .unwrap();
 
-        let another_note_type = bundle
+        let another_asset = bundle
             .add_recipient(str, recipient, NoteValue::from_raw(10), false, rng)
             .unwrap();
-        assert_eq!(note_type, another_note_type);
+        assert_eq!(asset, another_asset);
 
-        let third_note_type = bundle
+        let third_asset = bundle
             .add_recipient(str2.clone(), recipient, NoteValue::from_raw(15), false, rng)
             .unwrap();
-        assert_ne!(note_type, third_note_type);
+        assert_ne!(asset, third_asset);
 
         let actions = bundle.actions();
         assert_eq!(actions.len(), 2);
 
-        let action = bundle.get_action_by_type(note_type).unwrap();
+        let action = bundle.get_action_by_type(asset).unwrap();
         assert_eq!(action.notes.len(), 2);
         assert_eq!(action.notes.first().value().inner(), 5);
-        assert_eq!(action.notes.first().note_type(), note_type);
+        assert_eq!(action.notes.first().asset(), asset);
         assert_eq!(action.notes.first().recipient(), recipient);
 
         assert_eq!(action.notes.tail().first().unwrap().value().inner(), 10);
-        assert_eq!(action.notes.tail().first().unwrap().note_type(), note_type);
+        assert_eq!(action.notes.tail().first().unwrap().asset(), asset);
         assert_eq!(action.notes.tail().first().unwrap().recipient(), recipient);
 
         let action2 = bundle.get_action(str2).unwrap();
         assert_eq!(action2.notes.len(), 1);
         assert_eq!(action2.notes().first().value().inner(), 15);
-        assert_eq!(action2.notes().first().note_type(), third_note_type);
+        assert_eq!(action2.notes().first().asset(), third_asset);
     }
 
     #[test]
@@ -700,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_bundle_incorrect_note_type_for_signature() {
+    fn issue_bundle_incorrect_asset_for_signature() {
         let (mut rng, isk, ik, recipient, _) = setup_params();
 
         let mut bundle = IssueBundle::new(ik);
@@ -720,7 +719,7 @@ mod tests {
         let note = Note::new(
             recipient,
             NoteValue::from_raw(5),
-            NoteType::derive(bundle.ik(), "Poisoned pill"),
+            AssetId::derive(bundle.ik(), "Poisoned pill"),
             Nullifier::dummy(&mut rng),
             &mut rng,
         );
@@ -760,8 +759,9 @@ mod tests {
 
         let prev_finalized = &mut HashSet::new();
 
-        let finalized = verify_issue_bundle(&signed, sighash, prev_finalized);
-        assert!(finalized.unwrap().is_empty());
+        let res = verify_issue_bundle(&signed, sighash, prev_finalized);
+        assert!(res.is_ok());
+        assert!(prev_finalized.is_empty());
     }
 
     #[test]
@@ -784,12 +784,12 @@ mod tests {
 
         let prev_finalized = &mut HashSet::new();
 
-        let finalized = verify_issue_bundle(&signed, sighash, prev_finalized).unwrap();
-        assert!(finalized.contains(&NoteType::derive(
-            &ik,
-            &String::from("verify_with_finalize")
-        )));
-        assert_eq!(finalized.len(), 1);
+        let res = verify_issue_bundle(&signed, sighash, prev_finalized);
+        assert!(res.is_ok());
+        assert!(
+            prev_finalized.contains(&AssetId::derive(&ik, &String::from("verify_with_finalize")))
+        );
+        assert_eq!(prev_finalized.len(), 1);
     }
 
     #[test]
@@ -811,7 +811,7 @@ mod tests {
         let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
         let prev_finalized = &mut HashSet::new();
 
-        let final_type = NoteType::derive(&ik, &String::from("already final"));
+        let final_type = AssetId::derive(&ik, &String::from("already final"));
 
         prev_finalized.insert(final_type);
 
@@ -911,7 +911,7 @@ mod tests {
         let note = Note::new(
             recipient,
             NoteValue::from_raw(5),
-            NoteType::derive(signed.ik(), "Poisoned pill"),
+            AssetId::derive(signed.ik(), "Poisoned pill"),
             Nullifier::dummy(&mut rng),
             &mut rng,
         );
@@ -958,7 +958,7 @@ mod tests {
         let note = Note::new(
             recipient,
             NoteValue::from_raw(55),
-            NoteType::derive(&incorrect_ik, asset_description),
+            AssetId::derive(&incorrect_ik, asset_description),
             Nullifier::dummy(&mut rng),
             &mut rng,
         );

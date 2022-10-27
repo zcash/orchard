@@ -968,7 +968,7 @@ mod tests {
     use rand::{rngs::OsRng, RngCore};
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
-    use crate::note::NoteType;
+    use crate::note::AssetId;
     use crate::{
         keys::SpendValidatingKey,
         note::Note,
@@ -977,7 +977,7 @@ mod tests {
     };
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, NoteType::native());
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetId::native());
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -987,12 +987,12 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), NoteType::native());
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), AssetId::native());
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv, NoteType::native());
+        let cv_net = ValueCommitment::derive(value, rcv, AssetId::native());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());

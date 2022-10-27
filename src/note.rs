@@ -19,8 +19,8 @@ pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 pub(crate) mod nullifier;
 pub use self::nullifier::Nullifier;
 
-pub(crate) mod note_type;
-pub use self::note_type::NoteType;
+pub(crate) mod asset_id;
+pub use self::asset_id::AssetId;
 
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
@@ -93,8 +93,8 @@ pub struct Note {
     recipient: Address,
     /// The value of this note.
     value: NoteValue,
-    /// The type of this note.
-    note_type: NoteType,
+    /// The asset id of this note.
+    asset: AssetId,
     /// A unique creation ID for this note.
     ///
     /// This is set to the nullifier of the note that was spent in the [`Action`] that
@@ -134,14 +134,14 @@ impl Note {
     pub fn from_parts(
         recipient: Address,
         value: NoteValue,
-        note_type: NoteType,
+        asset: AssetId,
         rho: Nullifier,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
         let note = Note {
             recipient,
             value,
-            note_type,
+            asset,
             rho,
             rseed,
         };
@@ -156,12 +156,12 @@ impl Note {
     pub(crate) fn new(
         recipient: Address,
         value: NoteValue,
-        note_type: NoteType,
+        asset: AssetId,
         rho: Nullifier,
         mut rng: impl RngCore,
     ) -> Self {
         loop {
-            let note = Note::from_parts(recipient, value, note_type, rho, RandomSeed::random(&mut rng, &rho));
+            let note = Note::from_parts(recipient, value, asset, rho, RandomSeed::random(&mut rng, &rho));
             if note.is_some().into() {
                 break note.unwrap();
             }
@@ -173,11 +173,10 @@ impl Note {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    /// TODO zsa: remove note_type
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Nullifier>,
-        note_type: NoteType,
+        asset: AssetId,
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
@@ -186,7 +185,7 @@ impl Note {
         let note = Note::new(
             recipient,
             NoteValue::zero(),
-            note_type,
+            asset,
             rho.unwrap_or_else(|| Nullifier::dummy(rng)),
             rng,
         );
@@ -205,8 +204,8 @@ impl Note {
     }
 
     /// Returns the note type of this note.
-    pub fn note_type(&self) -> NoteType {
-        self.note_type
+    pub fn asset(&self) -> AssetId {
+        self.asset
     }
 
     /// Returns the rseed value of this note.
@@ -250,7 +249,7 @@ impl Note {
             g_d.to_bytes(),
             self.recipient.pk_d().to_bytes(),
             self.value,
-            self.note_type,
+            self.asset,
             self.rho.0,
             self.rseed.psi(&self.rho),
             self.rseed.rcm(&self.rho),
@@ -296,8 +295,8 @@ impl fmt::Debug for TransmittedNoteCiphertext {
 pub mod testing {
     use proptest::prelude::*;
 
-    use crate::note::note_type::testing::arb_note_type;
-    use crate::note::note_type::testing::zsa_note_type;
+    use crate::note::asset_id::testing::arb_asset_id;
+    use crate::note::asset_id::testing::zsa_asset_id;
     use crate::value::testing::arb_note_value;
     use crate::{
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
@@ -318,12 +317,12 @@ pub mod testing {
             recipient in arb_address(),
             rho in arb_nullifier(),
             rseed in arb_rseed(),
-            note_type in arb_note_type(),
+            asset in arb_asset_id(),
         ) -> Note {
             Note {
                 recipient,
                 value,
-                note_type,
+                asset,
                 rho,
                 rseed,
             }
@@ -337,12 +336,12 @@ pub mod testing {
             value in arb_note_value(),
             rho in arb_nullifier(),
             rseed in arb_rseed(),
-            note_type in zsa_note_type(),
+            asset in zsa_asset_id(),
         ) -> Note {
             Note {
                 recipient,
                 value,
-                note_type,
+                asset,
                 rho,
                 rseed,
             }

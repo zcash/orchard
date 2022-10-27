@@ -55,31 +55,32 @@ jobs:
       - name: Test Orchard book
         run: mdbook test book/
 
-  codecov:
-    name: Code coverage
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v2
-      # Use stable for this to ensure that cargo-tarpaulin can be built.
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-      - name: Install cargo-tarpaulin
-        uses: actions-rs/cargo@v1
-        with:
-          command: install
-          args: cargo-tarpaulin
-      - name: Generate coverage report
-        uses: actions-rs/cargo@v1
-        with:
-          command: tarpaulin
-          args: --all-features --timeout 1200 --out Xml
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
-        with:
-          token: ${{secrets.CODECOV_TOKEN}}
+#  disabled due to performance issues:
+#  codecov:
+#    name: Code coverage
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - uses: actions/checkout@v2
+#      # Use stable for this to ensure that cargo-tarpaulin can be built.
+#      - uses: actions-rs/toolchain@v1
+#        with:
+#          toolchain: stable
+#          override: true
+#      - name: Install cargo-tarpaulin
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: install
+#          args: cargo-tarpaulin
+#      - name: Generate coverage report
+#        uses: actions-rs/cargo@v1
+#        with:
+#          command: tarpaulin
+#          args: --all-features --timeout 1200 --out Xml
+#      - name: Upload coverage to Codecov
+#        uses: codecov/codecov-action@v1
+#        with:
+#          token: ${{secrets.CODECOV_TOKEN}}
 
   doc-links:
     name: Intra-doc links

@@ -102,7 +102,7 @@ pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>)
         for note in action.notes().iter() {
             h.update(&note.recipient().to_raw_address_bytes());
             h.update(&note.value().to_bytes());
-            h.update(&note.note_type().to_bytes());
+            h.update(&note.asset().to_bytes());
             h.update(&note.rho().to_bytes());
             h.update(note.rseed().as_bytes());
         }
