@@ -161,7 +161,13 @@ impl Note {
         mut rng: impl RngCore,
     ) -> Self {
         loop {
-            let note = Note::from_parts(recipient, value, asset, rho, RandomSeed::random(&mut rng, &rho));
+            let note = Note::from_parts(
+                recipient,
+                value,
+                asset,
+                rho,
+                RandomSeed::random(&mut rng, &rho),
+            );
             if note.is_some().into() {
                 break note.unwrap();
             }

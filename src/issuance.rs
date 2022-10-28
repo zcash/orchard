@@ -335,32 +335,32 @@ impl IssueBundle<Signed> {
 /// Validation for Orchard IssueBundles
 ///
 /// A set of previously finalized asset types must be provided.
-/// In case of success, `finalized` will contain a set of the provided **and** the newly finalized `NoteType`s
+/// In case of success, `finalized` will contain a set of the provided **and** the newly finalized `AssetId`s
 ///
 /// The following checks are performed:
 /// * For the `IssueBundle`:
 ///     * the Signature on top of the provided `sighash` verifies correctly.
 /// * For each `IssueAction`:
 ///     * Asset description size is collect.
-///     * `NoteType` for the `IssueAction` has not been previously finalized.
+///     * `AssetId` for the `IssueAction` has not been previously finalized.
 /// * For each `Note` inside an `IssueAction`:
 ///     * All notes have the same, correct `NoteType`.
 pub fn verify_issue_bundle(
     bundle: &IssueBundle<Signed>,
     sighash: [u8; 32],
-    finalized: &mut HashSet<AssetId>, // The current finalization set.
+    finalized: &mut HashSet<AssetId>, // The finalization set.
 ) -> Result<(), Error> {
     if let Err(e) = bundle.ik.verify(&sighash, &bundle.authorization.signature) {
         return Err(IssueBundleInvalidSignature(e));
     };
 
-    let currently_finalized: &mut HashSet<AssetId> = &mut HashSet::new();
+    let s = &mut HashSet::<AssetId>::new();
 
-    // Any IssueAction could have just one properly derived NoteType.
-    let res = bundle
+    // An IssueAction could have just one properly derived AssetId.
+    let newly_finalized = bundle
         .actions()
         .iter()
-        .try_fold(currently_finalized, |acc, action| {
+        .try_fold(s, |newly_finalized, action| {
             if !is_asset_desc_of_valid_size(action.asset_desc()) {
                 return Err(WrongAssetDescSize);
             }
@@ -368,21 +368,21 @@ pub fn verify_issue_bundle(
             // Fail if any note in the IssueAction has incorrect note type.
             let asset = action.are_note_asset_ids_derived_correctly(bundle.ik())?;
 
-            // Fail if the current asset was previously finalized.
-            if finalized.contains(&asset) || acc.contains(&asset) {
+            // Fail if the asset was previously finalized.
+            if finalized.contains(&asset) || newly_finalized.contains(&asset) {
                 return Err(IssueActionPreviouslyFinalizedNoteType(asset));
             }
 
             // Add to finalization set, if needed.
             if action.is_finalized() {
-                acc.insert(asset);
+                newly_finalized.insert(asset);
             }
 
-            // Proceed with the new asset finalization set.
-            Ok(acc)
+            // Proceed with the new finalization set.
+            Ok(newly_finalized)
         })?;
 
-    finalized.extend(res.iter());
+    finalized.extend(newly_finalized.iter());
     Ok(())
 }
 
