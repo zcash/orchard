@@ -44,7 +44,7 @@ pub enum BuildError {
 }
 
 /// An error type for adding a spend to the builder.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum SpendError {
     /// Spends aren't enabled for this builder.
     SpendsDisabled,
