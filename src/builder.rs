@@ -28,7 +28,7 @@ const MIN_ACTIONS: usize = 2;
 
 /// An error type for the kinds of errors that can occur during bundle construction.
 #[derive(Debug)]
-pub enum Error {
+pub enum BuildError {
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
     /// An error occurred in the process of producing a proof for a bundle.
@@ -57,15 +57,15 @@ pub enum SpendError {
 /// The only error that can occur here is if outputs are disabled for this builder.
 pub type OutputsDisabled = ();
 
-impl From<halo2_proofs::plonk::Error> for Error {
+impl From<halo2_proofs::plonk::Error> for BuildError {
     fn from(e: halo2_proofs::plonk::Error) -> Self {
-        Error::Proof(e)
+        BuildError::Proof(e)
     }
 }
 
-impl From<value::OverflowError> for Error {
+impl From<value::OverflowError> for BuildError {
     fn from(e: value::OverflowError) -> Self {
-        Error::ValueSum(e)
+        BuildError::ValueSum(e)
     }
 }
 
@@ -339,7 +339,7 @@ impl Builder {
     pub fn build<V: TryFrom<i64>>(
         mut self,
         mut rng: impl RngCore,
-    ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, Error> {
+    ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, BuildError> {
         // Pair up the spends and recipients, extending with dummy values as necessary.
         let pre_actions: Vec<_> = {
             let num_spends = self.spends.len();
@@ -384,8 +384,8 @@ impl Builder {
             .ok_or(OverflowError)?;
 
         let result_value_balance: V = i64::try_from(value_balance)
-            .map_err(Error::ValueSum)
-            .and_then(|i| V::try_from(i).map_err(|_| Error::ValueSum(value::OverflowError)))?;
+            .map_err(BuildError::ValueSum)
+            .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError)))?;
 
         // Compute the transaction binding signing key.
         let bsk = pre_actions
@@ -460,7 +460,7 @@ impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
         self,
         pk: &ProvingKey,
         mut rng: impl RngCore,
-    ) -> Result<Bundle<InProgress<Proof, S>, V>, Error> {
+    ) -> Result<Bundle<InProgress<Proof, S>, V>, BuildError> {
         let instances: Vec<_> = self
             .actions()
             .iter()
@@ -535,10 +535,10 @@ pub enum MaybeSigned {
 }
 
 impl MaybeSigned {
-    fn finalize(self) -> Result<redpallas::Signature<SpendAuth>, Error> {
+    fn finalize(self) -> Result<redpallas::Signature<SpendAuth>, BuildError> {
         match self {
             Self::Signature(sig) => Ok(sig),
-            _ => Err(Error::MissingSignatures),
+            _ => Err(BuildError::MissingSignatures),
         }
     }
 }
@@ -582,7 +582,7 @@ impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
         mut rng: R,
         sighash: [u8; 32],
         signing_keys: &[SpendAuthorizingKey],
-    ) -> Result<Bundle<Authorized, V>, Error> {
+    ) -> Result<Bundle<Authorized, V>, BuildError> {
         signing_keys
             .iter()
             .fold(self.prepare(&mut rng, sighash), |partial, ask| {
@@ -621,11 +621,14 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
     pub fn append_signatures(
         self,
         signatures: &[redpallas::Signature<SpendAuth>],
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, BuildError> {
         signatures.iter().try_fold(self, Self::append_signature)
     }
 
-    fn append_signature(self, signature: &redpallas::Signature<SpendAuth>) -> Result<Self, Error> {
+    fn append_signature(
+        self,
+        signature: &redpallas::Signature<SpendAuth>,
+    ) -> Result<Self, BuildError> {
         let mut signature_valid_for = 0usize;
         let bundle = self.map_authorization(
             &mut signature_valid_for,
@@ -645,9 +648,9 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
             |_, partial| partial,
         );
         match signature_valid_for {
-            0 => Err(Error::InvalidExternalSignature),
+            0 => Err(BuildError::InvalidExternalSignature),
             1 => Ok(bundle),
-            _ => Err(Error::DuplicateSignature),
+            _ => Err(BuildError::DuplicateSignature),
         }
     }
 }
@@ -656,7 +659,7 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
     /// Finalizes this bundle, enabling it to be included in a transaction.
     ///
     /// Returns an error if any signatures are missing.
-    pub fn finalize(self) -> Result<Bundle<Authorized, V>, Error> {
+    pub fn finalize(self) -> Result<Bundle<Authorized, V>, BuildError> {
         self.try_map_authorization(
             &mut (),
             |_, _, maybe| maybe.finalize(),
