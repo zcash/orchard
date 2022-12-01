@@ -26,9 +26,14 @@ and this project adheres to Rust's notion of
 - impls of `Eq` for:
   - `orchard::zip32::ChildIndex`
   - `orchard::value::ValueSum`
+- `orchard::builder::Builder:`
+  - `SpendError` 
+  - `OutputsDisabled` 
 
 ### Changed
 - Migrated to `zcash_note_encryption 0.2`.
+- `orchard::builder::Builder::{add_spend, add_output}` now use 
+  concrete error types instead of `&'static str`s. 
 
 ## [0.2.0] - 2022-06-24
 ### Added

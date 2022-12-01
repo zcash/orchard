@@ -43,6 +43,20 @@ pub enum Error {
     DuplicateSignature,
 }
 
+/// An error type for adding a spend to the builder.
+#[derive(Debug)]
+pub enum SpendError {
+    /// Spends aren't enabled for this builder.
+    SpendsDisabled,
+    /// The anchor provided to this builder doesn't match the merkle path used to add a spend.
+    AnchorMismatch,
+    /// The full viewing key provided didn't match the note provided
+    FvkMismatch,
+}
+
+/// The only error that can occur here is if outputs are disabled for this builder.
+pub type OutputsDisabled = ();
+
 impl From<halo2_proofs::plonk::Error> for Error {
     fn from(e: halo2_proofs::plonk::Error) -> Self {
         Error::Proof(e)
@@ -243,23 +257,22 @@ impl Builder {
         fvk: FullViewingKey,
         note: Note,
         merkle_path: MerklePath,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), SpendError> {
         if !self.flags.spends_enabled() {
-            return Err("Spends are not enabled for this builder");
+            return Err(SpendError::SpendsDisabled);
         }
 
         // Consistency check: all anchors must be equal.
         let cm = note.commitment();
-        let path_root: Anchor =
-            <Option<_>>::from(merkle_path.root(cm.into())).ok_or("Derived the bottom anchor")?;
+        let path_root = merkle_path.root(cm.into());
         if path_root != self.anchor {
-            return Err("All anchors must be equal.");
+            return Err(SpendError::AnchorMismatch);
         }
 
         // Check if note is internal or external.
         let scope = fvk
             .scope_for_address(&note.recipient())
-            .ok_or("FullViewingKey does not correspond to the given note")?;
+            .ok_or(SpendError::FvkMismatch)?;
 
         self.spends.push(SpendInfo {
             dummy_sk: None,
@@ -279,9 +292,9 @@ impl Builder {
         recipient: Address,
         value: NoteValue,
         memo: Option<[u8; 512]>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), OutputsDisabled> {
         if !self.flags.outputs_enabled() {
-            return Err("Outputs are not enabled for this builder");
+            return Err(());
         }
 
         self.recipients.push(RecipientInfo {
