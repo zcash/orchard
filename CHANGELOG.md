@@ -33,7 +33,9 @@ and this project adheres to Rust's notion of
   - `impl memuse::DynamicUsage for Nullifier`
 - `orchard::note_encryption`:
   - `impl memuse::DynamicUsage for OrchardDomain`
-- `orchard::builder::SpendInfo::new`
+- `orchard::builder`:
+  - `{SpendInfo::new, InputView, OutputView}`
+  - `Builder::{spends, outputs}`
 - `orchard::circuit::Circuit::from_action_context`
 - impls of `Eq` for:
   - `orchard::zip32::ChildIndex`

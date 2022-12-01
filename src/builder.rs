@@ -345,6 +345,16 @@ impl Builder {
         Ok(())
     }
 
+    /// Returns the action spend components that will be produced by the transaction being constructed
+    pub fn spends(&self) -> &Vec<impl InputView<()>> {
+        &self.spends
+    }
+
+    /// Returns the action output components that will be produced by the transaction being constructed
+    pub fn outputs(&self) -> &Vec<impl OutputView> {
+        &self.recipients
+    }
+
     /// The net value of the bundle to be built. The value of all spends,
     /// minus the value of all outputs.
     ///
@@ -708,6 +718,39 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
                 ))
             },
         )
+    }
+}
+
+/// A trait that provides a minimized view of an Orchard input suitable for use in
+/// fee and change calculation.
+pub trait InputView<NoteRef> {
+    /// An identifier for the input being spent.
+    fn note_id(&self) -> &NoteRef;
+    /// The value of the input being spent.
+    fn value<V: From<u64>>(&self) -> V;
+}
+
+impl InputView<()> for SpendInfo {
+    fn note_id(&self) -> &() {
+        // The builder does not make use of note identifiers, so we can just return the unit value.
+        &()
+    }
+
+    fn value<V: From<u64>>(&self) -> V {
+        V::from(self.note.value().inner())
+    }
+}
+
+/// A trait that provides a minimized view of an Orchard output suitable for use in
+/// fee and change calculation.
+pub trait OutputView {
+    /// The value of the output being produced.
+    fn value<V: From<u64>>(&self) -> V;
+}
+
+impl OutputView for RecipientInfo {
+    fn value<V: From<u64>>(&self) -> V {
+        V::from(self.value.inner())
     }
 }
 
