@@ -26,7 +26,7 @@ and this project adheres to Rust's notion of
 - impls of `Eq` for:
   - `orchard::zip32::ChildIndex`
   - `orchard::value::ValueSum`
-- `orchard::builder::Builder:`
+- `orchard::builder`:
   - `SpendError` 
   - `OutputsDisabled` 
 
