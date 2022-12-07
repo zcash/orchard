@@ -231,32 +231,31 @@ struct TestOutputInfo {
 fn build_and_verify_bundle(
     spends: Vec<&TestSpendInfo>,
     outputs: Vec<TestOutputInfo>,
+    assets_to_burn: Vec<(AssetId, NoteValue)>,
     anchor: Anchor,
     expected_num_actions: usize,
     keys: &Keychain,
-) {
+) -> Result<(), &'static str> {
     let rng = OsRng;
     let shielded_bundle: Bundle<_, i64> = {
         let mut builder = Builder::new(Flags::from_parts(true, true), anchor);
 
-        spends.iter().for_each(|spend| {
-            assert_eq!(
-                builder.add_spend(keys.fvk().clone(), spend.note, spend.merkle_path().clone()),
-                Ok(())
-            );
-        });
-        outputs.iter().for_each(|output| {
-            assert_eq!(
-                builder.add_recipient(None, keys.recipient, output.value, output.asset, None),
-                Ok(())
-            )
-        });
+        spends.iter().try_for_each(|spend| {
+            builder.add_spend(keys.fvk().clone(), spend.note, spend.merkle_path().clone())
+        })?;
+        outputs.iter().try_for_each(|output| {
+            builder.add_recipient(None, keys.recipient, output.value, output.asset, None)
+        })?;
+        assets_to_burn
+            .into_iter()
+            .try_for_each(|(asset, value)| builder.add_burn(asset, value))?;
         build_and_sign_bundle(builder, rng, keys.pk(), keys.sk())
     };
 
     // Verify the shielded bundle, currently without the proof.
     verify_bundle(&shielded_bundle, &keys.vk, false);
     assert_eq!(shielded_bundle.actions().len(), expected_num_actions);
+    Ok(())
 }
 
 /// Issue several ZSA and native notes and spend them in different combinations, e.g. split and join
@@ -268,18 +267,30 @@ fn zsa_issue_and_transfer() {
     let asset_descr = "zsa_asset";
 
     // Prepare ZSA
-    let (zsa_note1, zsa_note2) = issue_zsa_notes(asset_descr, &keys);
+    let (zsa_note_1, zsa_note_2) = issue_zsa_notes(asset_descr, &keys);
 
     let (merkle_path1, merkle_path2, anchor) =
-        build_merkle_path_with_two_leaves(&zsa_note1, &zsa_note2);
+        build_merkle_path_with_two_leaves(&zsa_note_1, &zsa_note_2);
 
     let zsa_spend_1 = TestSpendInfo {
-        note: zsa_note1,
+        note: zsa_note_1,
         merkle_path: merkle_path1,
     };
     let zsa_spend_2 = TestSpendInfo {
-        note: zsa_note2,
+        note: zsa_note_2,
         merkle_path: merkle_path2,
+    };
+
+    let native_note = create_native_note(&keys);
+    let (native_merkle_path_1, native_merkle_path_2, native_anchor) =
+        build_merkle_path_with_two_leaves(&native_note, &zsa_note_1);
+    let native_spend: TestSpendInfo = TestSpendInfo {
+        note: native_note,
+        merkle_path: native_merkle_path_1,
+    };
+    let zsa_spend_with_native: TestSpendInfo = TestSpendInfo {
+        note: zsa_note_1,
+        merkle_path: native_merkle_path_2,
     };
 
     // --------------------------- Tests -----------------------------------------
@@ -291,10 +302,12 @@ fn zsa_issue_and_transfer() {
             value: zsa_spend_1.note.value(),
             asset: zsa_spend_1.note.asset(),
         }],
+        vec![],
         anchor,
         2,
         &keys,
-    );
+    )
+    .unwrap();
 
     // 2. Split single ZSA note into 2 notes
     let delta = 2; // arbitrary number for value manipulation
@@ -310,10 +323,12 @@ fn zsa_issue_and_transfer() {
                 asset: zsa_spend_1.note.asset(),
             },
         ],
+        vec![],
         anchor,
         2,
         &keys,
-    );
+    )
+    .unwrap();
 
     // 3. Join 2 ZSA notes into a single note
     build_and_verify_bundle(
@@ -324,10 +339,12 @@ fn zsa_issue_and_transfer() {
             ),
             asset: zsa_spend_1.note.asset(),
         }],
+        vec![],
         anchor,
         2,
         &keys,
-    );
+    )
+    .unwrap();
 
     // 4. Take 2 ZSA notes and send them as 2 notes with different denomination
     build_and_verify_bundle(
@@ -342,10 +359,12 @@ fn zsa_issue_and_transfer() {
                 asset: zsa_spend_2.note.asset(),
             },
         ],
+        vec![],
         anchor,
         2,
         &keys,
-    );
+    )
+    .unwrap();
 
     // 5. Spend single ZSA note, mixed with native note (shielding)
     build_and_verify_bundle(
@@ -360,24 +379,14 @@ fn zsa_issue_and_transfer() {
                 asset: AssetId::native(),
             },
         ],
+        vec![],
         anchor,
         4,
         &keys,
-    );
+    )
+    .unwrap();
 
     // 6. Spend single ZSA note, mixed with native note (shielded to shielded)
-    let native_note = create_native_note(&keys);
-    let (native_merkle_path1, native_merkle_path2, native_anchor) =
-        build_merkle_path_with_two_leaves(&native_note, &zsa_note1);
-    let native_spend: TestSpendInfo = TestSpendInfo {
-        note: native_note,
-        merkle_path: native_merkle_path1,
-    };
-    let zsa_spend_with_native: TestSpendInfo = TestSpendInfo {
-        note: zsa_note1,
-        merkle_path: native_merkle_path2,
-    };
-
     build_and_verify_bundle(
         vec![&zsa_spend_with_native, &native_spend],
         vec![
@@ -390,21 +399,23 @@ fn zsa_issue_and_transfer() {
                 asset: AssetId::native(),
             },
         ],
+        vec![],
         native_anchor,
         4,
         &keys,
-    );
+    )
+    .unwrap();
 
     // 7. Spend ZSA notes of different asset types
     let (zsa_note_t7, _) = issue_zsa_notes("zsa_asset2", &keys);
     let (merkle_path_t7_1, merkle_path_t7_2, anchor_t7) =
-        build_merkle_path_with_two_leaves(&zsa_note_t7, &zsa_note2);
+        build_merkle_path_with_two_leaves(&zsa_note_t7, &zsa_note_2);
     let zsa_spend_t7_1: TestSpendInfo = TestSpendInfo {
         note: zsa_note_t7,
         merkle_path: merkle_path_t7_1,
     };
     let zsa_spend_t7_2: TestSpendInfo = TestSpendInfo {
-        note: zsa_note2,
+        note: zsa_note_2,
         merkle_path: merkle_path_t7_2,
     };
 
@@ -420,10 +431,12 @@ fn zsa_issue_and_transfer() {
                 asset: zsa_spend_t7_2.note.asset(),
             },
         ],
+        vec![],
         anchor_t7,
         4,
         &keys,
-    );
+    )
+    .unwrap();
 
     // 8. Same but wrong denomination
     let result = std::panic::catch_unwind(|| {
@@ -439,10 +452,54 @@ fn zsa_issue_and_transfer() {
                     asset: zsa_spend_t7_2.note.asset(),
                 },
             ],
+            vec![],
             anchor_t7,
             4,
             &keys,
-        );
+        )
+        .unwrap();
     });
     assert!(result.is_err());
+
+    // 9. Burn ZSA assets
+    build_and_verify_bundle(
+        vec![&zsa_spend_1],
+        vec![],
+        vec![(zsa_spend_1.note.asset(), zsa_spend_1.note.value())],
+        anchor,
+        2,
+        &keys,
+    )
+    .unwrap();
+
+    // 10. Burn a partial amount of the ZSA assets
+    let value_to_burn = 3;
+    let value_to_transfer = zsa_spend_1.note.value().inner() - value_to_burn;
+
+    build_and_verify_bundle(
+        vec![&zsa_spend_1],
+        vec![TestOutputInfo {
+            value: NoteValue::from_raw(value_to_transfer),
+            asset: zsa_spend_1.note.asset(),
+        }],
+        vec![(zsa_spend_1.note.asset(), NoteValue::from_raw(value_to_burn))],
+        anchor,
+        2,
+        &keys,
+    )
+    .unwrap();
+
+    // 11. Try to burn native asset - should fail
+    let result = build_and_verify_bundle(
+        vec![&native_spend],
+        vec![],
+        vec![(AssetId::native(), native_spend.note.value())],
+        native_anchor,
+        2,
+        &keys,
+    );
+    match result {
+        Ok(_) => panic!("Test should fail"),
+        Err(error) => assert_eq!(error, "Burning is only possible for non-native assets"),
+    }
 }

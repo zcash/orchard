@@ -53,6 +53,7 @@ use pasta_curves::{
 use rand::RngCore;
 use subtle::CtOption;
 
+use crate::builder::Error;
 use crate::note::AssetId;
 use crate::{
     constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES},
@@ -129,6 +130,12 @@ impl From<&NoteValue> for Assigned<pallas::Base> {
     }
 }
 
+impl From<NoteValue> for i128 {
+    fn from(value: NoteValue) -> Self {
+        value.0 as i128
+    }
+}
+
 impl Sub for NoteValue {
     type Output = ValueSum;
 
@@ -181,15 +188,21 @@ impl ValueSum {
             sign,
         )
     }
+
+    pub(crate) fn into<V: TryFrom<i64>>(self) -> Result<V, Error> {
+        i64::try_from(self)
+            .map_err(Error::ValueSum)
+            .and_then(|i| V::try_from(i).map_err(|_| Error::ValueSum(OverflowError)))
+    }
 }
 
-impl Add for ValueSum {
+impl<T: Into<i128>> Add<T> for ValueSum {
     type Output = Option<ValueSum>;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn add(self, rhs: Self) -> Self::Output {
+    fn add(self, rhs: T) -> Self::Output {
         self.0
-            .checked_add(rhs.0)
+            .checked_add(rhs.into())
             .filter(|v| VALUE_SUM_RANGE.contains(v))
             .map(ValueSum)
     }
@@ -224,6 +237,12 @@ impl TryFrom<ValueSum> for i64 {
 
     fn try_from(v: ValueSum) -> Result<i64, Self::Error> {
         i64::try_from(v.0).map_err(|_| OverflowError)
+    }
+}
+
+impl From<ValueSum> for i128 {
+    fn from(value: ValueSum) -> Self {
+        value.0
     }
 }
 
@@ -452,10 +471,11 @@ mod tests {
     };
     use crate::primitives::redpallas;
 
-    fn _bsk_consistent_with_bvk(
+    fn check_binding_signature(
         native_values: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
         arb_values: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
         neg_trapdoors: &[ValueCommitTrapdoor],
+        arb_values_to_burn: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
     ) {
         // for each arb value, create a negative value with a different trapdoor
         let neg_arb_values: Vec<_> = arb_values
@@ -471,7 +491,13 @@ mod tests {
             .sum::<Result<ValueSum, OverflowError>>()
             .expect("we generate values that won't overflow");
 
-        let values = [native_values, arb_values, &neg_arb_values].concat();
+        let values = [
+            native_values,
+            arb_values,
+            &neg_arb_values,
+            arb_values_to_burn,
+        ]
+        .concat();
 
         let bsk = values
             .iter()
@@ -480,14 +506,20 @@ mod tests {
             .into_bsk();
 
         let bvk = (values
-            .iter()
-            .map(|(value, rcv, asset)| ValueCommitment::derive(*value, *rcv, *asset))
+            .into_iter()
+            .map(|(value, rcv, asset)| ValueCommitment::derive(value, rcv, asset))
             .sum::<ValueCommitment>()
             - ValueCommitment::derive(
                 native_value_balance,
                 ValueCommitTrapdoor::zero(),
                 AssetId::native(),
-            ))
+            )
+            - arb_values_to_burn
+                .iter()
+                .map(|(value, _, asset)| {
+                    ValueCommitment::derive(*value, ValueCommitTrapdoor::zero(), *asset)
+                })
+                .sum::<ValueCommitment>())
         .into_bvk();
 
         assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
@@ -495,34 +527,26 @@ mod tests {
 
     proptest! {
         #[test]
-        fn bsk_consistent_with_bvk_native_only(
+        fn bsk_consistent_with_bvk_native_with_zsa_transfer_and_burning(
             native_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
                     prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_asset_id()), n_values)
                 )
             ),
-        ) {
-            // Test with native note type (zec) only
-            _bsk_consistent_with_bvk(&native_values, &[], &[]);
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn bsk_consistent_with_bvk(
-            native_values in (1usize..10).prop_flat_map(|n_values|
-                arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_asset_id()), n_values)
-                )
-            ),
-            (arb_values,neg_trapdoors) in (1usize..10).prop_flat_map(|n_values|
+            (asset_values, neg_trapdoors) in (1usize..10).prop_flat_map(|n_values|
                 (arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
                     prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_id()), n_values)
                 ), prop::collection::vec(arb_trapdoor(), n_values))
             ),
+            burn_values in (1usize..10).prop_flat_map(|n_values|
+                arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64)
+                .prop_flat_map(move |bound| prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_id()), n_values))
+            )
         ) {
-            // Test with native note type (zec)
-             _bsk_consistent_with_bvk(&native_values, &arb_values, &neg_trapdoors);
+            check_binding_signature(&native_values, &[], &[], &[]);
+            check_binding_signature(&native_values, &[], &[], &burn_values);
+            check_binding_signature(&native_values, &asset_values, &neg_trapdoors, &[]);
+            check_binding_signature(&native_values, &asset_values, &neg_trapdoors, &burn_values);
         }
     }
 }

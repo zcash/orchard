@@ -251,6 +251,7 @@ impl ActionInfo {
 pub struct Builder {
     spends: Vec<SpendInfo>,
     recipients: Vec<RecipientInfo>,
+    burn: HashMap<AssetId, ValueSum>,
     flags: Flags,
     anchor: Anchor,
 }
@@ -261,6 +262,7 @@ impl Builder {
         Builder {
             spends: vec![],
             recipients: vec![],
+            burn: HashMap::new(),
             flags,
             anchor,
         }
@@ -337,6 +339,17 @@ impl Builder {
         Ok(())
     }
 
+    /// Add an instruction to burn a given amount of a specific asset.
+    pub fn add_burn(&mut self, asset: AssetId, value: NoteValue) -> Result<(), &'static str> {
+        if asset.is_native().into() {
+            return Err("Burning is only possible for non-native assets");
+        }
+        let cur = *self.burn.get(&asset).unwrap_or(&ValueSum::zero());
+        let sum = (cur + value).ok_or("Orchard ValueSum operation overflowed")?;
+        self.burn.insert(asset, sum);
+        Ok(())
+    }
+
     /// The net value of the bundle to be built. The value of all spends,
     /// minus the value of all outputs.
     ///
@@ -366,7 +379,7 @@ impl Builder {
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
-    pub fn build<V: TryFrom<i64>>(
+    pub fn build<V: TryFrom<i64> + Copy + Into<i64>>(
         self,
         mut rng: impl RngCore,
     ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, Error> {
@@ -419,16 +432,14 @@ impl Builder {
         let anchor = self.anchor;
 
         // Determine the value balance for this bundle, ensuring it is valid.
-        let value_balance = pre_actions
+        let native_value_balance: V = pre_actions
             .iter()
+            .filter(|action| action.spend.note.asset().is_native().into())
             .fold(Some(ValueSum::zero()), |acc, action| {
                 acc? + action.value_sum()
             })
-            .ok_or(OverflowError)?;
-
-        let result_value_balance: V = i64::try_from(value_balance)
-            .map_err(Error::ValueSum)
-            .and_then(|i| V::try_from(i).map_err(|_| Error::ValueSum(value::OverflowError)))?;
+            .ok_or(OverflowError)?
+            .into()?;
 
         // Compute the transaction binding signing key.
         let bsk = pre_actions
@@ -441,26 +452,26 @@ impl Builder {
         let (actions, circuits): (Vec<_>, Vec<_>) =
             pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
 
-        // Verify that bsk and bvk are consistent.
-        let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-            - ValueCommitment::derive(
-                value_balance,
-                ValueCommitTrapdoor::zero(),
-                AssetId::native(),
-            ))
-        .into_bvk();
-        assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
-
-        Ok(Bundle::from_parts(
+        let bundle = Bundle::from_parts(
             NonEmpty::from_vec(actions).unwrap(),
             flags,
-            result_value_balance,
+            native_value_balance,
+            self.burn
+                .into_iter()
+                .map(|(asset, value)| Ok((asset, value.into()?)))
+                .collect::<Result<_, Error>>()?,
             anchor,
             InProgress {
                 proof: Unproven { circuits },
                 sigs: Unauthorized { bsk },
             },
-        ))
+        );
+
+        assert_eq!(
+            redpallas::VerificationKey::from(&bundle.authorization().sigs.bsk),
+            bundle.binding_validating_key()
+        );
+        Ok(bundle)
     }
 }
 
@@ -785,7 +796,7 @@ pub mod testing {
 
     impl<R: RngCore + CryptoRng> ArbitraryBundleInputs<R> {
         /// Create a bundle from the set of arbitrary bundle inputs.
-        fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
+        fn into_bundle<V: TryFrom<i64> + Copy + Into<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
             let flags = Flags::from_parts(true, true);
             let mut builder = Builder::new(flags, self.anchor);
@@ -866,14 +877,15 @@ pub mod testing {
     }
 
     /// Produce an arbitrary valid Orchard bundle using a random spending key.
-    pub fn arb_bundle<V: TryFrom<i64> + Debug>() -> impl Strategy<Value = Bundle<Authorized, V>> {
+    pub fn arb_bundle<V: TryFrom<i64> + Debug + Copy + Into<i64>>(
+    ) -> impl Strategy<Value = Bundle<Authorized, V>> {
         arb_spending_key()
             .prop_flat_map(arb_bundle_inputs)
             .prop_map(|inputs| inputs.into_bundle::<V>())
     }
 
     /// Produce an arbitrary valid Orchard bundle using a specified spending key.
-    pub fn arb_bundle_with_key<V: TryFrom<i64> + Debug>(
+    pub fn arb_bundle_with_key<V: TryFrom<i64> + Debug + Copy + Into<i64>>(
         k: SpendingKey,
     ) -> impl Strategy<Value = Bundle<Authorized, V>> {
         arb_bundle_inputs(k).prop_map(|inputs| inputs.into_bundle::<V>())

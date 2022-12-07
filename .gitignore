@@ -4,4 +4,3 @@ Cargo.lock
 .vscode
 .idea
 action-circuit-layout.png
-proptest-regressions/*.txt

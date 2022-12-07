@@ -140,6 +140,9 @@ pub struct Bundle<T: Authorization, V> {
     ///
     /// This is the sum of Orchard spends minus the sum of Orchard outputs.
     value_balance: V,
+    /// Assets intended for burning
+    /// TODO We need to add a consensus check to make sure that it is impossible to burn ZEC.
+    burn: Vec<(AssetId, V)>,
     /// The root of the Orchard commitment tree that this bundle commits to.
     anchor: Anchor,
     /// The authorization for this bundle.
@@ -172,6 +175,7 @@ impl<T: Authorization, V> Bundle<T, V> {
         actions: NonEmpty<Action<T::SpendAuth>>,
         flags: Flags,
         value_balance: V,
+        burn: Vec<(AssetId, V)>,
         anchor: Anchor,
         authorization: T,
     ) -> Self {
@@ -179,6 +183,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             actions,
             flags,
             value_balance,
+            burn,
             anchor,
             authorization,
         }
@@ -214,8 +219,8 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Construct a new bundle by applying a transformation that might fail
-    /// to the value balance.
-    pub fn try_map_value_balance<V0, E, F: FnOnce(V) -> Result<V0, E>>(
+    /// to the value balance and balances of assets to burn.
+    pub fn try_map_value_balance<V0, E, F: Fn(V) -> Result<V0, E>>(
         self,
         f: F,
     ) -> Result<Bundle<T, V0>, E> {
@@ -223,6 +228,11 @@ impl<T: Authorization, V> Bundle<T, V> {
             actions: self.actions,
             flags: self.flags,
             value_balance: f(self.value_balance)?,
+            burn: self
+                .burn
+                .into_iter()
+                .map(|(asset, value)| Ok((asset, f(value)?)))
+                .collect::<Result<Vec<(AssetId, V0)>, E>>()?,
             anchor: self.anchor,
             authorization: self.authorization,
         })
@@ -244,6 +254,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             value_balance: self.value_balance,
             anchor: self.anchor,
             authorization: step(context, authorization),
+            burn: self.burn,
         }
     }
 
@@ -267,6 +278,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             value_balance: self.value_balance,
             anchor: self.anchor,
             authorization: step(context, authorization)?,
+            burn: self.burn,
         })
     }
 
@@ -386,7 +398,19 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
                 ValueSum::from_raw(self.value_balance.into()),
                 ValueCommitTrapdoor::zero(),
                 AssetId::native(),
-            ))
+            )
+            - self
+                .burn
+                .clone()
+                .into_iter()
+                .map(|(asset, value)| {
+                    ValueCommitment::derive(
+                        ValueSum::from_raw(value.into()),
+                        ValueCommitTrapdoor::zero(),
+                        asset,
+                    )
+                })
+                .sum::<ValueCommitment>())
         .into_bvk()
     }
 }
@@ -503,6 +527,9 @@ pub mod testing {
     use super::{Action, Authorization, Authorized, Bundle, Flags};
 
     pub use crate::action::testing::{arb_action, arb_unauthorized_action};
+    use crate::note::asset_id::testing::zsa_asset_id;
+    use crate::note::AssetId;
+    use crate::value::testing::arb_value_sum;
 
     /// Marker for an unauthorized bundle with no proofs or signatures.
     #[derive(Debug)]
@@ -563,6 +590,13 @@ pub mod testing {
     }
 
     prop_compose! {
+        /// Create an arbitrary vector of assets to burn.
+        pub fn arb_asset_to_burn()(asset_id in zsa_asset_id(), value in arb_value_sum()) -> (AssetId, ValueSum) {
+            (asset_id, value)
+        }
+    }
+
+    prop_compose! {
         /// Create an arbitrary set of flags.
         pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY) -> Flags {
             Flags::from_parts(spends_enabled, outputs_enabled)
@@ -589,7 +623,8 @@ pub mod testing {
         (
             acts in vec(arb_unauthorized_action_n(n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
-            flags in Just(flags)
+            flags in Just(flags),
+            burn in vec(arb_asset_to_burn(), 1usize..10)
         ) -> Bundle<Unauthorized, ValueSum> {
             let (balances, actions): (Vec<ValueSum>, Vec<Action<_>>) = acts.into_iter().unzip();
 
@@ -597,8 +632,9 @@ pub mod testing {
                 NonEmpty::from_vec(actions).unwrap(),
                 flags,
                 balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
+                burn,
                 anchor,
-                Unauthorized
+                Unauthorized,
             )
         }
     }
@@ -618,7 +654,8 @@ pub mod testing {
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             fake_proof in vec(prop::num::u8::ANY, 1973),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
-            flags in Just(flags)
+            flags in Just(flags),
+            burn in vec(arb_asset_to_burn(), 1usize..10)
         ) -> Bundle<Authorized, ValueSum> {
             let (balances, actions): (Vec<ValueSum>, Vec<Action<_>>) = acts.into_iter().unzip();
             let rng = StdRng::from_seed(rng_seed);
@@ -627,11 +664,12 @@ pub mod testing {
                 NonEmpty::from_vec(actions).unwrap(),
                 flags,
                 balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
+                burn,
                 anchor,
                 Authorized {
                     proof: Proof::new(fake_proof),
                     binding_signature: sk.sign(rng, &fake_sighash),
-                }
+                },
             )
         }
     }
