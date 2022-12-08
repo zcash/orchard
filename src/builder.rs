@@ -345,12 +345,14 @@ impl Builder {
         Ok(())
     }
 
-    /// Returns the action spend components that will be produced by the transaction being constructed
+    /// Returns the action spend components that will be produced by the 
+    /// transaction being constructed
     pub fn spends(&self) -> &Vec<impl InputView<()>> {
         &self.spends
     }
 
-    /// Returns the action output components that will be produced by the transaction being constructed
+    /// Returns the action output components that will be produced by the
+    /// transaction being constructed
     pub fn outputs(&self) -> &Vec<impl OutputView> {
         &self.recipients
     }
