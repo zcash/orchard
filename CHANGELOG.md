@@ -6,6 +6,18 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `orchard::builder`:
+  - `SpendError` 
+  - `OutputError` 
+
+### Changed
+- `orchard::builder`:
+  - `Builder::{add_spend, add_output}` now use concrete error types instead of
+    `&'static str`s.
+  - `Error` has been renamed to `BuildError` to differentiate from new error
+    types.
+  - `BuildError` now implements `std::error::Error` and `std::fmt::Display`.
 
 ## [0.3.0] - 2022-10-19
 ### Added

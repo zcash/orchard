@@ -2,6 +2,7 @@
 
 use core::fmt;
 use core::iter;
+use std::fmt::Display;
 
 use ff::Field;
 use nonempty::NonEmpty;
@@ -28,7 +29,7 @@ const MIN_ACTIONS: usize = 2;
 
 /// An error type for the kinds of errors that can occur during bundle construction.
 #[derive(Debug)]
-pub enum Error {
+pub enum BuildError {
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
     /// An error occurred in the process of producing a proof for a bundle.
@@ -43,15 +44,66 @@ pub enum Error {
     DuplicateSignature,
 }
 
-impl From<halo2_proofs::plonk::Error> for Error {
-    fn from(e: halo2_proofs::plonk::Error) -> Self {
-        Error::Proof(e)
+impl Display for BuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use BuildError::*;
+        match self {
+            MissingSignatures => f.write_str("Required signatures were missing during build"),
+            Proof(e) => f.write_str(&format!("Could not create proof: {}", e.to_string())),
+            ValueSum(_) => f.write_str("Overflow occured during value construction"),
+            InvalidExternalSignature => f.write_str("External signature was invalid"),
+            DuplicateSignature => f.write_str("Signature valid for more than one input"),
+        }
     }
 }
 
-impl From<value::OverflowError> for Error {
+impl std::error::Error for BuildError {}
+
+/// An error type for adding a spend to the builder.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SpendError {
+    /// Spends aren't enabled for this builder.
+    SpendsDisabled,
+    /// The anchor provided to this builder doesn't match the merkle path used to add a spend.
+    AnchorMismatch,
+    /// The full viewing key provided didn't match the note provided
+    FvkMismatch,
+}
+
+impl Display for SpendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use SpendError::*;
+        f.write_str(match self {
+            SpendsDisabled => "Spends are not enabled for this builder",
+            AnchorMismatch => "All anchors must be equal.",
+            FvkMismatch => "FullViewingKey does not correspond to the given note",
+        })
+    }
+}
+
+impl std::error::Error for SpendError {}
+
+/// The only error that can occur here is if outputs are disabled for this builder.
+#[derive(Debug, PartialEq, Eq)]
+pub struct OutputError;
+
+impl Display for OutputError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Outputs are not enabled for this builder")
+    }
+}
+
+impl std::error::Error for OutputError {}
+
+impl From<halo2_proofs::plonk::Error> for BuildError {
+    fn from(e: halo2_proofs::plonk::Error) -> Self {
+        BuildError::Proof(e)
+    }
+}
+
+impl From<value::OverflowError> for BuildError {
     fn from(e: value::OverflowError) -> Self {
-        Error::ValueSum(e)
+        BuildError::ValueSum(e)
     }
 }
 
@@ -243,23 +295,22 @@ impl Builder {
         fvk: FullViewingKey,
         note: Note,
         merkle_path: MerklePath,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), SpendError> {
         if !self.flags.spends_enabled() {
-            return Err("Spends are not enabled for this builder");
+            return Err(SpendError::SpendsDisabled);
         }
 
         // Consistency check: all anchors must be equal.
         let cm = note.commitment();
-        let path_root: Anchor =
-            <Option<_>>::from(merkle_path.root(cm.into())).ok_or("Derived the bottom anchor")?;
+        let path_root = merkle_path.root(cm.into());
         if path_root != self.anchor {
-            return Err("All anchors must be equal.");
+            return Err(SpendError::AnchorMismatch);
         }
 
         // Check if note is internal or external.
         let scope = fvk
             .scope_for_address(&note.recipient())
-            .ok_or("FullViewingKey does not correspond to the given note")?;
+            .ok_or(SpendError::FvkMismatch)?;
 
         self.spends.push(SpendInfo {
             dummy_sk: None,
@@ -279,9 +330,9 @@ impl Builder {
         recipient: Address,
         value: NoteValue,
         memo: Option<[u8; 512]>,
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), OutputError> {
         if !self.flags.outputs_enabled() {
-            return Err("Outputs are not enabled for this builder");
+            return Err(OutputError);
         }
 
         self.recipients.push(RecipientInfo {
@@ -326,7 +377,7 @@ impl Builder {
     pub fn build<V: TryFrom<i64>>(
         mut self,
         mut rng: impl RngCore,
-    ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, Error> {
+    ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, BuildError> {
         // Pair up the spends and recipients, extending with dummy values as necessary.
         let pre_actions: Vec<_> = {
             let num_spends = self.spends.len();
@@ -371,8 +422,8 @@ impl Builder {
             .ok_or(OverflowError)?;
 
         let result_value_balance: V = i64::try_from(value_balance)
-            .map_err(Error::ValueSum)
-            .and_then(|i| V::try_from(i).map_err(|_| Error::ValueSum(value::OverflowError)))?;
+            .map_err(BuildError::ValueSum)
+            .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError)))?;
 
         // Compute the transaction binding signing key.
         let bsk = pre_actions
@@ -447,7 +498,7 @@ impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
         self,
         pk: &ProvingKey,
         mut rng: impl RngCore,
-    ) -> Result<Bundle<InProgress<Proof, S>, V>, Error> {
+    ) -> Result<Bundle<InProgress<Proof, S>, V>, BuildError> {
         let instances: Vec<_> = self
             .actions()
             .iter()
@@ -522,10 +573,10 @@ pub enum MaybeSigned {
 }
 
 impl MaybeSigned {
-    fn finalize(self) -> Result<redpallas::Signature<SpendAuth>, Error> {
+    fn finalize(self) -> Result<redpallas::Signature<SpendAuth>, BuildError> {
         match self {
             Self::Signature(sig) => Ok(sig),
-            _ => Err(Error::MissingSignatures),
+            _ => Err(BuildError::MissingSignatures),
         }
     }
 }
@@ -569,7 +620,7 @@ impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
         mut rng: R,
         sighash: [u8; 32],
         signing_keys: &[SpendAuthorizingKey],
-    ) -> Result<Bundle<Authorized, V>, Error> {
+    ) -> Result<Bundle<Authorized, V>, BuildError> {
         signing_keys
             .iter()
             .fold(self.prepare(&mut rng, sighash), |partial, ask| {
@@ -608,11 +659,14 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
     pub fn append_signatures(
         self,
         signatures: &[redpallas::Signature<SpendAuth>],
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, BuildError> {
         signatures.iter().try_fold(self, Self::append_signature)
     }
 
-    fn append_signature(self, signature: &redpallas::Signature<SpendAuth>) -> Result<Self, Error> {
+    fn append_signature(
+        self,
+        signature: &redpallas::Signature<SpendAuth>,
+    ) -> Result<Self, BuildError> {
         let mut signature_valid_for = 0usize;
         let bundle = self.map_authorization(
             &mut signature_valid_for,
@@ -632,9 +686,9 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
             |_, partial| partial,
         );
         match signature_valid_for {
-            0 => Err(Error::InvalidExternalSignature),
+            0 => Err(BuildError::InvalidExternalSignature),
             1 => Ok(bundle),
-            _ => Err(Error::DuplicateSignature),
+            _ => Err(BuildError::DuplicateSignature),
         }
     }
 }
@@ -643,7 +697,7 @@ impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
     /// Finalizes this bundle, enabling it to be included in a transaction.
     ///
     /// Returns an error if any signatures are missing.
-    pub fn finalize(self) -> Result<Bundle<Authorized, V>, Error> {
+    pub fn finalize(self) -> Result<Bundle<Authorized, V>, BuildError> {
         self.try_map_authorization(
             &mut (),
             |_, _, maybe| maybe.finalize(),
