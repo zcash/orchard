@@ -55,7 +55,8 @@ pub enum SpendError {
 }
 
 /// The only error that can occur here is if outputs are disabled for this builder.
-pub type OutputsDisabled = ();
+#[derive(Debug, PartialEq, Eq)]
+pub struct OutputsDisabled;
 
 impl From<halo2_proofs::plonk::Error> for BuildError {
     fn from(e: halo2_proofs::plonk::Error) -> Self {
