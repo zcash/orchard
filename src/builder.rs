@@ -2,6 +2,7 @@
 
 use core::fmt;
 use core::iter;
+use std::fmt::Display;
 
 use ff::Field;
 use nonempty::NonEmpty;
@@ -43,6 +44,21 @@ pub enum BuildError {
     DuplicateSignature,
 }
 
+impl Display for BuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use BuildError::*;
+        match self {
+            MissingSignatures => f.write_str("Required signatures were missing during build"),
+            Proof(e) => f.write_str(&format!("Could not create proof: {}", e.to_string())),
+            ValueSum(_) => f.write_str("Overflow occured during value construction"),
+            InvalidExternalSignature => f.write_str("External signature was invalid"),
+            DuplicateSignature => f.write_str("Signature valid for more than one input"),
+        }
+    }
+}
+
+impl std::error::Error for BuildError {}
+
 /// An error type for adding a spend to the builder.
 #[derive(Debug, PartialEq, Eq)]
 pub enum SpendError {
@@ -54,9 +70,30 @@ pub enum SpendError {
     FvkMismatch,
 }
 
+impl Display for SpendError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use SpendError::*;
+        f.write_str(match self {
+            SpendsDisabled => "Spends are not enabled for this builder",
+            AnchorMismatch => "All anchors must be equal.",
+            FvkMismatch => "FullViewingKey does not correspond to the given note",
+        })
+    }
+}
+
+impl std::error::Error for SpendError {}
+
 /// The only error that can occur here is if outputs are disabled for this builder.
 #[derive(Debug, PartialEq, Eq)]
-pub struct OutputsDisabled;
+pub struct OutputError;
+
+impl Display for OutputError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Outputs are not enabled for this builder")
+    }
+}
+
+impl std::error::Error for OutputError {}
 
 impl From<halo2_proofs::plonk::Error> for BuildError {
     fn from(e: halo2_proofs::plonk::Error) -> Self {
@@ -293,9 +330,9 @@ impl Builder {
         recipient: Address,
         value: NoteValue,
         memo: Option<[u8; 512]>,
-    ) -> Result<(), OutputsDisabled> {
+    ) -> Result<(), OutputError> {
         if !self.flags.outputs_enabled() {
-            return Err(OutputsDisabled);
+            return Err(OutputError);
         }
 
         self.recipients.push(RecipientInfo {

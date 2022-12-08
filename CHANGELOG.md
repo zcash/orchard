@@ -9,7 +9,7 @@ and this project adheres to Rust's notion of
 ### Added
 - `orchard::builder`:
   - `SpendError` 
-  - `OutputsDisabled` 
+  - `OutputError` 
 
 ### Changed
 - `orchard::builder`:
@@ -17,6 +17,7 @@ and this project adheres to Rust's notion of
     `&'static str`s.
   - `Error` has been renamed to `BuildError` to differentiate from new error
     types.
+  - `BuildError` now implements `std::error::Error` and `std::fmt::Display`.
 
 ## [0.3.0] - 2022-10-19
 ### Added
