@@ -295,7 +295,7 @@ impl Builder {
         memo: Option<[u8; 512]>,
     ) -> Result<(), OutputsDisabled> {
         if !self.flags.outputs_enabled() {
-            return Err(());
+            return Err(OutputsDisabled);
         }
 
         self.recipients.push(RecipientInfo {

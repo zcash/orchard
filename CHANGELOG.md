@@ -12,10 +12,11 @@ and this project adheres to Rust's notion of
   - `OutputsDisabled` 
 
 ### Changed
-- `orchard::builder::Builder::{add_spend, add_output}` now use 
-  concrete error types instead of `&'static str`s. 
-- `orchard::builder::Error` is now `BuildError` to differentiate from
-  new error types
+- `orchard::builder`:
+  - `Builder::{add_spend, add_output}` now use concrete error types instead of
+    `&'static str`s.
+  - `Error` has been renamed to `BuildError` to differentiate from new error
+    types.
 
 ## [0.3.0] - 2022-10-19
 ### Added
