@@ -6,6 +6,16 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `orchard::builder`:
+  - `SpendError` 
+  - `OutputsDisabled` 
+
+### Changed
+- `orchard::builder::Builder::{add_spend, add_output}` now use 
+  concrete error types instead of `&'static str`s. 
+- `orchard::builder::Error` is now `BuildError` to differentiate from
+  new error types
 
 ## [0.3.0] - 2022-10-19
 ### Added
@@ -26,16 +36,9 @@ and this project adheres to Rust's notion of
 - impls of `Eq` for:
   - `orchard::zip32::ChildIndex`
   - `orchard::value::ValueSum`
-- `orchard::builder`:
-  - `SpendError` 
-  - `OutputsDisabled` 
 
 ### Changed
 - Migrated to `zcash_note_encryption 0.2`.
-- `orchard::builder::Builder::{add_spend, add_output}` now use 
-  concrete error types instead of `&'static str`s. 
-- `orchard::builder::Error` is now `BuildError` to differentiate from
-  new error types
 
 ## [0.2.0] - 2022-06-24
 ### Added
