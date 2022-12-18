@@ -387,7 +387,7 @@ impl Builder {
 
         // Pair up the spends and recipients, extending with dummy values as necessary.
         for (asset, (mut spends, mut recipients)) in
-            partition_by_asset(&self.spends, &self.recipients)
+            partition_by_asset(&self.spends, &self.recipients, &mut rng)
         {
             let num_spends = spends.len();
             let num_recipients = recipients.len();
@@ -475,10 +475,12 @@ impl Builder {
     }
 }
 
-/// partition a list of spends and recipients by note types.
+/// Partition a list of spends and recipients by note types.
+/// Method creates single dummy ZEC note if spends and recipients are both empty.
 fn partition_by_asset(
     spends: &[SpendInfo],
     recipients: &[RecipientInfo],
+    rng: &mut impl RngCore,
 ) -> HashMap<AssetId, (Vec<SpendInfo>, Vec<RecipientInfo>)> {
     let mut hm = HashMap::new();
 
@@ -494,6 +496,11 @@ fn partition_by_asset(
             .or_insert((vec![], vec![]))
             .1
             .push(r.clone())
+    }
+
+    if hm.is_empty() {
+        let dummy_spend = SpendInfo::dummy(AssetId::native(), rng);
+        hm.insert(dummy_spend.note.asset(), (vec![dummy_spend], vec![]));
     }
 
     hm
