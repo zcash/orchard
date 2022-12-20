@@ -129,4 +129,21 @@ pub mod testing {
             AssetId::derive(&IssuanceValidatingKey::from(&isk), &str)
         }
     }
+
+    #[test]
+    fn test_vectors() {
+        let test_vectors = crate::test_vectors::asset_id::test_vectors();
+
+        for tv in test_vectors {
+            let description = std::str::from_utf8(&tv.description).unwrap();
+
+            let calculated_asset_id = AssetId::derive(
+                &IssuanceValidatingKey::from_bytes(&tv.key).unwrap(),
+                description,
+            );
+            let test_vector_asset_id = AssetId::from_bytes(&tv.asset_id).unwrap();
+
+            assert_eq!(calculated_asset_id, test_vector_asset_id);
+        }
+    }
 }
