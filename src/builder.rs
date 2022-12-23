@@ -403,10 +403,13 @@ impl Builder {
             //     || SpendInfo::dummy(asset, &mut rng),
             //     |s| s.create_split_spend(),
             // );
-            let dummy_spend = SpendInfo::dummy(asset, &mut rng);
+            // spends.extend(iter::repeat_with(|| dummy_spend.clone()).take(num_actions - num_spends));
 
             // Extend the spends and recipients with dummy values.
-            spends.extend(iter::repeat_with(|| dummy_spend.clone()).take(num_actions - num_spends));
+            spends.extend(
+                iter::repeat_with(|| SpendInfo::dummy(asset, &mut rng))
+                    .take(num_actions - num_spends),
+            );
 
             recipients.extend(
                 iter::repeat_with(|| RecipientInfo::dummy(&mut rng, asset))
