@@ -50,7 +50,7 @@ impl Display for BuildError {
         match self {
             MissingSignatures => f.write_str("Required signatures were missing during build"),
             Proof(e) => f.write_str(&format!("Could not create proof: {}", e.to_string())),
-            ValueSum(_) => f.write_str("Overflow occured during value construction"),
+            ValueSum(_) => f.write_str("Overflow occurred during value construction"),
             InvalidExternalSignature => f.write_str("External signature was invalid"),
             DuplicateSignature => f.write_str("Signature valid for more than one input"),
         }
