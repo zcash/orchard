@@ -345,7 +345,7 @@ impl Builder {
         Ok(())
     }
 
-    /// Returns the action spend components that will be produced by the 
+    /// Returns the action spend components that will be produced by the
     /// transaction being constructed
     pub fn spends(&self) -> &Vec<impl InputView<()>> {
         &self.spends
