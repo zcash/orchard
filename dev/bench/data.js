@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1670535588606,
+  "lastUpdate": 1672776309101,
   "repoUrl": "https://github.com/zcash/orchard",
   "entries": {
     "Orchard Benchmarks": [
@@ -3959,6 +3959,186 @@ window.BENCHMARK_DATA = {
             "name": "default_address",
             "value": 545090,
             "range": "± 1983",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kris@nutty.land",
+            "name": "Kris Nuttycombe",
+            "username": "nuttycom"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "54b6e7437a795e67bed638d0d82045041add4089",
+          "message": "Merge pull request #367 from rex4539/typos\n\nFix typo",
+          "timestamp": "2023-01-03T12:46:31-07:00",
+          "tree_id": "a8c27e1579511126edb4f6d55584e22fe9860bcb",
+          "url": "https://github.com/zcash/orchard/commit/54b6e7437a795e67bed638d0d82045041add4089"
+        },
+        "date": 1672776306586,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "proving/bundle/1",
+            "value": 3926019342,
+            "range": "± 133146668",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/2",
+            "value": 3899174097,
+            "range": "± 6043828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/3",
+            "value": 5511627530,
+            "range": "± 38016178",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/4",
+            "value": 7190129799,
+            "range": "± 17720312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/1",
+            "value": 31888617,
+            "range": "± 3455510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/2",
+            "value": 33292454,
+            "range": "± 3470246",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/3",
+            "value": 39014380,
+            "range": "± 3454783",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/4",
+            "value": 43998497,
+            "range": "± 3617442",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/valid",
+            "value": 1600703,
+            "range": "± 3202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/invalid",
+            "value": 131501,
+            "range": "± 76",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/compact-valid",
+            "value": 1596127,
+            "range": "± 911",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "compact-note-decryption/invalid",
+            "value": 1399145257,
+            "range": "± 1141420",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/10",
+            "value": 16909864,
+            "range": "± 8571",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/10",
+            "value": 2268487,
+            "range": "± 1012",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/10",
+            "value": 16894213,
+            "range": "± 4924",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/10",
+            "value": 2233746,
+            "range": "± 17113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/50",
+            "value": 84489507,
+            "range": "± 197992",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/50",
+            "value": 11290463,
+            "range": "± 5768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/50",
+            "value": 84434925,
+            "range": "± 40857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/50",
+            "value": 11119351,
+            "range": "± 4351",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/100",
+            "value": 169019930,
+            "range": "± 290147",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/100",
+            "value": 22571620,
+            "range": "± 9581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/100",
+            "value": 168833495,
+            "range": "± 46799",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/100",
+            "value": 22220553,
+            "range": "± 10887",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "derive_fvk",
+            "value": 493664,
+            "range": "± 2466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "default_address",
+            "value": 544858,
+            "range": "± 435",
             "unit": "ns/iter"
           }
         ]
