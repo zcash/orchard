@@ -20,7 +20,7 @@ use crate::{
         SpendingKey,
     },
     note::{Note, TransmittedNoteCiphertext},
-    note_encryption::OrchardNoteEncryption,
+    note_encryption_v3::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -79,7 +79,12 @@ impl SpendInfo {
     /// Returns `None` if the `fvk` does not own the `note`.
     ///
     /// [`Builder::add_spend`]: Builder::add_spend
-    pub fn new(fvk: FullViewingKey, note: Note, merkle_path: MerklePath) -> Option<Self> {
+    pub fn new(
+        fvk: FullViewingKey,
+        note: Note,
+        merkle_path: MerklePath,
+        split_flag: bool,
+    ) -> Option<Self> {
         let scope = fvk.scope_for_address(&note.recipient())?;
         Some(SpendInfo {
             dummy_sk: None,
@@ -87,7 +92,7 @@ impl SpendInfo {
             scope,
             note,
             merkle_path,
-            split_flag: false,
+            split_flag,
         })
     }
 
@@ -112,10 +117,7 @@ impl SpendInfo {
 
     /// Return a copy of this note with the split flag set to `true`.
     fn create_split_spend(&self) -> Self {
-        let mut split_spend = SpendInfo::new(self.fvk.clone(), self.note, self.merkle_path.clone())
-            .expect("The spend info is valid");
-        split_spend.split_flag = true;
-        split_spend
+        SpendInfo::new(self.fvk.clone(), self.note, self.merkle_path.clone(), true).unwrap()
     }
 }
 
@@ -224,7 +226,7 @@ impl ActionInfo {
 
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: encryptor.epk().to_bytes().0,
-            enc_ciphertext: encryptor.encrypt_note_plaintext(),
+            enc_ciphertext: encryptor.encrypt_note_plaintext().0,
             out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv_net, &cmx, &mut rng),
         };
 
@@ -278,7 +280,7 @@ impl Builder {
     /// Returns an error if the given Merkle path does not have the required anchor for
     /// the given note.
     ///
-    /// [`OrchardDomain`]: crate::note_encryption::OrchardDomain
+    /// [`OrchardDomain`]: crate::note_encryption_v3::OrchardDomainV3
     /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
     pub fn add_spend(
         &mut self,

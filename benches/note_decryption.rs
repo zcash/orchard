@@ -5,7 +5,7 @@ use orchard::{
     circuit::ProvingKey,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note::AssetId,
-    note_encryption::{CompactAction, OrchardDomain},
+    note_encryption_v3::{CompactAction, OrchardDomainV3},
     value::NoteValue,
     Anchor, Bundle,
 };
@@ -79,7 +79,7 @@ fn bench_note_decryption(c: &mut Criterion) {
     };
     let action = bundle.actions().first();
 
-    let domain = OrchardDomain::for_action(action);
+    let domain = OrchardDomainV3::for_action(action);
 
     let compact = {
         let mut group = c.benchmark_group("note-decryption");
@@ -120,12 +120,12 @@ fn bench_note_decryption(c: &mut Criterion) {
         let ivks = 2;
         let valid_ivks = vec![valid_ivk; ivks];
         let actions: Vec<_> = (0..100)
-            .map(|_| (OrchardDomain::for_action(action), action.clone()))
+            .map(|_| (OrchardDomainV3::for_action(action), action.clone()))
             .collect();
         let compact: Vec<_> = (0..100)
             .map(|_| {
                 (
-                    OrchardDomain::for_action(action),
+                    OrchardDomainV3::for_action(action),
                     CompactAction::from(action),
                 )
             })

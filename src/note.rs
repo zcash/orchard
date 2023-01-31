@@ -279,7 +279,7 @@ pub struct TransmittedNoteCiphertext {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
     /// The encrypted note ciphertext
-    pub enc_ciphertext: [u8; 580],
+    pub enc_ciphertext: [u8; 612],
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
@@ -302,7 +302,7 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::note::asset_id::testing::arb_asset_id;
-    use crate::note::asset_id::testing::zsa_asset_id;
+    use crate::note::AssetId;
     use crate::value::testing::arb_note_value;
     use crate::{
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
@@ -336,13 +336,30 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an arbitrary ZSA note
-        pub fn arb_zsa_note()(
+        /// Generate an arbitrary native note
+        pub fn arb_native_note()(
             recipient in arb_address(),
             value in arb_note_value(),
             rho in arb_nullifier(),
             rseed in arb_rseed(),
-            asset in zsa_asset_id(),
+        ) -> Note {
+            Note {
+                recipient,
+                value,
+                asset: AssetId::native(),
+                rho,
+                rseed,
+            }
+        }
+    }
+
+    prop_compose! {
+        /// Generate an arbitrary zsa note
+        pub fn arb_zsa_note(asset: AssetId)(
+            recipient in arb_address(),
+            value in arb_note_value(),
+            rho in arb_nullifier(),
+            rseed in arb_rseed(),
         ) -> Note {
             Note {
                 recipient,

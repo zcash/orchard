@@ -120,13 +120,24 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate the ZSA note type
-        pub fn zsa_asset_id()(
+        /// Generate an asset ID
+        pub fn arb_zsa_asset_id()(
             sk in arb_spending_key(),
             str in "[A-Za-z]{255}"
         ) -> AssetId {
             let isk = IssuanceAuthorizingKey::from(&sk);
             AssetId::derive(&IssuanceValidatingKey::from(&isk), &str)
+        }
+    }
+
+    prop_compose! {
+        /// Generate an asset ID using a specific description
+        pub fn zsa_asset_id(asset_desc: String)(
+            sk in arb_spending_key(),
+        ) -> AssetId {
+            assert!(super::is_asset_desc_of_valid_size(&asset_desc));
+            let isk = IssuanceAuthorizingKey::from(&sk);
+            AssetId::derive(&IssuanceValidatingKey::from(&isk), &asset_desc)
         }
     }
 

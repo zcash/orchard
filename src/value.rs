@@ -53,12 +53,13 @@ use pasta_curves::{
 use rand::RngCore;
 use subtle::CtOption;
 
-use crate::builder::Error;
-use crate::note::AssetId;
 use crate::{
     constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES},
     primitives::redpallas::{self, Binding},
 };
+
+use crate::builder::Error;
+use crate::note::AssetId;
 
 /// Maximum note value.
 pub const MAX_NOTE_VALUE: u64 = u64::MAX;

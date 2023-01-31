@@ -20,7 +20,7 @@ use crate::{
     circuit::{Instance, Proof, VerifyingKey},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::Note,
-    note_encryption::OrchardDomain,
+    note_encryption_v3::OrchardDomainV3,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
     value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -305,7 +305,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
-                let domain = OrchardDomain::for_action(action);
+                let domain = OrchardDomainV3::for_action(action);
                 prepared_keys.iter().find_map(|(ivk, prepared_ivk)| {
                     try_note_decryption(&domain, prepared_ivk, action)
                         .map(|(n, a, m)| (idx, (*ivk).clone(), n, a, m))
@@ -324,7 +324,7 @@ impl<T: Authorization, V> Bundle<T, V> {
     ) -> Option<(Note, Address, [u8; 512])> {
         let prepared_ivk = PreparedIncomingViewingKey::new(key);
         self.actions.get(action_idx).and_then(move |action| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = OrchardDomainV3::for_action(action);
             try_note_decryption(&domain, &prepared_ivk, action)
         })
     }
@@ -341,7 +341,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
-                let domain = OrchardDomain::for_action(action);
+                let domain = OrchardDomainV3::for_action(action);
                 keys.iter().find_map(move |key| {
                     try_output_recovery_with_ovk(
                         &domain,
@@ -365,7 +365,7 @@ impl<T: Authorization, V> Bundle<T, V> {
         key: &OutgoingViewingKey,
     ) -> Option<(Note, Address, [u8; 512])> {
         self.actions.get(action_idx).and_then(move |action| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = OrchardDomainV3::for_action(action);
             try_output_recovery_with_ovk(
                 &domain,
                 key,
@@ -527,7 +527,7 @@ pub mod testing {
     use super::{Action, Authorization, Authorized, Bundle, Flags};
 
     pub use crate::action::testing::{arb_action, arb_unauthorized_action};
-    use crate::note::asset_id::testing::zsa_asset_id;
+    use crate::note::asset_id::testing::arb_zsa_asset_id;
     use crate::note::AssetId;
     use crate::value::testing::arb_value_sum;
 
@@ -591,7 +591,11 @@ pub mod testing {
 
     prop_compose! {
         /// Create an arbitrary vector of assets to burn.
-        pub fn arb_asset_to_burn()(asset_id in zsa_asset_id(), value in arb_value_sum()) -> (AssetId, ValueSum) {
+        pub fn arb_asset_to_burn()
+        (
+            asset_id in arb_zsa_asset_id(),
+            value in arb_value_sum()
+        ) -> (AssetId, ValueSum) {
             (asset_id, value)
         }
     }

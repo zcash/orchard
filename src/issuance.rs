@@ -344,7 +344,7 @@ impl IssueBundle<Signed> {
 ///     * Asset description size is collect.
 ///     * `AssetId` for the `IssueAction` has not been previously finalized.
 /// * For each `Note` inside an `IssueAction`:
-///     * All notes have the same, correct `NoteType`.
+///     * All notes have the same, correct `AssetId`.
 pub fn verify_issue_bundle(
     bundle: &IssueBundle<Signed>,
     sighash: [u8; 32],
@@ -356,7 +356,6 @@ pub fn verify_issue_bundle(
 
     let s = &mut HashSet::<AssetId>::new();
 
-    // An IssueAction could have just one properly derived AssetId.
     let newly_finalized = bundle
         .actions()
         .iter()
@@ -373,7 +372,7 @@ pub fn verify_issue_bundle(
                 return Err(IssueActionPreviouslyFinalizedNoteType(asset));
             }
 
-            // Add to finalization set, if needed.
+            // Add to the finalization set, if needed.
             if action.is_finalized() {
                 newly_finalized.insert(asset);
             }
@@ -1025,30 +1024,31 @@ mod tests {
 pub mod testing {
     use crate::issuance::{IssueAction, IssueBundle, Prepared, Signed, Unauthorized};
     use crate::keys::testing::{arb_issuance_authorizing_key, arb_issuance_validating_key};
+    use crate::note::asset_id::testing::zsa_asset_id;
     use crate::note::testing::arb_zsa_note;
     use proptest::collection::vec;
     use proptest::prelude::*;
     use proptest::prop_compose;
-    use proptest::string::string_regex;
     use rand::{rngs::StdRng, SeedableRng};
 
     prop_compose! {
-        /// Generate an issue action given note value
-        pub fn arb_issue_action()(
-            note in arb_zsa_note(),
-            asset_descr in string_regex(".{1,512}").unwrap()
-        ) -> IssueAction {
-            IssueAction::new(asset_descr, &note)
+        /// Generate an issue action
+        pub fn arb_issue_action(asset_desc: String)
+        (
+            asset in zsa_asset_id(asset_desc.clone()),
+        )
+        (
+            note in arb_zsa_note(asset),
+        )-> IssueAction {
+            IssueAction::new(asset_desc.clone(), &note)
         }
     }
 
     prop_compose! {
-        /// Generate an arbitrary issue bundle with fake authorization data. This bundle does not
-        /// necessarily respect consensus rules; for that use
-        /// [`crate::builder::testing::arb_issue_bundle`]
+        /// Generate an arbitrary issue bundle with fake authorization data.
         pub fn arb_unathorized_issue_bundle(n_actions: usize)
         (
-            actions in vec(arb_issue_action(), n_actions),
+            actions in vec(arb_issue_action("asset_desc".to_string()), n_actions),
             ik in arb_issuance_validating_key()
         ) -> IssueBundle<Unauthorized> {
             IssueBundle {
@@ -1061,11 +1061,10 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an arbitrary issue bundle with fake authorization data. This bundle does not
-        /// necessarily respect consensus rules; for that use
-        /// [`crate::builder::testing::arb_issue_bundle`]
+        /// necessarily respect consensus rules
         pub fn arb_prepared_issue_bundle(n_actions: usize)
         (
-            actions in vec(arb_issue_action(), n_actions),
+            actions in vec(arb_issue_action("asset_desc".to_string()), n_actions),
             ik in arb_issuance_validating_key(),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY)
         ) -> IssueBundle<Prepared> {
@@ -1079,11 +1078,10 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an arbitrary issue bundle with fake authorization data. This bundle does not
-        /// necessarily respect consensus rules; for that use
-        /// [`crate::builder::testing::arb_issue_bundle`]
+        /// necessarily respect consensus rules
         pub fn arb_signed_issue_bundle(n_actions: usize)
         (
-            actions in vec(arb_issue_action(), n_actions),
+            actions in vec(arb_issue_action("asset_desc".to_string()), n_actions),
             ik in arb_issuance_validating_key(),
             isk in arb_issuance_authorizing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),

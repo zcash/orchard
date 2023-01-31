@@ -42,13 +42,13 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
         ch.update(&action.nullifier().to_bytes());
         ch.update(&action.cmx().to_bytes());
         ch.update(&action.encrypted_note().epk_bytes);
-        ch.update(&action.encrypted_note().enc_ciphertext[..52]);
+        ch.update(&action.encrypted_note().enc_ciphertext[..84]); // TODO: make sure it is backward compatible with Orchard [..52]
 
-        mh.update(&action.encrypted_note().enc_ciphertext[52..564]);
+        mh.update(&action.encrypted_note().enc_ciphertext[84..596]);
 
         nh.update(&action.cv_net().to_bytes());
         nh.update(&<[u8; 32]>::from(action.rk()));
-        nh.update(&action.encrypted_note().enc_ciphertext[564..]);
+        nh.update(&action.encrypted_note().enc_ciphertext[596..]);
         nh.update(&action.encrypted_note().out_ciphertext);
     }
 
