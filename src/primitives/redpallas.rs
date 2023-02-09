@@ -22,7 +22,7 @@ pub type Binding = reddsa::orchard::Binding;
 impl SigType for Binding {}
 
 /// A RedPallas signing key.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct SigningKey<T: SigType>(reddsa::SigningKey<T>);
 
 impl<T: SigType> From<SigningKey<T>> for [u8; 32] {
