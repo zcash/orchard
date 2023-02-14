@@ -36,7 +36,7 @@ use crate::{
     note::{
         commitment::{NoteCommitTrapdoor, NoteCommitment},
         nullifier::Nullifier,
-        ExtractedNoteCommitment, Note,
+        AssetId, ExtractedNoteCommitment, Note,
     },
     primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
@@ -56,7 +56,7 @@ use halo2_gadgets::{
             MerklePath,
         },
     },
-    utilities::lookup_range_check::LookupRangeCheckConfig,
+    utilities::{bool_check, lookup_range_check::LookupRangeCheckConfig},
 };
 
 mod commit_ivk;
@@ -109,6 +109,7 @@ pub struct Circuit {
     pub(crate) psi_old: Value<pallas::Base>,
     pub(crate) rcm_old: Value<NoteCommitTrapdoor>,
     pub(crate) cm_old: Value<NoteCommitment>,
+    pub(crate) asset_old: Value<AssetId>,
     pub(crate) alpha: Value<pallas::Scalar>,
     pub(crate) ak: Value<SpendValidatingKey>,
     pub(crate) nk: Value<NullifierDerivingKey>,
@@ -118,7 +119,9 @@ pub struct Circuit {
     pub(crate) v_new: Value<NoteValue>,
     pub(crate) psi_new: Value<pallas::Base>,
     pub(crate) rcm_new: Value<NoteCommitTrapdoor>,
+    pub(crate) asset_new: Value<AssetId>,
     pub(crate) rcv: Value<ValueCommitTrapdoor>,
+    pub(crate) split_flag: Value<bool>,
 }
 
 impl Circuit {
@@ -172,6 +175,7 @@ impl Circuit {
             psi_old: Value::known(psi_old),
             rcm_old: Value::known(rcm_old),
             cm_old: Value::known(spend.note.commitment()),
+            asset_old: Value::known(spend.note.asset()),
             alpha: Value::known(alpha),
             ak: Value::known(spend.fvk.clone().into()),
             nk: Value::known(*spend.fvk.nk()),
@@ -181,7 +185,9 @@ impl Circuit {
             v_new: Value::known(output_note.value()),
             psi_new: Value::known(psi_new),
             rcm_new: Value::known(rcm_new),
+            asset_new: Value::known(output_note.asset()),
             rcv: Value::known(rcv),
+            split_flag: Value::known(spend.split_flag),
         }
     }
 }
@@ -209,10 +215,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             meta.advice_column(),
         ];
 
-        // Constrain v_old - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
-        // Either v_old = 0, or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
+        // Constrain split_flag to be boolean
+        // Constrain v_old * (1 - split_flag) - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
+        // Constrain v_old = 0 or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
         // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
+        // Constrain split_flag = 1 or nf_old = nf_old_pub
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -227,17 +235,25 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let enable_spends = meta.query_advice(advices[6], Rotation::cur());
             let enable_outputs = meta.query_advice(advices[7], Rotation::cur());
 
+            let split_flag = meta.query_advice(advices[8], Rotation::cur());
+
+            let nf_old = meta.query_advice(advices[9], Rotation::cur());
+            let nf_old_pub = meta.query_advice(advices[0], Rotation::next());
+
             let one = Expression::Constant(pallas::Base::one());
 
             Constraints::with_selector(
                 q_orchard,
                 [
+                    ("bool_check split_flag", bool_check(split_flag.clone())),
                     (
-                        "v_old - v_new = magnitude * sign",
-                        v_old.clone() - v_new.clone() - magnitude * sign,
+                        "v_old * (1 - split_flag) - v_new = magnitude * sign",
+                        v_old.clone() * (one.clone() - split_flag.clone())
+                            - v_new.clone()
+                            - magnitude * sign,
                     ),
                     (
-                        "Either v_old = 0, or root = anchor",
+                        "v_old = 0 or root = anchor",
                         v_old.clone() * (root - anchor),
                     ),
                     (
@@ -246,7 +262,11 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     ),
                     (
                         "v_new = 0 or enable_outputs = 1",
-                        v_new * (one - enable_outputs),
+                        v_new * (one.clone() - enable_outputs),
+                    ),
+                    (
+                        "split_flag = 1 or nf_old = nf_old_pub",
+                        (one - split_flag) * (nf_old - nf_old_pub),
                     ),
                 ],
             )
@@ -455,6 +475,23 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new)
         };
 
+        // Verify that asset_old and asset_new are equals
+        {
+            let asset_old = NonIdentityPoint::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "witness asset_old"),
+                self.asset_old
+                    .map(|asset_old| asset_old.cv_base().to_affine()),
+            )?;
+            let asset_new = NonIdentityPoint::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "asset equality"),
+                self.asset_new
+                    .map(|asset_new| asset_new.cv_base().to_affine()),
+            )?;
+            asset_old.constrain_equal(layouter.namespace(|| "asset equality"), &asset_new)?;
+        }
+
         // Merkle path validity check (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         let root = {
             let path = self
@@ -474,7 +511,17 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net_magnitude_sign = {
-                let v_net = self.v_old - self.v_new;
+                // v_net is equal to
+                //   (-v_new) if split_flag = true
+                //   v_old - v_new if split_flag = false
+                let v_net = self.split_flag.and_then(|split_flag| {
+                    if split_flag {
+                        Value::known(crate::value::NoteValue::zero()) - self.v_new
+                    } else {
+                        self.v_old - self.v_new
+                    }
+                });
+
                 let magnitude_sign = v_net.map(|v_net| {
                     let (magnitude, sign) = v_net.magnitude_sign();
 
@@ -540,9 +587,6 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 &cm_old,
                 nk.clone(),
             )?;
-
-            // Constrain nf_old to equal public input
-            layouter.constrain_instance(nf_old.inner().cell(), config.primary, NF_OLD)?;
 
             nf_old
         };
@@ -743,6 +787,27 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     ENABLE_OUTPUT,
                     config.advices[7],
                     0,
+                )?;
+
+                region.assign_advice(
+                    || "split_flag",
+                    config.advices[8],
+                    0,
+                    || {
+                        self.split_flag
+                            .map(|split_flag| pallas::Base::from(split_flag as u64))
+                    },
+                )?;
+
+                nf_old
+                    .inner()
+                    .copy_advice(|| "nf_old", &mut region, config.advices[9], 0)?;
+                region.assign_advice_from_instance(
+                    || "nf_old pub",
+                    config.primary,
+                    NF_OLD,
+                    config.advices[0],
+                    1,
                 )?;
 
                 config.q_orchard.enable(&mut region, 0)
@@ -968,6 +1033,7 @@ mod tests {
     use rand::{rngs::OsRng, RngCore};
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
+    use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey, SpendingKey};
     use crate::note::AssetId;
     use crate::{
         keys::SpendValidatingKey,
@@ -1008,6 +1074,7 @@ mod tests {
                 psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
                 rcm_old: Value::known(spent_note.rseed().rcm(&spent_note.rho())),
                 cm_old: Value::known(spent_note.commitment()),
+                asset_old: Value::known(spent_note.asset()),
                 alpha: Value::known(alpha),
                 ak: Value::known(ak),
                 nk: Value::known(nk),
@@ -1017,7 +1084,9 @@ mod tests {
                 v_new: Value::known(output_note.value()),
                 psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
                 rcm_new: Value::known(output_note.rseed().rcm(&output_note.rho())),
+                asset_new: Value::known(output_note.asset()),
                 rcv: Value::known(rcv),
+                split_flag: Value::known(false),
             },
             Instance {
                 anchor,
@@ -1085,6 +1154,74 @@ mod tests {
         let proof = Proof::create(&pk, &circuits, &instances, &mut rng).unwrap();
         assert!(proof.verify(&vk, &instances).is_ok());
         assert_eq!(proof.0.len(), expected_proof_size);
+    }
+
+    #[test]
+    fn test_not_equal_asset_ids() {
+        use halo2_proofs::dev::{
+            metadata::Column, metadata::Region, FailureLocation, VerifyFailure,
+        };
+        use halo2_proofs::plonk::Any::Advice;
+
+        let mut rng = OsRng;
+
+        let (mut circuit, instance) = generate_circuit_instance(&mut rng);
+
+        // We would like to test that if the asset of the spent note (called asset_old) and the
+        // asset of the output note (called asset_new) are not equal, the proof is not verified.
+        // To do that, we attribute a random value to asset_new.
+        let random_asset_id = {
+            let sk = SpendingKey::random(&mut rng);
+            let isk = IssuanceAuthorizingKey::from(&sk);
+            let ik = IssuanceValidatingKey::from(&isk);
+            let asset_descr = "zsa_asset";
+            AssetId::derive(&ik, asset_descr)
+        };
+        circuit.asset_new = Value::known(random_asset_id);
+
+        assert_eq!(
+            MockProver::run(
+                K,
+                &circuit,
+                instance
+                    .to_halo2_instance()
+                    .iter()
+                    .map(|p| p.to_vec())
+                    .collect()
+            )
+            .unwrap()
+            .verify(),
+            Err(vec![
+                VerifyFailure::Permutation {
+                    column: Column::from((Advice, 0)),
+                    location: FailureLocation::InRegion {
+                        region: Region::from((9, "witness non-identity point".to_string())),
+                        offset: 0
+                    }
+                },
+                VerifyFailure::Permutation {
+                    column: Column::from((Advice, 0)),
+                    location: FailureLocation::InRegion {
+                        region: Region::from((10, "witness non-identity point".to_string())),
+                        offset: 0
+                    }
+                },
+                VerifyFailure::Permutation {
+                    column: Column::from((Advice, 1)),
+                    location: FailureLocation::InRegion {
+                        region: Region::from((9, "witness non-identity point".to_string())),
+                        offset: 0
+                    }
+                },
+                VerifyFailure::Permutation {
+                    column: Column::from((Advice, 1)),
+                    location: FailureLocation::InRegion {
+                        region: Region::from((10, "witness non-identity point".to_string())),
+                        offset: 0
+                    }
+                }
+            ])
+        );
     }
 
     #[test]
@@ -1194,6 +1331,7 @@ mod tests {
             psi_old: Value::unknown(),
             rcm_old: Value::unknown(),
             cm_old: Value::unknown(),
+            asset_old: Value::unknown(),
             alpha: Value::unknown(),
             ak: Value::unknown(),
             nk: Value::unknown(),
@@ -1203,7 +1341,9 @@ mod tests {
             v_new: Value::unknown(),
             psi_new: Value::unknown(),
             rcm_new: Value::unknown(),
+            asset_new: Value::unknown(),
             rcv: Value::unknown(),
+            split_flag: Value::unknown(),
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)

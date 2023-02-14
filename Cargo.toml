@@ -58,7 +58,8 @@ proptest = "1.0.0"
 zcash_note_encryption = { version = "0.2", features = ["pre-zip-212"] }
 
 [target.'cfg(unix)'.dev-dependencies]
-pprof = { version = "0.9", features = ["criterion", "flamegraph"] } # MSRV 1.56
+# TODO: upgrade the pprof version once its inferno dependency respects all clippy lints
+pprof = { version = "0.6", features = ["criterion", "flamegraph"] } # MSRV 1.56
 
 [lib]
 bench = false
