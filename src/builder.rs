@@ -759,8 +759,8 @@ impl OutputView for RecipientInfo {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
+    use bridgetree::BridgeTree;
     use core::fmt::Debug;
-    use incrementalmerkletree::{bridgetree::BridgeTree, Tree};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 
     use proptest::collection::vec;
@@ -853,16 +853,15 @@ pub mod testing {
             rng_seed in prop::array::uniform32(prop::num::u8::ANY)
         ) -> ArbitraryBundleInputs<StdRng> {
             const MERKLE_DEPTH_ORCHARD: u8 = crate::constants::MERKLE_DEPTH_ORCHARD as u8;
-            let mut tree = BridgeTree::<MerkleHashOrchard, MERKLE_DEPTH_ORCHARD>::new(100);
+            let mut tree = BridgeTree::<MerkleHashOrchard, u32, MERKLE_DEPTH_ORCHARD>::new(100, 0);
             let mut notes_and_auth_paths: Vec<(Note, MerklePath)> = Vec::new();
 
             for note in notes.iter() {
                 let leaf = MerkleHashOrchard::from_cmx(&note.commitment().into());
-                tree.append(&leaf);
-                let position = tree.witness().expect("tree is not empty");
+                tree.append(leaf);
+                let position = tree.mark().expect("tree is not empty");
 
-                let root = tree.root(0).unwrap();
-                let path = MerklePath::from((position, tree.authentication_path(position, &root).expect("we just witnessed the path")));
+                let path = MerklePath::from((position, tree.witness(position, 0).expect("we just witnessed the path")));
                 notes_and_auth_paths.push((*note, path));
             }
 

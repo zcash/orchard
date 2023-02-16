@@ -1,4 +1,5 @@
-use incrementalmerkletree::{bridgetree::BridgeTree, Hashable, Tree};
+use bridgetree::BridgeTree;
+use incrementalmerkletree::Hashable;
 use orchard::{
     builder::Builder,
     bundle::{Authorized, Flags},
@@ -70,11 +71,11 @@ fn bundle_chain() {
         // Use the tree with a single leaf.
         let cmx: ExtractedNoteCommitment = note.commitment().into();
         let leaf = MerkleHashOrchard::from_cmx(&cmx);
-        let mut tree = BridgeTree::<MerkleHashOrchard, 32>::new(0);
-        tree.append(&leaf);
-        let position = tree.witness().unwrap();
+        let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100, 0);
+        tree.append(leaf);
+        let position = tree.mark().unwrap();
         let root = tree.root(0).unwrap();
-        let auth_path = tree.authentication_path(position, &root).unwrap();
+        let auth_path = tree.witness(position, 0).unwrap();
         let merkle_path = MerklePath::from_parts(
             u64::from(position).try_into().unwrap(),
             auth_path[..].try_into().unwrap(),

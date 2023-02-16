@@ -11,7 +11,7 @@ use crate::{
 };
 
 use halo2_gadgets::sinsemilla::primitives::HashDomain;
-use incrementalmerkletree::{Altitude, Hashable};
+use incrementalmerkletree::{Hashable, Level};
 use pasta_curves::pallas;
 
 use ff::{Field, PrimeField, PrimeFieldBits};
@@ -205,7 +205,7 @@ impl Hashable for MerkleHashOrchard {
     ///      - when hashing two leaves, we produce a node on the layer above the leaves, i.e.
     ///        layer = 31, l = 0
     ///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
-    fn combine(altitude: Altitude, left: &Self, right: &Self) -> Self {
+    fn combine(level: Level, left: &Self, right: &Self) -> Self {
         // MerkleCRH Sinsemilla hash domain.
         let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
 
@@ -213,7 +213,7 @@ impl Hashable for MerkleHashOrchard {
             domain
                 .hash(
                     iter::empty()
-                        .chain(i2lebsp_k(altitude.into()).iter().copied())
+                        .chain(i2lebsp_k(level.into()).iter().copied())
                         .chain(left.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
                         .chain(right.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
                 )
@@ -221,8 +221,8 @@ impl Hashable for MerkleHashOrchard {
         )
     }
 
-    fn empty_root(altitude: Altitude) -> Self {
-        EMPTY_ROOTS[<usize>::from(altitude)]
+    fn empty_root(level: Level) -> Self {
+        EMPTY_ROOTS[<usize>::from(level)]
     }
 }
 
@@ -248,17 +248,13 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     #[cfg(test)]
-    use incrementalmerkletree::{
+    use {
+        crate::tree::{MerkleHashOrchard, EMPTY_ROOTS},
         bridgetree::{BridgeTree, Frontier as BridgeFrontier},
-        Altitude, Frontier, Tree,
+        group::ff::PrimeField,
+        incrementalmerkletree::Level,
+        pasta_curves::pallas,
     };
-
-    #[cfg(test)]
-    use crate::tree::{MerkleHashOrchard, EMPTY_ROOTS};
-    #[cfg(test)]
-    use group::ff::PrimeField;
-    #[cfg(test)]
-    use pasta_curves::pallas;
 
     #[test]
     fn test_vectors() {
@@ -268,14 +264,14 @@ pub mod testing {
             assert_eq!(tv_empty_roots[height], root.to_bytes());
         }
 
-        let mut tree = BridgeTree::<MerkleHashOrchard, 4>::new(100);
+        let mut tree = BridgeTree::<MerkleHashOrchard, u32, 4>::new(100, 0);
         for (i, tv) in crate::test_vectors::merkle_path::test_vectors()
             .into_iter()
             .enumerate()
         {
             let cmx = MerkleHashOrchard::from_bytes(&tv.leaves[i]).unwrap();
-            tree.append(&cmx);
-            let position = tree.witness().expect("tree is not empty");
+            tree.append(cmx);
+            let position = tree.mark().expect("tree is not empty");
             assert_eq!(position, i.into());
 
             let root = tree.root(0).unwrap();
@@ -286,7 +282,7 @@ pub mod testing {
             // but BridgeTree doesn't encode these.
             for j in 0..=i {
                 assert_eq!(
-                    tree.authentication_path(j.try_into().unwrap(), &root),
+                    tree.witness(j.try_into().unwrap(), 0).ok(),
                     Some(
                         tv.paths[j]
                             .iter()
@@ -304,14 +300,14 @@ pub mod testing {
 
         let tv_empty_roots = crate::test_vectors::commitment_tree::test_vectors().empty_roots;
 
-        for (altitude, tv_root) in tv_empty_roots.iter().enumerate() {
+        for (level, tv_root) in tv_empty_roots.iter().enumerate() {
             assert_eq!(
-                MerkleHashOrchard::empty_root(Altitude::from(altitude as u8))
+                MerkleHashOrchard::empty_root(Level::from(level as u8))
                     .0
                     .to_repr(),
                 *tv_root,
-                "Empty root mismatch at altitude {}",
-                altitude
+                "Empty root mismatch at level {}",
+                level
             );
         }
     }
@@ -360,7 +356,7 @@ pub mod testing {
         let mut frontier = BridgeFrontier::<MerkleHashOrchard, 32>::empty();
         for commitment in commitments.iter() {
             let cmx = MerkleHashOrchard(pallas::Base::from_repr(*commitment).unwrap());
-            frontier.append(&cmx);
+            frontier.append(cmx);
         }
         assert_eq!(frontier.root().0, pallas::Base::from_repr(anchor).unwrap());
     }
