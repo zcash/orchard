@@ -14,6 +14,7 @@ and this project adheres to Rust's notion of
   - `OutputError` 
 
 ### Changed
+- MSRV is now 1.60.0.
 - `orchard::builder`:
   - `Builder::{add_spend, add_output}` now use concrete error types instead of
     `&'static str`s.
