@@ -3,10 +3,10 @@
 use core::iter;
 use core::ops::Deref;
 
-use ff::{Field, PrimeField, PrimeFieldBits};
+use ff::{Field, FromUniformBytes, PrimeField, PrimeFieldBits};
 use group::{Curve, Group, GroupEncoding, WnafBase, WnafScalar};
 use halo2_gadgets::{poseidon::primitives as poseidon, sinsemilla::primitives as sinsemilla};
-use halo2_proofs::arithmetic::{CurveAffine, CurveExt, FieldExt};
+use halo2_proofs::arithmetic::{CurveAffine, CurveExt};
 use memuse::DynamicUsage;
 use pasta_curves::pallas;
 use subtle::{ConditionallySelectable, CtOption};
@@ -176,7 +176,7 @@ impl PreparedNonZeroScalar {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 pub(crate) fn to_base(x: [u8; 64]) -> pallas::Base {
-    pallas::Base::from_bytes_wide(&x)
+    pallas::Base::from_uniform_bytes(&x)
 }
 
 /// $\mathsf{ToScalar}^\mathsf{Orchard}(x) := LEOS2IP_{\ell_\mathsf{PRFexpand}}(x) (mod r_P)$
@@ -185,7 +185,7 @@ pub(crate) fn to_base(x: [u8; 64]) -> pallas::Base {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 pub(crate) fn to_scalar(x: [u8; 64]) -> pallas::Scalar {
-    pallas::Scalar::from_bytes_wide(&x)
+    pallas::Scalar::from_uniform_bytes(&x)
 }
 
 /// Converts from pallas::Base to pallas::Scalar (aka $x \pmod{r_\mathbb{P}}$).
