@@ -19,8 +19,8 @@ pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 pub(crate) mod nullifier;
 pub use self::nullifier::Nullifier;
 
-pub(crate) mod asset_id;
-pub use self::asset_id::AssetId;
+pub(crate) mod asset_base;
+pub use self::asset_base::AssetBase;
 
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
@@ -94,7 +94,7 @@ pub struct Note {
     /// The value of this note.
     value: NoteValue,
     /// The asset id of this note.
-    asset: AssetId,
+    asset: AssetBase,
     /// A unique creation ID for this note.
     ///
     /// This is set to the nullifier of the note that was spent in the [`Action`] that
@@ -134,7 +134,7 @@ impl Note {
     pub fn from_parts(
         recipient: Address,
         value: NoteValue,
-        asset: AssetId,
+        asset: AssetBase,
         rho: Nullifier,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
@@ -156,7 +156,7 @@ impl Note {
     pub(crate) fn new(
         recipient: Address,
         value: NoteValue,
-        asset: AssetId,
+        asset: AssetBase,
         rho: Nullifier,
         mut rng: impl RngCore,
     ) -> Self {
@@ -182,7 +182,7 @@ impl Note {
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Nullifier>,
-        asset: AssetId,
+        asset: AssetBase,
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
@@ -210,7 +210,7 @@ impl Note {
     }
 
     /// Returns the note type of this note.
-    pub fn asset(&self) -> AssetId {
+    pub fn asset(&self) -> AssetBase {
         self.asset
     }
 
@@ -301,8 +301,8 @@ impl fmt::Debug for TransmittedNoteCiphertext {
 pub mod testing {
     use proptest::prelude::*;
 
-    use crate::note::asset_id::testing::arb_asset_id;
-    use crate::note::AssetId;
+    use crate::note::asset_base::testing::arb_asset_id;
+    use crate::note::AssetBase;
     use crate::value::testing::arb_note_value;
     use crate::{
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
@@ -346,7 +346,7 @@ pub mod testing {
             Note {
                 recipient,
                 value,
-                asset: AssetId::native(),
+                asset: AssetBase::native(),
                 rho,
                 rseed,
             }
@@ -355,7 +355,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an arbitrary zsa note
-        pub fn arb_zsa_note(asset: AssetId)(
+        pub fn arb_zsa_note(asset: AssetBase)(
             recipient in arb_address(),
             value in arb_note_value(),
             rho in arb_nullifier(),

@@ -59,7 +59,7 @@ use crate::{
 };
 
 use crate::builder::Error;
-use crate::note::AssetId;
+use crate::note::AssetBase;
 
 /// Maximum note value.
 pub const MAX_NOTE_VALUE: u64 = u64::MAX;
@@ -345,7 +345,7 @@ impl ValueCommitment {
     ///
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
-    pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor, asset: AssetId) -> Self {
+    pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor, asset: AssetBase) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
@@ -461,9 +461,9 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use crate::note::asset_id::testing::{arb_asset_id, native_asset_id};
+    use crate::note::asset_base::testing::{arb_asset_id, native_asset_id};
 
-    use crate::note::AssetId;
+    use crate::note::AssetBase;
     use proptest::prelude::*;
 
     use super::{
@@ -473,10 +473,10 @@ mod tests {
     use crate::primitives::redpallas;
 
     fn check_binding_signature(
-        native_values: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
-        arb_values: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
+        native_values: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
+        arb_values: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
         neg_trapdoors: &[ValueCommitTrapdoor],
-        arb_values_to_burn: &[(ValueSum, ValueCommitTrapdoor, AssetId)],
+        arb_values_to_burn: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
     ) {
         // for each arb value, create a negative value with a different trapdoor
         let neg_arb_values: Vec<_> = arb_values
@@ -513,7 +513,7 @@ mod tests {
             - ValueCommitment::derive(
                 native_value_balance,
                 ValueCommitTrapdoor::zero(),
-                AssetId::native(),
+                AssetBase::native(),
             )
             - arb_values_to_burn
                 .iter()

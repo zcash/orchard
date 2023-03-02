@@ -8,7 +8,7 @@ use zcash_note_encryption::{
     AEAD_TAG_SIZE, MEMO_SIZE, OUT_PLAINTEXT_SIZE,
 };
 
-use crate::note::AssetId;
+use crate::note::AssetBase;
 use crate::{
     action::Action,
     keys::{
@@ -109,14 +109,14 @@ where
     Some((note, recipient))
 }
 
-fn parse_version_and_asset_type(plaintext: &CompactNotePlaintextBytes) -> Option<AssetId> {
+fn parse_version_and_asset_type(plaintext: &CompactNotePlaintextBytes) -> Option<AssetBase> {
     match plaintext {
-        CompactNotePlaintextBytes::V2(x) if x[0] == 0x02 => Some(AssetId::native()),
+        CompactNotePlaintextBytes::V2(x) if x[0] == 0x02 => Some(AssetBase::native()),
         CompactNotePlaintextBytes::V3(x) if x[0] == 0x03 => {
             let bytes = x[COMPACT_NOTE_SIZE_V2..COMPACT_NOTE_SIZE_V3]
                 .try_into()
                 .unwrap();
-            AssetId::from_bytes(bytes).into()
+            AssetBase::from_bytes(bytes).into()
         }
         _ => None,
     }
@@ -554,7 +554,7 @@ mod tests {
     };
 
     use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
-    use crate::note::AssetId;
+    use crate::note::AssetBase;
     use crate::note_encryption::NoteCiphertextBytes;
     use crate::{
         action::Action,
@@ -646,8 +646,8 @@ mod tests {
             let recipient = Address::from_parts(d, pk_d);
 
             let asset = match tv.asset {
-                None => AssetId::native(),
-                Some(type_bytes) => AssetId::from_bytes(&type_bytes).unwrap(),
+                None => AssetBase::native(),
+                Some(type_bytes) => AssetBase::from_bytes(&type_bytes).unwrap(),
             };
 
             let note = Note::from_parts(recipient, value, asset, rho, rseed).unwrap();

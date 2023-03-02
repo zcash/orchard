@@ -4,7 +4,7 @@ use orchard::{
     bundle::Flags,
     circuit::ProvingKey,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
-    note::AssetId,
+    note::AssetBase,
     note_encryption_v3::{CompactAction, OrchardDomainV3},
     value::NoteValue,
     Anchor, Bundle,
@@ -57,7 +57,7 @@ fn bench_note_decryption(c: &mut Criterion) {
                 None,
                 recipient,
                 NoteValue::from_raw(10),
-                AssetId::native(),
+                AssetBase::native(),
                 None,
             )
             .unwrap();
@@ -66,7 +66,7 @@ fn bench_note_decryption(c: &mut Criterion) {
                 None,
                 recipient,
                 NoteValue::from_raw(10),
-                AssetId::native(),
+                AssetBase::native(),
                 None,
             )
             .unwrap();

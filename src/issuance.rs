@@ -12,8 +12,10 @@ use crate::issuance::Error::{
     IssueBundleInvalidSignature, WrongAssetDescSize,
 };
 use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
-use crate::note::asset_id::is_asset_desc_of_valid_size;
-use crate::note::{AssetId, Nullifier};
+use crate::note::asset_base::is_asset_desc_of_valid_size;
+use crate::note::{AssetBase, Nullifier};
+use crate::primitives::redpallas::Signature;
+
 use crate::value::NoteValue;
 use crate::{
     primitives::redpallas::{self, SpendAuth},
@@ -21,7 +23,7 @@ use crate::{
 };
 
 /// A bundle of actions to be applied to the ledger.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IssueBundle<T: IssueAuth> {
     /// The issuer key for the note being created.
     ik: IssuanceValidatingKey,
@@ -81,11 +83,11 @@ impl IssueAction {
         self.finalize
     }
 
-    /// Return the `AssetId` if the provided `ik` is used to derive the `asset_id` for **all** internal notes.
+    /// Return the `AssetBase` if the provided `ik` is used to derive the `asset_id` for **all** internal notes.
     fn are_note_asset_ids_derived_correctly(
         &self,
         ik: &IssuanceValidatingKey,
-    ) -> Result<AssetId, Error> {
+    ) -> Result<AssetBase, Error> {
         match self
             .notes
             .iter()
@@ -97,7 +99,7 @@ impl IssueAction {
                     .ok_or(IssueActionIncorrectNoteType)
             }) {
             Ok(asset) => asset // check that the asset was properly derived.
-                .eq(&AssetId::derive(ik, &self.asset_desc))
+                .eq(&AssetBase::derive(ik, &self.asset_desc))
                 .then(|| asset)
                 .ok_or(IssueBundleIkMismatchNoteType),
             Err(e) => Err(e),
@@ -106,20 +108,20 @@ impl IssueAction {
 }
 
 /// Defines the authorization type of an Issue bundle.
-pub trait IssueAuth: fmt::Debug {}
+pub trait IssueAuth: fmt::Debug + Clone {}
 
 /// Marker for an unauthorized bundle with no proofs or signatures.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Unauthorized;
 
 /// Marker for an unauthorized bundle with injected sighash.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Prepared {
     sighash: [u8; 32],
 }
 
 /// Marker for an authorized bundle.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Signed {
     signature: redpallas::Signature<SpendAuth>,
 }
@@ -128,6 +130,11 @@ impl Signed {
     /// Returns the signature for this authorization.
     pub fn signature(&self) -> &redpallas::Signature<SpendAuth> {
         &self.signature
+    }
+
+    /// Constructs an `Signed` from its constituent parts.
+    pub fn from_parts(signature: Signature<SpendAuth>) -> Self {
+        Signed { signature }
     }
 }
 
@@ -163,11 +170,11 @@ impl<T: IssueAuth> IssueBundle<T> {
     }
 
     /// Find an action by `asset` for a given `IssueBundle`.
-    pub fn get_action_by_type(&self, asset: AssetId) -> Option<&IssueAction> {
+    pub fn get_action_by_type(&self, asset: AssetBase) -> Option<&IssueAction> {
         let action = self
             .actions
             .iter()
-            .find(|a| AssetId::derive(&self.ik, &a.asset_desc).eq(&asset));
+            .find(|a| AssetBase::derive(&self.ik, &a.asset_desc).eq(&asset));
         action
     }
 
@@ -175,6 +182,19 @@ impl<T: IssueAuth> IssueBundle<T> {
     /// a transaction ID.
     pub fn commitment(&self) -> IssueBundleCommitment {
         IssueBundleCommitment(hash_issue_bundle_txid_data(self))
+    }
+
+    /// Constructs an `IssueBundle` from its constituent parts.
+    pub fn from_parts(
+        ik: IssuanceValidatingKey,
+        actions: Vec<IssueAction>,
+        authorization: T,
+    ) -> Self {
+        IssueBundle {
+            ik,
+            actions,
+            authorization,
+        }
     }
 }
 
@@ -202,12 +222,12 @@ impl IssueBundle<Unauthorized> {
         value: NoteValue,
         finalize: bool,
         mut rng: impl RngCore,
-    ) -> Result<AssetId, Error> {
+    ) -> Result<AssetBase, Error> {
         if !is_asset_desc_of_valid_size(&asset_desc) {
             return Err(WrongAssetDescSize);
         }
 
-        let asset = AssetId::derive(&self.ik, &asset_desc);
+        let asset = AssetBase::derive(&self.ik, &asset_desc);
 
         let note = Note::new(
             recipient,
@@ -335,26 +355,26 @@ impl IssueBundle<Signed> {
 /// Validation for Orchard IssueBundles
 ///
 /// A set of previously finalized asset types must be provided.
-/// In case of success, `finalized` will contain a set of the provided **and** the newly finalized `AssetId`s
+/// In case of success, `finalized` will contain a set of the provided **and** the newly finalized `AssetBase`s
 ///
 /// The following checks are performed:
 /// * For the `IssueBundle`:
 ///     * the Signature on top of the provided `sighash` verifies correctly.
 /// * For each `IssueAction`:
 ///     * Asset description size is collect.
-///     * `AssetId` for the `IssueAction` has not been previously finalized.
+///     * `AssetBase` for the `IssueAction` has not been previously finalized.
 /// * For each `Note` inside an `IssueAction`:
-///     * All notes have the same, correct `AssetId`.
+///     * All notes have the same, correct `AssetBase`.
 pub fn verify_issue_bundle(
     bundle: &IssueBundle<Signed>,
     sighash: [u8; 32],
-    finalized: &mut HashSet<AssetId>, // The finalization set.
+    finalized: &mut HashSet<AssetBase>, // The finalization set.
 ) -> Result<(), Error> {
     if let Err(e) = bundle.ik.verify(&sighash, &bundle.authorization.signature) {
         return Err(IssueBundleInvalidSignature(e));
     };
 
-    let s = &mut HashSet::<AssetId>::new();
+    let s = &mut HashSet::<AssetBase>::new();
 
     let newly_finalized = bundle
         .actions()
@@ -403,7 +423,7 @@ pub enum Error {
     /// Invalid signature.
     IssueBundleInvalidSignature(reddsa::Error),
     /// The provided `NoteType` has been previously finalized.
-    IssueActionPreviouslyFinalizedNoteType(AssetId),
+    IssueActionPreviouslyFinalizedNoteType(AssetBase),
 }
 
 impl std::error::Error for Error {}
@@ -454,7 +474,7 @@ mod tests {
     use crate::keys::{
         FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
     };
-    use crate::note::{AssetId, Nullifier};
+    use crate::note::{AssetBase, Nullifier};
     use crate::value::NoteValue;
     use crate::{Address, Note};
     use nonempty::NonEmpty;
@@ -561,7 +581,7 @@ mod tests {
 
         bundle
             .add_recipient(
-                String::from("Precious NFT"),
+                String::from("NFT"),
                 recipient,
                 NoteValue::from_raw(u64::MIN),
                 false,
@@ -570,13 +590,13 @@ mod tests {
             .expect("Should properly add recipient");
 
         bundle
-            .finalize_action(String::from("Precious NFT"))
+            .finalize_action(String::from("NFT"))
             .expect("Should finalize properly");
 
         assert_eq!(
             bundle
                 .add_recipient(
-                    String::from("Precious NFT"),
+                    String::from("NFT"),
                     recipient,
                     NoteValue::unsplittable(),
                     false,
@@ -588,7 +608,7 @@ mod tests {
 
         assert_eq!(
             bundle
-                .finalize_action(String::from("Another precious NFT"))
+                .finalize_action(String::from("Another NFT"))
                 .unwrap_err(),
             IssueActionNotFound
         );
@@ -607,7 +627,7 @@ mod tests {
 
         bundle
             .add_recipient(
-                String::from("Another precious NFT"),
+                String::from("Another NFT"),
                 recipient,
                 NoteValue::unsplittable(),
                 true,
@@ -618,7 +638,7 @@ mod tests {
         assert_eq!(
             bundle
                 .add_recipient(
-                    String::from("Another precious NFT"),
+                    String::from("Another NFT"),
                     recipient,
                     NoteValue::unsplittable(),
                     true,
@@ -718,7 +738,7 @@ mod tests {
         let note = Note::new(
             recipient,
             NoteValue::from_raw(5),
-            AssetId::derive(bundle.ik(), "Poisoned pill"),
+            AssetBase::derive(bundle.ik(), "zsa_asset"),
             Nullifier::dummy(&mut rng),
             &mut rng,
         );
@@ -771,7 +791,7 @@ mod tests {
 
         bundle
             .add_recipient(
-                String::from("verify_with_finalize"),
+                String::from("Verify with finalize"),
                 recipient,
                 NoteValue::from_raw(7),
                 true,
@@ -785,9 +805,10 @@ mod tests {
 
         let res = verify_issue_bundle(&signed, sighash, prev_finalized);
         assert!(res.is_ok());
-        assert!(
-            prev_finalized.contains(&AssetId::derive(&ik, &String::from("verify_with_finalize")))
-        );
+        assert!(prev_finalized.contains(&AssetBase::derive(
+            &ik,
+            &String::from("Verify with finalize")
+        )));
         assert_eq!(prev_finalized.len(), 1);
     }
 
@@ -810,7 +831,7 @@ mod tests {
         let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
         let prev_finalized = &mut HashSet::new();
 
-        let final_type = AssetId::derive(&ik, &String::from("already final"));
+        let final_type = AssetBase::derive(&ik, &String::from("already final"));
 
         prev_finalized.insert(final_type);
 
@@ -867,7 +888,7 @@ mod tests {
 
         bundle
             .add_recipient(
-                String::from("Good description"),
+                String::from("Asset description"),
                 recipient,
                 NoteValue::from_raw(5),
                 false,
@@ -896,7 +917,7 @@ mod tests {
 
         bundle
             .add_recipient(
-                String::from("Good description"),
+                String::from("Asset description"),
                 recipient,
                 NoteValue::from_raw(5),
                 false,
@@ -910,7 +931,7 @@ mod tests {
         let note = Note::new(
             recipient,
             NoteValue::from_raw(5),
-            AssetId::derive(signed.ik(), "Poisoned pill"),
+            AssetBase::derive(signed.ik(), "zsa_asset"),
             Nullifier::dummy(&mut rng),
             &mut rng,
         );
@@ -931,7 +952,7 @@ mod tests {
 
     #[test]
     fn issue_bundle_verify_fail_incorrect_ik() {
-        let asset_description = "asset";
+        let asset_description = "Asset";
 
         let (mut rng, isk, ik, recipient, sighash) = setup_params();
 
@@ -957,7 +978,7 @@ mod tests {
         let note = Note::new(
             recipient,
             NoteValue::from_raw(55),
-            AssetId::derive(&incorrect_ik, asset_description),
+            AssetBase::derive(&incorrect_ik, asset_description),
             Nullifier::dummy(&mut rng),
             &mut rng,
         );
@@ -985,7 +1006,7 @@ mod tests {
 
         bundle
             .add_recipient(
-                String::from("Good description"),
+                String::from("Asset description"),
                 recipient,
                 NoteValue::from_raw(5),
                 false,
@@ -1024,7 +1045,7 @@ mod tests {
 pub mod testing {
     use crate::issuance::{IssueAction, IssueBundle, Prepared, Signed, Unauthorized};
     use crate::keys::testing::{arb_issuance_authorizing_key, arb_issuance_validating_key};
-    use crate::note::asset_id::testing::zsa_asset_id;
+    use crate::note::asset_base::testing::zsa_asset_id;
     use crate::note::testing::arb_zsa_note;
     use proptest::collection::vec;
     use proptest::prelude::*;

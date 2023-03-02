@@ -12,7 +12,7 @@ use memuse::DynamicUsage;
 use nonempty::NonEmpty;
 use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
 
-use crate::note::AssetId;
+use crate::note::AssetBase;
 use crate::{
     action::Action,
     address::Address,
@@ -142,7 +142,7 @@ pub struct Bundle<T: Authorization, V> {
     value_balance: V,
     /// Assets intended for burning
     /// TODO We need to add a consensus check to make sure that it is impossible to burn ZEC.
-    burn: Vec<(AssetId, V)>,
+    burn: Vec<(AssetBase, V)>,
     /// The root of the Orchard commitment tree that this bundle commits to.
     anchor: Anchor,
     /// The authorization for this bundle.
@@ -175,7 +175,7 @@ impl<T: Authorization, V> Bundle<T, V> {
         actions: NonEmpty<Action<T::SpendAuth>>,
         flags: Flags,
         value_balance: V,
-        burn: Vec<(AssetId, V)>,
+        burn: Vec<(AssetBase, V)>,
         anchor: Anchor,
         authorization: T,
     ) -> Self {
@@ -232,7 +232,7 @@ impl<T: Authorization, V> Bundle<T, V> {
                 .burn
                 .into_iter()
                 .map(|(asset, value)| Ok((asset, f(value)?)))
-                .collect::<Result<Vec<(AssetId, V0)>, E>>()?,
+                .collect::<Result<Vec<(AssetBase, V0)>, E>>()?,
             anchor: self.anchor,
             authorization: self.authorization,
         })
@@ -397,7 +397,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
             - ValueCommitment::derive(
                 ValueSum::from_raw(self.value_balance.into()),
                 ValueCommitTrapdoor::zero(),
-                AssetId::native(),
+                AssetBase::native(),
             )
             - self
                 .burn
@@ -527,8 +527,8 @@ pub mod testing {
     use super::{Action, Authorization, Authorized, Bundle, Flags};
 
     pub use crate::action::testing::{arb_action, arb_unauthorized_action};
-    use crate::note::asset_id::testing::arb_zsa_asset_id;
-    use crate::note::AssetId;
+    use crate::note::asset_base::testing::arb_zsa_asset_id;
+    use crate::note::AssetBase;
     use crate::value::testing::arb_value_sum;
 
     /// Marker for an unauthorized bundle with no proofs or signatures.
@@ -595,7 +595,7 @@ pub mod testing {
         (
             asset_id in arb_zsa_asset_id(),
             value in arb_value_sum()
-        ) -> (AssetId, ValueSum) {
+        ) -> (AssetBase, ValueSum) {
             (asset_id, value)
         }
     }

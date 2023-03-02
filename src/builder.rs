@@ -9,7 +9,7 @@ use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
-use crate::note::AssetId;
+use crate::note::AssetBase;
 use crate::{
     action::Action,
     address::Address,
@@ -99,7 +99,7 @@ impl SpendInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(asset: AssetId, rng: &mut impl RngCore) -> Self {
+    fn dummy(asset: AssetBase, rng: &mut impl RngCore) -> Self {
         let (sk, fvk, note) = Note::dummy(rng, None, asset);
         let merkle_path = MerklePath::dummy(rng);
 
@@ -127,7 +127,7 @@ struct RecipientInfo {
     ovk: Option<OutgoingViewingKey>,
     recipient: Address,
     value: NoteValue,
-    asset: AssetId,
+    asset: AssetBase,
     memo: Option<[u8; 512]>,
 }
 
@@ -135,7 +135,7 @@ impl RecipientInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(rng: &mut impl RngCore, asset: AssetId) -> Self {
+    fn dummy(rng: &mut impl RngCore, asset: AssetBase) -> Self {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
@@ -253,7 +253,7 @@ impl ActionInfo {
 pub struct Builder {
     spends: Vec<SpendInfo>,
     recipients: Vec<RecipientInfo>,
-    burn: HashMap<AssetId, ValueSum>,
+    burn: HashMap<AssetBase, ValueSum>,
     flags: Flags,
     anchor: Anchor,
 }
@@ -323,7 +323,7 @@ impl Builder {
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
-        asset: AssetId,
+        asset: AssetBase,
         memo: Option<[u8; 512]>,
     ) -> Result<(), &'static str> {
         if !self.flags.outputs_enabled() {
@@ -342,7 +342,7 @@ impl Builder {
     }
 
     /// Add an instruction to burn a given amount of a specific asset.
-    pub fn add_burn(&mut self, asset: AssetId, value: NoteValue) -> Result<(), &'static str> {
+    pub fn add_burn(&mut self, asset: AssetBase, value: NoteValue) -> Result<(), &'static str> {
         if asset.is_native().into() {
             return Err("Burning is only possible for non-native assets");
         }
@@ -481,7 +481,7 @@ fn partition_by_asset(
     spends: &[SpendInfo],
     recipients: &[RecipientInfo],
     rng: &mut impl RngCore,
-) -> HashMap<AssetId, (Vec<SpendInfo>, Vec<RecipientInfo>)> {
+) -> HashMap<AssetBase, (Vec<SpendInfo>, Vec<RecipientInfo>)> {
     let mut hm = HashMap::new();
 
     for s in spends {
@@ -499,7 +499,7 @@ fn partition_by_asset(
     }
 
     if hm.is_empty() {
-        let dummy_spend = SpendInfo::dummy(AssetId::native(), rng);
+        let dummy_spend = SpendInfo::dummy(AssetBase::native(), rng);
         hm.insert(dummy_spend.note.asset(), (vec![dummy_spend], vec![]));
     }
 
@@ -770,7 +770,7 @@ pub mod testing {
     use proptest::collection::vec;
     use proptest::prelude::*;
 
-    use crate::note::AssetId;
+    use crate::note::AssetBase;
     use crate::{
         address::testing::arb_address,
         bundle::{Authorized, Bundle, Flags},
@@ -798,7 +798,7 @@ pub mod testing {
         sk: SpendingKey,
         anchor: Anchor,
         notes: Vec<(Note, MerklePath)>,
-        recipient_amounts: Vec<(Address, NoteValue, AssetId)>,
+        recipient_amounts: Vec<(Address, NoteValue, AssetBase)>,
     }
 
     impl<R: RngCore + CryptoRng> ArbitraryBundleInputs<R> {
@@ -852,7 +852,7 @@ pub mod testing {
                 arb_address().prop_flat_map(move |a| {
                     arb_positive_note_value(MAX_NOTE_VALUE / n_recipients as u64)
                         .prop_map(move |v| {
-                            (a,v, AssetId::native())
+                            (a,v, AssetBase::native())
                         })
                 }),
                 n_recipients as usize,
@@ -904,7 +904,7 @@ mod tests {
     use rand::rngs::OsRng;
 
     use super::Builder;
-    use crate::note::AssetId;
+    use crate::note::AssetBase;
     use crate::{
         bundle::{Authorized, Bundle, Flags},
         circuit::ProvingKey,
@@ -933,7 +933,7 @@ mod tests {
                 None,
                 recipient,
                 NoteValue::from_raw(5000),
-                AssetId::native(),
+                AssetBase::native(),
                 None,
             )
             .unwrap();

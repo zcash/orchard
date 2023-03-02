@@ -6,7 +6,7 @@ use incrementalmerkletree::{Hashable, Tree};
 use orchard::bundle::Authorized;
 use orchard::issuance::{verify_issue_bundle, IssueBundle, Signed, Unauthorized};
 use orchard::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
-use orchard::note::{AssetId, ExtractedNoteCommitment};
+use orchard::note::{AssetBase, ExtractedNoteCommitment};
 use orchard::note_encryption_v3::OrchardDomainV3;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::{
@@ -189,7 +189,7 @@ fn create_native_note(keys: &Keychain) -> Note {
                 None,
                 keys.recipient,
                 NoteValue::from_raw(100),
-                AssetId::native(),
+                AssetBase::native(),
                 None
             ),
             Ok(())
@@ -225,13 +225,13 @@ impl TestSpendInfo {
 
 struct TestOutputInfo {
     value: NoteValue,
-    asset: AssetId,
+    asset: AssetBase,
 }
 
 fn build_and_verify_bundle(
     spends: Vec<&TestSpendInfo>,
     outputs: Vec<TestOutputInfo>,
-    assets_to_burn: Vec<(AssetId, NoteValue)>,
+    assets_to_burn: Vec<(AssetBase, NoteValue)>,
     anchor: Anchor,
     expected_num_actions: usize,
     keys: &Keychain,
@@ -376,7 +376,7 @@ fn zsa_issue_and_transfer() {
             },
             TestOutputInfo {
                 value: NoteValue::from_raw(100),
-                asset: AssetId::native(),
+                asset: AssetBase::native(),
             },
         ],
         vec![],
@@ -396,7 +396,7 @@ fn zsa_issue_and_transfer() {
             },
             TestOutputInfo {
                 value: native_spend.note.value(),
-                asset: AssetId::native(),
+                asset: AssetBase::native(),
             },
         ],
         vec![],
@@ -493,7 +493,7 @@ fn zsa_issue_and_transfer() {
     let result = build_and_verify_bundle(
         vec![&native_spend],
         vec![],
-        vec![(AssetId::native(), native_spend.note.value())],
+        vec![(AssetBase::native(), native_spend.note.value())],
         native_anchor,
         2,
         &keys,

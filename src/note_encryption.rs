@@ -8,7 +8,7 @@ use zcash_note_encryption::{
     AEAD_TAG_SIZE, MEMO_SIZE, OUT_PLAINTEXT_SIZE,
 };
 
-use crate::note::AssetId;
+use crate::note::AssetBase;
 use crate::{
     action::Action,
     keys::{
@@ -163,7 +163,7 @@ where
     let note = Option::from(Note::from_parts(
         recipient,
         value,
-        AssetId::native(), //V2 notes are always native.
+        AssetBase::native(), //V2 notes are always native.
         domain.rho,
         rseed,
     ))?;
@@ -474,7 +474,7 @@ mod tests {
     };
 
     use super::{prf_ock_orchard, CompactAction, OrchardDomainV2, OrchardNoteEncryption};
-    use crate::note::AssetId;
+    use crate::note::AssetBase;
     use crate::{
         action::Action,
         keys::{
@@ -566,7 +566,7 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let note = Note::from_parts(recipient, value, AssetId::native(), rho, rseed).unwrap();
+            let note = Note::from_parts(recipient, value, AssetBase::native(), rho, rseed).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(

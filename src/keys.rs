@@ -271,7 +271,7 @@ impl Eq for IssuanceValidatingKey {}
 impl IssuanceValidatingKey {
     /// Converts this spend validating key to its serialized form,
     /// I2LEOSP_256(ik).
-    pub(crate) fn to_bytes(&self) -> [u8; 32] {
+    pub fn to_bytes(&self) -> [u8; 32] {
         // This is correct because the wrapped point must have ỹ = 0, and
         // so the point repr is the same as I2LEOSP of its x-coordinate.
         <[u8; 32]>::from(&self.0)
@@ -1127,7 +1127,7 @@ mod tests {
         testing::{arb_diversifier_index, arb_diversifier_key, arb_esk, arb_spending_key},
         *,
     };
-    use crate::note::AssetId;
+    use crate::note::AssetBase;
     use crate::{
         note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
         value::NoteValue,
@@ -1219,7 +1219,7 @@ mod tests {
             let note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),
-                AssetId::native(),
+                AssetBase::native(),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
             )

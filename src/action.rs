@@ -126,7 +126,7 @@ pub(crate) mod testing {
 
     use proptest::prelude::*;
 
-    use crate::note::asset_id::testing::arb_asset_id;
+    use crate::note::asset_base::testing::arb_asset_id;
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,

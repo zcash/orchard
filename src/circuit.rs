@@ -36,7 +36,7 @@ use crate::{
     note::{
         commitment::{NoteCommitTrapdoor, NoteCommitment},
         nullifier::Nullifier,
-        AssetId, ExtractedNoteCommitment, Note,
+        AssetBase, ExtractedNoteCommitment, Note,
     },
     primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
@@ -109,7 +109,7 @@ pub struct Circuit {
     pub(crate) psi_old: Value<pallas::Base>,
     pub(crate) rcm_old: Value<NoteCommitTrapdoor>,
     pub(crate) cm_old: Value<NoteCommitment>,
-    pub(crate) asset_old: Value<AssetId>,
+    pub(crate) asset_old: Value<AssetBase>,
     pub(crate) alpha: Value<pallas::Scalar>,
     pub(crate) ak: Value<SpendValidatingKey>,
     pub(crate) nk: Value<NullifierDerivingKey>,
@@ -119,7 +119,7 @@ pub struct Circuit {
     pub(crate) v_new: Value<NoteValue>,
     pub(crate) psi_new: Value<pallas::Base>,
     pub(crate) rcm_new: Value<NoteCommitTrapdoor>,
-    pub(crate) asset_new: Value<AssetId>,
+    pub(crate) asset_new: Value<AssetBase>,
     pub(crate) rcv: Value<ValueCommitTrapdoor>,
     pub(crate) split_flag: Value<bool>,
 }
@@ -1034,7 +1034,7 @@ mod tests {
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
     use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey, SpendingKey};
-    use crate::note::AssetId;
+    use crate::note::AssetBase;
     use crate::{
         keys::SpendValidatingKey,
         note::Note,
@@ -1043,7 +1043,7 @@ mod tests {
     };
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetId::native());
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetBase::native());
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -1053,12 +1053,12 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), AssetId::native());
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), AssetBase::native());
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv, AssetId::native());
+        let cv_net = ValueCommitment::derive(value, rcv, AssetBase::native());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());
@@ -1175,7 +1175,7 @@ mod tests {
             let isk = IssuanceAuthorizingKey::from(&sk);
             let ik = IssuanceValidatingKey::from(&isk);
             let asset_descr = "zsa_asset";
-            AssetId::derive(&ik, asset_descr)
+            AssetBase::derive(&ik, asset_descr)
         };
         circuit.asset_new = Value::known(random_asset_id);
 

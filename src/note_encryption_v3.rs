@@ -8,7 +8,7 @@ use zcash_note_encryption::{
     AEAD_TAG_SIZE, MEMO_SIZE, OUT_PLAINTEXT_SIZE,
 };
 
-use crate::note::AssetId;
+use crate::note::AssetBase;
 use crate::{
     action::Action,
     keys::{
@@ -161,12 +161,12 @@ where
     let recipient = Address::from_parts(diversifier, pk_d);
 
     let asset = match note_version(plaintext.0.as_ref())? {
-        0x02 => AssetId::native(),
+        0x02 => AssetBase::native(),
         0x03 => {
             let bytes = plaintext.0[COMPACT_NOTE_SIZE_V2..COMPACT_NOTE_SIZE_V3]
                 .try_into()
                 .unwrap();
-            AssetId::from_bytes(bytes).unwrap()
+            AssetBase::from_bytes(bytes).unwrap()
         }
         _ => panic!("invalid note version"),
     };
@@ -483,7 +483,7 @@ mod tests {
             OutgoingViewingKey, PreparedIncomingViewingKey,
         },
         note::{
-            testing::arb_note, AssetId, ExtractedNoteCommitment, Nullifier, RandomSeed,
+            testing::arb_note, AssetBase, ExtractedNoteCommitment, Nullifier, RandomSeed,
             TransmittedNoteCiphertext,
         },
         primitives::redpallas,
@@ -565,7 +565,7 @@ mod tests {
 
             let recipient = Address::from_parts(d, pk_d);
 
-            let asset = AssetId::from_bytes(&tv.asset).unwrap();
+            let asset = AssetBase::from_bytes(&tv.asset).unwrap();
 
             let note = Note::from_parts(recipient, value, asset, rho, rseed).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
