@@ -361,7 +361,8 @@ impl ValueCommitment {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use group::ff::FromUniformBytes;
+    use pasta_curves::pallas;
     use proptest::prelude::*;
 
     use super::{NoteValue, ValueCommitTrapdoor, ValueSum, MAX_NOTE_VALUE, VALUE_SUM_RANGE};
@@ -372,7 +373,7 @@ pub mod testing {
             // Instead of rejecting out-of-range bytes, let's reduce them.
             let mut buf = [0; 64];
             buf[..32].copy_from_slice(&bytes);
-            pallas::Scalar::from_bytes_wide(&buf)
+            pallas::Scalar::from_uniform_bytes(&buf)
         }
     }
 

@@ -483,8 +483,9 @@ pub struct BundleAuthorizingCommitment(pub Blake2bHash);
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
+    use group::ff::FromUniformBytes;
     use nonempty::NonEmpty;
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use pasta_curves::pallas;
     use rand::{rngs::StdRng, SeedableRng};
     use reddsa::orchard::SpendAuth;
 
@@ -572,7 +573,7 @@ pub mod testing {
             // Instead of rejecting out-of-range bytes, let's reduce them.
             let mut buf = [0; 64];
             buf[..32].copy_from_slice(&bytes);
-            pallas::Base::from_bytes_wide(&buf)
+            pallas::Base::from_uniform_bytes(&buf)
         }
     }
 
