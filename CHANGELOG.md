@@ -23,6 +23,7 @@ and this project adheres to Rust's notion of
   - `Error` has been renamed to `BuildError` to differentiate from new error
     types.
   - `BuildError` now implements `std::error::Error` and `std::fmt::Display`.
+- Migrate to `zcash_note_encryption 0.3.0` 
 
 ## [0.3.0] - 2022-10-19
 ### Added

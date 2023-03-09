@@ -226,7 +226,6 @@ impl ActionInfo {
         let encryptor = OrchardNoteEncryption::new(
             self.output.ovk,
             note,
-            self.output.recipient,
             self.output.memo.unwrap_or_else(|| {
                 let mut memo = [0; 512];
                 memo[0] = 0xf6;
