@@ -49,7 +49,7 @@ fn bundle_chain() {
         let unauthorized = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
-        proven.apply_signatures(&mut rng, sighash, &[]).unwrap()
+        proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
 
     // Verify the shielding bundle.
@@ -92,7 +92,7 @@ fn bundle_chain() {
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
-            .apply_signatures(&mut rng, sighash, &[SpendAuthorizingKey::from(&sk)])
+            .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
             .unwrap()
     };
 
