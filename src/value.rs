@@ -380,14 +380,14 @@ pub mod testing {
     prop_compose! {
         /// Generate an arbitrary [`ValueSum`] in the range of valid Zcash values.
         pub fn arb_value_sum()(value in VALUE_SUM_RANGE) -> ValueSum {
-            ValueSum(value as i128)
+            ValueSum(value)
         }
     }
 
     prop_compose! {
         /// Generate an arbitrary [`ValueSum`] in the range of valid Zcash values.
         pub fn arb_value_sum_bounded(bound: NoteValue)(value in -(bound.0 as i128)..=(bound.0 as i128)) -> ValueSum {
-            ValueSum(value as i128)
+            ValueSum(value)
         }
     }
 
