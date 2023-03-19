@@ -30,7 +30,7 @@ ff = "0.13"
 fpe = "0.5"
 group = { version = "0.13", features = ["wnaf-memuse"] }
 halo2_gadgets = "0.2"
-halo2_proofs = { version = "0.2", default-features = false, features = ["batch"] }
+halo2_proofs = { version = "0.2", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 hex = "0.4"
 lazy_static = "1"
 memuse = { version = "0.2.1", features = ["nonempty"] }
@@ -91,5 +91,5 @@ debug = true
 debug = true
 
 [patch.crates-io]
-halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "35eb268e202d76721abde3d6e50e719ae9140605" }
-halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "35eb268e202d76721abde3d6e50e719ae9140605" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
