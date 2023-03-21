@@ -41,7 +41,7 @@ reddsa = "0.5"
 nonempty = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
-zcash_note_encryption = "0.2"
+zcash_note_encryption = "0.3"
 incrementalmerkletree = "0.3"
 
 # Logging
@@ -56,7 +56,7 @@ criterion = "0.3"
 halo2_gadgets = { version = "0.2", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1.0.0"
-zcash_note_encryption = { version = "0.2", features = ["pre-zip-212"] }
+zcash_note_encryption = { version = "0.3", features = ["pre-zip-212"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 inferno = ">= 0.11, < 0.11.15"
@@ -92,3 +92,4 @@ debug = true
 [patch.crates-io]
 halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
 halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
+zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "169782c672abaa0c94940a3b2c2c6561933743c3" }
