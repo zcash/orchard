@@ -16,7 +16,7 @@ and this project adheres to Rust's notion of
 ### Changed
 - MSRV is now 1.60.0.
 - Migrated to `ff 0.13`, `group 0.13`, `pasta_curves 0.5`, `halo2_proofs 0.3`,
-  `reddsa 0.5`, `zcash_note_encryption 0.3`.
+  `halo2_gadgets 0.3`, `reddsa 0.5`, `zcash_note_encryption 0.3`.
 - `orchard::builder`:
   - `Builder::{add_spend, add_output}` now use concrete error types instead of
     `&'static str`s.

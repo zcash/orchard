@@ -29,8 +29,8 @@ blake2b_simd = "1"
 ff = "0.13"
 fpe = "0.5"
 group = { version = "0.13", features = ["wnaf-memuse"] }
-halo2_gadgets = "0.2"
-halo2_proofs = { version = "0.2", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
+halo2_gadgets = "0.3"
+halo2_proofs = { version = "0.3", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 hex = "0.4"
 lazy_static = "1"
 memuse = { version = "0.2.1", features = ["nonempty"] }
@@ -53,7 +53,7 @@ plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.3"
-halo2_gadgets = { version = "0.2", features = ["test-dependencies"] }
+halo2_gadgets = { version = "0.3", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1.0.0"
 zcash_note_encryption = { version = "0.3", features = ["pre-zip-212"] }
@@ -88,7 +88,3 @@ debug = true
 
 [profile.bench]
 debug = true
-
-[patch.crates-io]
-halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
-halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
