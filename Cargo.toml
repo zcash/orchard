@@ -92,4 +92,3 @@ debug = true
 [patch.crates-io]
 halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
 halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "642924d614305d882cc122739c59144109f4bd3f" }
-zcash_note_encryption = { git = "https://github.com/zcash/librustzcash.git", rev = "169782c672abaa0c94940a3b2c2c6561933743c3" }
