@@ -23,11 +23,11 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 
 [dependencies]
-aes = "0.7"
+aes = "0.8"
 bitvec = "1"
 blake2b_simd = "1"
 ff = "0.13"
-fpe = "0.5"
+fpe = "0.6"
 group = { version = "0.13", features = ["wnaf-memuse"] }
 halo2_gadgets = "0.3"
 halo2_proofs = { version = "0.3", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
