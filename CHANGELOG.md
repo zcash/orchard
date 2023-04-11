@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.4.0] - 2023-04-11
 ### Added
 - `orchard::builder`:
   - `{SpendInfo::new, InputView, OutputView}`
@@ -23,7 +25,10 @@ and this project adheres to Rust's notion of
   - `Error` has been renamed to `BuildError` to differentiate from new error
     types.
   - `BuildError` now implements `std::error::Error` and `std::fmt::Display`.
-- Migrate to `zcash_note_encryption 0.3.0` 
+
+### Fixed
+- Several bugs have been fixed that were preventing Orchard bundles from being
+  created or verified on 32-bit platforms, or with recent versions of Rust.
 
 ## [0.3.0] - 2022-10-19
 ### Added
