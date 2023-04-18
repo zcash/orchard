@@ -1219,7 +1219,7 @@ mod tests {
             let note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),
-                AssetBase::native(),
+                AssetBase::from_bytes(&tv.asset).unwrap(),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
             )

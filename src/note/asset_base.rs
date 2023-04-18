@@ -162,22 +162,20 @@ pub mod testing {
         }
     }
 
-    // the following test should fail until updated to use the new asset ID derivation
     #[test]
-    #[should_panic]
     fn test_vectors() {
         let test_vectors = crate::test_vectors::asset_id::test_vectors();
 
         for tv in test_vectors {
             let description = std::str::from_utf8(&tv.description).unwrap();
 
-            let calculated_asset_id = AssetBase::derive(
+            let calculated_asset_base = AssetBase::derive(
                 &IssuanceValidatingKey::from_bytes(&tv.key).unwrap(),
                 description,
             );
-            let test_vector_asset_id = AssetBase::from_bytes(&tv.asset_id).unwrap();
+            let test_vector_asset_base = AssetBase::from_bytes(&tv.asset_base).unwrap();
 
-            assert_eq!(calculated_asset_id, test_vector_asset_id);
+            assert_eq!(calculated_asset_base, test_vector_asset_base);
         }
     }
 }
