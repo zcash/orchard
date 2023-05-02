@@ -361,7 +361,7 @@ $$
 \begin{array}{|c|l|}
 \hline
 \text{Degree} & \text{Constraint} \\\hline
-2 & q_{\NoteCommit,x(\mathsf{pk_d})} \cdot (b_3 + c \cdot 2^4 + d_0 \cdot 2^{254} - x(\mathsf{pk_d}) = 0 \\\hline
+2 & q_{\NoteCommit,x(\mathsf{pk_d})} \cdot \left(b_3 + c \cdot 2^4 + d_0 \cdot 2^{254} - x(\mathsf{pk_d}) \right) = 0 \\\hline
 3 & q_{\NoteCommit,x(\mathsf{pk_d})} \cdot d_0 \cdot z_{c,13} = 0 \\\hline
 2 & q_{\NoteCommit,x(\mathsf{pk_d})} \cdot (b_3 + c \cdot 2^4 + 2^{140} - t_\mathbb{P} - {b_3}c') = 0 \\\hline
 3 & q_{\NoteCommit,x(\mathsf{pk_d})} \cdot d_0 \cdot z_{{b_3}c',14} = 0 \\\hline
