@@ -169,7 +169,7 @@ fn issue_zsa_notes(asset_descr: &str, keys: &Keychain) -> (Note, Note) {
     assert!(verify_issue_bundle(
         &issue_bundle,
         issue_bundle.commitment().into(),
-        &mut HashSet::new(),
+        &HashSet::new(),
     )
     .is_ok());
 
