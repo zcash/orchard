@@ -206,6 +206,11 @@ impl<T: Authorization, V> Bundle<T, V> {
         &self.value_balance
     }
 
+    /// Returns assets intended for burning
+    pub fn burn(&self) -> &Vec<(AssetBase, V)> {
+        &self.burn
+    }
+
     /// Returns the root of the Orchard commitment tree that this bundle commits to.
     pub fn anchor(&self) -> &Anchor {
         &self.anchor
