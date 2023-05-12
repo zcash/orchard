@@ -66,8 +66,8 @@ impl Nullifier {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use group::Group;
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use group::{ff::FromUniformBytes, Group};
+    use pasta_curves::pallas;
     use proptest::collection::vec;
     use proptest::prelude::*;
 
@@ -79,7 +79,7 @@ pub mod testing {
         pub fn arb_nullifier()(
             bytes in vec(any::<u8>(), 64)
         ) -> Nullifier {
-            let point = pallas::Point::generator() * pallas::Scalar::from_bytes_wide(&<[u8; 64]>::try_from(bytes).unwrap());
+            let point = pallas::Point::generator() * pallas::Scalar::from_uniform_bytes(&<[u8; 64]>::try_from(bytes).unwrap());
             Nullifier(extract_p(&point))
         }
     }

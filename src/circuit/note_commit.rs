@@ -1,11 +1,12 @@
 use core::iter;
 
+use group::ff::PrimeField;
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
     poly::Rotation,
 };
-use pasta_curves::{arithmetic::FieldExt, pallas};
+use pasta_curves::pallas;
 
 use crate::{
     constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
@@ -60,7 +61,7 @@ type CanonicityBounds = (
 /// |  b  | b_0 | b_1 |       1        |
 /// |     | b_2 | b_3 |       0        |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-decomposition-b?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-decomposition-b?partial>
 #[derive(Clone, Debug)]
 struct DecomposeB {
     q_notecommit_b: Selector,
@@ -205,7 +206,7 @@ impl DecomposeB {
 /// |  d  | d_0 | d_1 |       1        |
 /// |     | d_2 | d_3 |       0        |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-decomposition-d?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-decomposition-d?partial>
 #[derive(Clone, Debug)]
 struct DecomposeD {
     q_notecommit_d: Selector,
@@ -341,7 +342,7 @@ impl DecomposeD {
 /// ------------------------------------
 /// |  e  | e_0 | e_1 |       1        |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-decomposition-e?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-decomposition-e?partial>
 #[derive(Clone, Debug)]
 struct DecomposeE {
     q_notecommit_e: Selector,
@@ -460,7 +461,7 @@ impl DecomposeE {
 /// |  g  | g_0 |       1        |
 /// | g_1 | g_2 |       0        |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-decomposition-g?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-decomposition-g?partial>
 #[derive(Clone, Debug)]
 struct DecomposeG {
     q_notecommit_g: Selector,
@@ -582,7 +583,7 @@ impl DecomposeG {
 /// ------------------------------------
 /// |  h  | h_0 | h_1 |       1        |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-decomposition-h?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-decomposition-h?partial>
 #[derive(Clone, Debug)]
 struct DecomposeH {
     q_notecommit_h: Selector,
@@ -699,7 +700,7 @@ impl DecomposeH {
 /// | x(g_d) | b_0 | a       | z13_a       |        1         |
 /// |        | b_1 | a_prime | z13_a_prime |        0         |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-canonicity-g_d?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-canonicity-g_d?partial>
 #[derive(Clone, Debug)]
 struct GdCanonicity {
     q_notecommit_g_d: Selector,
@@ -816,7 +817,7 @@ impl GdCanonicity {
 /// | x(pk_d) | b_3 |    c       | z13_c          |         1         |
 /// |         | d_0 | b3_c_prime | z14_b3_c_prime |         0         |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-canonicity-pk_d?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-canonicity-pk_d?partial>
 #[derive(Clone, Debug)]
 struct PkdCanonicity {
     q_notecommit_pk_d: Selector,
@@ -932,7 +933,7 @@ impl PkdCanonicity {
 /// ------------------------------------------------
 /// | value | d_2 | d_3 | e_0 |          1         |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-canonicity-v?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-canonicity-v?partial>
 #[derive(Clone, Debug)]
 struct ValueCanonicity {
     q_notecommit_value: Selector,
@@ -1010,7 +1011,7 @@ impl ValueCanonicity {
 /// | rho | e_1 |    f       | z13_f          |        1         |
 /// |     | g_0 | e1_f_prime | z14_e1_f_prime |        0         |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-canonicity-rho?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-canonicity-rho?partial>
 #[derive(Clone, Debug)]
 struct RhoCanonicity {
     q_notecommit_rho: Selector,
@@ -1125,7 +1126,7 @@ impl RhoCanonicity {
 /// | psi | g_1 |   g_2       | z13_g           |        1         |
 /// | h_0 | h_1 | g1_g2_prime | z13_g1_g2_prime |        0         |
 ///
-/// https://p.z.cash/orchard-0.1:note-commit-canonicity-psi?partial
+/// <https://p.z.cash/orchard-0.1:note-commit-canonicity-psi?partial>
 #[derive(Clone, Debug)]
 struct PsiCanonicity {
     q_notecommit_psi: Selector,
@@ -2043,10 +2044,7 @@ mod tests {
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
-    use pasta_curves::{
-        arithmetic::{CurveAffine, FieldExt},
-        pallas,
-    };
+    use pasta_curves::{arithmetic::CurveAffine, pallas};
 
     use rand::{rngs::OsRng, RngCore};
 

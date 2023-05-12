@@ -1,8 +1,8 @@
 mod builder;
 
 use crate::builder::verify_bundle;
-use incrementalmerkletree::bridgetree::BridgeTree;
-use incrementalmerkletree::{Hashable, Tree};
+use bridgetree::BridgeTree;
+use incrementalmerkletree::Hashable;
 use orchard::bundle::Authorized;
 use orchard::issuance::{verify_issue_bundle, IssueBundle, Signed, Unauthorized};
 use orchard::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
@@ -99,32 +99,32 @@ pub fn build_merkle_path_with_two_leaves(
     note1: &Note,
     note2: &Note,
 ) -> (MerklePath, MerklePath, Anchor) {
-    let mut tree = BridgeTree::<MerkleHashOrchard, 32>::new(0);
+    let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100, 0);
 
     // Add first leaf
     let cmx1: ExtractedNoteCommitment = note1.commitment().into();
     let leaf1 = MerkleHashOrchard::from_cmx(&cmx1);
-    tree.append(&leaf1);
-    let position1 = tree.witness().unwrap();
+    tree.append(leaf1);
+    let position1 = tree.mark().unwrap();
 
     // Add second leaf
     let cmx2: ExtractedNoteCommitment = note2.commitment().into();
     let leaf2 = MerkleHashOrchard::from_cmx(&cmx2);
-    tree.append(&leaf2);
-    let position2 = tree.witness().unwrap();
+    tree.append(leaf2);
+    let position2 = tree.mark().unwrap();
 
     let root = tree.root(0).unwrap();
     let anchor = root.into();
 
     // Calculate first path
-    let auth_path1 = tree.authentication_path(position1, &root).unwrap();
+    let auth_path1 = tree.witness(position1, 0).unwrap();
     let merkle_path1 = MerklePath::from_parts(
         u64::from(position1).try_into().unwrap(),
         auth_path1[..].try_into().unwrap(),
     );
 
     // Calculate second path
-    let auth_path2 = tree.authentication_path(position2, &root).unwrap();
+    let auth_path2 = tree.witness(position2, 0).unwrap();
     let merkle_path2 = MerklePath::from_parts(
         u64::from(position2).try_into().unwrap(),
         auth_path2[..].try_into().unwrap(),
@@ -235,17 +235,23 @@ fn build_and_verify_bundle(
     anchor: Anchor,
     expected_num_actions: usize,
     keys: &Keychain,
-) -> Result<(), &'static str> {
+) -> Result<(), String> {
     let rng = OsRng;
     let shielded_bundle: Bundle<_, i64> = {
         let mut builder = Builder::new(Flags::from_parts(true, true), anchor);
 
-        spends.iter().try_for_each(|spend| {
-            builder.add_spend(keys.fvk().clone(), spend.note, spend.merkle_path().clone())
-        })?;
-        outputs.iter().try_for_each(|output| {
-            builder.add_recipient(None, keys.recipient, output.value, output.asset, None)
-        })?;
+        spends
+            .iter()
+            .try_for_each(|spend| {
+                builder.add_spend(keys.fvk().clone(), spend.note, spend.merkle_path().clone())
+            })
+            .map_err(|err| err.to_string())?;
+        outputs
+            .iter()
+            .try_for_each(|output| {
+                builder.add_recipient(None, keys.recipient, output.value, output.asset, None)
+            })
+            .map_err(|err| err.to_string())?;
         assets_to_burn
             .into_iter()
             .try_for_each(|(asset, value)| builder.add_burn(asset, value))?;

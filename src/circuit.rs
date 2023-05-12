@@ -1108,7 +1108,7 @@ mod tests {
         let expected_proof_size = {
             let circuit_cost =
                 halo2_proofs::dev::CircuitCost::<pasta_curves::vesta::Point, _>::measure(
-                    K as usize,
+                    K,
                     &circuits[0],
                 );
             assert_eq!(usize::from(circuit_cost.proof_size(1)), 5024);

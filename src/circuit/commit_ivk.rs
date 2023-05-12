@@ -1,11 +1,12 @@
 use core::iter;
 
+use group::ff::{Field, PrimeField};
 use halo2_proofs::{
     circuit::{AssignedCell, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
     poly::Rotation,
 };
-use pasta_curves::{arithmetic::FieldExt, pallas};
+use pasta_curves::pallas;
 
 use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
 use halo2_gadgets::{
@@ -118,7 +119,7 @@ impl CommitIvkChip {
 
             // Check that nk = b_2 (5 bits) || c (240 bits) || d_0 (9 bits) || d_1 (1 bit)
             let nk_decomposition_check = {
-                let two_pow_245 = pallas::Base::from(1 << 49).pow(&[5, 0, 0, 0]);
+                let two_pow_245 = pallas::Base::from(1 << 49).pow([5, 0, 0, 0]);
 
                 b_2.clone()
                     + c.clone() * two_pow_5
@@ -667,7 +668,7 @@ mod tests {
         fixed_bases::COMMIT_IVK_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
         OrchardHashDomains, L_ORCHARD_BASE, T_Q,
     };
-    use group::ff::{Field, PrimeFieldBits};
+    use group::ff::{Field, PrimeField, PrimeFieldBits};
     use halo2_gadgets::{
         ecc::{
             chip::{EccChip, EccConfig},
@@ -684,7 +685,7 @@ mod tests {
         dev::MockProver,
         plonk::{Circuit, ConstraintSystem, Error},
     };
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use pasta_curves::pallas;
     use rand::rngs::OsRng;
 
     #[test]
