@@ -1,11 +1,11 @@
-use incrementalmerkletree::{bridgetree::BridgeTree, Hashable, Tree};
-use orchard::note::AssetBase;
+use bridgetree::BridgeTree;
+use incrementalmerkletree::Hashable;
 use orchard::{
     builder::Builder,
     bundle::{Authorized, Flags},
     circuit::{ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-    note::ExtractedNoteCommitment,
+    note::{AssetBase, ExtractedNoteCommitment},
     note_encryption_v3::OrchardDomainV3,
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
@@ -33,11 +33,11 @@ pub fn build_merkle_path(note: &Note) -> (MerklePath, Anchor) {
     // Use the tree with a single leaf.
     let cmx: ExtractedNoteCommitment = note.commitment().into();
     let leaf = MerkleHashOrchard::from_cmx(&cmx);
-    let mut tree = BridgeTree::<MerkleHashOrchard, 32>::new(0);
-    tree.append(&leaf);
-    let position = tree.witness().unwrap();
+    let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100, 0);
+    tree.append(leaf);
+    let position = tree.mark().unwrap();
     let root = tree.root(0).unwrap();
-    let auth_path = tree.authentication_path(position, &root).unwrap();
+    let auth_path = tree.witness(position, 0).unwrap();
     let merkle_path = MerklePath::from_parts(
         u64::from(position).try_into().unwrap(),
         auth_path[..].try_into().unwrap(),
@@ -76,7 +76,7 @@ fn bundle_chain() {
         let unauthorized = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
-        proven.apply_signatures(&mut rng, sighash, &[]).unwrap()
+        proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
 
     // Verify the shielding bundle.
@@ -112,7 +112,7 @@ fn bundle_chain() {
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
-            .apply_signatures(&mut rng, sighash, &[SpendAuthorizingKey::from(&sk)])
+            .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
             .unwrap()
     };
 

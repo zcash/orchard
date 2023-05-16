@@ -58,7 +58,7 @@ use crate::{
     primitives::redpallas::{self, Binding},
 };
 
-use crate::builder::Error;
+use crate::builder::BuildError;
 use crate::note::AssetBase;
 
 /// Maximum note value.
@@ -190,10 +190,10 @@ impl ValueSum {
         )
     }
 
-    pub(crate) fn into<V: TryFrom<i64>>(self) -> Result<V, Error> {
+    pub(crate) fn into<V: TryFrom<i64>>(self) -> Result<V, BuildError> {
         i64::try_from(self)
-            .map_err(Error::ValueSum)
-            .and_then(|i| V::try_from(i).map_err(|_| Error::ValueSum(OverflowError)))
+            .map_err(BuildError::ValueSum)
+            .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(OverflowError)))
     }
 }
 
@@ -399,7 +399,8 @@ impl ValueCommitment {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use pasta_curves::{arithmetic::FieldExt, pallas};
+    use group::ff::FromUniformBytes;
+    use pasta_curves::pallas;
     use proptest::prelude::*;
 
     use super::{NoteValue, ValueCommitTrapdoor, ValueSum, MAX_NOTE_VALUE, VALUE_SUM_RANGE};
@@ -410,21 +411,21 @@ pub mod testing {
             // Instead of rejecting out-of-range bytes, let's reduce them.
             let mut buf = [0; 64];
             buf[..32].copy_from_slice(&bytes);
-            pallas::Scalar::from_bytes_wide(&buf)
+            pallas::Scalar::from_uniform_bytes(&buf)
         }
     }
 
     prop_compose! {
         /// Generate an arbitrary [`ValueSum`] in the range of valid Zcash values.
         pub fn arb_value_sum()(value in VALUE_SUM_RANGE) -> ValueSum {
-            ValueSum(value as i128)
+            ValueSum(value)
         }
     }
 
     prop_compose! {
         /// Generate an arbitrary [`ValueSum`] in the range of valid Zcash values.
         pub fn arb_value_sum_bounded(bound: NoteValue)(value in -(bound.0 as i128)..=(bound.0 as i128)) -> ValueSum {
-            ValueSum(value as i128)
+            ValueSum(value)
         }
     }
 

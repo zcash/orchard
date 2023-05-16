@@ -7,6 +7,29 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.4.0] - 2023-04-11
+### Added
+- `orchard::builder`:
+  - `{SpendInfo::new, InputView, OutputView}`
+  - `Builder::{spends, outputs}`
+  - `SpendError` 
+  - `OutputError` 
+
+### Changed
+- MSRV is now 1.60.0.
+- Migrated to `ff 0.13`, `group 0.13`, `pasta_curves 0.5`, `halo2_proofs 0.3`,
+  `halo2_gadgets 0.3`, `reddsa 0.5`, `zcash_note_encryption 0.3`.
+- `orchard::builder`:
+  - `Builder::{add_spend, add_output}` now use concrete error types instead of
+    `&'static str`s.
+  - `Error` has been renamed to `BuildError` to differentiate from new error
+    types.
+  - `BuildError` now implements `std::error::Error` and `std::fmt::Display`.
+
+### Fixed
+- Several bugs have been fixed that were preventing Orchard bundles from being
+  created or verified on 32-bit platforms, or with recent versions of Rust.
+
 ## [0.3.0] - 2022-10-19
 ### Added
 - `orchard::Proof::add_to_batch`
@@ -21,7 +44,6 @@ and this project adheres to Rust's notion of
   - `impl memuse::DynamicUsage for Nullifier`
 - `orchard::note_encryption`:
   - `impl memuse::DynamicUsage for OrchardDomain`
-- `orchard::builder::SpendInfo::new`
 - `orchard::circuit::Circuit::from_action_context`
 - impls of `Eq` for:
   - `orchard::zip32::ChildIndex`
