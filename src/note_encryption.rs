@@ -17,7 +17,6 @@ use crate::{
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
     },
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
-    spec::diversify_hash,
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
@@ -52,10 +51,10 @@ pub(crate) fn prf_ock_orchard(
 fn orchard_parse_note_plaintext_without_memo<F>(
     domain: &OrchardDomain,
     plaintext: &[u8],
-    get_validated_pk_d: F,
+    get_pk_d: F,
 ) -> Option<(Note, Address)>
 where
-    F: FnOnce(&Diversifier) -> Option<DiversifiedTransmissionKey>,
+    F: FnOnce(&Diversifier) -> DiversifiedTransmissionKey,
 {
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
@@ -72,7 +71,7 @@ where
         &domain.rho,
     ))?;
 
-    let pk_d = get_validated_pk_d(&diversifier)?;
+    let pk_d = get_pk_d(&diversifier);
 
     let recipient = Address::from_parts(diversifier, pk_d);
     let note = Option::from(Note::from_parts(recipient, value, domain.rho, rseed))?;
@@ -209,29 +208,18 @@ impl Domain for OrchardDomain {
         plaintext: &[u8],
     ) -> Option<(Self::Note, Self::Recipient)> {
         orchard_parse_note_plaintext_without_memo(self, plaintext, |diversifier| {
-            Some(DiversifiedTransmissionKey::derive(ivk, diversifier))
+            DiversifiedTransmissionKey::derive(ivk, diversifier)
         })
     }
 
     fn parse_note_plaintext_without_memo_ovk(
         &self,
         pk_d: &Self::DiversifiedTransmissionKey,
-        esk: &Self::EphemeralSecretKey,
-        ephemeral_key: &EphemeralKeyBytes,
+        _esk: &Self::EphemeralSecretKey,
+        _ephemeral_key: &EphemeralKeyBytes,
         plaintext: &NotePlaintextBytes,
     ) -> Option<(Self::Note, Self::Recipient)> {
-        orchard_parse_note_plaintext_without_memo(self, &plaintext.0, |diversifier| {
-            if esk
-                .derive_public(diversify_hash(diversifier.as_array()))
-                .to_bytes()
-                .0
-                == ephemeral_key.0
-            {
-                Some(*pk_d)
-            } else {
-                None
-            }
-        })
+        orchard_parse_note_plaintext_without_memo(self, &plaintext.0, |_| *pk_d)
     }
 
     fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> Self::Memo {
