@@ -95,7 +95,6 @@ mod tests {
         circuit::gadget::{assign_free_advice, value_commit_orchard},
         circuit::K,
         constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
-        keys::{IssuanceAuthorizingKey, IssuanceValidatingKey, SpendingKey},
         note::AssetBase,
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
     };
@@ -299,13 +298,7 @@ mod tests {
         let mut circuits = vec![];
         let mut instances = vec![];
         let native_asset = AssetBase::native();
-        let random_asset = {
-            let sk = SpendingKey::random(&mut rng);
-            let isk = IssuanceAuthorizingKey::from(&sk);
-            let ik = IssuanceValidatingKey::from(&isk);
-            let asset_descr = "zsa_asset";
-            AssetBase::derive(&ik, asset_descr)
-        };
+        let random_asset = AssetBase::random(&mut rng);
         for split_flag in [false, true] {
             for asset in [native_asset, random_asset] {
                 let v_old = NoteValue::from_raw(rng.next_u64());

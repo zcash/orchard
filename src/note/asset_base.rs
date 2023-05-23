@@ -2,6 +2,7 @@ use blake2b_simd::{Hash as Blake2bHash, Params};
 use group::GroupEncoding;
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
+use rand::RngCore;
 use std::hash::{Hash, Hasher};
 
 use subtle::{Choice, ConstantTimeEq, CtOption};
@@ -9,7 +10,7 @@ use subtle::{Choice, ConstantTimeEq, CtOption};
 use crate::constants::fixed_bases::{
     NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_PERSONALIZATION, ZSA_ASSET_BASE_PERSONALIZATION,
 };
-use crate::keys::IssuanceValidatingKey;
+use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey, SpendingKey};
 
 /// Note type identifier.
 #[derive(Clone, Copy, Debug, Eq)]
@@ -85,6 +86,17 @@ impl AssetBase {
     /// Whether this note represents a native or ZSA asset.
     pub fn is_native(&self) -> Choice {
         self.0.ct_eq(&Self::native().0)
+    }
+
+    /// Generates a ZSA random asset.
+    ///
+    /// This is only used in tests.
+    pub(crate) fn random(rng: &mut impl RngCore) -> Self {
+        let sk = SpendingKey::random(rng);
+        let isk = IssuanceAuthorizingKey::from(&sk);
+        let ik = IssuanceValidatingKey::from(&isk);
+        let asset_descr = "zsa_asset";
+        AssetBase::derive(&ik, asset_descr)
     }
 }
 

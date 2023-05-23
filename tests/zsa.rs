@@ -259,7 +259,7 @@ fn build_and_verify_bundle(
     };
 
     // Verify the shielded bundle, currently without the proof.
-    verify_bundle(&shielded_bundle, &keys.vk, false);
+    verify_bundle(&shielded_bundle, &keys.vk, true);
     assert_eq!(shielded_bundle.actions().len(), expected_num_actions);
     Ok(())
 }
