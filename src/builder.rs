@@ -759,8 +759,8 @@ impl OutputView for RecipientInfo {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use bridgetree::BridgeTree;
     use core::fmt::Debug;
+    use incrementalmerkletree::{frontier::Frontier, Hashable};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 
     use proptest::collection::vec;
@@ -852,23 +852,26 @@ pub mod testing {
             ),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY)
         ) -> ArbitraryBundleInputs<StdRng> {
-            const MERKLE_DEPTH_ORCHARD: u8 = crate::constants::MERKLE_DEPTH_ORCHARD as u8;
-            let mut tree = BridgeTree::<MerkleHashOrchard, u32, MERKLE_DEPTH_ORCHARD>::new(100, 0);
+            use crate::constants::MERKLE_DEPTH_ORCHARD;
+            let mut frontier = Frontier::<MerkleHashOrchard, { MERKLE_DEPTH_ORCHARD as u8 }>::empty();
             let mut notes_and_auth_paths: Vec<(Note, MerklePath)> = Vec::new();
 
             for note in notes.iter() {
                 let leaf = MerkleHashOrchard::from_cmx(&note.commitment().into());
-                tree.append(leaf);
-                let position = tree.mark().expect("tree is not empty");
+                frontier.append(leaf);
 
-                let path = MerklePath::from((position, tree.witness(position, 0).expect("we just witnessed the path")));
-                notes_and_auth_paths.push((*note, path));
+                let path = frontier
+                    .witness(|addr| Some(<MerkleHashOrchard as Hashable>::empty_root(addr.level())))
+                    .ok()
+                    .flatten()
+                    .expect("we can always construct a correct Merkle path");
+                notes_and_auth_paths.push((*note, path.into()));
             }
 
             ArbitraryBundleInputs {
                 rng: StdRng::from_seed(rng_seed),
                 sk,
-                anchor: tree.root(0).unwrap().into(),
+                anchor: frontier.root().into(),
                 notes: notes_and_auth_paths,
                 recipient_amounts
             }

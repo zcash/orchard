@@ -26,7 +26,6 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 aes = "0.8"
 bitvec = "1"
 blake2b_simd = "1"
-bridgetree = { version = "0.2", optional = true }
 ff = "0.13"
 fpe = "0.6"
 group = { version = "0.13", features = ["wnaf-memuse"] }
@@ -72,7 +71,7 @@ bench = false
 default = ["multicore"]
 multicore = ["halo2_proofs/multicore"]
 dev-graph = ["halo2_proofs/dev-graph", "image", "plotters"]
-test-dependencies = ["bridgetree", "proptest"]
+test-dependencies = ["proptest"]
 
 [[bench]]
 name = "note_decryption"
@@ -93,5 +92,5 @@ debug = true
 debug = true
 
 [patch.crates-io]
-bridgetree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "ea1686e8f8f6c1e41aa97251a7eb4fadfd33df47" }
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "ea1686e8f8f6c1e41aa97251a7eb4fadfd33df47" }
+bridgetree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "62f0c9039b0bee94c16c40c272e19c5922290664" }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "62f0c9039b0bee94c16c40c272e19c5922290664" }
