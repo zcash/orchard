@@ -459,7 +459,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let ecc_chip = config.ecc_chip();
 
         // Witness private inputs that are used across multiple checks.
-        let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new, asset) = {
+        let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new, asset, nf_old_pub) = {
             // Witness psi_old
             let psi_old = assign_free_advice(
                 layouter.namespace(|| "witness psi_old"),
@@ -524,8 +524,22 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.asset.map(|asset| asset.cv_base().to_affine()),
             )?;
 
+            // Witness nf_old_pub
+            let nf_old_pub = layouter.assign_region(
+                || "load nf_old pub",
+                |mut region| {
+                    region.assign_advice_from_instance(
+                        || "load nf_old pub",
+                        config.primary,
+                        NF_OLD,
+                        config.advices[0],
+                        1,
+                    )
+                },
+            )?;
+
             (
-                psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new, asset,
+                psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new, asset, nf_old_pub,
             )
         };
 
@@ -754,7 +768,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             };
 
             // ρ^new = nf^old
-            let rho_new = nf_old.inner().clone();
+            let rho_new = nf_old_pub.clone();
 
             // Witness psi_new
             let psi_new = assign_free_advice(
@@ -851,13 +865,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 nf_old
                     .inner()
                     .copy_advice(|| "nf_old", &mut region, config.advices[9], 0)?;
-                region.assign_advice_from_instance(
-                    || "nf_old pub",
-                    config.primary,
-                    NF_OLD,
-                    config.advices[0],
-                    1,
-                )?;
+                nf_old_pub.copy_advice(|| "nf_old", &mut region, config.advices[0], 1)?;
 
                 is_native_asset.copy_advice(
                     || "is_native_asset",
