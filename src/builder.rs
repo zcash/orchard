@@ -397,6 +397,11 @@ impl Builder {
         if asset.is_native().into() {
             return Err("Burning is only possible for non-native assets");
         }
+
+        if value.inner() == 0 {
+            return Err("Burning is not possible for zero values");
+        }
+
         let cur = *self.burn.get(&asset).unwrap_or(&ValueSum::zero());
         let sum = (cur + value).ok_or("Orchard ValueSum operation overflowed")?;
         self.burn.insert(asset, sum);

@@ -508,4 +508,21 @@ fn zsa_issue_and_transfer() {
         Ok(_) => panic!("Test should fail"),
         Err(error) => assert_eq!(error, "Burning is only possible for non-native assets"),
     }
+
+    // 12. Try to burn zero value - should fail
+    let result = build_and_verify_bundle(
+        vec![&zsa_spend_1],
+        vec![TestOutputInfo {
+            value: zsa_spend_1.note.value(),
+            asset: zsa_spend_1.note.asset(),
+        }],
+        vec![(zsa_spend_1.note.asset(), NoteValue::from_raw(0))],
+        anchor,
+        2,
+        &keys,
+    );
+    match result {
+        Ok(_) => panic!("Test should fail"),
+        Err(error) => assert_eq!(error, "Burning is not possible for zero values"),
+    }
 }
