@@ -215,8 +215,6 @@ impl Domain for OrchardDomain {
     fn parse_note_plaintext_without_memo_ovk(
         &self,
         pk_d: &Self::DiversifiedTransmissionKey,
-        _esk: &Self::EphemeralSecretKey,
-        _ephemeral_key: &EphemeralKeyBytes,
         plaintext: &NotePlaintextBytes,
     ) -> Option<(Self::Note, Self::Recipient)> {
         orchard_parse_note_plaintext_without_memo(self, &plaintext.0, |_| *pk_d)
