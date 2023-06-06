@@ -408,7 +408,7 @@ fn zsa_issue_and_transfer() {
         ],
         vec![],
         anchor,
-        4,
+        2,
         &keys,
     )
     .unwrap();
@@ -436,7 +436,7 @@ fn zsa_issue_and_transfer() {
         ],
         vec![],
         native_anchor,
-        5,
+        4,
         &keys,
     )
     .unwrap();
@@ -468,7 +468,7 @@ fn zsa_issue_and_transfer() {
         ],
         vec![],
         anchor_t7,
-        4,
+        2,
         &keys,
     )
     .unwrap();
@@ -489,7 +489,7 @@ fn zsa_issue_and_transfer() {
             ],
             vec![],
             anchor_t7,
-            4,
+            2,
             &keys,
         )
         .unwrap();
