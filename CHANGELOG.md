@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.5.0] - 2023-06-06
+### Changed
+- Migrated to `zcash_note_encryption 0.4`, `incrementalmerkletree 0.4`, `bridgetree 0.3`.
+  `bridgetree` is now exclusively a test dependency.
+
 ## [0.4.0] - 2023-04-11
 ### Added
 - `orchard::builder`:
