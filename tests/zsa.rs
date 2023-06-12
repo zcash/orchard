@@ -4,7 +4,7 @@ use crate::builder::verify_bundle;
 use bridgetree::BridgeTree;
 use incrementalmerkletree::Hashable;
 use orchard::bundle::Authorized;
-use orchard::issuance::{verify_issue_bundle, IssueBundle, Signed, Unauthorized};
+use orchard::issuance::{verify_issue_bundle, IssueBundle, IssueInfo, Signed, Unauthorized};
 use orchard::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use orchard::note::{AssetBase, ExtractedNoteCommitment};
 use orchard::note_encryption_v3::OrchardDomainV3;
@@ -138,23 +138,25 @@ pub fn build_merkle_path_with_two_leaves(
 fn issue_zsa_notes(asset_descr: &str, keys: &Keychain) -> (Note, Note) {
     let mut rng = OsRng;
     // Create a issuance bundle
-    let mut unauthorized = IssueBundle::new(keys.ik().clone());
+    let unauthorized_asset = IssueBundle::new(
+        keys.ik().clone(),
+        asset_descr.to_string(),
+        Some(IssueInfo {
+            recipient: keys.recipient,
+            value: NoteValue::from_raw(40),
+        }),
+        &mut rng,
+    );
+
+    assert!(unauthorized_asset.is_ok());
+
+    let (mut unauthorized, _) = unauthorized_asset.unwrap();
 
     assert!(unauthorized
         .add_recipient(
             asset_descr.to_string(),
             keys.recipient,
-            NoteValue::from_raw(40),
-            false,
-            &mut rng,
-        )
-        .is_ok());
-    assert!(unauthorized
-        .add_recipient(
-            asset_descr.to_string(),
-            keys.recipient,
             NoteValue::from_raw(2),
-            false,
             &mut rng,
         )
         .is_ok());
