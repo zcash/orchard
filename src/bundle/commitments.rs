@@ -10,7 +10,9 @@ const ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrc
 const ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrcActMHash";
 const ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrcActNHash";
 const ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthOrchaHash";
-const ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrcZSAIssue";
+const ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION: &[u8; 16] = b"ZTxIdSAIssueHash";
+const ZCASH_ORCHARD_ZSA_ISSUE_ACTION_PERSONALIZATION: &[u8; 16] = b"ZTxIdIssuActHash";
+const ZCASH_ORCHARD_ZSA_ISSUE_NOTE_PERSONALIZATION: &[u8; 16] = b"ZTxIdIAcNoteHash";
 const ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION: &[u8; 16] = b"ZTxAuthZSAOrHash";
 
 fn hasher(personal: &[u8; 16]) -> State {
@@ -97,20 +99,32 @@ pub fn hash_bundle_auth_empty() -> Blake2bHash {
 /// Construct the commitment for the issue bundle
 pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION);
+    let mut ia = hasher(ZCASH_ORCHARD_ZSA_ISSUE_ACTION_PERSONALIZATION);
+    let mut ind = hasher(ZCASH_ORCHARD_ZSA_ISSUE_NOTE_PERSONALIZATION);
 
     for action in bundle.actions().iter() {
         for note in action.notes().iter() {
-            h.update(&note.recipient().to_raw_address_bytes());
-            h.update(&note.value().to_bytes());
-            h.update(&note.asset().to_bytes());
-            h.update(&note.rho().to_bytes());
-            h.update(note.rseed().as_bytes());
+            ind.update(&note.recipient().to_raw_address_bytes());
+            ind.update(&note.value().to_bytes());
+            ind.update(&note.asset().to_bytes());
+            ind.update(&note.rho().to_bytes());
+            ind.update(note.rseed().as_bytes());
         }
-        h.update(action.asset_desc().as_bytes());
-        h.update(&[u8::from(action.is_finalized())]);
+        ia.update(ind.finalize().as_bytes());
+        ia.update(action.asset_desc().as_bytes());
+        ia.update(&[u8::from(action.is_finalized())]);
     }
+    h.update(ia.finalize().as_bytes());
     h.update(&bundle.ik().to_bytes());
     h.finalize()
+}
+
+/// Construct the commitment for the absent issue bundle as defined in
+/// [ZIP-227: Issuance of Zcash Shielded Assets][zip227]
+///
+/// [zip227]: https://qed-it.github.io/zips/zip-0227
+pub fn hash_issue_bundle_txid_empty() -> Blake2bHash {
+    hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION).finalize()
 }
 
 /// Construct the commitment to the authorizing data of an
@@ -119,4 +133,12 @@ pub(crate) fn hash_issue_bundle_auth_data(bundle: &IssueBundle<Signed>) -> Blake
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
     h.update(&<[u8; 64]>::from(bundle.authorization().signature()));
     h.finalize()
+}
+
+/// Construct the commitment for an absent issue bundle as defined in
+/// [ZIP-227: Issuance of Zcash Shielded Assets][zip227]
+///
+/// [zip227]: https://qed-it.github.io/zips/zip-0227
+pub fn hash_issue_bundle_auth_empty() -> Blake2bHash {
+    hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION).finalize()
 }
