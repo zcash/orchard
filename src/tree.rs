@@ -95,6 +95,16 @@ impl From<(incrementalmerkletree::Position, Vec<MerkleHashOrchard>)> for MerkleP
     }
 }
 
+impl From<incrementalmerkletree::MerklePath<MerkleHashOrchard, 32>> for MerklePath {
+    fn from(path: incrementalmerkletree::MerklePath<MerkleHashOrchard, 32>) -> Self {
+        let position: u64 = path.position().into();
+        Self {
+            position: position as u32,
+            auth_path: path.path_elems().try_into().unwrap(),
+        }
+    }
+}
+
 impl MerklePath {
     /// Generates a dummy Merkle path for use in dummy spent notes.
     pub(crate) fn dummy(mut rng: &mut impl RngCore) -> Self {
@@ -243,11 +253,8 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
     }
 }
 
-/// Generators for property testing.
-#[cfg(any(test, feature = "test-dependencies"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
-pub mod testing {
-    #[cfg(test)]
+#[cfg(test)]
+mod tests {
     use {
         crate::tree::{MerkleHashOrchard, EMPTY_ROOTS},
         bridgetree::{BridgeTree, Frontier as BridgeFrontier},
@@ -264,7 +271,7 @@ pub mod testing {
             assert_eq!(tv_empty_roots[height], root.to_bytes());
         }
 
-        let mut tree = BridgeTree::<MerkleHashOrchard, u32, 4>::new(100, 0);
+        let mut tree = BridgeTree::<MerkleHashOrchard, u32, 4>::new(100);
         for (i, tv) in crate::test_vectors::merkle_path::test_vectors()
             .into_iter()
             .enumerate()
@@ -272,7 +279,7 @@ pub mod testing {
             let cmx = MerkleHashOrchard::from_bytes(&tv.leaves[i]).unwrap();
             tree.append(cmx);
             let position = tree.mark().expect("tree is not empty");
-            assert_eq!(position, i.into());
+            assert_eq!(position, (i as u64).into());
 
             let root = tree.root(0).unwrap();
             assert_eq!(root.0, pallas::Base::from_repr(tv.root).unwrap());
