@@ -16,7 +16,6 @@ use crate::{
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
     },
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
-    spec::diversify_hash,
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
@@ -137,10 +136,10 @@ pub fn note_version(plaintext: &[u8]) -> Option<u8> {
 fn orchard_parse_note_plaintext_without_memo<F>(
     domain: &OrchardDomainV2,
     plaintext: &[u8], // TODO: replace with CompactNotePlaintextBytes
-    get_validated_pk_d: F,
+    get_pk_d: F,
 ) -> Option<(Note, Address)>
 where
-    F: FnOnce(&Diversifier) -> Option<DiversifiedTransmissionKey>,
+    F: FnOnce(&Diversifier) -> DiversifiedTransmissionKey,
 {
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE_V2);
 
@@ -157,7 +156,7 @@ where
         &domain.rho,
     ))?;
 
-    let pk_d = get_validated_pk_d(&diversifier)?;
+    let pk_d = get_pk_d(&diversifier);
 
     let recipient = Address::from_parts(diversifier, pk_d);
     let note = Option::from(Note::from_parts(
@@ -304,30 +303,17 @@ impl Domain for OrchardDomainV2 {
         ivk: &Self::IncomingViewingKey,
         plaintext: &CompactNotePlaintextBytes,
     ) -> Option<(Self::Note, Self::Recipient)> {
-        orchard_parse_note_plaintext_without_memo(self, &plaintext.0, |diversifier| {
-            Some(DiversifiedTransmissionKey::derive(ivk, diversifier))
+        orchard_parse_note_plaintext_without_memo(self, plaintext, |diversifier| {
+            DiversifiedTransmissionKey::derive(ivk, diversifier)
         })
     }
 
     fn parse_note_plaintext_without_memo_ovk(
         &self,
         pk_d: &Self::DiversifiedTransmissionKey,
-        esk: &Self::EphemeralSecretKey,
-        ephemeral_key: &EphemeralKeyBytes,
-        plaintext: &CompactNotePlaintextBytes,
+        plaintext: &NotePlaintextBytes,
     ) -> Option<(Self::Note, Self::Recipient)> {
-        orchard_parse_note_plaintext_without_memo(self, &plaintext.0, |diversifier| {
-            if esk
-                .derive_public(diversify_hash(diversifier.as_array()))
-                .to_bytes()
-                .0
-                == ephemeral_key.0
-            {
-                Some(*pk_d)
-            } else {
-                None
-            }
-        })
+        orchard_parse_note_plaintext_without_memo(self, &plaintext.0, |_| *pk_d)
     }
 
     fn extract_memo(

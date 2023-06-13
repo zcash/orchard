@@ -99,7 +99,7 @@ pub fn build_merkle_path_with_two_leaves(
     note1: &Note,
     note2: &Note,
 ) -> (MerklePath, MerklePath, Anchor) {
-    let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100, 0);
+    let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100);
 
     // Add first leaf
     let cmx1: ExtractedNoteCommitment = note1.commitment().into();

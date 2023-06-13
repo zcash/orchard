@@ -33,7 +33,7 @@ pub fn build_merkle_path(note: &Note) -> (MerklePath, Anchor) {
     // Use the tree with a single leaf.
     let cmx: ExtractedNoteCommitment = note.commitment().into();
     let leaf = MerkleHashOrchard::from_cmx(&cmx);
-    let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100, 0);
+    let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100);
     tree.append(leaf);
     let position = tree.mark().unwrap();
     let root = tree.root(0).unwrap();

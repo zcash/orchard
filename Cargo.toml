@@ -1,6 +1,6 @@
 [package]
 name = "orchard"
-version = "0.4.0"
+version = "0.5.0"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Jack Grigg <jack@electriccoin.co>",
@@ -26,7 +26,6 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 aes = "0.8"
 bitvec = "1"
 blake2b_simd = "1"
-bridgetree = { version = "0.2", optional = true }
 ff = "0.13"
 fpe = "0.6"
 group = { version = "0.13", features = ["wnaf-memuse"] }
@@ -43,7 +42,7 @@ nonempty = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
 zcash_note_encryption = "0.2"
-incrementalmerkletree = "0.3.1"
+incrementalmerkletree = "0.4"
 
 # Logging
 tracing = "0.1"
@@ -53,13 +52,13 @@ image = { version = ">= 0.24, < 0.24.5", optional = true } # 0.24.5 has MSRV 1.6
 plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
-bridgetree = "0.2"
+bridgetree = "0.3"
 criterion = "0.3"
 halo2_gadgets = { git = "https://github.com/QED-it/halo2", branch = "zsa1", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1.0.0"
 zcash_note_encryption = { version = "0.2", features = ["pre-zip-212"] }
-incrementalmerkletree = { version = "0.3", features = ["test-dependencies"] }
+incrementalmerkletree = { version = "0.4", features = ["test-dependencies"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 inferno = ">= 0.11, < 0.11.15"
@@ -72,7 +71,7 @@ bench = false
 default = ["multicore"]
 multicore = ["halo2_proofs/multicore"]
 dev-graph = ["halo2_proofs/dev-graph", "image", "plotters"]
-test-dependencies = ["bridgetree", "proptest"]
+test-dependencies = ["proptest"]
 
 [[bench]]
 name = "note_decryption"
@@ -94,5 +93,3 @@ debug = true
 
 [patch.crates-io]
 zcash_note_encryption = { git = "https://github.com/QED-it/librustzcash.git", rev = "07c377ddedf71ab7c7a266d284b054a2dafc2ed4" }
-bridgetree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "ea1686e8f8f6c1e41aa97251a7eb4fadfd33df47" }
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "ea1686e8f8f6c1e41aa97251a7eb4fadfd33df47" }
