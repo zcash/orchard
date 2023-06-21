@@ -1,5 +1,5 @@
 use blake2b_simd::{Hash as Blake2bHash, Params};
-use group::GroupEncoding;
+use group::{Group, GroupEncoding};
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
 use rand::RngCore;
@@ -54,10 +54,13 @@ impl AssetBase {
     ///
     /// # Panics
     ///
-    /// Panics if `asset_desc` is empty or greater than `MAX_ASSET_DESCRIPTION_SIZE`.
+    /// Panics if `asset_desc` is empty or greater than `MAX_ASSET_DESCRIPTION_SIZE` or if the derived Asset Base is the identity point.
     #[allow(non_snake_case)]
     pub fn derive(ik: &IssuanceValidatingKey, asset_desc: &str) -> Self {
-        assert!(is_asset_desc_of_valid_size(asset_desc));
+        assert!(
+            is_asset_desc_of_valid_size(asset_desc),
+            "The asset_desc string is not of valid size"
+        );
 
         // EncodeAssetId(ik, asset_desc) = version_byte || ik || asset_desc
         let version_byte = [0x00];
@@ -65,10 +68,17 @@ impl AssetBase {
 
         let asset_digest = asset_digest(encode_asset_id);
 
+        let asset_base =
+            pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(asset_digest.as_bytes());
+
+        // this will happen with negligible probability.
+        assert!(
+            bool::from(!asset_base.is_identity()),
+            "The Asset Base is the identity point, which is invalid."
+        );
+
         // AssetBase = ZSAValueBase(AssetDigest)
-        AssetBase(
-            pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(asset_digest.as_bytes()),
-        )
+        AssetBase(asset_base)
     }
 
     /// Note type for the "native" currency (zec), maintains backward compatibility with Orchard untyped notes.
