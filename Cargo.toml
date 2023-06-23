@@ -92,4 +92,4 @@ debug = true
 debug = true
 
 [patch.crates-io]
-zcash_note_encryption = { git = "https://github.com/QED-it/librustzcash.git", branch = "upgrade_for_orchard_v05_new" }
+zcash_note_encryption = { git = "https://github.com/QED-it/librustzcash.git", tag = "O.5_compatible" }
