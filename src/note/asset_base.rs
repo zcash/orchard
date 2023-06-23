@@ -1,5 +1,5 @@
 use blake2b_simd::{Hash as Blake2bHash, Params};
-use group::GroupEncoding;
+use group::{Group, GroupEncoding};
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
 use rand::RngCore;
@@ -10,7 +10,7 @@ use subtle::{Choice, ConstantTimeEq, CtOption};
 use crate::constants::fixed_bases::{
     NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_PERSONALIZATION, ZSA_ASSET_BASE_PERSONALIZATION,
 };
-use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey, SpendingKey};
+use crate::keys::{IssuanceAuthorizingKey, IssuanceKey, IssuanceValidatingKey};
 
 /// Note type identifier.
 #[derive(Clone, Copy, Debug, Eq)]
@@ -54,10 +54,13 @@ impl AssetBase {
     ///
     /// # Panics
     ///
-    /// Panics if `asset_desc` is empty or greater than `MAX_ASSET_DESCRIPTION_SIZE`.
+    /// Panics if `asset_desc` is empty or greater than `MAX_ASSET_DESCRIPTION_SIZE` or if the derived Asset Base is the identity point.
     #[allow(non_snake_case)]
     pub fn derive(ik: &IssuanceValidatingKey, asset_desc: &str) -> Self {
-        assert!(is_asset_desc_of_valid_size(asset_desc));
+        assert!(
+            is_asset_desc_of_valid_size(asset_desc),
+            "The asset_desc string is not of valid size"
+        );
 
         // EncodeAssetId(ik, asset_desc) = version_byte || ik || asset_desc
         let version_byte = [0x00];
@@ -65,10 +68,17 @@ impl AssetBase {
 
         let asset_digest = asset_digest(encode_asset_id);
 
+        let asset_base =
+            pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(asset_digest.as_bytes());
+
+        // this will happen with negligible probability.
+        assert!(
+            bool::from(!asset_base.is_identity()),
+            "The Asset Base is the identity point, which is invalid."
+        );
+
         // AssetBase = ZSAValueBase(AssetDigest)
-        AssetBase(
-            pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(asset_digest.as_bytes()),
-        )
+        AssetBase(asset_base)
     }
 
     /// Note type for the "native" currency (zec), maintains backward compatibility with Orchard untyped notes.
@@ -92,8 +102,8 @@ impl AssetBase {
     ///
     /// This is only used in tests.
     pub(crate) fn random(rng: &mut impl RngCore) -> Self {
-        let sk = SpendingKey::random(rng);
-        let isk = IssuanceAuthorizingKey::from(&sk);
+        let sk_iss = IssuanceKey::random(rng);
+        let isk = IssuanceAuthorizingKey::from(&sk_iss);
         let ik = IssuanceValidatingKey::from(&isk);
         let asset_descr = "zsa_asset";
         AssetBase::derive(&ik, asset_descr)
@@ -126,13 +136,13 @@ pub mod testing {
 
     use proptest::prelude::*;
 
-    use crate::keys::{testing::arb_spending_key, IssuanceAuthorizingKey, IssuanceValidatingKey};
+    use crate::keys::{testing::arb_issuance_key, IssuanceAuthorizingKey, IssuanceValidatingKey};
 
     prop_compose! {
         /// Generate a uniformly distributed note type
         pub fn arb_asset_id()(
             is_native in prop::bool::ANY,
-            sk in arb_spending_key(),
+            sk in arb_issuance_key(),
             str in "[A-Za-z]{255}",
         ) -> AssetBase {
             if is_native {
@@ -155,10 +165,10 @@ pub mod testing {
     prop_compose! {
         /// Generate an asset ID
         pub fn arb_zsa_asset_id()(
-            sk in arb_spending_key(),
+            sk_iss in arb_issuance_key(),
             str in "[A-Za-z]{255}"
         ) -> AssetBase {
-            let isk = IssuanceAuthorizingKey::from(&sk);
+            let isk = IssuanceAuthorizingKey::from(&sk_iss);
             AssetBase::derive(&IssuanceValidatingKey::from(&isk), &str)
         }
     }
@@ -166,10 +176,10 @@ pub mod testing {
     prop_compose! {
         /// Generate an asset ID using a specific description
         pub fn zsa_asset_id(asset_desc: String)(
-            sk in arb_spending_key(),
+            sk_iss in arb_issuance_key(),
         ) -> AssetBase {
             assert!(super::is_asset_desc_of_valid_size(&asset_desc));
-            let isk = IssuanceAuthorizingKey::from(&sk);
+            let isk = IssuanceAuthorizingKey::from(&sk_iss);
             AssetBase::derive(&IssuanceValidatingKey::from(&isk), &asset_desc)
         }
     }

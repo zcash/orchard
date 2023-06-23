@@ -13,7 +13,10 @@ use orchard::{
     builder::Builder,
     bundle::Flags,
     circuit::{ProvingKey, VerifyingKey},
-    keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
+    keys::{
+        FullViewingKey, IssuanceKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey,
+        SpendingKey,
+    },
     value::NoteValue,
     Address, Anchor, Bundle, Note,
 };
@@ -58,7 +61,8 @@ fn prepare_keys() -> Keychain {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let isk = IssuanceAuthorizingKey::from(&sk);
+    let sk_iss = IssuanceKey::from_bytes([0; 32]).unwrap();
+    let isk = IssuanceAuthorizingKey::from(&sk_iss);
     let ik = IssuanceValidatingKey::from(&isk);
     Keychain {
         pk,

@@ -141,7 +141,6 @@ pub struct Bundle<T: Authorization, V> {
     /// This is the sum of Orchard spends minus the sum of Orchard outputs.
     value_balance: V,
     /// Assets intended for burning
-    /// TODO We need to add a consensus check to make sure that it is impossible to burn ZEC.
     burn: Vec<(AssetBase, V)>,
     /// The root of the Orchard commitment tree that this bundle commits to.
     anchor: Anchor,

@@ -1,5 +1,6 @@
 //! Structs related to issuance bundles and the associated logic.
 use blake2b_simd::Hash as Blake2bHash;
+use group::Group;
 use nonempty::NonEmpty;
 use rand::{CryptoRng, RngCore};
 use std::collections::HashSet;
@@ -7,7 +8,7 @@ use std::fmt;
 
 use crate::bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data};
 use crate::issuance::Error::{
-    IssueActionNotFound, IssueActionPreviouslyFinalizedAssetBase,
+    AssetBaseCannotBeIdentityPoint, IssueActionNotFound, IssueActionPreviouslyFinalizedAssetBase,
     IssueActionWithoutNoteNotFinalized, IssueBundleIkMismatchAssetBase,
     IssueBundleInvalidSignature, ValueSumOverflow, WrongAssetDescSize,
 };
@@ -134,6 +135,11 @@ impl IssueAction {
             .notes
             .iter()
             .try_fold(ValueSum::zero(), |value_sum, &note| {
+                //The asset base should not be the identity point of the Pallas curve.
+                if bool::from(note.asset().cv_base().is_identity()) {
+                    return Err(AssetBaseCannotBeIdentityPoint);
+                }
+
                 // All assets should be derived correctly
                 note.asset()
                     .eq(&issue_asset)
@@ -527,6 +533,8 @@ pub enum Error {
     WrongAssetDescSize,
     /// The `IssueAction` is not finalized but contains no notes.
     IssueActionWithoutNoteNotFinalized,
+    /// The `AssetBase` is the Pallas identity point, which is invalid.
+    AssetBaseCannotBeIdentityPoint,
 
     /// Verification errors:
     /// Invalid signature.
@@ -561,6 +569,12 @@ impl fmt::Display for Error {
                     "this `IssueAction` contains no notes but is not finalized"
                 )
             }
+            AssetBaseCannotBeIdentityPoint => {
+                write!(
+                    f,
+                    "the AssetBase is the identity point of the Pallas curve, which is invalid."
+                )
+            }
             IssueBundleInvalidSignature(_) => {
                 write!(f, "invalid signature")
             }
@@ -581,16 +595,21 @@ impl fmt::Display for Error {
 mod tests {
     use super::{AssetSupply, IssueBundle, IssueInfo};
     use crate::issuance::Error::{
-        IssueActionNotFound, IssueActionPreviouslyFinalizedAssetBase,
-        IssueBundleIkMismatchAssetBase, IssueBundleInvalidSignature, WrongAssetDescSize,
+        AssetBaseCannotBeIdentityPoint, IssueActionNotFound,
+        IssueActionPreviouslyFinalizedAssetBase, IssueBundleIkMismatchAssetBase,
+        IssueBundleInvalidSignature, WrongAssetDescSize,
     };
-    use crate::issuance::{verify_issue_bundle, IssueAction, Signed};
+    use crate::issuance::{verify_issue_bundle, IssueAction, Signed, Unauthorized};
     use crate::keys::{
-        FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
+        FullViewingKey, IssuanceAuthorizingKey, IssuanceKey, IssuanceValidatingKey, Scope,
+        SpendingKey,
     };
     use crate::note::{AssetBase, Nullifier};
     use crate::value::{NoteValue, ValueSum};
     use crate::{Address, Note};
+    use group::{Group, GroupEncoding};
+    use nonempty::NonEmpty;
+    use pasta_curves::pallas::{Point, Scalar};
     use rand::rngs::OsRng;
     use rand::RngCore;
     use reddsa::Error::InvalidSignature;
@@ -605,8 +624,8 @@ mod tests {
     ) {
         let mut rng = OsRng;
 
-        let sk = SpendingKey::random(&mut rng);
-        let isk: IssuanceAuthorizingKey = (&sk).into();
+        let sk_iss = IssuanceKey::random(&mut rng);
+        let isk: IssuanceAuthorizingKey = (&sk_iss).into();
         let ik: IssuanceValidatingKey = (&isk).into();
 
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
@@ -653,8 +672,49 @@ mod tests {
         )
     }
 
+    // This function computes the identity point on the Pallas curve and returns an Asset Base with that value.
+    fn identity_point() -> AssetBase {
+        let identity_point = (Point::generator() * -Scalar::one()) + Point::generator();
+        AssetBase::from_bytes(&identity_point.to_bytes()).unwrap()
+    }
+
+    fn identity_point_test_params(
+        note1_value: u64,
+        note2_value: u64,
+    ) -> (
+        OsRng,
+        IssuanceAuthorizingKey,
+        IssueBundle<Unauthorized>,
+        [u8; 32],
+    ) {
+        let (mut rng, isk, ik, recipient, sighash) = setup_params();
+
+        let note1 = Note::new(
+            recipient,
+            NoteValue::from_raw(note1_value),
+            identity_point(),
+            Nullifier::dummy(&mut rng),
+            &mut rng,
+        );
+
+        let note2 = Note::new(
+            recipient,
+            NoteValue::from_raw(note2_value),
+            identity_point(),
+            Nullifier::dummy(&mut rng),
+            &mut rng,
+        );
+
+        let action =
+            IssueAction::from_parts("arbitrary asset_desc".into(), vec![note1, note2], false);
+
+        let bundle = IssueBundle::from_parts(ik, NonEmpty::new(action), Unauthorized);
+
+        (rng, isk, bundle, sighash)
+    }
+
     #[test]
-    fn test_verify_supply_valid() {
+    fn verify_supply_valid() {
         let (ik, test_asset, action) =
             setup_verify_supply_test_params(10, 20, "Asset 1", None, false);
 
@@ -670,7 +730,17 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_supply_finalized() {
+    fn verify_supply_invalid_for_asset_base_as_identity() {
+        let (_, _, bundle, _) = identity_point_test_params(10, 20);
+
+        assert_eq!(
+            bundle.actions.head.verify_supply(&bundle.ik),
+            Err(AssetBaseCannotBeIdentityPoint)
+        );
+    }
+
+    #[test]
+    fn verify_supply_finalized() {
         let (ik, test_asset, action) =
             setup_verify_supply_test_params(10, 20, "Asset 1", None, true);
 
@@ -686,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_supply_incorrect_asset_base() {
+    fn verify_supply_incorrect_asset_base() {
         let (ik, _, action) =
             setup_verify_supply_test_params(10, 20, "Asset 1", Some("Asset 2"), false);
 
@@ -697,7 +767,7 @@ mod tests {
     }
 
     #[test]
-    fn test_verify_supply_ik_mismatch_asset_base() {
+    fn verify_supply_ik_mismatch_asset_base() {
         let (_, _, action) = setup_verify_supply_test_params(10, 20, "Asset 1", None, false);
         let (_, _, ik, _, _) = setup_params();
 
@@ -876,7 +946,7 @@ mod tests {
         )
         .unwrap();
 
-        let wrong_isk: IssuanceAuthorizingKey = (&SpendingKey::random(&mut OsRng)).into();
+        let wrong_isk: IssuanceAuthorizingKey = (&IssuanceKey::random(&mut OsRng)).into();
 
         let err = bundle
             .prepare([0; 32])
@@ -1108,7 +1178,7 @@ mod tests {
         )
         .unwrap();
 
-        let wrong_isk: IssuanceAuthorizingKey = (&SpendingKey::random(&mut rng)).into();
+        let wrong_isk: IssuanceAuthorizingKey = (&IssuanceKey::random(&mut rng)).into();
 
         let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
@@ -1203,8 +1273,8 @@ mod tests {
 
         let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
-        let incorrect_sk = SpendingKey::random(&mut rng);
-        let incorrect_isk: IssuanceAuthorizingKey = (&incorrect_sk).into();
+        let incorrect_sk_iss = IssuanceKey::random(&mut rng);
+        let incorrect_isk: IssuanceAuthorizingKey = (&incorrect_sk_iss).into();
         let incorrect_ik: IssuanceValidatingKey = (&incorrect_isk).into();
 
         // Add "bad" note
@@ -1272,7 +1342,35 @@ mod tests {
     }
 
     #[test]
-    fn test_finalize_flag_serialization() {
+    fn issue_bundle_cannot_be_signed_with_asset_base_identity_point() {
+        let (rng, isk, bundle, sighash) = identity_point_test_params(10, 20);
+
+        assert_eq!(
+            bundle.prepare(sighash).sign(rng, &isk).unwrap_err(),
+            AssetBaseCannotBeIdentityPoint
+        );
+    }
+
+    #[test]
+    fn issue_bundle_verify_fail_asset_base_identity_point() {
+        let (mut rng, isk, bundle, sighash) = identity_point_test_params(10, 20);
+
+        let signed = IssueBundle {
+            ik: bundle.ik,
+            actions: bundle.actions,
+            authorization: Signed {
+                signature: isk.sign(&mut rng, &sighash),
+            },
+        };
+
+        assert_eq!(
+            verify_issue_bundle(&signed, sighash, &HashSet::new()).unwrap_err(),
+            AssetBaseCannotBeIdentityPoint
+        );
+    }
+
+    #[test]
+    fn finalize_flag_serialization() {
         let mut rng = OsRng;
         let (_, _, note) = Note::dummy(&mut rng, None, AssetBase::native());
 
