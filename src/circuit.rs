@@ -224,12 +224,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Constrain split_flag to be boolean
         // Constrain v_old * (1 - split_flag) - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
-        // Constrain v_old = 0 or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
+        // Constrain (v_old = 0 and split_flag = 0) or (calculated root = anchor) (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
         // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
         // Constrain is_native_asset to be boolean
         // Constraint if is_native_asset = 1 then asset = native_asset else asset != native_asset
         // Constraint if split_flag = 0 then psi_old = psi_nf
+        // Constraint if split_flag = 1, then is_native_asset = 0
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -276,9 +277,13 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                             - v_new.clone()
                             - magnitude * sign,
                     ),
+                    // We already checked that
+                    // * split_flag is boolean (just above), and
+                    // * v_old is a 64 bit integer (in the note commitment evaluation).
+                    // So, split_flag + v_old = 0 only when (split_flag = 0 and v_old = 0), no overflow can occur.
                     (
-                        "v_old = 0 or root = anchor",
-                        v_old.clone() * (root - anchor),
+                        "(v_old = 0 and split_flag = 0) or (root = anchor)",
+                        (v_old.clone() + split_flag.clone()) * (root - anchor),
                     ),
                     (
                         "v_old = 0 or enable_spends = 1",
@@ -307,13 +312,17 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     // is not equal to zero, we will prove that it is invertible.
                     (
                         "(is_native_asset = 0) => (asset != native_asset)",
-                        (one.clone() - is_native_asset)
+                        (one.clone() - is_native_asset.clone())
                             * (diff_asset_x * diff_asset_x_inv - one.clone())
                             * (diff_asset_y * diff_asset_y_inv - one.clone()),
                     ),
                     (
                         "(split_flag = 0) => (psi_old = psi_nf)",
-                        (one - split_flag) * (psi_old - psi_nf),
+                        (one - split_flag.clone()) * (psi_old - psi_nf),
+                    ),
+                    (
+                        "(split_flag = 1) => (is_native_asset = 0)",
+                        split_flag * is_native_asset,
                     ),
                 ],
             )
@@ -1550,9 +1559,11 @@ mod tests {
                 let (circuit, instance) =
                     generate_circuit_instance(is_native_asset, split_flag, &mut rng);
 
-                check_proof_of_orchard_circuit(&circuit, &instance, true);
+                let should_pass = !(matches!((is_native_asset, split_flag), (true, true)));
 
-                // Set cv_net to zero
+                check_proof_of_orchard_circuit(&circuit, &instance, should_pass);
+
+                // Set cv_net to be zero
                 // The proof should fail
                 let instance_wrong_cv_net = Instance {
                     anchor: instance.anchor,
@@ -1565,7 +1576,7 @@ mod tests {
                 };
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_cv_net, false);
 
-                // Set rk_pub to dummy VerificationKey
+                // Set rk_pub to be a dummy VerificationKey
                 // The proof should fail
                 let instance_wrong_rk = Instance {
                     anchor: instance.anchor,
@@ -1578,7 +1589,7 @@ mod tests {
                 };
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_rk, false);
 
-                // Set cm_old to random NoteCommitment
+                // Set cm_old to be a random NoteCommitment
                 // The proof should fail
                 let circuit_wrong_cm_old = Circuit {
                     path: circuit.path,
@@ -1606,7 +1617,7 @@ mod tests {
                 };
                 check_proof_of_orchard_circuit(&circuit_wrong_cm_old, &instance, false);
 
-                // Set cmx_pub to random NoteCommitment
+                // Set cmx_pub to be a random NoteCommitment
                 // The proof should fail
                 let instance_wrong_cmx_pub = Instance {
                     anchor: instance.anchor,
@@ -1619,19 +1630,47 @@ mod tests {
                 };
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_cmx_pub, false);
 
-                // If split_flag=0, set nf_old_pub to random Nullifier
+                // Set nf_old_pub to be a random Nullifier
+                // The proof should fail
+                let instance_wrong_nf_old_pub = Instance {
+                    anchor: instance.anchor,
+                    cv_net: instance.cv_net.clone(),
+                    nf_old: Nullifier::dummy(&mut rng),
+                    rk: instance.rk.clone(),
+                    cmx: instance.cmx,
+                    enable_spend: instance.enable_spend,
+                    enable_output: instance.enable_output,
+                };
+                check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
+
+                // If split_flag = 0 , set psi_nf to be a random Pallas base element
                 // The proof should fail
                 if !split_flag {
-                    let instance_wrong_nf_old_pub = Instance {
-                        anchor: instance.anchor,
-                        cv_net: instance.cv_net,
-                        nf_old: Nullifier::dummy(&mut rng),
-                        rk: instance.rk,
-                        cmx: instance.cmx,
-                        enable_spend: instance.enable_spend,
-                        enable_output: instance.enable_output,
+                    let circuit_wrong_psi_nf = Circuit {
+                        path: circuit.path,
+                        pos: circuit.pos,
+                        g_d_old: circuit.g_d_old,
+                        pk_d_old: circuit.pk_d_old,
+                        v_old: circuit.v_old,
+                        rho_old: circuit.rho_old,
+                        psi_old: circuit.psi_old,
+                        rcm_old: circuit.rcm_old.clone(),
+                        cm_old: circuit.cm_old.clone(),
+                        psi_nf: Value::known(pallas::Base::random(&mut rng)),
+                        alpha: circuit.alpha,
+                        ak: circuit.ak.clone(),
+                        nk: circuit.nk,
+                        rivk: circuit.rivk,
+                        g_d_new: circuit.g_d_new,
+                        pk_d_new: circuit.pk_d_new,
+                        v_new: circuit.v_new,
+                        psi_new: circuit.psi_new,
+                        rcm_new: circuit.rcm_new.clone(),
+                        rcv: circuit.rcv,
+                        asset: circuit.asset,
+                        split_flag: circuit.split_flag,
                     };
-                    check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
+                    check_proof_of_orchard_circuit(&circuit_wrong_psi_nf, &instance, false);
                 }
             }
         }

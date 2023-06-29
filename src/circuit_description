@@ -260,13 +260,22 @@ PinnedVerificationKey {
                     ),
                 ),
                 Product(
-                    Advice {
-                        query_index: 0,
-                        column_index: 0,
-                        rotation: Rotation(
-                            0,
-                        ),
-                    },
+                    Sum(
+                        Advice {
+                            query_index: 0,
+                            column_index: 0,
+                            rotation: Rotation(
+                                0,
+                            ),
+                        },
+                        Advice {
+                            query_index: 8,
+                            column_index: 8,
+                            rotation: Rotation(
+                                0,
+                            ),
+                        },
+                    ),
                     Sum(
                         Advice {
                             query_index: 4,
@@ -911,6 +920,79 @@ PinnedVerificationKey {
                             },
                         ),
                     ),
+                ),
+            ),
+            Product(
+                Product(
+                    Product(
+                        Product(
+                            Fixed {
+                                query_index: 18,
+                                column_index: 18,
+                                rotation: Rotation(
+                                    0,
+                                ),
+                            },
+                            Sum(
+                                Constant(
+                                    0x0000000000000000000000000000000000000000000000000000000000000002,
+                                ),
+                                Negated(
+                                    Fixed {
+                                        query_index: 18,
+                                        column_index: 18,
+                                        rotation: Rotation(
+                                            0,
+                                        ),
+                                    },
+                                ),
+                            ),
+                        ),
+                        Sum(
+                            Constant(
+                                0x0000000000000000000000000000000000000000000000000000000000000003,
+                            ),
+                            Negated(
+                                Fixed {
+                                    query_index: 18,
+                                    column_index: 18,
+                                    rotation: Rotation(
+                                        0,
+                                    ),
+                                },
+                            ),
+                        ),
+                    ),
+                    Sum(
+                        Constant(
+                            0x0000000000000000000000000000000000000000000000000000000000000004,
+                        ),
+                        Negated(
+                            Fixed {
+                                query_index: 18,
+                                column_index: 18,
+                                rotation: Rotation(
+                                    0,
+                                ),
+                            },
+                        ),
+                    ),
+                ),
+                Product(
+                    Advice {
+                        query_index: 8,
+                        column_index: 8,
+                        rotation: Rotation(
+                            0,
+                        ),
+                    },
+                    Advice {
+                        query_index: 9,
+                        column_index: 9,
+                        rotation: Rotation(
+                            0,
+                        ),
+                    },
                 ),
             ),
             Product(
