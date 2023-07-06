@@ -92,5 +92,5 @@ debug = true
 debug = true
 
 [patch.crates-io]
-bridgetree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "082109deacf8611ee7917732e19b56158bda96d5" }
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "082109deacf8611ee7917732e19b56158bda96d5" }
+bridgetree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "67111e29403c33f2e36d6924167f1d5f04ad0fc2" }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "67111e29403c33f2e36d6924167f1d5f04ad0fc2" }
