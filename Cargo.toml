@@ -25,7 +25,9 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 [dependencies]
 aes = "0.8"
 bitvec = "1"
+borsh = {version = "0.9", features = ["const-generics"]}
 blake2b_simd = "1"
+blake2s_simd = "1"
 ff = "0.13"
 fpe = "0.6"
 group = { version = "0.13", features = ["wnaf-memuse"] }
