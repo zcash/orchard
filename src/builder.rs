@@ -9,6 +9,7 @@ use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
+use crate::asset_type::AssetType;
 use crate::{
     action::Action,
     address::Address,
@@ -189,14 +190,21 @@ struct ActionInfo {
     spend: SpendInfo,
     output: RecipientInfo,
     rcv: ValueCommitTrapdoor,
+    asset_type: AssetType,
 }
 
 impl ActionInfo {
-    fn new(spend: SpendInfo, output: RecipientInfo, rng: impl RngCore) -> Self {
+    fn new(
+        spend: SpendInfo,
+        output: RecipientInfo,
+        rng: impl RngCore,
+        asset_type: AssetType,
+    ) -> Self {
         ActionInfo {
             spend,
             output,
             rcv: ValueCommitTrapdoor::random(rng),
+            asset_type,
         }
     }
 
@@ -219,7 +227,13 @@ impl ActionInfo {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let note = Note::new(self.output.recipient, self.output.value, nf_old, &mut rng);
+        let note = Note::new(
+            self.output.recipient,
+            self.output.value,
+            nf_old,
+            &mut rng,
+            self.asset_type,
+        );
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
@@ -416,7 +430,7 @@ impl Builder {
             self.spends
                 .into_iter()
                 .zip(self.recipients.into_iter())
-                .map(|(spend, recipient)| ActionInfo::new(spend, recipient, &mut rng))
+                .map(|(spend, recipient)| ActionInfo::new(spend, recipient, &mut rng, todo!()))
                 .collect()
         };
 
@@ -729,12 +743,18 @@ pub trait InputView<NoteRef> {
     fn note_id(&self) -> &NoteRef;
     /// The value of the input being spent.
     fn value<V: From<u64>>(&self) -> V;
+    /// The asset type of the input being spent.
+    fn asset_type(&self) -> AssetType;
 }
 
 impl InputView<()> for SpendInfo {
     fn note_id(&self) -> &() {
         // The builder does not make use of note identifiers, so we can just return the unit value.
         &()
+    }
+
+    fn asset_type(&self) -> AssetType {
+        todo!()
     }
 
     fn value<V: From<u64>>(&self) -> V {
@@ -747,11 +767,16 @@ impl InputView<()> for SpendInfo {
 pub trait OutputView {
     /// The value of the output being produced.
     fn value<V: From<u64>>(&self) -> V;
+    /// The asset type of the output being produced.
+    fn asset_type(&self) -> AssetType;
 }
 
 impl OutputView for RecipientInfo {
     fn value<V: From<u64>>(&self) -> V {
         V::from(self.value.inner())
+    }
+    fn asset_type(&self) -> AssetType {
+        todo!()
     }
 }
 

@@ -29,6 +29,22 @@ pub(crate) const L_VALUE: usize = 64;
 /// SWU hash-to-curve personalization for the group hash for key diversification
 pub const KEY_DIVERSIFICATION_PERSONALIZATION: &str = "z.cash:Orchard-gd";
 
+/// First 64 bytes of the BLAKE2s input during group hash.
+/// This is chosen to be some random string that we couldn't have anticipated when we designed
+/// the algorithm, for rigidity purposes.
+/// We deliberately use an ASCII hex string of 32 bytes here.
+pub const GH_FIRST_BLOCK: &[u8; 64] =
+    b"096b36a5804bfacef1691e173c366a47ff5ba84a44f26ddd7e8d9f79d5b42df0";
+
+/// Length in bytes of the asset identifier
+pub const ASSET_IDENTIFIER_LENGTH: usize = 32;
+
+/// BLAKE2s Personalization for deriving asset identifier from asset name
+pub const ASSET_IDENTIFIER_PERSONALIZATION: &[u8; 8] = b"MASP__t_";
+
+/// BLAKE2s Personalization for the value commitment generator for the value
+pub const VALUE_COMMITMENT_GENERATOR_PERSONALIZATION: &[u8; 8] = b"MASP__v_";
+
 #[cfg(test)]
 mod tests {
     use ff::PrimeField;

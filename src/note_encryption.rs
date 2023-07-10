@@ -12,6 +12,7 @@ use zcash_note_encryption::{
 
 use crate::{
     action::Action,
+    asset_type::AssetType,
     keys::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
@@ -48,6 +49,8 @@ pub(crate) fn prf_ock_orchard(
     )
 }
 
+//sapling_parse_note_plaintext_without_memoと比較
+// TODO:plaintext通りに並び替える。そもそもbit列の並びを知る
 fn orchard_parse_note_plaintext_without_memo<F>(
     domain: &OrchardDomain,
     plaintext: &[u8],
@@ -72,9 +75,13 @@ where
     ))?;
 
     let pk_d = get_pk_d(&diversifier);
-
+    //plaintext?
+    let asset_type = AssetType::from_identifier(plaintext[20..52].try_into().unwrap())?;
     let recipient = Address::from_parts(diversifier, pk_d);
-    let note = Option::from(Note::from_parts(recipient, value, domain.rho, rseed))?;
+    //to.create_noteを参考にrecipient.create_noteを作りたい
+    let note = Option::from(Note::from_parts(
+        recipient, value, domain.rho, rseed, asset_type,
+    ))?;
     Some((note, recipient))
 }
 
@@ -395,7 +402,8 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let note = Note::from_parts(recipient, value, rho, rseed).unwrap();
+
+            let note = Note::from_parts(recipient, value, rho, rseed, todo!()).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(

@@ -7,6 +7,7 @@ use rand::RngCore;
 use subtle::CtOption;
 
 use crate::{
+    asset_type::{self, AssetType},
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
     spec::{to_base, to_scalar, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
@@ -99,6 +100,8 @@ pub struct Note {
     rho: Nullifier,
     /// The seed randomness for various note components.
     rseed: RandomSeed,
+    /// The asset type that the note represents
+    asset_type: AssetType,
 }
 
 impl PartialEq for Note {
@@ -131,12 +134,14 @@ impl Note {
         value: NoteValue,
         rho: Nullifier,
         rseed: RandomSeed,
+        asset_type: AssetType,
     ) -> CtOption<Self> {
         let note = Note {
             recipient,
             value,
             rho,
             rseed,
+            asset_type,
         };
         CtOption::new(note, note.commitment_inner().is_some())
     }
@@ -151,9 +156,16 @@ impl Note {
         value: NoteValue,
         rho: Nullifier,
         mut rng: impl RngCore,
+        asset_type: AssetType,
     ) -> Self {
         loop {
-            let note = Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho));
+            let note = Note::from_parts(
+                recipient,
+                value,
+                rho,
+                RandomSeed::random(&mut rng, &rho),
+                asset_type,
+            );
             if note.is_some().into() {
                 break note.unwrap();
             }
@@ -178,6 +190,7 @@ impl Note {
             NoteValue::zero(),
             rho.unwrap_or_else(|| Nullifier::dummy(rng)),
             rng,
+            AssetType::new(b"dummy").unwrap(),
         );
 
         (sk, fvk, note)
@@ -299,12 +312,7 @@ pub mod testing {
             rho in arb_nullifier(),
             rseed in arb_rseed(),
         ) -> Note {
-            Note {
-                recipient,
-                value,
-                rho,
-                rseed,
-            }
+            Note {recipient,value,rho,rseed, asset_type: todo!() }
         }
     }
 }

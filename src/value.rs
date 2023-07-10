@@ -267,7 +267,7 @@ impl ValueCommitTrapdoor {
 
 /// A commitment to a [`ValueSum`].
 #[derive(Clone, Debug)]
-pub struct ValueCommitment(pallas::Point);
+pub struct ValueCommitment(pub pallas::Point);
 
 impl Add<&ValueCommitment> for ValueCommitment {
     type Output = ValueCommitment;
