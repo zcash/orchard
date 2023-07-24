@@ -261,20 +261,27 @@ PinnedVerificationKey {
                 ),
                 Product(
                     Sum(
-                        Advice {
-                            query_index: 0,
-                            column_index: 0,
-                            rotation: Rotation(
-                                0,
+                        Sum(
+                            Advice {
+                                query_index: 0,
+                                column_index: 0,
+                                rotation: Rotation(
+                                    0,
+                                ),
+                            },
+                            Constant(
+                                0x0000000000000000000000000000000000000000000000000000000000000001,
                             ),
-                        },
-                        Advice {
-                            query_index: 8,
-                            column_index: 8,
-                            rotation: Rotation(
-                                0,
-                            ),
-                        },
+                        ),
+                        Negated(
+                            Advice {
+                                query_index: 9,
+                                column_index: 9,
+                                rotation: Rotation(
+                                    0,
+                                ),
+                            },
+                        ),
                     ),
                     Sum(
                         Advice {

@@ -224,7 +224,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Constrain split_flag to be boolean
         // Constrain v_old * (1 - split_flag) - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
-        // Constrain (v_old = 0 and split_flag = 0) or (calculated root = anchor) (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
+        // Constrain (v_old = 0 and is_native_asset = 1) or (calculated root = anchor) (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
         // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
         // Constrain is_native_asset to be boolean
@@ -278,12 +278,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                             - magnitude * sign,
                     ),
                     // We already checked that
-                    // * split_flag is boolean (just above), and
-                    // * v_old is a 64 bit integer (in the note commitment evaluation).
-                    // So, split_flag + v_old = 0 only when (split_flag = 0 and v_old = 0), no overflow can occur.
+                    // * is_native_asset is boolean (just below), and
+                    // * v_old is a 64 bit unsigned integer (in the note commitment evaluation).
+                    // So, 1 - is_native_asset + v_old = 0 only when (is_native_asset = 1 and v_old = 0), no overflow can occur.
                     (
-                        "(v_old = 0 and split_flag = 0) or (root = anchor)",
-                        (v_old.clone() + split_flag.clone()) * (root - anchor),
+                        "(v_old = 0 and is_native_asset = 1) or (root = anchor)",
+                        (v_old.clone() + one.clone() - is_native_asset.clone()) * (root - anchor),
                     ),
                     (
                         "v_old = 0 or enable_spends = 1",
