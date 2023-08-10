@@ -470,6 +470,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             merkle_inputs.calculate_root(layouter.namespace(|| "Merkle path"), leaf)?
         };
 
+        // TODO:add vb
         // Value commitment integrity (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
@@ -613,6 +614,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             pk_d_old
         };
 
+        //TODO:add vb
         // Old note commitment integrity (https://p.z.cash/ZKS:action-cm-old-integrity?partial).
         {
             let rcm_old = ScalarFixed::new(
@@ -621,10 +623,10 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.rcm_old.as_ref().map(|rcm_old| rcm_old.inner()),
             )?;
 
-            // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
+            // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi) || i2lebsp_{255}(vb)
             let derived_cm_old = gadget::note_commit(
                 layouter.namespace(|| {
-                    "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
+                    "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi) || i2lebsp_{255}(vb)"
                 }),
                 config.sinsemilla_chip_1(),
                 config.ecc_chip(),
@@ -641,6 +643,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             derived_cm_old.constrain_equal(layouter.namespace(|| "cm_old equality"), &cm_old)?;
         }
 
+        //TODO:add vb
         // New note commitment integrity (https://p.z.cash/ZKS:action-cmx-new-integrity?partial).
         {
             // Witness g_d_new
@@ -679,10 +682,10 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner()),
             )?;
 
-            // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
+            // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi) || i2lebsp_{255}(vb)
             let cm_new = gadget::note_commit(
                 layouter.namespace(|| {
-                    "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
+                    "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi) || i2lebsp_{255}(vb)"
                 }),
                 config.sinsemilla_chip_2(),
                 config.ecc_chip(),

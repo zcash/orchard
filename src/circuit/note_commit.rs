@@ -40,6 +40,7 @@ type CanonicityBounds = (
     AssignedCell<pallas::Base, pallas::Base>,
 );
 
+// sinsemilla hash のinputは固定長なので、vbを追加した場合は変更が必要かもしれない
 /*
     <https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit>
     We need to hash g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi,
@@ -51,8 +52,10 @@ type CanonicityBounds = (
         - v is a 64-bit value;
         - rho is a base field element (255 bits); and
         - psi is a base field element (255 bits).
+        - vb★ is the representation of the point g_d, with 255 bits used for the
+        x-coordinate and 1 bit used for the y-coordinate;
 */
-
+// https://zcash.github.io/orchard/design/circuit/note-commit.html
 /// b = b_0 || b_1 || b_2 || b_3
 ///   = (bits 250..=253 of x(g_d)) || (bit 254 of x(g_d)) || (ỹ bit of g_d) || (bits 0..=3 of pk★_d)
 ///
@@ -1580,6 +1583,7 @@ pub(in crate::circuit) mod gadgets {
         rho: AssignedCell<pallas::Base, pallas::Base>,
         psi: AssignedCell<pallas::Base, pallas::Base>,
         rcm: ScalarFixed<pallas::Affine, EccChip<OrchardFixedBases>>,
+        vb: &NonIdentityEccPoint,
     ) -> Result<Point<pallas::Affine, EccChip<OrchardFixedBases>>, Error> {
         let lookup_config = chip.config().lookup_config();
 
@@ -1590,6 +1594,7 @@ pub(in crate::circuit) mod gadgets {
             [RangeConstrained::bitrange_of(g_d.x().value(), 0..250)],
         )?;
 
+        //文字列の結合
         // b = b_0 || b_1 || b_2 || b_3
         //   = (bits 250..=253 of x(g_d)) || (bit 254 of x(g_d)) || (ỹ bit of g_d) || (bits 0..=3 of pk★_d)
         let (b, b_0, b_1, b_2, b_3) =
@@ -1636,6 +1641,7 @@ pub(in crate::circuit) mod gadgets {
             g_d.y(),
             b_2,
         )?;
+
         // Check decomposition of `y(pk_d)`.
         let d_1 = y_canonicity(
             &lookup_config,
@@ -1645,7 +1651,7 @@ pub(in crate::circuit) mod gadgets {
             d_1,
         )?;
 
-        // cm = NoteCommit^Orchard_rcm(g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi)
+        // cm = NoteCommit^Orchard_rcm(g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi || vb★)
         //
         // `cm = ⊥` is handled internally to `CommitDomain::commit`: incomplete addition
         // constraints allows ⊥ to occur, and then during synthesis it detects these edge
@@ -2058,6 +2064,8 @@ mod tests {
             pkd_y_lsb: Value<pallas::Base>,
             rho: Value<pallas::Base>,
             psi: Value<pallas::Base>,
+            vb_x: Value<pallas::Base>,
+            vb_y_lsb: Value<pallas::Base>,
         }
 
         impl Circuit<pallas::Base> for MyCircuit {
@@ -2069,18 +2077,7 @@ mod tests {
             }
 
             fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
-                let advices = [
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                    meta.advice_column(),
-                ];
+                let advices = [meta.advice_column(); 10];
 
                 // Shared fixed column for loading constants.
                 let constants = meta.fixed_column();
@@ -2096,16 +2093,7 @@ mod tests {
                     meta.lookup_table_column(),
                     meta.lookup_table_column(),
                 );
-                let lagrange_coeffs = [
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                    meta.fixed_column(),
-                ];
+                let lagrange_coeffs = [meta.fixed_column(); 8];
 
                 let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
                 let sinsemilla_config = SinsemillaChip::<
@@ -2221,6 +2209,24 @@ mod tests {
                     self.psi,
                 )?;
 
+                // Witness vb
+                let vb = {
+                    let vb = self.vb_x.zip(self.vb_y_lsb).map(|(x, y_lsb)| {
+                        // Calculate y = (x^3 + 5).sqrt()
+                        let mut y = (x.square() * x + pallas::Affine::b()).sqrt().unwrap();
+                        if bool::from(y.is_odd() ^ y_lsb.is_odd()) {
+                            y = -y;
+                        }
+                        pallas::Affine::from_xy(x, y).unwrap()
+                    });
+
+                    NonIdentityPoint::new(
+                        ecc_chip.clone(),
+                        layouter.namespace(|| "witness g_d"),
+                        vb,
+                    )?
+                };
+
                 let rcm = pallas::Scalar::random(OsRng);
                 let rcm_gadget = ScalarFixed::new(
                     ecc_chip.clone(),
@@ -2239,6 +2245,7 @@ mod tests {
                     rho,
                     psi,
                     rcm_gadget,
+                    vb,
                 )?;
                 let expected_cm = {
                     let domain = CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
@@ -2295,6 +2302,8 @@ mod tests {
                 pkd_y_lsb: Value::known(pallas::Base::one()),
                 rho: Value::known(pallas::Base::zero()),
                 psi: Value::known(pallas::Base::zero()),
+                vb_x: todo!(),
+                vb_y_lsb: todo!(),
             },
             // `rho` = T_Q - 1, `psi` = T_Q - 1
             MyCircuit {
@@ -2304,6 +2313,8 @@ mod tests {
                 pkd_y_lsb: Value::known(pallas::Base::zero()),
                 rho: Value::known(pallas::Base::from_u128(T_Q - 1)),
                 psi: Value::known(pallas::Base::from_u128(T_Q - 1)),
+                vb_x: todo!(),
+                vb_y_lsb: todo!(),
             },
             // `rho` = T_Q, `psi` = T_Q
             MyCircuit {
@@ -2313,6 +2324,8 @@ mod tests {
                 pkd_y_lsb: Value::known(pallas::Base::zero()),
                 rho: Value::known(pallas::Base::from_u128(T_Q)),
                 psi: Value::known(pallas::Base::from_u128(T_Q)),
+                vb_x: todo!(),
+                vb_y_lsb: todo!(),
             },
             // `rho` = 2^127 - 1, `psi` = 2^127 - 1
             MyCircuit {
@@ -2322,6 +2335,8 @@ mod tests {
                 pkd_y_lsb: Value::known(pallas::Base::one()),
                 rho: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
                 psi: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
+                vb_x: todo!(),
+                vb_y_lsb: todo!(),
             },
             // `rho` = 2^127, `psi` = 2^127
             MyCircuit {
@@ -2331,6 +2346,8 @@ mod tests {
                 pkd_y_lsb: Value::known(pallas::Base::zero()),
                 rho: Value::known(pallas::Base::from_u128(1 << 127)),
                 psi: Value::known(pallas::Base::from_u128(1 << 127)),
+                vb_x: todo!(),
+                vb_y_lsb: todo!(),
             },
             // `rho` = 2^254 - 1, `psi` = 2^254 - 1
             MyCircuit {
@@ -2340,6 +2357,8 @@ mod tests {
                 pkd_y_lsb: Value::known(pallas::Base::one()),
                 rho: Value::known(two_pow_254 - pallas::Base::one()),
                 psi: Value::known(two_pow_254 - pallas::Base::one()),
+                vb_x: todo!(),
+                vb_y_lsb: todo!(),
             },
             // `rho` = 2^254, `psi` = 2^254
             MyCircuit {
