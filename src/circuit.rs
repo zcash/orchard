@@ -637,6 +637,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 rho_old,
                 psi_old,
                 rcm_old,
+                todo!()
             )?;
 
             // Constrain derived cm_old to equal witnessed cm_old
@@ -696,6 +697,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 rho_new,
                 psi_new,
                 rcm_new,
+                todo!()
             )?;
 
             let cmx = cm_new.extract_p();

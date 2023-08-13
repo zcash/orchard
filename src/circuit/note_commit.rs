@@ -2245,7 +2245,7 @@ mod tests {
                     rho,
                     psi,
                     rcm_gadget,
-                    vb,
+                    todo!(),
                 )?;
                 let expected_cm = {
                     let domain = CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
@@ -2368,6 +2368,8 @@ mod tests {
                 pkd_y_lsb: Value::known(pallas::Base::zero()),
                 rho: Value::known(two_pow_254),
                 psi: Value::known(two_pow_254),
+                vb_x: todo!(),
+                vb_y_lsb: todo!(),
             },
         ];
 
