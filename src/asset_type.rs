@@ -46,7 +46,7 @@ impl AssetType {
         assert_eq!(ASSET_IDENTIFIER_PERSONALIZATION.len(), 8);
 
         // Create a new BLAKE2s state for deriving the asset identifier
-        //TODO:sinsemillaに置き換える
+        // TODO: sinsemilla hasに置き換える?そのままでもいい気がしてきた
         let h = Blake2sParams::new()
             .hash_length(ASSET_IDENTIFIER_LENGTH)
             .personal(ASSET_IDENTIFIER_PERSONALIZATION)
@@ -122,7 +122,7 @@ impl AssetType {
     }
 
     /// Produces a value commitment generator with cofactor cleared
-    /// todo:返り値をsubgroup
+    /// TODO:返り値をsubgroupにする
     pub fn value_commitment_generator(&self) -> () {
         CofactorGroup::clear_cofactor(&self.asset_generator());
     }

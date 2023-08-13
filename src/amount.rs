@@ -31,7 +31,6 @@ pub const DEFAULT_FEE: Amount = Amount(1000);
 /// by the network consensus rules.
 ///
 /// [`Transaction`]: crate::transaction::Transaction
-/// TODO: should downgrade rust analyzer?
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Amount(i64);
 
@@ -248,7 +247,6 @@ impl TryFrom<orchard::ValueSum> for Amount {
 ///
 /// A NonNegativeAmount can only be constructed from an integer that is within the valid monetary
 /// range of `{0..MAX_MONEY}` (where `MAX_MONEY` = 21,000,000 × 10⁸ zatoshis).
-/// TODO: should downgrade rust analyzer?
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct NonNegativeAmount(Amount);
 

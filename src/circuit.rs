@@ -470,7 +470,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             merkle_inputs.calculate_root(layouter.namespace(|| "Merkle path"), leaf)?
         };
 
-        // TODO:add vb
+        // TODO: add vb
         // Value commitment integrity (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
@@ -614,7 +614,6 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             pk_d_old
         };
 
-        //TODO:add vb
         // Old note commitment integrity (https://p.z.cash/ZKS:action-cm-old-integrity?partial).
         {
             let rcm_old = ScalarFixed::new(
