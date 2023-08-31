@@ -4,7 +4,8 @@ use orchard::{
     bundle::Flags,
     circuit::ProvingKey,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
-    note_encryption::{CompactAction, OrchardDomain},
+    note::AssetBase,
+    note_encryption_v3::{CompactAction, OrchardDomainV3},
     value::NoteValue,
     Anchor, Bundle,
 };
@@ -46,16 +47,28 @@ fn bench_note_decryption(c: &mut Criterion) {
 
     let bundle = {
         let mut builder = Builder::new(
-            Flags::from_parts(true, true),
+            Flags::from_parts(true, true, false),
             Anchor::from_bytes([0; 32]).unwrap(),
         );
         // The builder pads to two actions, and shuffles their order. Add two recipients
         // so the first action is always decryptable.
         builder
-            .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+            .add_recipient(
+                None,
+                recipient,
+                NoteValue::from_raw(10),
+                AssetBase::native(),
+                None,
+            )
             .unwrap();
         builder
-            .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+            .add_recipient(
+                None,
+                recipient,
+                NoteValue::from_raw(10),
+                AssetBase::native(),
+                None,
+            )
             .unwrap();
         let bundle: Bundle<_, i64> = builder.build(rng).unwrap();
         bundle
@@ -66,7 +79,7 @@ fn bench_note_decryption(c: &mut Criterion) {
     };
     let action = bundle.actions().first();
 
-    let domain = OrchardDomain::for_action(action);
+    let domain = OrchardDomainV3::for_action(action);
 
     let compact = {
         let mut group = c.benchmark_group("note-decryption");
@@ -107,12 +120,12 @@ fn bench_note_decryption(c: &mut Criterion) {
         let ivks = 2;
         let valid_ivks = vec![valid_ivk; ivks];
         let actions: Vec<_> = (0..100)
-            .map(|_| (OrchardDomain::for_action(action), action.clone()))
+            .map(|_| (OrchardDomainV3::for_action(action), action.clone()))
             .collect();
         let compact: Vec<_> = (0..100)
             .map(|_| {
                 (
-                    OrchardDomain::for_action(action),
+                    OrchardDomainV3::for_action(action),
                     CompactAction::from(action),
                 )
             })

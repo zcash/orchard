@@ -11,24 +11,28 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
-use pasta_curves::pallas;
-use rand::RngCore;
+use pasta_curves::{pallas, pallas::Scalar};
+use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
 
 use crate::{
     address::Address,
-    primitives::redpallas::{self, SpendAuth},
+    primitives::redpallas::{self, SpendAuth, VerificationKey},
     spec::{
         commit_ivk, diversify_hash, extract_p, ka_orchard, ka_orchard_prepared, prf_nf, to_base,
         to_scalar, NonIdentityPallasPoint, NonZeroPallasBase, NonZeroPallasScalar,
         PreparedNonIdentityBase, PreparedNonZeroScalar, PrfExpand,
     },
-    zip32::{self, ChildIndex, ExtendedSpendingKey},
+    zip32::{
+        self, ChildIndex, ExtendedSpendingKey, ZIP32_ORCHARD_PERSONALIZATION,
+        ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE,
+    },
 };
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
+const ZIP32_PURPOSE_FOR_ISSUANCE: u32 = 227;
 
 /// A spending key, from which all key material is derived.
 ///
@@ -99,7 +103,8 @@ impl SpendingKey {
             ChildIndex::try_from(coin_type)?,
             ChildIndex::try_from(account)?,
         ];
-        ExtendedSpendingKey::from_path(seed, path).map(|esk| esk.sk())
+        ExtendedSpendingKey::from_path(seed, path, ZIP32_ORCHARD_PERSONALIZATION)
+            .map(|esk| esk.sk())
     }
 }
 
@@ -132,13 +137,17 @@ impl From<&SpendingKey> for SpendAuthorizingKey {
         // SpendingKey cannot be constructed such that this assertion would fail.
         assert!(!bool::from(ask.is_zero()));
         // TODO: Add TryFrom<S::Scalar> for SpendAuthorizingKey.
-        let ret = SpendAuthorizingKey(ask.to_repr().try_into().unwrap());
-        // If the last bit of repr_P(ak) is 1, negate ask.
-        if (<[u8; 32]>::from(SpendValidatingKey::from(&ret).0)[31] >> 7) == 1 {
-            SpendAuthorizingKey((-ask).to_repr().try_into().unwrap())
-        } else {
-            ret
-        }
+        SpendAuthorizingKey(conditionally_negate(ask))
+    }
+}
+
+// If the last bit of repr_P(ak) is 1, negate ask.
+fn conditionally_negate<T: redpallas::SigType>(scalar: Scalar) -> redpallas::SigningKey<T> {
+    let ret = redpallas::SigningKey::<T>(scalar.to_repr().try_into().unwrap());
+    if (<[u8; 32]>::from(redpallas::VerificationKey::<T>::from(&ret).0)[31] >> 7) == 1 {
+        redpallas::SigningKey::<T>((-scalar).to_repr().try_into().unwrap())
+    } else {
+        ret
     }
 }
 
@@ -178,7 +187,7 @@ impl SpendValidatingKey {
         self.0.randomize(randomizer)
     }
 
-    /// Converts this spend validating key to its serialized form,
+    /// Converts this spend key to its serialized form,
     /// I2LEOSP_256(ak).
     pub(crate) fn to_bytes(&self) -> [u8; 32] {
         // This is correct because the wrapped point must have ỹ = 0, and
@@ -189,18 +198,183 @@ impl SpendValidatingKey {
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         <[u8; 32]>::try_from(bytes)
             .ok()
-            .and_then(|b| {
-                // Structural validity checks for ak_P:
-                // - The point must not be the identity
-                //   (which for Pallas is canonically encoded as all-zeroes).
-                // - The sign of the y-coordinate must be positive.
-                if b != [0; 32] && b[31] & 0x80 == 0 {
-                    <redpallas::VerificationKey<SpendAuth>>::try_from(b).ok()
-                } else {
-                    None
-                }
-            })
+            .and_then(check_structural_validity)
             .map(SpendValidatingKey)
+    }
+}
+
+/// A function to check structural validity of the validating keys for authorizing transfers and
+/// issuing assets
+/// Structural validity checks for ak_P or ik_P:
+///  - The point must not be the identity (which for Pallas is canonically encoded as all-zeroes).
+///  - The compressed y-coordinate bit must be 0.
+fn check_structural_validity(
+    verification_key_bytes: [u8; 32],
+) -> Option<VerificationKey<SpendAuth>> {
+    if verification_key_bytes != [0; 32] && verification_key_bytes[31] & 0x80 == 0 {
+        <redpallas::VerificationKey<SpendAuth>>::try_from(verification_key_bytes).ok()
+    } else {
+        None
+    }
+}
+
+/// We currently use `SpendAuth` as the `IssuanceAuth`.
+type IssuanceAuth = SpendAuth;
+
+/// An issuance key, from which all key material is derived.
+///
+/// $\mathsf{sk}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+///
+/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+#[derive(Debug, Copy, Clone)]
+pub struct IssuanceKey([u8; 32]);
+
+impl From<SpendingKey> for IssuanceKey {
+    fn from(sk: SpendingKey) -> Self {
+        IssuanceKey(*sk.to_bytes())
+    }
+}
+
+impl ConstantTimeEq for IssuanceKey {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        self.to_bytes().ct_eq(other.to_bytes())
+    }
+}
+
+impl IssuanceKey {
+    /// Generates a random issuance key.
+    ///
+    /// This is only used when generating a random AssetBase.
+    /// Real issuance keys should be derived according to [ZIP 32].
+    ///
+    /// [ZIP 32]: https://zips.z.cash/zip-0032
+    pub(crate) fn random(rng: &mut impl RngCore) -> Self {
+        SpendingKey::random(rng).into()
+    }
+
+    /// Constructs an Orchard issuance key from uniformly-random bytes.
+    ///
+    /// Returns `None` if the bytes do not correspond to a valid Orchard issuance key.
+    pub fn from_bytes(sk_iss: [u8; 32]) -> CtOption<Self> {
+        let sk_iss = IssuanceKey(sk_iss);
+        // If isk = 0 (A scalar value), discard this key.
+        let isk = IssuanceAuthorizingKey::derive_inner(&sk_iss);
+        CtOption::new(sk_iss, !isk.is_zero())
+    }
+
+    /// Returns the raw bytes of the issuance key.
+    pub fn to_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Derives the Orchard issuance key for the given seed, coin type, and account.
+    pub fn from_zip32_seed(
+        seed: &[u8],
+        coin_type: u32,
+        account: u32,
+    ) -> Result<Self, zip32::Error> {
+        // Call zip32 logic
+        let path = &[
+            ChildIndex::try_from(ZIP32_PURPOSE_FOR_ISSUANCE)?,
+            ChildIndex::try_from(coin_type)?,
+            ChildIndex::try_from(account)?,
+        ];
+        ExtendedSpendingKey::from_path(seed, path, ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE)
+            .map(|esk| esk.sk().into())
+    }
+}
+
+/// An issuance authorizing key, used to create issuance authorization signatures.
+/// This type enforces that the corresponding public point (ik^ℙ) has ỹ = 0.
+///
+/// $\mathsf{isk}$ as defined in
+/// [Issuance of Zcash Shielded Assets ZIP-0227 § Asset Identifier Generation (DRAFT ZIP)][IssuanceZSA].
+///
+/// [IssuanceZSA]: https://qed-it.github.io/zips/draft-ZIP-0227.html#asset-identifier-generation
+#[derive(Clone, Debug)]
+pub struct IssuanceAuthorizingKey(redpallas::SigningKey<IssuanceAuth>);
+
+impl IssuanceAuthorizingKey {
+    /// Derives isk from sk_iss. Internal use only, does not enforce all constraints.
+    fn derive_inner(sk_iss: &IssuanceKey) -> pallas::Scalar {
+        to_scalar(PrfExpand::ZsaIsk.expand(&sk_iss.0))
+    }
+
+    /// Sign the provided message using the `IssuanceAuthorizingKey`.
+    pub fn sign(
+        &self,
+        rng: &mut (impl RngCore + CryptoRng),
+        msg: &[u8],
+    ) -> redpallas::Signature<IssuanceAuth> {
+        self.0.sign(rng, msg)
+    }
+}
+
+impl From<&IssuanceKey> for IssuanceAuthorizingKey {
+    fn from(sk_iss: &IssuanceKey) -> Self {
+        let isk = IssuanceAuthorizingKey::derive_inner(sk_iss);
+        // IssuanceAuthorizingKey cannot be constructed such that this assertion would fail.
+        assert!(!bool::from(isk.is_zero()));
+        IssuanceAuthorizingKey(conditionally_negate(isk))
+    }
+}
+
+/// A key used to validate issuance authorization signatures.
+///
+/// Defined in [Issuance of Zcash Shielded Assets ZIP-0227 § Asset Identifier Generation (DRAFT PR)][IssuanceZSA].
+/// Note that this is $\mathsf{ik}^\mathbb{P}$, which by construction is equivalent to
+/// $\mathsf{ik}$ but stored here as a RedPallas verification key.
+///
+/// [IssuanceZSA]: https://qed-it.github.io/zips/draft-ZIP-0227.html#asset-identifier-generation
+#[derive(Debug, Clone, PartialOrd, Ord)]
+pub struct IssuanceValidatingKey(VerificationKey<IssuanceAuth>);
+
+impl From<&IssuanceAuthorizingKey> for IssuanceValidatingKey {
+    fn from(isk: &IssuanceAuthorizingKey) -> Self {
+        IssuanceValidatingKey((&isk.0).into())
+    }
+}
+
+impl From<&IssuanceValidatingKey> for pallas::Point {
+    fn from(issuance_validating_key: &IssuanceValidatingKey) -> pallas::Point {
+        pallas::Point::from_bytes(&(&issuance_validating_key.0).into()).unwrap()
+    }
+}
+
+impl PartialEq for IssuanceValidatingKey {
+    fn eq(&self, other: &Self) -> bool {
+        <[u8; 32]>::from(&self.0).eq(&<[u8; 32]>::from(&other.0))
+    }
+}
+
+impl Eq for IssuanceValidatingKey {}
+
+impl IssuanceValidatingKey {
+    /// Converts this spend validating key to its serialized form,
+    /// I2LEOSP_256(ik).
+    pub fn to_bytes(&self) -> [u8; 32] {
+        // This is correct because the wrapped point must have ỹ = 0, and
+        // so the point repr is the same as I2LEOSP of its x-coordinate.
+        <[u8; 32]>::from(&self.0)
+    }
+
+    /// Constructs an Orchard issuance validating key from uniformly-random bytes.
+    ///
+    /// Returns `None` if the bytes do not correspond to a valid key.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        <[u8; 32]>::try_from(bytes)
+            .ok()
+            .and_then(check_structural_validity)
+            .map(IssuanceValidatingKey)
+    }
+
+    /// Verifies a purported `signature` over `msg` made by this verification key.
+    pub fn verify(
+        &self,
+        msg: &[u8],
+        signature: &redpallas::Signature<IssuanceAuth>,
+    ) -> Result<(), reddsa::Error> {
+        self.0.verify(msg, signature)
     }
 }
 
@@ -941,9 +1115,12 @@ impl SharedSecret {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
+    use super::{
+        DiversifierIndex, DiversifierKey, EphemeralSecretKey, IssuanceAuthorizingKey, IssuanceKey,
+        IssuanceValidatingKey, SpendingKey,
+    };
     use proptest::prelude::*;
-
-    use super::{DiversifierIndex, DiversifierKey, EphemeralSecretKey, SpendingKey};
+    use rand::{rngs::StdRng, SeedableRng};
 
     prop_compose! {
         /// Generate a uniformly distributed Orchard spending key.
@@ -955,6 +1132,20 @@ pub mod testing {
                     |opt| bool::from(opt.is_some())
                 )
         ) -> SpendingKey {
+            key.unwrap()
+        }
+    }
+
+    prop_compose! {
+        /// Generate a uniformly distributed Orchard issuance key.
+        pub fn arb_issuance_key()(
+            key in prop::array::uniform32(prop::num::u8::ANY)
+                .prop_map(IssuanceKey::from_bytes)
+                .prop_filter(
+                    "Values must correspond to valid Orchard issuance keys.",
+                    |opt| bool::from(opt.is_some())
+                )
+        ) -> IssuanceKey {
             key.unwrap()
         }
     }
@@ -990,6 +1181,21 @@ pub mod testing {
             DiversifierIndex::from(d_bytes)
         }
     }
+
+    prop_compose! {
+        /// Generate a uniformly distributed RedDSA issuance authorizing key.
+        pub fn arb_issuance_authorizing_key()(rng_seed in prop::array::uniform32(prop::num::u8::ANY)) -> IssuanceAuthorizingKey {
+            let mut rng = StdRng::from_seed(rng_seed);
+            IssuanceAuthorizingKey::from(&IssuanceKey::random(&mut rng))
+        }
+    }
+
+    prop_compose! {
+        /// Generate a uniformly distributed RedDSA issuance validating key.
+        pub fn arb_issuance_validating_key()(isk in arb_issuance_authorizing_key()) -> IssuanceValidatingKey {
+            IssuanceValidatingKey::from(&isk)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1001,6 +1207,7 @@ mod tests {
         testing::{arb_diversifier_index, arb_diversifier_key, arb_esk, arb_spending_key},
         *,
     };
+    use crate::note::AssetBase;
     use crate::{
         note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
         value::NoteValue,
@@ -1060,8 +1267,16 @@ mod tests {
             let ask: SpendAuthorizingKey = (&sk).into();
             assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
 
+            let sk_iss = IssuanceKey::from_bytes(tv.sk).unwrap();
+
+            let isk: IssuanceAuthorizingKey = (&sk_iss).into();
+            assert_eq!(<[u8; 32]>::from(&isk.0), tv.isk);
+
             let ak: SpendValidatingKey = (&ask).into();
             assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
+
+            let ik: IssuanceValidatingKey = (&isk).into();
+            assert_eq!(<[u8; 32]>::from(ik.0), tv.ik);
 
             let nk: NullifierDerivingKey = (&sk).into();
             assert_eq!(nk.0.to_repr(), tv.nk);
@@ -1086,6 +1301,7 @@ mod tests {
             let note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),
+                AssetBase::from_bytes(&tv.asset).unwrap(),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
             )
