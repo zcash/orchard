@@ -189,7 +189,7 @@ fn create_native_note(keys: &Keychain) -> Note {
         // Use the empty tree.
         let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
-        let mut builder = Builder::new(Flags::from_parts(false, true), anchor);
+        let mut builder = Builder::new(Flags::from_parts(false, true, false), anchor);
         assert_eq!(
             builder.add_recipient(
                 None,
@@ -244,7 +244,7 @@ fn build_and_verify_bundle(
 ) -> Result<(), String> {
     let rng = OsRng;
     let shielded_bundle: Bundle<_, i64> = {
-        let mut builder = Builder::new(Flags::from_parts(true, true), anchor);
+        let mut builder = Builder::new(Flags::from_parts(true, true, true), anchor);
 
         spends
             .iter()

@@ -38,6 +38,7 @@ impl<T> Action<T> {
             cmx: *self.cmx(),
             enable_spend: flags.spends_enabled,
             enable_output: flags.outputs_enabled,
+            enable_zsa: flags.zsa_enabled,
         }
     }
 }
@@ -57,18 +58,25 @@ pub struct Flags {
     /// guaranteed to be dummy notes. If `true`, the created notes may be either real or
     /// dummy notes.
     outputs_enabled: bool,
+    /// Flag denoting whether ZSA transaction is enabled.
+    ///
+    /// If `false`,  all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with native asset.
+    zsa_enabled: bool,
 }
 
 const FLAG_SPENDS_ENABLED: u8 = 0b0000_0001;
 const FLAG_OUTPUTS_ENABLED: u8 = 0b0000_0010;
-const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED);
+const FLAG_ZSA_ENABLED: u8 = 0b0000_0100;
+const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED | FLAG_ZSA_ENABLED);
 
 impl Flags {
     /// Construct a set of flags from its constituent parts
-    pub fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
+    pub fn from_parts(spends_enabled: bool, outputs_enabled: bool, zsa_enabled: bool) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
+            zsa_enabled,
         }
     }
 
@@ -90,6 +98,14 @@ impl Flags {
         self.outputs_enabled
     }
 
+    /// Flag denoting whether ZSA transaction is enabled.
+    ///
+    /// If `false`,  all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with native asset.
+    pub fn zsa_enabled(&self) -> bool {
+        self.zsa_enabled
+    }
+
     /// Serialize flags to a byte as defined in [Zcash Protocol Spec § 7.1: Transaction
     /// Encoding And Consensus][txencoding].
     ///
@@ -101,6 +117,9 @@ impl Flags {
         }
         if self.outputs_enabled {
             value |= FLAG_OUTPUTS_ENABLED;
+        }
+        if self.zsa_enabled {
+            value |= FLAG_ZSA_ENABLED;
         }
         value
     }
@@ -116,6 +135,7 @@ impl Flags {
             Some(Self::from_parts(
                 value & FLAG_SPENDS_ENABLED != 0,
                 value & FLAG_OUTPUTS_ENABLED != 0,
+                value & FLAG_ZSA_ENABLED != 0,
             ))
         } else {
             None
@@ -607,8 +627,8 @@ pub mod testing {
 
     prop_compose! {
         /// Create an arbitrary set of flags.
-        pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY) -> Flags {
-            Flags::from_parts(spends_enabled, outputs_enabled)
+        pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY, zsa_enabled in prop::bool::ANY) -> Flags {
+            Flags::from_parts(spends_enabled, outputs_enabled, zsa_enabled)
         }
     }
 

@@ -27,6 +27,7 @@ use self::{
 };
 use crate::{
     builder::SpendInfo,
+    bundle::Flags,
     circuit::gadget::mux_chip::{MuxChip, MuxConfig},
     constants::{
         OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
@@ -79,6 +80,7 @@ const RK_Y: usize = 5;
 const CMX: usize = 6;
 const ENABLE_SPEND: usize = 7;
 const ENABLE_OUTPUT: usize = 8;
+const ENABLE_ZSA: usize = 9;
 
 /// Configuration needed to use the Orchard Action circuit.
 #[derive(Clone, Debug)]
@@ -231,6 +233,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         // Constraint if is_native_asset = 1 then asset = native_asset else asset != native_asset
         // Constraint if split_flag = 0 then psi_old = psi_nf
         // Constraint if split_flag = 1, then is_native_asset = 0
+        // Constraint if enable_zsa = 0, then is_native_asset = 1
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -266,6 +269,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
             let psi_old = meta.query_advice(advices[4], Rotation::next());
             let psi_nf = meta.query_advice(advices[5], Rotation::next());
+
+            let enable_zsa = meta.query_advice(advices[6], Rotation::next());
 
             Constraints::with_selector(
                 q_orchard,
@@ -318,11 +323,15 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     ),
                     (
                         "(split_flag = 0) => (psi_old = psi_nf)",
-                        (one - split_flag.clone()) * (psi_old - psi_nf),
+                        (one.clone() - split_flag.clone()) * (psi_old - psi_nf),
                     ),
                     (
                         "(split_flag = 1) => (is_native_asset = 0)",
-                        split_flag * is_native_asset,
+                        split_flag * is_native_asset.clone(),
+                    ),
+                    (
+                        "(enable_zsa = 0) => (is_native_asset = 1)",
+                        (one.clone() - enable_zsa) * (one - is_native_asset),
                     ),
                 ],
             )
@@ -942,6 +951,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 psi_old.copy_advice(|| "psi_old", &mut region, config.advices[4], 1)?;
                 psi_nf.copy_advice(|| "psi_nf", &mut region, config.advices[5], 1)?;
 
+                region.assign_advice_from_instance(
+                    || "enable zsa",
+                    config.primary,
+                    ENABLE_ZSA,
+                    config.advices[6],
+                    1,
+                )?;
+
                 config.q_orchard.enable(&mut region, 0)
             },
         )?;
@@ -999,6 +1016,7 @@ pub struct Instance {
     pub(crate) cmx: ExtractedNoteCommitment,
     pub(crate) enable_spend: bool,
     pub(crate) enable_output: bool,
+    pub(crate) enable_zsa: bool,
 }
 
 impl Instance {
@@ -1015,8 +1033,7 @@ impl Instance {
         nf_old: Nullifier,
         rk: VerificationKey<SpendAuth>,
         cmx: ExtractedNoteCommitment,
-        enable_spend: bool,
-        enable_output: bool,
+        flags: Flags,
     ) -> Self {
         Instance {
             anchor,
@@ -1024,13 +1041,14 @@ impl Instance {
             nf_old,
             rk,
             cmx,
-            enable_spend,
-            enable_output,
+            enable_spend: flags.spends_enabled(),
+            enable_output: flags.outputs_enabled(),
+            enable_zsa: flags.zsa_enabled(),
         }
     }
 
-    fn to_halo2_instance(&self) -> [[vesta::Scalar; 9]; 1] {
-        let mut instance = [vesta::Scalar::zero(); 9];
+    fn to_halo2_instance(&self) -> [[vesta::Scalar; 10]; 1] {
+        let mut instance = [vesta::Scalar::zero(); 10];
 
         instance[ANCHOR] = self.anchor.inner();
         instance[CV_NET_X] = self.cv_net.x();
@@ -1048,6 +1066,7 @@ impl Instance {
         instance[CMX] = self.cmx.inner();
         instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(self.enable_spend));
         instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
+        instance[ENABLE_ZSA] = vesta::Scalar::from(u64::from(self.enable_zsa));
 
         [instance]
     }
@@ -1167,6 +1186,7 @@ mod tests {
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
     use crate::builder::SpendInfo;
+    use crate::bundle::Flags;
     use crate::note::commitment::NoteCommitTrapdoor;
     use crate::note::{AssetBase, Nullifier};
     use crate::primitives::redpallas::VerificationKey;
@@ -1234,6 +1254,7 @@ mod tests {
                 cmx,
                 enable_spend: true,
                 enable_output: true,
+                enable_zsa: false,
             },
         )
     }
@@ -1314,6 +1335,7 @@ mod tests {
             w.write_all(&[
                 if instance.enable_spend { 1 } else { 0 },
                 if instance.enable_output { 1 } else { 0 },
+                if instance.enable_zsa { 1 } else { 0 },
             ])?;
 
             w.write_all(proof.as_ref())?;
@@ -1344,8 +1366,15 @@ mod tests {
                 crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
             let enable_spend = read_bool(&mut r);
             let enable_output = read_bool(&mut r);
-            let instance =
-                Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output);
+            let enable_zsa = read_bool(&mut r);
+            let instance = Instance::from_parts(
+                anchor,
+                cv_net,
+                nf_old,
+                rk,
+                cmx,
+                Flags::from_parts(enable_spend, enable_output, enable_zsa),
+            );
 
             let mut proof_bytes = vec![];
             r.read_to_end(&mut proof_bytes)?;
@@ -1533,6 +1562,7 @@ mod tests {
                 cmx,
                 enable_spend: true,
                 enable_output: true,
+                enable_zsa: true,
             },
         )
     }
@@ -1573,6 +1603,7 @@ mod tests {
                     cmx: instance.cmx,
                     enable_spend: instance.enable_spend,
                     enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
                 };
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_cv_net, false);
 
@@ -1586,6 +1617,7 @@ mod tests {
                     cmx: instance.cmx,
                     enable_spend: instance.enable_spend,
                     enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
                 };
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_rk, false);
 
@@ -1627,6 +1659,7 @@ mod tests {
                     cmx: random_note_commitment(&mut rng).into(),
                     enable_spend: instance.enable_spend,
                     enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
                 };
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_cmx_pub, false);
 
@@ -1640,6 +1673,7 @@ mod tests {
                     cmx: instance.cmx,
                     enable_spend: instance.enable_spend,
                     enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
                 };
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
 
@@ -1671,6 +1705,22 @@ mod tests {
                         split_flag: circuit.split_flag,
                     };
                     check_proof_of_orchard_circuit(&circuit_wrong_psi_nf, &instance, false);
+                }
+
+                // If asset is not equal to the native asset, set enable_zsa = 0
+                // The proof should fail
+                if !is_native_asset {
+                    let instance_wrong_enable_zsa = Instance {
+                        anchor: instance.anchor,
+                        cv_net: instance.cv_net.clone(),
+                        nf_old: instance.nf_old,
+                        rk: instance.rk.clone(),
+                        cmx: instance.cmx,
+                        enable_spend: instance.enable_spend,
+                        enable_output: instance.enable_output,
+                        enable_zsa: false,
+                    };
+                    check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
                 }
             }
         }

@@ -62,7 +62,7 @@ fn bundle_chain() {
         // Use the empty tree.
         let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
-        let mut builder = Builder::new(Flags::from_parts(false, true), anchor);
+        let mut builder = Builder::new(Flags::from_parts(false, true, false), anchor);
         assert_eq!(
             builder.add_recipient(
                 None,
@@ -96,7 +96,7 @@ fn bundle_chain() {
 
         let (merkle_path, anchor) = build_merkle_path(&note);
 
-        let mut builder = Builder::new(Flags::from_parts(true, true), anchor);
+        let mut builder = Builder::new(Flags::from_parts(true, true, false), anchor);
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_recipient(

@@ -35,9 +35,10 @@ hex = "0.4"
 lazy_static = "1"
 memuse = { version = "0.2.1", features = ["nonempty"] }
 pasta_curves = "0.5"
+tempfile = "= 3.5.0" # Last version required rust 1.63
 proptest = { version = "1.0.0", optional = true }
 rand = "0.8"
-reddsa = "0.5"
+reddsa = "=0.5.0" # Last version required rust 1.65
 nonempty = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
@@ -49,6 +50,7 @@ tracing = "0.1"
 
 # Developer tooling dependencies
 image = { version = ">= 0.24, < 0.24.5", optional = true } # 0.24.5 has MSRV 1.61
+flate2 = ">= 1.0, <1.0.27" # Clippy issues in last version
 plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]

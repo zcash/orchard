@@ -47,7 +47,7 @@ fn bench_note_decryption(c: &mut Criterion) {
 
     let bundle = {
         let mut builder = Builder::new(
-            Flags::from_parts(true, true),
+            Flags::from_parts(true, true, false),
             Anchor::from_bytes([0; 32]).unwrap(),
         );
         // The builder pads to two actions, and shuffles their order. Add two recipients

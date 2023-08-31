@@ -947,7 +947,7 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64> + Copy + Into<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let flags = Flags::from_parts(true, true);
+            let flags = Flags::from_parts(true, true, true);
             let mut builder = Builder::new(flags, self.anchor);
 
             for (note, path) in self.notes.into_iter() {
@@ -1068,7 +1068,7 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            Flags::from_parts(true, true),
+            Flags::from_parts(true, true, false),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
 
