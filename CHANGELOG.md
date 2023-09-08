@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Migrated to `incrementalmerkletree 0.5`.
 
 ## [0.5.0] - 2023-06-06
 ### Changed
