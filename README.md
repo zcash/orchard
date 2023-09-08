@@ -1,6 +1,6 @@
 # orchard [![Crates.io](https://img.shields.io/crates/v/orchard.svg)](https://crates.io/crates/orchard) #
 
-Requires Rust 1.60+.
+Requires Rust 1.65+.
 
 ## Documentation
 

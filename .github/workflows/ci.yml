@@ -12,15 +12,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.60.0
-          override: true
       - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose
+        run: cargo test --verbose
 
   build:
     name: Build target ${{ matrix.target }}
@@ -41,29 +34,17 @@ jobs:
   bitrot:
     name: Bitrot check
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.60.0
-          override: true
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --benches
+        run: cargo build --benches
 
   book:
     name: Book tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.60.0
-          override: true
       - name: Setup mdBook
         uses: peaceiris/actions-mdbook@v1
         with:
@@ -100,25 +81,12 @@ jobs:
   doc-links:
     name: Intra-doc links
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.60.0
-          override: true
-      - name: cargo fetch
-        uses: actions-rs/cargo@v1
-        with:
-          command: fetch
-
-      # Ensure intra-documentation links all resolve correctly
+      - run: cargo fetch
       # Requires #![deny(intra_doc_link_resolution_failure)] in crates.
       - name: Check intra-doc links
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --document-private-items
+        run: cargo doc --document-private-items
 
   fmt:
     name: Rustfmt
@@ -126,12 +94,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.60.0
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+      - run: cargo fmt -- --check
