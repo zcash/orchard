@@ -1103,8 +1103,8 @@ mod tests {
             w.write_all(&<[u8; 32]>::from(instance.rk.clone()))?;
             w.write_all(&instance.cmx.to_bytes())?;
             w.write_all(&[
-                if instance.enable_spend { 1 } else { 0 },
-                if instance.enable_output { 1 } else { 0 },
+                u8::from(instance.enable_spend),
+                u8::from(instance.enable_output),
             ])?;
 
             w.write_all(proof.as_ref())?;

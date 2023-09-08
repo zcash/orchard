@@ -7,6 +7,7 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 ### Changed
+- MSRV is now 1.65.0.
 - Migrated to `incrementalmerkletree 0.5`.
 
 ## [0.5.0] - 2023-06-06
