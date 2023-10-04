@@ -6,7 +6,7 @@ use crate::{issuance::Error, note::AssetBase, value::ValueSum};
 
 /// Represents the amount of an asset and its finalization status.
 #[derive(Debug, Clone, Copy)]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct AssetSupply {
     /// The amount of the asset.
     pub amount: ValueSum,
@@ -64,7 +64,7 @@ impl SupplyInfo {
         finalization_set.extend(
             self.assets
                 .iter()
-                .filter_map(|(asset, supply)| supply.is_finalized.then(|| asset)),
+                .filter_map(|(asset, supply)| supply.is_finalized.then_some(asset)),
         );
     }
 }

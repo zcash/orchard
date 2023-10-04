@@ -143,7 +143,7 @@ impl IssueAction {
                 // All assets should be derived correctly
                 note.asset()
                     .eq(&issue_asset)
-                    .then(|| ())
+                    .then_some(())
                     .ok_or(IssueBundleIkMismatchAssetBase)?;
 
                 // The total amount should not overflow
@@ -157,8 +157,13 @@ impl IssueAction {
     }
 
     /// Serialize `finalize` flag to a byte
+    #[allow(clippy::bool_to_int_with_if)]
     pub fn flags(&self) -> u8 {
-        self.finalize.then(|| 0b0000_0001).unwrap_or(0b0000_0000)
+        if self.finalize {
+            0b0000_0001
+        } else {
+            0b0000_0000
+        }
     }
 }
 
@@ -1395,14 +1400,27 @@ mod tests {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use crate::issuance::{IssueAction, IssueBundle, Prepared, Signed, Unauthorized};
-    use crate::keys::testing::{arb_issuance_authorizing_key, arb_issuance_validating_key};
+    use crate::keys::testing::arb_issuance_validating_key;
     use crate::note::asset_base::testing::zsa_asset_id;
     use crate::note::testing::arb_zsa_note;
+    use crate::primitives::redpallas::Signature;
     use nonempty::NonEmpty;
     use proptest::collection::vec;
     use proptest::prelude::*;
     use proptest::prop_compose;
-    use rand::{rngs::StdRng, SeedableRng};
+    use reddsa::orchard::SpendAuth;
+
+    prop_compose! {
+        /// Generate a uniformly distributed signature
+        pub(crate) fn arb_signature()(
+            half_bytes in prop::array::uniform32(prop::num::u8::ANY)
+        ) -> Signature<SpendAuth> {
+            // prop::array can only generate 32 elements max, so we duplicate it
+            let sig_bytes: [u8; 64] = [half_bytes, half_bytes].concat().try_into().unwrap();
+            let sig: Signature<SpendAuth> = Signature::from(sig_bytes);
+            sig
+        }
+    }
 
     prop_compose! {
         /// Generate an issue action
@@ -1462,17 +1480,14 @@ pub mod testing {
         (
             actions in vec(arb_issue_action("asset_desc".to_string()), n_actions),
             ik in arb_issuance_validating_key(),
-            isk in arb_issuance_authorizing_key(),
-            rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-            fake_sighash in prop::array::uniform32(prop::num::u8::ANY)
+            fake_sig in arb_signature(),
         ) -> IssueBundle<Signed> {
-            let rng = StdRng::from_seed(rng_seed);
             let actions = NonEmpty::from_vec(actions).unwrap();
             IssueBundle {
                 ik,
                 actions,
-                authorization: Prepared { sighash: fake_sighash },
-            }.sign(rng, &isk).unwrap()
+                authorization: Signed { signature: fake_sig },
+            }
         }
     }
 }

@@ -464,9 +464,11 @@ impl Builder {
             .max()
             .cloned()
             .unwrap();
-        (num_actions < MIN_ACTIONS)
-            .then(|| MIN_ACTIONS - num_actions)
-            .unwrap_or(0)
+        if num_actions < MIN_ACTIONS {
+            MIN_ACTIONS - num_actions
+        } else {
+            0
+        }
     }
 
     /// Builds a bundle containing the given spent notes and recipients.

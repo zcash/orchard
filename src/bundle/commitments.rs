@@ -96,6 +96,22 @@ pub fn hash_bundle_auth_empty() -> Blake2bHash {
     hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION).finalize()
 }
 
+/// Construct the commitment for an absent issue bundle as defined in
+/// [ZIP-227: Issuance of Zcash Shielded Assets][zip227]
+///
+/// [zip227]: https://qed-it.github.io/zips/zip-0227
+pub fn hash_issue_bundle_auth_empty() -> Blake2bHash {
+    hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION).finalize()
+}
+
+/// Construct the commitment for an absent issue bundle as defined in
+/// [ZIP-227: Issuance of Zcash Shielded Assets][zip227]
+///
+/// [zip227]: https://qed-it.github.io/zips/zip-0227
+pub fn hash_issue_bundle_txid_empty() -> Blake2bHash {
+    hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION).finalize()
+}
+
 /// Construct the commitment for the issue bundle
 pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION);
@@ -119,26 +135,10 @@ pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>)
     h.finalize()
 }
 
-/// Construct the commitment for the absent issue bundle as defined in
-/// [ZIP-227: Issuance of Zcash Shielded Assets][zip227]
-///
-/// [zip227]: https://qed-it.github.io/zips/zip-0227
-pub fn hash_issue_bundle_txid_empty() -> Blake2bHash {
-    hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION).finalize()
-}
-
 /// Construct the commitment to the authorizing data of an
 /// authorized issue bundle
 pub(crate) fn hash_issue_bundle_auth_data(bundle: &IssueBundle<Signed>) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
     h.update(&<[u8; 64]>::from(bundle.authorization().signature()));
     h.finalize()
-}
-
-/// Construct the commitment for an absent issue bundle as defined in
-/// [ZIP-227: Issuance of Zcash Shielded Assets][zip227]
-///
-/// [zip227]: https://qed-it.github.io/zips/zip-0227
-pub fn hash_issue_bundle_auth_empty() -> Blake2bHash {
-    hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION).finalize()
 }

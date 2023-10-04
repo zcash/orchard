@@ -77,12 +77,12 @@ fn prepare_keys() -> Keychain {
 
 fn sign_issue_bundle(
     unauthorized: IssueBundle<Unauthorized>,
-    mut rng: OsRng,
+    rng: OsRng,
     isk: &IssuanceAuthorizingKey,
 ) -> IssueBundle<Signed> {
     let sighash = unauthorized.commitment().into();
     let proven = unauthorized.prepare(sighash);
-    proven.sign(&mut rng, isk).unwrap()
+    proven.sign(rng, isk).unwrap()
 }
 
 fn build_and_sign_bundle(
@@ -95,7 +95,7 @@ fn build_and_sign_bundle(
     let sighash = unauthorized.commitment().into();
     let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
     proven
-        .apply_signatures(&mut rng, sighash, &[SpendAuthorizingKey::from(sk)])
+        .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(sk)])
         .unwrap()
 }
 
@@ -203,7 +203,7 @@ fn create_native_note(keys: &Keychain) -> Note {
         let unauthorized = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(keys.pk(), &mut rng).unwrap();
-        proven.apply_signatures(&mut rng, sighash, &[]).unwrap()
+        proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
     let ivk = keys.fvk().to_ivk(Scope::External);
     let (native_note, _, _) = shielding_bundle

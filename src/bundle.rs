@@ -1,6 +1,7 @@
 //! Structs related to bundles of Orchard actions.
 
 mod batch;
+pub mod burn_validation;
 pub mod commitments;
 
 pub use batch::BatchValidator;
