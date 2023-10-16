@@ -2369,10 +2369,12 @@ mod tests {
                 }
 
                 let table_idx = meta.lookup_table_column();
+                let table_range_check_tag = meta.lookup_table_column();
                 let lookup = (
                     table_idx,
                     meta.lookup_table_column(),
                     meta.lookup_table_column(),
+                    table_range_check_tag,
                 );
                 let lagrange_coeffs = [
                     meta.fixed_column(),
@@ -2385,7 +2387,12 @@ mod tests {
                     meta.fixed_column(),
                 ];
 
-                let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+                let range_check = LookupRangeCheckConfig::configure(
+                    meta,
+                    advices[9],
+                    table_idx,
+                    table_range_check_tag,
+                );
                 let sinsemilla_config = SinsemillaChip::<
                     OrchardHashDomains,
                     OrchardCommitDomains,

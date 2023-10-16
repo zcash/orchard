@@ -215,6 +215,7 @@ mod tests {
                     MuxChip::configure(meta, advices[0], advices[1], advices[2], advices[3]);
 
                 let table_idx = meta.lookup_table_column();
+                let table_range_check_tag = meta.lookup_table_column();
 
                 let lagrange_coeffs = [
                     meta.fixed_column(),
@@ -228,7 +229,12 @@ mod tests {
                 ];
                 meta.enable_constant(lagrange_coeffs[0]);
 
-                let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+                let range_check = LookupRangeCheckConfig::configure(
+                    meta,
+                    advices[9],
+                    table_idx,
+                    table_range_check_tag,
+                );
 
                 let ecc_config = EccChip::<OrchardFixedBases>::configure(
                     meta,

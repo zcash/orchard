@@ -169,10 +169,12 @@ mod tests {
                 meta.enable_equality(primary);
 
                 let table_idx = meta.lookup_table_column();
+                let table_range_check_tag = meta.lookup_table_column();
                 let lookup = (
                     table_idx,
                     meta.lookup_table_column(),
                     meta.lookup_table_column(),
+                    table_range_check_tag,
                 );
 
                 let lagrange_coeffs = [
@@ -187,7 +189,12 @@ mod tests {
                 ];
                 meta.enable_constant(lagrange_coeffs[0]);
 
-                let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+                let range_check = LookupRangeCheckConfig::configure(
+                    meta,
+                    advices[9],
+                    table_idx,
+                    table_range_check_tag,
+                );
 
                 let sinsemilla_config = SinsemillaChip::configure(
                     meta,

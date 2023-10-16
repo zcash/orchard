@@ -68,7 +68,7 @@ mod note_commit;
 mod value_commit_orchard;
 
 /// Size of the Orchard circuit.
-const K: u32 = 12;
+const K: u32 = 11;
 
 // Absolute offsets for public inputs.
 const ANCHOR: usize = 0;
@@ -342,10 +342,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Fixed columns for the Sinsemilla generator lookup table
         let table_idx = meta.lookup_table_column();
+        let table_range_check_tag = meta.lookup_table_column();
         let lookup = (
             table_idx,
             meta.lookup_table_column(),
             meta.lookup_table_column(),
+            table_range_check_tag,
         );
 
         // Instance column used for public inputs
@@ -381,7 +383,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // We have a lot of free space in the right-most advice columns; use one of them
         // for all of our range checks.
-        let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+        let range_check =
+            LookupRangeCheckConfig::configure(meta, advices[9], table_idx, table_range_check_tag);
 
         // Configuration for curve point operations.
         // This uses 10 advice columns and spans the whole circuit.
@@ -1287,8 +1290,8 @@ mod tests {
                     K,
                     &circuits[0],
                 );
-            assert_eq!(usize::from(circuit_cost.proof_size(1)), 5088);
-            assert_eq!(usize::from(circuit_cost.proof_size(2)), 7360);
+            assert_eq!(usize::from(circuit_cost.proof_size(1)), 5120);
+            assert_eq!(usize::from(circuit_cost.proof_size(2)), 7392);
             usize::from(circuit_cost.proof_size(instances.len()))
         };
 
@@ -1405,7 +1408,7 @@ mod tests {
             let test_case_bytes = fs::read("src/circuit_proof_test_case.bin").unwrap();
             read_test_case(&test_case_bytes[..]).expect("proof must be valid")
         };
-        assert_eq!(proof.0.len(), 5088);
+        assert_eq!(proof.0.len(), 5120);
 
         assert!(proof.verify(&vk, &[instance]).is_ok());
     }
