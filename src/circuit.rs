@@ -28,7 +28,6 @@ use self::{
 use crate::{
     builder::SpendInfo,
     bundle::Flags,
-    circuit::gadget::mux_chip::{MuxChip, MuxConfig},
     constants::{
         OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
         MERKLE_DEPTH_ORCHARD,
@@ -59,7 +58,11 @@ use halo2_gadgets::{
             MerklePath,
         },
     },
-    utilities::{bool_check, lookup_range_check::LookupRangeCheckConfig},
+    utilities::{
+        bool_check,
+        lookup_range_check::LookupRangeCheckConfig,
+        mux::{MuxChip, MuxConfig},
+    },
 };
 
 mod commit_ivk;

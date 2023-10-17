@@ -9,7 +9,6 @@ use halo2_proofs::{
 use pasta_curves::pallas;
 
 use crate::{
-    circuit::gadget::mux_chip::{MuxChip, MuxInstructions},
     constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
     value::NoteValue,
 };
@@ -23,7 +22,10 @@ use halo2_gadgets::{
         CommitDomain, Message, MessagePiece,
     },
     utilities::{
-        bool_check, lookup_range_check::LookupRangeCheckConfig, FieldValue, RangeConstrained,
+        bool_check,
+        lookup_range_check::LookupRangeCheckConfig,
+        mux::{MuxChip, MuxInstructions},
+        FieldValue, RangeConstrained,
     },
 };
 
@@ -1908,7 +1910,7 @@ pub(in crate::circuit) mod gadgets {
             // hash_point = hash_zsa if is_native_asset is false
             let hash_point = Point::from_inner(
                 ecc_chip,
-                mux_chip.mux(
+                mux_chip.mux_on_points(
                     layouter.namespace(|| "mux on hash point"),
                     &is_native_asset,
                     &(hash_point_zsa.inner().clone().into()),
@@ -2297,10 +2299,7 @@ mod tests {
     use super::NoteCommitConfig;
     use crate::{
         circuit::{
-            gadget::{
-                assign_free_advice, assign_is_native_asset,
-                mux_chip::{MuxChip, MuxConfig},
-            },
+            gadget::{assign_free_advice, assign_is_native_asset},
             note_commit::{gadgets, NoteCommitChip},
         },
         constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_Q},
@@ -2313,7 +2312,10 @@ mod tests {
             NonIdentityPoint, ScalarFixed,
         },
         sinsemilla::chip::SinsemillaChip,
-        utilities::lookup_range_check::LookupRangeCheckConfig,
+        utilities::{
+            lookup_range_check::LookupRangeCheckConfig,
+            mux::{MuxChip, MuxConfig},
+        },
     };
 
     use ff::{Field, PrimeField};

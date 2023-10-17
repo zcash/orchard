@@ -6,7 +6,6 @@ use pasta_curves::arithmetic::CurveExt;
 use pasta_curves::pallas;
 
 use super::{commit_ivk::CommitIvkChip, note_commit::NoteCommitChip};
-use crate::circuit::gadget::mux_chip::{MuxChip, MuxInstructions};
 use crate::constants::{NullifierK, OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains};
 use crate::note::AssetBase;
 use halo2_gadgets::{
@@ -16,6 +15,7 @@ use halo2_gadgets::{
         Hash as PoseidonHash, PoseidonSpongeInstructions, Pow5Chip as PoseidonChip,
     },
     sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip},
+    utilities::mux::{MuxChip, MuxInstructions},
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter, Value},
@@ -23,7 +23,6 @@ use halo2_proofs::{
 };
 
 pub(in crate::circuit) mod add_chip;
-pub(in crate::circuit) mod mux_chip;
 
 impl super::Config {
     pub(super) fn add_chip(&self) -> add_chip::AddChip {
@@ -74,8 +73,8 @@ impl super::Config {
         NoteCommitChip::construct(self.old_note_commit_config.clone())
     }
 
-    pub(super) fn mux_chip(&self) -> mux_chip::MuxChip {
-        mux_chip::MuxChip::construct(self.mux_config.clone())
+    pub(super) fn mux_chip(&self) -> MuxChip {
+        MuxChip::construct(self.mux_config.clone())
     }
 }
 
@@ -224,7 +223,7 @@ pub(in crate::circuit) fn derive_nullifier<
     // Select the desired nullifier according to split_flag
     Ok(Point::from_inner(
         ecc_chip,
-        mux_chip.mux(
+        mux_chip.mux_on_points(
             layouter.namespace(|| "mux on nf"),
             &split_flag,
             nf.inner(),
