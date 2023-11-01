@@ -3,7 +3,7 @@
 use blake2b_simd::{Hash, Params};
 use core::fmt;
 use group::ff::PrimeField;
-use zcash_note_encryption::{
+use zcash_note_encryption_zsa::{
     BatchDomain, Domain, EphemeralKeyBytes, OutPlaintextBytes, OutgoingCipherKey, ShieldedOutput,
     AEAD_TAG_SIZE, MEMO_SIZE, OUT_PLAINTEXT_SIZE,
 };
@@ -440,9 +440,8 @@ impl BatchDomain for OrchardDomain {
     }
 }
 
-
 /// Implementation of in-band secret distribution for Orchard bundles.
-pub type OrchardNoteEncryption = zcash_note_encryption::NoteEncryption<OrchardDomain>;
+pub type OrchardNoteEncryption = zcash_note_encryption_zsa::NoteEncryption<OrchardDomain>;
 
 impl<T> ShieldedOutput<OrchardDomain> for Action<T> {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
@@ -548,7 +547,7 @@ impl CompactAction {
 mod tests {
     use proptest::prelude::*;
     use rand::rngs::OsRng;
-    use zcash_note_encryption::{
+    use zcash_note_encryption_zsa::{
         try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk, Domain,
         EphemeralKeyBytes,
     };
@@ -571,7 +570,7 @@ mod tests {
         Address, Note,
     };
 
-    use super::{version, orchard_parse_note_plaintext_without_memo};
+    use super::{orchard_parse_note_plaintext_without_memo, version};
 
     proptest! {
         #[test]

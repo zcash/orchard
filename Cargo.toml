@@ -41,7 +41,7 @@ reddsa = "0.5"
 nonempty = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
-zcash_note_encryption = "0.4"
+zcash_note_encryption_zsa = { package = "zcash_note_encryption", version = "0.4", git = "https://github.com/QED-it/librustzcash", branch = "zsa1-zebra" }
 incrementalmerkletree = "0.5"
 
 # Logging
@@ -57,7 +57,7 @@ criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
 halo2_gadgets = { git = "https://github.com/QED-it/halo2", branch = "zsa1", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1.0.0"
-zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
+zcash_note_encryption_zsa = { package = "zcash_note_encryption", version = "0.4", git = "https://github.com/QED-it/librustzcash", branch = "zsa1-zebra", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -91,6 +91,3 @@ debug = true
 
 [profile.bench]
 debug = true
-
-[patch.crates-io]
-zcash_note_encryption = { version = "0.4", git = "https://github.com/QED-it/librustzcash.git", branch = "zsa1-zebra" }

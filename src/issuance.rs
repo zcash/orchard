@@ -26,7 +26,7 @@ use crate::{
 use crate::supply_info::{AssetSupply, SupplyInfo};
 
 /// A bundle of actions to be applied to the ledger.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueBundle<T: IssueAuth> {
     /// The issuer key for the note being created.
     ik: IssuanceValidatingKey,
@@ -39,7 +39,7 @@ pub struct IssueBundle<T: IssueAuth> {
 /// An issue action applied to the global ledger.
 ///
 /// Externally, this creates new zsa notes (adding a commitment to the global ledger).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueAction {
     /// Asset description for verification.
     asset_desc: String,
@@ -181,7 +181,7 @@ pub struct Prepared {
 }
 
 /// Marker for an authorized bundle.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed {
     signature: redpallas::Signature<SpendAuth>,
 }

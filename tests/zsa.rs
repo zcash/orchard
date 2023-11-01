@@ -22,7 +22,7 @@ use orchard::{
 };
 use rand::rngs::OsRng;
 use std::collections::HashSet;
-use zcash_note_encryption::try_note_decryption;
+use zcash_note_encryption_zsa::try_note_decryption;
 
 #[derive(Debug)]
 struct Keychain {

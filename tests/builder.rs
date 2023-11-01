@@ -12,7 +12,7 @@ use orchard::{
     Anchor, Bundle, Note,
 };
 use rand::rngs::OsRng;
-use zcash_note_encryption::try_note_decryption;
+use zcash_note_encryption_zsa::try_note_decryption;
 
 pub fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, verify_proof: bool) {
     if verify_proof {

@@ -337,7 +337,7 @@ impl Builder {
     /// Adds a note to be spent in this transaction.
     ///
     /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`] using the
-    ///   [`zcash_note_encryption`] crate instantiated with [`OrchardDomain`].
+    ///   [`zcash_note_encryption_zsa`] crate instantiated with [`OrchardDomain`].
     /// - `merkle_path` can be obtained using the [`incrementalmerkletree`] crate
     ///   instantiated with [`MerkleHashOrchard`].
     ///
