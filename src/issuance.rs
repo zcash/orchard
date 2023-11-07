@@ -532,7 +532,7 @@ pub fn verify_issue_bundle(
 pub enum Error {
     /// The requested IssueAction not exists in the bundle.
     IssueActionNotFound,
-    /// The provided `isk` and the driven `ik` does not match at least one note type.
+    /// The provided `isk` and the derived `ik` does not match at least one note type.
     IssueBundleIkMismatchAssetBase,
     /// `asset_desc` should be between 1 and 512 bytes.
     WrongAssetDescSize,
@@ -562,7 +562,7 @@ impl fmt::Display for Error {
             IssueBundleIkMismatchAssetBase => {
                 write!(
                     f,
-                    "the provided `isk` and the driven `ik` does not match at least one note type"
+                    "the provided `isk` and the derived `ik` do not match at least one note type"
                 )
             }
             WrongAssetDescSize => {
@@ -606,8 +606,7 @@ mod tests {
     };
     use crate::issuance::{verify_issue_bundle, IssueAction, Signed, Unauthorized};
     use crate::keys::{
-        FullViewingKey, IssuanceAuthorizingKey, IssuanceKey, IssuanceValidatingKey, Scope,
-        SpendingKey,
+        FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
     };
     use crate::note::{AssetBase, Nullifier};
     use crate::value::{NoteValue, ValueSum};
@@ -629,8 +628,7 @@ mod tests {
     ) {
         let mut rng = OsRng;
 
-        let sk_iss = IssuanceKey::random(&mut rng);
-        let isk: IssuanceAuthorizingKey = (&sk_iss).into();
+        let isk = IssuanceAuthorizingKey::random(&mut rng);
         let ik: IssuanceValidatingKey = (&isk).into();
 
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
@@ -951,7 +949,7 @@ mod tests {
         )
         .unwrap();
 
-        let wrong_isk: IssuanceAuthorizingKey = (&IssuanceKey::random(&mut OsRng)).into();
+        let wrong_isk: IssuanceAuthorizingKey = IssuanceAuthorizingKey::random(&mut OsRng);
 
         let err = bundle
             .prepare([0; 32])
@@ -1183,7 +1181,7 @@ mod tests {
         )
         .unwrap();
 
-        let wrong_isk: IssuanceAuthorizingKey = (&IssuanceKey::random(&mut rng)).into();
+        let wrong_isk: IssuanceAuthorizingKey = IssuanceAuthorizingKey::random(&mut rng);
 
         let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
@@ -1278,8 +1276,7 @@ mod tests {
 
         let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
 
-        let incorrect_sk_iss = IssuanceKey::random(&mut rng);
-        let incorrect_isk: IssuanceAuthorizingKey = (&incorrect_sk_iss).into();
+        let incorrect_isk = IssuanceAuthorizingKey::random(&mut rng);
         let incorrect_ik: IssuanceValidatingKey = (&incorrect_isk).into();
 
         // Add "bad" note

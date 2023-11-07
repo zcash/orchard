@@ -69,7 +69,7 @@ mod tests {
     /// Creates an item of bundle burn list for a given asset description and value.
     ///
     /// This function is deterministic and guarantees that each call with the same parameters
-    /// will return the same result. It achieves determinism by using a static `IssuanceKey`.
+    /// will return the same result. It achieves determinism by using a static `IssuanceAuthorizingKey`.
     ///
     /// # Arguments
     ///
@@ -81,10 +81,9 @@ mod tests {
     /// A tuple `(AssetBase, Amount)` representing the burn list item.
     ///
     pub fn get_burn_tuple(asset_desc: &str, value: i64) -> (AssetBase, i64) {
-        use crate::keys::{IssuanceAuthorizingKey, IssuanceKey, IssuanceValidatingKey};
+        use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 
-        let sk_iss = IssuanceKey::from_bytes([0u8; 32]).unwrap();
-        let isk: IssuanceAuthorizingKey = (&sk_iss).into();
+        let isk = IssuanceAuthorizingKey::from_bytes([0u8; 32]).unwrap();
 
         (
             AssetBase::derive(&IssuanceValidatingKey::from(&isk), asset_desc),

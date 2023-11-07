@@ -80,10 +80,9 @@ mod tests {
     use super::*;
 
     fn create_test_asset(asset_desc: &str) -> AssetBase {
-        use crate::keys::{IssuanceAuthorizingKey, IssuanceKey, IssuanceValidatingKey};
+        use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 
-        let sk_iss = IssuanceKey::from_bytes([0u8; 32]).unwrap();
-        let isk: IssuanceAuthorizingKey = (&sk_iss).into();
+        let isk = IssuanceAuthorizingKey::from_bytes([0u8; 32]).unwrap();
 
         AssetBase::derive(&IssuanceValidatingKey::from(&isk), asset_desc)
     }

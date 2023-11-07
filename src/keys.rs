@@ -223,25 +223,25 @@ type IssuanceAuth = SpendAuth;
 
 /// An issuance key, from which all key material is derived.
 ///
-/// $\mathsf{sk}$ as defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
+/// $\mathsf{isk}$ as defined in [ZIP 227][issuancekeycomponents].
 ///
-/// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
+/// [issuancekeycomponents]: https://qed-it.github.io/zips/zip-0227#issuance-key-derivation
 #[derive(Debug, Copy, Clone)]
-pub struct IssuanceKey([u8; 32]);
+pub struct IssuanceAuthorizingKey([u8; 32]);
 
-impl From<SpendingKey> for IssuanceKey {
+impl From<SpendingKey> for IssuanceAuthorizingKey {
     fn from(sk: SpendingKey) -> Self {
-        IssuanceKey(*sk.to_bytes())
+        IssuanceAuthorizingKey(*sk.to_bytes())
     }
 }
 
-impl ConstantTimeEq for IssuanceKey {
+impl ConstantTimeEq for IssuanceAuthorizingKey {
     fn ct_eq(&self, other: &Self) -> Choice {
         self.to_bytes().ct_eq(other.to_bytes())
     }
 }
 
-impl IssuanceKey {
+impl IssuanceAuthorizingKey {
     /// Generates a random issuance key.
     ///
     /// This is only used when generating a random AssetBase.
@@ -255,11 +255,9 @@ impl IssuanceKey {
     /// Constructs an Orchard issuance key from uniformly-random bytes.
     ///
     /// Returns `None` if the bytes do not correspond to a valid Orchard issuance key.
-    pub fn from_bytes(sk_iss: [u8; 32]) -> CtOption<Self> {
-        let sk_iss = IssuanceKey(sk_iss);
-        // If isk = 0 (A scalar value), discard this key.
-        let isk = IssuanceAuthorizingKey::derive_inner(&sk_iss);
-        CtOption::new(sk_iss, !isk.is_zero())
+    pub fn from_bytes(isk_bytes: [u8; 32]) -> CtOption<Self> {
+        let isk = IssuanceAuthorizingKey(isk_bytes);
+        CtOption::new(isk, 1u8.into())
     }
 
     /// Returns the raw bytes of the issuance key.
@@ -267,7 +265,7 @@ impl IssuanceKey {
         &self.0
     }
 
-    /// Derives the Orchard issuance key for the given seed, coin type, and account.
+    /// Derives the Orchard-ZSA issuance key for the given seed, coin type, and account.
     pub fn from_zip32_seed(
         seed: &[u8],
         coin_type: u32,
@@ -282,22 +280,10 @@ impl IssuanceKey {
         ExtendedSpendingKey::from_path(seed, path, ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE)
             .map(|esk| esk.sk().into())
     }
-}
 
-/// An issuance authorizing key, used to create issuance authorization signatures.
-/// This type enforces that the corresponding public point (ik^ℙ) has ỹ = 0.
-///
-/// $\mathsf{isk}$ as defined in
-/// [Issuance of Zcash Shielded Assets ZIP-0227 § Asset Identifier Generation (DRAFT ZIP)][IssuanceZSA].
-///
-/// [IssuanceZSA]: https://qed-it.github.io/zips/draft-ZIP-0227.html#asset-identifier-generation
-#[derive(Clone, Debug)]
-pub struct IssuanceAuthorizingKey(redpallas::SigningKey<IssuanceAuth>);
-
-impl IssuanceAuthorizingKey {
-    /// Derives isk from sk_iss. Internal use only, does not enforce all constraints.
-    fn derive_inner(sk_iss: &IssuanceKey) -> pallas::Scalar {
-        to_scalar(PrfExpand::ZsaIsk.expand(&sk_iss.0))
+    /// Derives the RedPallas signing key from isk. Internal use only, does not enforce all constraints.
+    fn derive_inner(&self) -> pallas::Scalar {
+        to_scalar(PrfExpand::ZsaIsk.expand(&self.0))
     }
 
     /// Sign the provided message using the `IssuanceAuthorizingKey`.
@@ -306,32 +292,23 @@ impl IssuanceAuthorizingKey {
         rng: &mut (impl RngCore + CryptoRng),
         msg: &[u8],
     ) -> redpallas::Signature<IssuanceAuth> {
-        self.0.sign(rng, msg)
-    }
-}
-
-impl From<&IssuanceKey> for IssuanceAuthorizingKey {
-    fn from(sk_iss: &IssuanceKey) -> Self {
-        let isk = IssuanceAuthorizingKey::derive_inner(sk_iss);
-        // IssuanceAuthorizingKey cannot be constructed such that this assertion would fail.
-        assert!(!bool::from(isk.is_zero()));
-        IssuanceAuthorizingKey(conditionally_negate(isk))
+        conditionally_negate(self.derive_inner()).sign(rng, msg)
     }
 }
 
 /// A key used to validate issuance authorization signatures.
 ///
-/// Defined in [Issuance of Zcash Shielded Assets ZIP-0227 § Asset Identifier Generation (DRAFT PR)][IssuanceZSA].
+/// Defined in [ZIP 227: Issuance of Zcash Shielded Assets § Issuance Key Generation][IssuanceZSA].
 /// Note that this is $\mathsf{ik}^\mathbb{P}$, which by construction is equivalent to
 /// $\mathsf{ik}$ but stored here as a RedPallas verification key.
 ///
-/// [IssuanceZSA]: https://qed-it.github.io/zips/draft-ZIP-0227.html#asset-identifier-generation
+/// [IssuanceZSA]: https://qed-it.github.io/zips/zip-0227#issuance-key-derivation
 #[derive(Debug, Clone, PartialOrd, Ord)]
 pub struct IssuanceValidatingKey(VerificationKey<IssuanceAuth>);
 
 impl From<&IssuanceAuthorizingKey> for IssuanceValidatingKey {
     fn from(isk: &IssuanceAuthorizingKey) -> Self {
-        IssuanceValidatingKey((&isk.0).into())
+        IssuanceValidatingKey((&(conditionally_negate(isk.derive_inner()))).into())
     }
 }
 
@@ -1116,11 +1093,10 @@ impl SharedSecret {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use super::{
-        DiversifierIndex, DiversifierKey, EphemeralSecretKey, IssuanceAuthorizingKey, IssuanceKey,
+        DiversifierIndex, DiversifierKey, EphemeralSecretKey, IssuanceAuthorizingKey,
         IssuanceValidatingKey, SpendingKey,
     };
     use proptest::prelude::*;
-    use rand::{rngs::StdRng, SeedableRng};
 
     prop_compose! {
         /// Generate a uniformly distributed Orchard spending key.
@@ -1137,15 +1113,15 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate a uniformly distributed Orchard issuance key.
-        pub fn arb_issuance_key()(
+        /// Generate a uniformly distributed Orchard issuance master key.
+        pub fn arb_issuance_authorizing_key()(
             key in prop::array::uniform32(prop::num::u8::ANY)
-                .prop_map(IssuanceKey::from_bytes)
+                .prop_map(IssuanceAuthorizingKey::from_bytes)
                 .prop_filter(
                     "Values must correspond to valid Orchard issuance keys.",
                     |opt| bool::from(opt.is_some())
                 )
-        ) -> IssuanceKey {
+        ) -> IssuanceAuthorizingKey {
             key.unwrap()
         }
     }
@@ -1179,14 +1155,6 @@ pub mod testing {
             d_bytes in prop::array::uniform11(prop::num::u8::ANY)
         ) -> DiversifierIndex {
             DiversifierIndex::from(d_bytes)
-        }
-    }
-
-    prop_compose! {
-        /// Generate a uniformly distributed RedDSA issuance authorizing key.
-        pub fn arb_issuance_authorizing_key()(rng_seed in prop::array::uniform32(prop::num::u8::ANY)) -> IssuanceAuthorizingKey {
-            let mut rng = StdRng::from_seed(rng_seed);
-            IssuanceAuthorizingKey::from(&IssuanceKey::random(&mut rng))
         }
     }
 
@@ -1267,10 +1235,7 @@ mod tests {
             let ask: SpendAuthorizingKey = (&sk).into();
             assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
 
-            let sk_iss = IssuanceKey::from_bytes(tv.sk).unwrap();
-
-            let isk: IssuanceAuthorizingKey = (&sk_iss).into();
-            assert_eq!(<[u8; 32]>::from(&isk.0), tv.isk);
+            let isk = IssuanceAuthorizingKey::from_bytes(tv.sk).unwrap();
 
             let ak: SpendValidatingKey = (&ask).into();
             assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
