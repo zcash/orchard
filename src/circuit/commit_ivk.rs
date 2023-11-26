@@ -71,6 +71,7 @@ impl CommitIvkChip {
             let two_pow_4 = pallas::Base::from(1 << 4);
             let two_pow_5 = pallas::Base::from(1 << 5);
             let two_pow_9 = two_pow_4 * two_pow_5;
+            let two_pow_245 = pallas::Base::from(1 << 49).pow([5, 0, 0, 0]);
             let two_pow_250 = pallas::Base::from_u128(1 << 125).square();
             let two_pow_254 = two_pow_250 * two_pow_4;
 
@@ -119,8 +120,6 @@ impl CommitIvkChip {
 
             // Check that nk = b_2 (5 bits) || c (240 bits) || d_0 (9 bits) || d_1 (1 bit)
             let nk_decomposition_check = {
-                let two_pow_245 = pallas::Base::from(1 << 49).pow([5, 0, 0, 0]);
-
                 b_2.clone()
                     + c.clone() * two_pow_5
                     + d_0.clone() * two_pow_245
