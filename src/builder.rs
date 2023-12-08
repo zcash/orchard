@@ -27,6 +27,42 @@ use crate::{
 
 const MIN_ACTIONS: usize = 2;
 
+/// An enumeration of rules Orchard bundle construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BundleType {
+    /// A transactional bundle will be padded if necessary to contain at least 2 actions,
+    /// irrespective of whether any genuine actions are required.
+    Transactional,
+    /// A coinbase bundle is required to have no non-dummy spends. No padding is performed.
+    Coinbase,
+}
+
+impl BundleType {
+    /// Returns the number of logical actions that builder will produce in constructing a bundle
+    /// of this type, given the specified numbers of spends and outputs.
+    ///
+    /// Returns an error if the specified number of spends and outputs is incompatible with
+    /// this bundle type.
+    pub fn num_actions(
+        &self,
+        num_spends: usize,
+        num_outputs: usize,
+    ) -> Result<usize, &'static str> {
+        let num_real_actions = core::cmp::max(num_spends, num_outputs);
+
+        match self {
+            BundleType::Transactional => Ok(core::cmp::max(num_real_actions, MIN_ACTIONS)),
+            BundleType::Coinbase => {
+                if num_spends == 0 {
+                    Ok(num_real_actions)
+                } else {
+                    Err("Spends not allowed in coinbase bundles")
+                }
+            }
+        }
+    }
+}
+
 /// An error type for the kinds of errors that can occur during bundle construction.
 #[derive(Debug)]
 pub enum BuildError {
@@ -42,6 +78,8 @@ pub enum BuildError {
     /// A signature is valid for more than one input. This should never happen if `alpha`
     /// is sampled correctly, and indicates a critical failure in randomness generation.
     DuplicateSignature,
+    /// The bundle being constructed violated the construction rules for the requested bundle type.
+    BundleTypeNotSatisfiable,
 }
 
 impl Display for BuildError {
@@ -53,6 +91,9 @@ impl Display for BuildError {
             ValueSum(_) => f.write_str("Overflow occurred during value construction"),
             InvalidExternalSignature => f.write_str("External signature was invalid"),
             DuplicateSignature => f.write_str("Signature valid for more than one input"),
+            BundleTypeNotSatisfiable => {
+                f.write_str("Bundle structure did not conform to requested bundle type.")
+            }
         }
     }
 }
@@ -388,22 +429,23 @@ impl Builder {
     pub fn build<V: TryFrom<i64>>(
         mut self,
         mut rng: impl RngCore,
+        bundle_type: &BundleType,
     ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, BuildError> {
+        let num_real_spends = self.spends.len();
+        let num_real_outputs = self.outputs.len();
+        let num_actions = bundle_type
+            .num_actions(num_real_spends, num_real_outputs)
+            .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
+
         // Pair up the spends and outputs, extending with dummy values as necessary.
         let pre_actions: Vec<_> = {
-            let num_spends = self.spends.len();
-            let num_outputs = self.outputs.len();
-            let num_actions = [num_spends, num_outputs, MIN_ACTIONS]
-                .iter()
-                .max()
-                .cloned()
-                .unwrap();
-
             self.spends.extend(
-                iter::repeat_with(|| SpendInfo::dummy(&mut rng)).take(num_actions - num_spends),
+                iter::repeat_with(|| SpendInfo::dummy(&mut rng))
+                    .take(num_actions - num_real_spends),
             );
             self.outputs.extend(
-                iter::repeat_with(|| OutputInfo::dummy(&mut rng)).take(num_actions - num_outputs),
+                iter::repeat_with(|| OutputInfo::dummy(&mut rng))
+                    .take(num_actions - num_real_outputs),
             );
 
             // Shuffle the spends and outputs, so that learning the position of a
@@ -776,7 +818,7 @@ pub mod testing {
         Address, Note,
     };
 
-    use super::Builder;
+    use super::{Builder, BundleType};
 
     /// An intermediate type used for construction of arbitrary
     /// bundle values. This type is required because of a limitation
@@ -817,7 +859,7 @@ pub mod testing {
 
             let pk = ProvingKey::build();
             builder
-                .build(&mut self.rng)
+                .build(&mut self.rng, &BundleType::Transactional)
                 .unwrap()
                 .create_proof(&pk, &mut self.rng)
                 .unwrap()
@@ -898,6 +940,7 @@ mod tests {
 
     use super::Builder;
     use crate::{
+        builder::BundleType,
         bundle::{Authorized, Bundle, Flags},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
@@ -927,7 +970,7 @@ mod tests {
         assert_eq!(balance, -5000);
 
         let bundle: Bundle<Authorized, i64> = builder
-            .build(&mut rng)
+            .build(&mut rng, &BundleType::Transactional)
             .unwrap()
             .create_proof(&pk, &mut rng)
             .unwrap()

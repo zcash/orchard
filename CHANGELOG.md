@@ -6,11 +6,15 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `orchard::builder::BundleType`
 
 ### Changed
 - `orchard::builder::Builder::add_recipient` has been renamed to `add_output`
   in order to clarify than more than one output of a given transaction may be
   sent to the same recipient.
+- `orchard::builder::Builder::build` now takes an additional `BundleType` argument
+  that specifies how actions should be padded, instead of using hardcoded padding.
 
 ## [0.6.0] - 2023-09-08
 ### Changed

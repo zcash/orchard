@@ -1,7 +1,7 @@
 use bridgetree::BridgeTree;
 use incrementalmerkletree::Hashable;
 use orchard::{
-    builder::Builder,
+    builder::{Builder, BundleType},
     bundle::{Authorized, Flags},
     circuit::{ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -47,7 +47,7 @@ fn bundle_chain() {
             builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap();
+        let unauthorized = builder.build(&mut rng, &BundleType::Transactional).unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
@@ -89,7 +89,7 @@ fn bundle_chain() {
             builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap();
+        let unauthorized = builder.build(&mut rng, &BundleType::Transactional).unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven

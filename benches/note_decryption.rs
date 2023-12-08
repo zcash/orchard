@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
-    builder::Builder,
+    builder::{Builder, BundleType},
     bundle::Flags,
     circuit::ProvingKey,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
@@ -57,7 +57,7 @@ fn bench_note_decryption(c: &mut Criterion) {
         builder
             .add_output(None, recipient, NoteValue::from_raw(10), None)
             .unwrap();
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap();
+        let bundle: Bundle<_, i64> = builder.build(rng, &BundleType::Transactional).unwrap();
         bundle
             .create_proof(&pk, rng)
             .unwrap()
