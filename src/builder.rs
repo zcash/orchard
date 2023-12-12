@@ -157,16 +157,16 @@ impl SpendInfo {
     }
 }
 
-/// Information about a specific recipient to receive funds in an [`Action`].
+/// Information about a specific output to receive funds in an [`Action`].
 #[derive(Debug)]
-struct RecipientInfo {
+struct OutputInfo {
     ovk: Option<OutgoingViewingKey>,
     recipient: Address,
     value: NoteValue,
     memo: Option<[u8; 512]>,
 }
 
-impl RecipientInfo {
+impl OutputInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
@@ -174,7 +174,7 @@ impl RecipientInfo {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        RecipientInfo {
+        OutputInfo {
             ovk: None,
             recipient,
             value: NoteValue::zero(),
@@ -187,12 +187,12 @@ impl RecipientInfo {
 #[derive(Debug)]
 struct ActionInfo {
     spend: SpendInfo,
-    output: RecipientInfo,
+    output: OutputInfo,
     rcv: ValueCommitTrapdoor,
 }
 
 impl ActionInfo {
-    fn new(spend: SpendInfo, output: RecipientInfo, rng: impl RngCore) -> Self {
+    fn new(spend: SpendInfo, output: OutputInfo, rng: impl RngCore) -> Self {
         ActionInfo {
             spend,
             output,
@@ -256,12 +256,12 @@ impl ActionInfo {
     }
 }
 
-/// A builder that constructs a [`Bundle`] from a set of notes to be spent, and recipients
+/// A builder that constructs a [`Bundle`] from a set of notes to be spent, and outputs
 /// to receive funds.
 #[derive(Debug)]
 pub struct Builder {
     spends: Vec<SpendInfo>,
-    recipients: Vec<RecipientInfo>,
+    outputs: Vec<OutputInfo>,
     flags: Flags,
     anchor: Anchor,
 }
@@ -271,7 +271,7 @@ impl Builder {
     pub fn new(flags: Flags, anchor: Anchor) -> Self {
         Builder {
             spends: vec![],
-            recipients: vec![],
+            outputs: vec![],
             flags,
             anchor,
         }
@@ -323,7 +323,7 @@ impl Builder {
     }
 
     /// Adds an address which will receive funds in this transaction.
-    pub fn add_recipient(
+    pub fn add_output(
         &mut self,
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
@@ -334,7 +334,7 @@ impl Builder {
             return Err(OutputError);
         }
 
-        self.recipients.push(RecipientInfo {
+        self.outputs.push(OutputInfo {
             ovk,
             recipient,
             value,
@@ -353,7 +353,7 @@ impl Builder {
     /// Returns the action output components that will be produced by the
     /// transaction being constructed
     pub fn outputs(&self) -> &Vec<impl OutputView> {
-        &self.recipients
+        &self.outputs
     }
 
     /// The net value of the bundle to be built. The value of all spends,
@@ -372,16 +372,16 @@ impl Builder {
             .iter()
             .map(|spend| spend.note.value() - NoteValue::zero())
             .chain(
-                self.recipients
+                self.outputs
                     .iter()
-                    .map(|recipient| NoteValue::zero() - recipient.value),
+                    .map(|output| NoteValue::zero() - output.value),
             )
             .fold(Some(ValueSum::zero()), |acc, note_value| acc? + note_value)
             .ok_or(OverflowError)?;
         i64::try_from(value_balance).and_then(|i| V::try_from(i).map_err(|_| value::OverflowError))
     }
 
-    /// Builds a bundle containing the given spent notes and recipients.
+    /// Builds a bundle containing the given spent notes and outputs.
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
@@ -389,11 +389,11 @@ impl Builder {
         mut self,
         mut rng: impl RngCore,
     ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, BuildError> {
-        // Pair up the spends and recipients, extending with dummy values as necessary.
+        // Pair up the spends and outputs, extending with dummy values as necessary.
         let pre_actions: Vec<_> = {
             let num_spends = self.spends.len();
-            let num_recipients = self.recipients.len();
-            let num_actions = [num_spends, num_recipients, MIN_ACTIONS]
+            let num_outputs = self.outputs.len();
+            let num_actions = [num_spends, num_outputs, MIN_ACTIONS]
                 .iter()
                 .max()
                 .cloned()
@@ -402,21 +402,20 @@ impl Builder {
             self.spends.extend(
                 iter::repeat_with(|| SpendInfo::dummy(&mut rng)).take(num_actions - num_spends),
             );
-            self.recipients.extend(
-                iter::repeat_with(|| RecipientInfo::dummy(&mut rng))
-                    .take(num_actions - num_recipients),
+            self.outputs.extend(
+                iter::repeat_with(|| OutputInfo::dummy(&mut rng)).take(num_actions - num_outputs),
             );
 
-            // Shuffle the spends and recipients, so that learning the position of a
+            // Shuffle the spends and outputs, so that learning the position of a
             // specific spent note or output note doesn't reveal anything on its own about
             // the meaning of that note in the transaction context.
             self.spends.shuffle(&mut rng);
-            self.recipients.shuffle(&mut rng);
+            self.outputs.shuffle(&mut rng);
 
             self.spends
                 .into_iter()
-                .zip(self.recipients.into_iter())
-                .map(|(spend, recipient)| ActionInfo::new(spend, recipient, &mut rng))
+                .zip(self.outputs.into_iter())
+                .map(|(spend, output)| ActionInfo::new(spend, output, &mut rng))
                 .collect()
         };
 
@@ -749,7 +748,7 @@ pub trait OutputView {
     fn value<V: From<u64>>(&self) -> V;
 }
 
-impl OutputView for RecipientInfo {
+impl OutputView for OutputInfo {
     fn value<V: From<u64>>(&self) -> V {
         V::from(self.value.inner())
     }
@@ -793,7 +792,7 @@ pub mod testing {
         sk: SpendingKey,
         anchor: Anchor,
         notes: Vec<(Note, MerklePath)>,
-        recipient_amounts: Vec<(Address, NoteValue)>,
+        output_amounts: Vec<(Address, NoteValue)>,
     }
 
     impl<R: RngCore + CryptoRng> ArbitraryBundleInputs<R> {
@@ -807,12 +806,12 @@ pub mod testing {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
             }
 
-            for (addr, value) in self.recipient_amounts.into_iter() {
+            for (addr, value) in self.output_amounts.into_iter() {
                 let scope = fvk.scope_for_address(&addr).unwrap();
                 let ovk = fvk.to_ovk(scope);
 
                 builder
-                    .add_recipient(Some(ovk.clone()), addr, value, None)
+                    .add_output(Some(ovk.clone()), addr, value, None)
                     .unwrap();
             }
 
@@ -834,7 +833,7 @@ pub mod testing {
         fn arb_bundle_inputs(sk: SpendingKey)
         (
             n_notes in 1usize..30,
-            n_recipients in 1..30,
+            n_outputs in 1..30,
 
         )
         (
@@ -843,12 +842,12 @@ pub mod testing {
                 arb_positive_note_value(MAX_NOTE_VALUE / n_notes as u64).prop_flat_map(arb_note),
                 n_notes
             ),
-            recipient_amounts in vec(
+            output_amounts in vec(
                 arb_address().prop_flat_map(move |a| {
-                    arb_positive_note_value(MAX_NOTE_VALUE / n_recipients as u64)
+                    arb_positive_note_value(MAX_NOTE_VALUE / n_outputs as u64)
                         .prop_map(move |v| (a, v))
                 }),
-                n_recipients as usize
+                n_outputs as usize
             ),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY)
         ) -> ArbitraryBundleInputs<StdRng> {
@@ -873,7 +872,7 @@ pub mod testing {
                 sk,
                 anchor: frontier.root().into(),
                 notes: notes_and_auth_paths,
-                recipient_amounts
+                output_amounts
             }
         }
     }
@@ -922,7 +921,7 @@ mod tests {
         );
 
         builder
-            .add_recipient(None, recipient, NoteValue::from_raw(5000), None)
+            .add_output(None, recipient, NoteValue::from_raw(5000), None)
             .unwrap();
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);

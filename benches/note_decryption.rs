@@ -52,10 +52,10 @@ fn bench_note_decryption(c: &mut Criterion) {
         // The builder pads to two actions, and shuffles their order. Add two recipients
         // so the first action is always decryptable.
         builder
-            .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+            .add_output(None, recipient, NoteValue::from_raw(10), None)
             .unwrap();
         builder
-            .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+            .add_output(None, recipient, NoteValue::from_raw(10), None)
             .unwrap();
         let bundle: Bundle<_, i64> = builder.build(rng).unwrap();
         bundle

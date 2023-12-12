@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- `orchard::builder::Builder::add_recipient` has been renamed to `add_output`
+  in order to clarify than more than one output of a given transaction may be
+  sent to the same recipient.
+
 ## [0.6.0] - 2023-09-08
 ### Changed
 - MSRV is now 1.65.0.
@@ -22,8 +27,8 @@ and this project adheres to Rust's notion of
 - `orchard::builder`:
   - `{SpendInfo::new, InputView, OutputView}`
   - `Builder::{spends, outputs}`
-  - `SpendError` 
-  - `OutputError` 
+  - `SpendError`
+  - `OutputError`
 
 ### Changed
 - MSRV is now 1.60.0.

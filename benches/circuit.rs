@@ -32,7 +32,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         );
         for _ in 0..num_recipients {
             builder
-                .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+                .add_output(None, recipient, NoteValue::from_raw(10), None)
                 .unwrap();
         }
         let bundle: Bundle<_, i64> = builder.build(rng).unwrap();
