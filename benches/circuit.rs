@@ -28,7 +28,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
         for _ in 0..num_recipients {
             builder
-                .add_output(None, recipient, NoteValue::from_raw(10), None)
+                .add_output(None, recipient, NoteValue::from_raw(10), [0; 512])
                 .unwrap();
         }
         let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;

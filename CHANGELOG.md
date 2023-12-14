@@ -19,6 +19,10 @@ and this project adheres to Rust's notion of
   - `ValueCommitTrapdoor::to_bytes`
 - `impl Clone for orchard::tree::MerklePath`
 
+### Changed
+- `orchard::builder::Builder::add_output` now takes a `[u8; 512]` for its
+  `memo` argument instead of an optional value.
+
 ## [0.10.0] - 2024-10-02
 
 ### Changed

@@ -321,17 +321,13 @@ impl OutputInfo {
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
-        memo: Option<[u8; 512]>,
+        memo: [u8; 512],
     ) -> Self {
         Self {
             ovk,
             recipient,
             value,
-            memo: memo.unwrap_or_else(|| {
-                let mut memo = [0; 512];
-                memo[0] = 0xf6;
-                memo
-            }),
+            memo,
         }
     }
 
@@ -342,7 +338,7 @@ impl OutputInfo {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        Self::new(None, recipient, NoteValue::zero(), None)
+        Self::new(None, recipient, NoteValue::zero(), [0u8; 512])
     }
 
     /// Builds the output half of an action.
@@ -578,7 +574,7 @@ impl Builder {
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
-        memo: Option<[u8; 512]>,
+        memo: [u8; 512],
     ) -> Result<(), OutputError> {
         let flags = self.bundle_type.flags();
         if !flags.outputs_enabled() {
@@ -1171,7 +1167,7 @@ pub mod testing {
                 let ovk = fvk.to_ovk(scope);
 
                 builder
-                    .add_output(Some(ovk.clone()), addr, value, None)
+                    .add_output(Some(ovk.clone()), addr, value, [0u8; 512])
                     .unwrap();
             }
 
@@ -1284,7 +1280,7 @@ mod tests {
         );
 
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), None)
+            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);

@@ -51,7 +51,7 @@ fn bundle_chain() {
         );
         let note_value = NoteValue::from_raw(5000);
         assert_eq!(
-            builder.add_output(None, recipient, note_value, None),
+            builder.add_output(None, recipient, note_value, [0u8; 512]),
             Ok(())
         );
         let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
@@ -106,7 +106,7 @@ fn bundle_chain() {
         let mut builder = Builder::new(BundleType::DEFAULT, anchor);
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
-            builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
+            builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
             Ok(())
         );
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
