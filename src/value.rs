@@ -83,7 +83,7 @@ impl fmt::Display for OverflowError {
 impl std::error::Error for OverflowError {}
 
 /// The non-negative value of an individual Orchard note.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NoteValue(u64);
 
 impl NoteValue {

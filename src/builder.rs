@@ -32,7 +32,7 @@ const MIN_ACTIONS: usize = 2;
 pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
     /// irrespective of whether any genuine actions are required.
-    Transactional,
+    Transactional(Flags, Anchor),
     /// A coinbase bundle is required to have no non-dummy spends. No padding is performed.
     Coinbase,
 }
@@ -48,17 +48,27 @@ impl BundleType {
         num_spends: usize,
         num_outputs: usize,
     ) -> Result<usize, &'static str> {
-        let num_real_actions = core::cmp::max(num_spends, num_outputs);
+        let num_requested_actions = core::cmp::max(num_spends, num_outputs);
 
         match self {
-            BundleType::Transactional => Ok(core::cmp::max(num_real_actions, MIN_ACTIONS)),
-            BundleType::Coinbase => {
-                if num_spends == 0 {
-                    Ok(num_real_actions)
+            BundleType::Transactional(flags, _) => {
+                if !flags.spends_enabled() && num_spends > 0 {
+                    Err("Spends are disabled, so num_spends must be zero")
+                } else if !flags.outputs_enabled() && num_outputs > 0 {
+                    Err("Outputs are disabled, so num_outputs must be zero")
                 } else {
-                    Err("Spends not allowed in coinbase bundles")
+                    Ok(core::cmp::max(num_requested_actions, MIN_ACTIONS))
                 }
             }
+            BundleType::Coinbase => Ok(num_outputs),
+        }
+    }
+
+    /// Returns the set of flags and the anchor that will be used for bundle construction.
+    pub fn bundle_config(&self) -> (Flags, Anchor) {
+        match self {
+            BundleType::Transactional(flags, anchor) => (*flags, *anchor),
+            BundleType::Coinbase => (Flags::SPENDS_DISABLED, Anchor::empty_tree()),
         }
     }
 }
@@ -66,6 +76,12 @@ impl BundleType {
 /// An error type for the kinds of errors that can occur during bundle construction.
 #[derive(Debug)]
 pub enum BuildError {
+    /// Spends are disabled for the provided bundle type.
+    SpendsDisabled,
+    /// Spends are disabled for the provided bundle type.
+    OutputsDisabled,
+    /// The anchor provided to this builder doesn't match the merkle path used to add a spend.
+    AnchorMismatch,
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
     /// An error occurred in the process of producing a proof for a bundle.
@@ -94,11 +110,28 @@ impl Display for BuildError {
             BundleTypeNotSatisfiable => {
                 f.write_str("Bundle structure did not conform to requested bundle type.")
             }
+            SpendsDisabled => f.write_str("Spends are not enabled for the requested bundle type."),
+            OutputsDisabled => f.write_str("Spends are not enabled for the requested bundle type."),
+            AnchorMismatch => {
+                f.write_str("All spends must share the anchor requested for the transaction.")
+            }
         }
     }
 }
 
 impl std::error::Error for BuildError {}
+
+impl From<halo2_proofs::plonk::Error> for BuildError {
+    fn from(e: halo2_proofs::plonk::Error) -> Self {
+        BuildError::Proof(e)
+    }
+}
+
+impl From<value::OverflowError> for BuildError {
+    fn from(e: value::OverflowError) -> Self {
+        BuildError::ValueSum(e)
+    }
+}
 
 /// An error type for adding a spend to the builder.
 #[derive(Debug, PartialEq, Eq)]
@@ -135,18 +168,6 @@ impl Display for OutputError {
 }
 
 impl std::error::Error for OutputError {}
-
-impl From<halo2_proofs::plonk::Error> for BuildError {
-    fn from(e: halo2_proofs::plonk::Error) -> Self {
-        BuildError::Proof(e)
-    }
-}
-
-impl From<value::OverflowError> for BuildError {
-    fn from(e: value::OverflowError) -> Self {
-        BuildError::ValueSum(e)
-    }
-}
 
 /// Information about a specific note to be spent in an [`Action`].
 #[derive(Debug)]
@@ -200,27 +221,41 @@ impl SpendInfo {
 
 /// Information about a specific output to receive funds in an [`Action`].
 #[derive(Debug)]
-struct OutputInfo {
+pub struct OutputInfo {
     ovk: Option<OutgoingViewingKey>,
     recipient: Address,
     value: NoteValue,
-    memo: Option<[u8; 512]>,
+    memo: [u8; 512],
 }
 
 impl OutputInfo {
+    /// Constructs a new OutputInfo from its constituent parts.
+    pub fn new(
+        ovk: Option<OutgoingViewingKey>,
+        recipient: Address,
+        value: NoteValue,
+        memo: Option<[u8; 512]>,
+    ) -> Self {
+        Self {
+            ovk,
+            recipient,
+            value,
+            memo: memo.unwrap_or_else(|| {
+                let mut memo = [0; 512];
+                memo[0] = 0xf6;
+                memo
+            }),
+        }
+    }
+
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(rng: &mut impl RngCore) -> Self {
+    pub fn dummy(rng: &mut impl RngCore) -> Self {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        OutputInfo {
-            ovk: None,
-            recipient,
-            value: NoteValue::zero(),
-            memo: None,
-        }
+        Self::new(None, recipient, NoteValue::zero(), None)
     }
 }
 
@@ -264,15 +299,7 @@ impl ActionInfo {
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
-        let encryptor = OrchardNoteEncryption::new(
-            self.output.ovk,
-            note,
-            self.output.memo.unwrap_or_else(|| {
-                let mut memo = [0; 512];
-                memo[0] = 0xf6;
-                memo
-            }),
-        );
+        let encryptor = OrchardNoteEncryption::new(self.output.ovk, note, self.output.memo);
 
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: encryptor.epk().to_bytes().0,
@@ -303,18 +330,16 @@ impl ActionInfo {
 pub struct Builder {
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
-    flags: Flags,
-    anchor: Anchor,
+    bundle_type: BundleType,
 }
 
 impl Builder {
     /// Constructs a new empty builder for an Orchard bundle.
-    pub fn new(flags: Flags, anchor: Anchor) -> Self {
+    pub fn new(bundle_type: BundleType) -> Self {
         Builder {
             spends: vec![],
             outputs: vec![],
-            flags,
-            anchor,
+            bundle_type,
         }
     }
 
@@ -336,29 +361,20 @@ impl Builder {
         note: Note,
         merkle_path: MerklePath,
     ) -> Result<(), SpendError> {
-        if !self.flags.spends_enabled() {
+        let (flags, anchor) = self.bundle_type.bundle_config();
+        if !flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
 
         // Consistency check: all anchors must be equal.
         let cm = note.commitment();
         let path_root = merkle_path.root(cm.into());
-        if path_root != self.anchor {
+        if path_root != anchor {
             return Err(SpendError::AnchorMismatch);
         }
 
-        // Check if note is internal or external.
-        let scope = fvk
-            .scope_for_address(&note.recipient())
-            .ok_or(SpendError::FvkMismatch)?;
-
-        self.spends.push(SpendInfo {
-            dummy_sk: None,
-            fvk,
-            scope,
-            note,
-            merkle_path,
-        });
+        self.spends
+            .push(SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?);
 
         Ok(())
     }
@@ -371,16 +387,13 @@ impl Builder {
         value: NoteValue,
         memo: Option<[u8; 512]>,
     ) -> Result<(), OutputError> {
-        if !self.flags.outputs_enabled() {
+        let (flags, _) = self.bundle_type.bundle_config();
+        if !flags.outputs_enabled() {
             return Err(OutputError);
         }
 
-        self.outputs.push(OutputInfo {
-            ovk,
-            recipient,
-            value,
-            memo,
-        });
+        self.outputs
+            .push(OutputInfo::new(ovk, recipient, value, memo));
 
         Ok(())
     }
@@ -427,75 +440,105 @@ impl Builder {
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
     pub fn build<V: TryFrom<i64>>(
-        mut self,
-        mut rng: impl RngCore,
-        bundle_type: &BundleType,
-    ) -> Result<Bundle<InProgress<Unproven, Unauthorized>, V>, BuildError> {
-        let num_real_spends = self.spends.len();
-        let num_real_outputs = self.outputs.len();
-        let num_actions = bundle_type
-            .num_actions(num_real_spends, num_real_outputs)
-            .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
+        self,
+        rng: impl RngCore,
+    ) -> Result<Option<Bundle<InProgress<Unproven, Unauthorized>, V>>, BuildError> {
+        bundle(rng, self.spends, self.outputs, self.bundle_type)
+    }
+}
 
-        // Pair up the spends and outputs, extending with dummy values as necessary.
-        let pre_actions: Vec<_> = {
-            self.spends.extend(
-                iter::repeat_with(|| SpendInfo::dummy(&mut rng))
-                    .take(num_actions - num_real_spends),
-            );
-            self.outputs.extend(
-                iter::repeat_with(|| OutputInfo::dummy(&mut rng))
-                    .take(num_actions - num_real_outputs),
-            );
+/// Builds a bundle containing the given spent notes and outputs.
+///
+/// The returned bundle will have no proof or signatures; these can be applied with
+/// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
+pub fn bundle<V: TryFrom<i64>>(
+    mut rng: impl RngCore,
+    mut spends: Vec<SpendInfo>,
+    mut outputs: Vec<OutputInfo>,
+    bundle_type: BundleType,
+) -> Result<Option<Bundle<InProgress<Unproven, Unauthorized>, V>>, BuildError> {
+    let (flags, anchor) = bundle_type.bundle_config();
 
-            // Shuffle the spends and outputs, so that learning the position of a
-            // specific spent note or output note doesn't reveal anything on its own about
-            // the meaning of that note in the transaction context.
-            self.spends.shuffle(&mut rng);
-            self.outputs.shuffle(&mut rng);
+    let num_requested_spends = spends.len();
+    if !flags.spends_enabled() && num_requested_spends > 0 {
+        return Err(BuildError::SpendsDisabled);
+    }
 
-            self.spends
-                .into_iter()
-                .zip(self.outputs.into_iter())
-                .map(|(spend, output)| ActionInfo::new(spend, output, &mut rng))
-                .collect()
-        };
+    for spend in &spends {
+        if spend.note.value() != NoteValue::zero() {
+            let cm = spend.note.commitment();
+            let path_root = spend.merkle_path.root(cm.into());
+            if path_root != anchor {
+                return Err(BuildError::AnchorMismatch);
+            }
+        }
+    }
 
-        // Move some things out of self that we will need.
-        let flags = self.flags;
-        let anchor = self.anchor;
+    let num_requested_outputs = outputs.len();
+    if !flags.outputs_enabled() && num_requested_outputs > 0 {
+        return Err(BuildError::OutputsDisabled);
+    }
 
-        // Determine the value balance for this bundle, ensuring it is valid.
-        let value_balance = pre_actions
-            .iter()
-            .fold(Some(ValueSum::zero()), |acc, action| {
-                acc? + action.value_sum()
-            })
-            .ok_or(OverflowError)?;
+    let num_actions = bundle_type
+        .num_actions(num_requested_spends, num_requested_outputs)
+        .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
-        let result_value_balance: V = i64::try_from(value_balance)
-            .map_err(BuildError::ValueSum)
-            .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError)))?;
+    // Pair up the spends and outputs, extending with dummy values as necessary.
+    let pre_actions: Vec<_> = {
+        spends.extend(
+            iter::repeat_with(|| SpendInfo::dummy(&mut rng))
+                .take(num_actions - num_requested_spends),
+        );
+        outputs.extend(
+            iter::repeat_with(|| OutputInfo::dummy(&mut rng))
+                .take(num_actions - num_requested_outputs),
+        );
 
-        // Compute the transaction binding signing key.
-        let bsk = pre_actions
-            .iter()
-            .map(|a| &a.rcv)
-            .sum::<ValueCommitTrapdoor>()
-            .into_bsk();
+        // Shuffle the spends and outputs, so that learning the position of a
+        // specific spent note or output note doesn't reveal anything on its own about
+        // the meaning of that note in the transaction context.
+        spends.shuffle(&mut rng);
+        outputs.shuffle(&mut rng);
 
-        // Create the actions.
-        let (actions, circuits): (Vec<_>, Vec<_>) =
-            pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
+        spends
+            .into_iter()
+            .zip(outputs.into_iter())
+            .map(|(spend, output)| ActionInfo::new(spend, output, &mut rng))
+            .collect()
+    };
 
-        // Verify that bsk and bvk are consistent.
-        let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-            - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
-        .into_bvk();
-        assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+    // Determine the value balance for this bundle, ensuring it is valid.
+    let value_balance = pre_actions
+        .iter()
+        .fold(Some(ValueSum::zero()), |acc, action| {
+            acc? + action.value_sum()
+        })
+        .ok_or(OverflowError)?;
 
-        Ok(Bundle::from_parts(
-            NonEmpty::from_vec(actions).unwrap(),
+    let result_value_balance: V = i64::try_from(value_balance)
+        .map_err(BuildError::ValueSum)
+        .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError)))?;
+
+    // Compute the transaction binding signing key.
+    let bsk = pre_actions
+        .iter()
+        .map(|a| &a.rcv)
+        .sum::<ValueCommitTrapdoor>()
+        .into_bsk();
+
+    // Create the actions.
+    let (actions, circuits): (Vec<_>, Vec<_>) =
+        pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
+
+    // Verify that bsk and bvk are consistent.
+    let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
+        - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
+    .into_bvk();
+    assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+
+    Ok(NonEmpty::from_vec(actions).map(|actions| {
+        Bundle::from_parts(
+            actions,
             flags,
             result_value_balance,
             anchor,
@@ -503,8 +546,8 @@ impl Builder {
                 proof: Unproven { circuits },
                 sigs: Unauthorized { bsk },
             },
-        ))
-    }
+        )
+    }))
 }
 
 /// Marker trait representing bundle signatures in the process of being created.
@@ -842,7 +885,7 @@ pub mod testing {
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
             let flags = Flags::from_parts(true, true);
-            let mut builder = Builder::new(flags, self.anchor);
+            let mut builder = Builder::new(BundleType::Transactional(flags, self.anchor));
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -859,7 +902,8 @@ pub mod testing {
 
             let pk = ProvingKey::build();
             builder
-                .build(&mut self.rng, &BundleType::Transactional)
+                .build(&mut self.rng)
+                .unwrap()
                 .unwrap()
                 .create_proof(&pk, &mut self.rng)
                 .unwrap()
@@ -958,10 +1002,10 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let mut builder = Builder::new(
+        let mut builder = Builder::new(BundleType::Transactional(
             Flags::from_parts(true, true),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        ));
 
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), None)
@@ -970,7 +1014,8 @@ mod tests {
         assert_eq!(balance, -5000);
 
         let bundle: Bundle<Authorized, i64> = builder
-            .build(&mut rng, &BundleType::Transactional)
+            .build(&mut rng)
+            .unwrap()
             .unwrap()
             .create_proof(&pk, &mut rng)
             .unwrap()

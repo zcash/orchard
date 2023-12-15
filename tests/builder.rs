@@ -42,12 +42,12 @@ fn bundle_chain() {
         // Use the empty tree.
         let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
-        let mut builder = Builder::new(Flags::from_parts(false, true), anchor);
+        let mut builder = Builder::new(BundleType::Transactional(Flags::SPENDS_DISABLED, anchor));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng, &BundleType::Transactional).unwrap();
+        let unauthorized = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
@@ -83,13 +83,13 @@ fn bundle_chain() {
         let anchor = root.into();
         assert_eq!(anchor, merkle_path.root(cmx));
 
-        let mut builder = Builder::new(Flags::from_parts(true, true), anchor);
+        let mut builder = Builder::new(BundleType::Transactional(Flags::ENABLED, anchor));
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng, &BundleType::Transactional).unwrap();
+        let unauthorized = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
