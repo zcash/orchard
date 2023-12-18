@@ -22,9 +22,7 @@ use halo2_gadgets::{
         CommitDomain, Message, MessagePiece,
     },
     utilities::{
-        bool_check,
-        lookup_range_check::LookupRangeCheckConfig,
-        mux::{MuxChip, MuxInstructions},
+        bool_check, cond_swap::CondSwapChip, lookup_range_check::LookupRangeCheckConfig,
         FieldValue, RangeConstrained,
     },
 };
@@ -1747,7 +1745,7 @@ pub(in crate::circuit) mod gadgets {
         chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
         ecc_chip: EccChip<OrchardFixedBases>,
         note_commit_chip: NoteCommitChip,
-        mux_chip: MuxChip,
+        cond_swap_chip: CondSwapChip<pallas::Base>,
         g_d: &NonIdentityEccPoint,
         pk_d: &NonIdentityEccPoint,
         value: AssignedCell<NoteValue, pallas::Base>,
@@ -1902,7 +1900,7 @@ pub(in crate::circuit) mod gadgets {
                     Value::known(zsa_domain.q_init()),
                 )?;
 
-                mux_chip.mux_on_non_identity_points(
+                cond_swap_chip.mux_on_non_identity_points(
                     layouter.namespace(|| "mux on hash point"),
                     &is_native_asset,
                     q_init_zsa.inner(),
@@ -1939,7 +1937,7 @@ pub(in crate::circuit) mod gadgets {
             // hash_point = hash_zsa if is_native_asset is false
             let hash_point = Point::from_inner(
                 ecc_chip,
-                mux_chip.mux_on_points(
+                cond_swap_chip.mux_on_points(
                     layouter.namespace(|| "mux on hash point"),
                     &is_native_asset,
                     &(hash_point_zsa.inner().clone().into()),
@@ -2342,8 +2340,8 @@ mod tests {
         },
         sinsemilla::chip::SinsemillaChip,
         utilities::{
+            cond_swap::{CondSwapChip, CondSwapConfig},
             lookup_range_check::LookupRangeCheckConfig,
-            mux::{MuxChip, MuxConfig},
         },
     };
 
@@ -2370,7 +2368,11 @@ mod tests {
         }
 
         impl Circuit<pallas::Base> for MyCircuit {
-            type Config = (NoteCommitConfig, EccConfig<OrchardFixedBases>, MuxConfig);
+            type Config = (
+                NoteCommitConfig,
+                EccConfig<OrchardFixedBases>,
+                CondSwapConfig,
+            );
             type FloorPlanner = SimpleFloorPlanner;
 
             fn without_witnesses(&self) -> Self {
@@ -2446,10 +2448,10 @@ mod tests {
                     range_check,
                 );
 
-                let mux_config =
-                    MuxChip::configure(meta, advices[0], advices[1], advices[2], advices[3]);
+                let cond_swap_config =
+                    CondSwapChip::configure(meta, advices[0..5].try_into().unwrap());
 
-                (note_commit_config, ecc_config, mux_config)
+                (note_commit_config, ecc_config, cond_swap_config)
             }
 
             fn synthesize(
@@ -2457,7 +2459,7 @@ mod tests {
                 config: Self::Config,
                 mut layouter: impl Layouter<pallas::Base>,
             ) -> Result<(), Error> {
-                let (note_commit_config, ecc_config, mux_config) = config;
+                let (note_commit_config, ecc_config, cond_swap_config) = config;
 
                 // Load the Sinsemilla generator lookup table used by the whole circuit.
                 SinsemillaChip::<
@@ -2476,8 +2478,8 @@ mod tests {
                 // Construct a NoteCommit chip
                 let note_commit_chip = NoteCommitChip::construct(note_commit_config.clone());
 
-                // Construct a Mux chip
-                let mux_chip = MuxChip::construct(mux_config);
+                // Construct a CondSwap chip
+                let cond_swap_chip = CondSwapChip::construct(cond_swap_config);
 
                 // Witness g_d
                 let g_d = NonIdentityPoint::new(
@@ -2544,7 +2546,7 @@ mod tests {
                     sinsemilla_chip,
                     ecc_chip.clone(),
                     note_commit_chip,
-                    mux_chip,
+                    cond_swap_chip,
                     g_d.inner(),
                     pk_d.inner(),
                     value_var,

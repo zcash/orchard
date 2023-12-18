@@ -77,8 +77,8 @@ impl NoteCommitment {
             NOTE_COMMITMENT_PERSONALIZATION,
         );
 
-        let zec_hash_point = zec_domain.M.hash_to_point(zec_note_bits);
-        let zsa_hash_point = zsa_domain.M.hash_to_point(zsa_note_bits);
+        let zec_hash_point = zec_domain.hash_to_point(zec_note_bits);
+        let zsa_hash_point = zsa_domain.hash_to_point(zsa_note_bits);
 
         // Select the desired hash point in constant-time
         let hash_point = zsa_hash_point.and_then(|zsa_hash| {
@@ -176,7 +176,7 @@ mod tests {
 
         // Evaluating the commitment in one step with `commit` or in two steps with `hash_to_point`
         // and `commit_from_hash_point` must give the same commitment.
-        let hash_point = domain_zsa.M.hash_to_point(msg.into_iter());
+        let hash_point = domain_zsa.hash_to_point(msg.into_iter());
         let commit_r_zsa = domain_zsa.commit_from_hash_point(hash_point, &rcm.0);
         assert_eq!(expected_commit.unwrap(), commit_r_zsa.unwrap());
 

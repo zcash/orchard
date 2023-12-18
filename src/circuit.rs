@@ -60,8 +60,8 @@ use halo2_gadgets::{
     },
     utilities::{
         bool_check,
+        cond_swap::{CondSwapChip, CondSwapConfig},
         lookup_range_check::LookupRangeCheckConfig,
-        mux::{MuxChip, MuxConfig},
     },
 };
 
@@ -103,7 +103,7 @@ pub struct Config {
     commit_ivk_config: CommitIvkConfig,
     old_note_commit_config: NoteCommitConfig,
     new_note_commit_config: NoteCommitConfig,
-    mux_config: MuxConfig,
+    cond_swap_config: CondSwapConfig,
 }
 
 /// The Orchard Action circuit.
@@ -455,7 +455,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let new_note_commit_config =
             NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone());
 
-        let mux_config = MuxChip::configure(meta, advices[0], advices[1], advices[2], advices[3]);
+        let cond_swap_config = CondSwapChip::configure(meta, advices[0..5].try_into().unwrap());
 
         Config {
             primary,
@@ -471,7 +471,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             commit_ivk_config,
             old_note_commit_config,
             new_note_commit_config,
-            mux_config,
+            cond_swap_config,
         }
     }
 
@@ -668,7 +668,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.poseidon_chip(),
                 config.add_chip(),
                 ecc_chip.clone(),
-                config.mux_chip(),
+                config.cond_swap_chip(),
                 rho_old.clone(),
                 &psi_nf,
                 &cm_old,
@@ -764,7 +764,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.sinsemilla_chip_1(),
                 config.ecc_chip(),
                 config.note_commit_chip_old(),
-                config.mux_chip(),
+                config.cond_swap_chip(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
                 v_old.clone(),
@@ -825,7 +825,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.sinsemilla_chip_2(),
                 config.ecc_chip(),
                 config.note_commit_chip_new(),
-                config.mux_chip(),
+                config.cond_swap_chip(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
                 v_new.clone(),

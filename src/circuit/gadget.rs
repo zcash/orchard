@@ -15,7 +15,7 @@ use halo2_gadgets::{
         Hash as PoseidonHash, PoseidonSpongeInstructions, Pow5Chip as PoseidonChip,
     },
     sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip},
-    utilities::mux::{MuxChip, MuxInstructions},
+    utilities::cond_swap::CondSwapChip,
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter, Value},
@@ -73,8 +73,8 @@ impl super::Config {
         NoteCommitChip::construct(self.old_note_commit_config.clone())
     }
 
-    pub(super) fn mux_chip(&self) -> MuxChip {
-        MuxChip::construct(self.mux_config.clone())
+    pub(super) fn cond_swap_chip(&self) -> CondSwapChip<pallas::Base> {
+        CondSwapChip::construct(self.cond_swap_config.clone())
     }
 }
 
@@ -170,7 +170,7 @@ pub(in crate::circuit) fn derive_nullifier<
     poseidon_chip: PoseidonChip,
     add_chip: AddChip,
     ecc_chip: EccChip,
-    mux_chip: MuxChip,
+    cond_swap_chip: CondSwapChip<pallas::Base>,
     rho: AssignedCell<pallas::Base, pallas::Base>,
     psi: &AssignedCell<pallas::Base, pallas::Base>,
     cm: &Point<pallas::Affine, EccChip>,
@@ -223,7 +223,7 @@ pub(in crate::circuit) fn derive_nullifier<
     // Select the desired nullifier according to split_flag
     Ok(Point::from_inner(
         ecc_chip,
-        mux_chip.mux_on_points(
+        cond_swap_chip.mux_on_points(
             layouter.namespace(|| "mux on nf"),
             &split_flag,
             nf.inner(),
