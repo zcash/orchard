@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
-    builder::Builder,
+    builder::{Builder, BundleType},
     bundle::Flags,
     circuit::ProvingKey,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
@@ -45,19 +45,19 @@ fn bench_note_decryption(c: &mut Criterion) {
         .collect();
 
     let bundle = {
-        let mut builder = Builder::new(
-            Flags::from_parts(true, true),
+        let mut builder = Builder::new(BundleType::Transactional(
+            Flags::ENABLED,
             Anchor::from_bytes([0; 32]).unwrap(),
-        );
+        ));
         // The builder pads to two actions, and shuffles their order. Add two recipients
         // so the first action is always decryptable.
         builder
-            .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+            .add_output(None, recipient, NoteValue::from_raw(10), None)
             .unwrap();
         builder
-            .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+            .add_output(None, recipient, NoteValue::from_raw(10), None)
             .unwrap();
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap();
+        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap();
         bundle
             .create_proof(&pk, rng)
             .unwrap()

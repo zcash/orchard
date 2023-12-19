@@ -6,6 +6,31 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `orchard::builder::bundle`
+- `orchard::builder::BundleType`
+- `orchard::builder::OutputInfo`
+- `orchard::bundle::Flags::{ENABLED, SPENDS_DISABLED, OUTPUTS_DISABLED}`
+
+### Changed
+- `orchard::builder::Builder::new` now takes the bundle type to be used
+  in bundle construction, instead of taking the flags and anchor separately.
+- `orchard::builder::Builder::add_recipient` has been renamed to `add_output`
+  in order to clarify than more than one output of a given transaction may be
+  sent to the same recipient.
+- `orchard::builder::Builder::build` now takes an additional `BundleType` argument
+  that specifies how actions should be padded, instead of using hardcoded padding.
+  It also now returns a `Result<Option<Bundle<...>>, ...>` instead of a 
+  `Result<Bundle<...>, ...>`.
+- `orchard::builder::BuildError` has additional variants:
+  - `SpendsDisabled`
+  - `OutputsDisabled`
+  - `AnchorMismatch`
+- `orchard::builder::SpendInfo::new` now returns a `Result<SpendInfo, SpendError>`
+  instead of an `Option`.
+
+### Removed
+- `orchard::bundle::Flags::from_parts`
 
 ## [0.6.0] - 2023-09-08
 ### Changed
@@ -22,8 +47,8 @@ and this project adheres to Rust's notion of
 - `orchard::builder`:
   - `{SpendInfo::new, InputView, OutputView}`
   - `Builder::{spends, outputs}`
-  - `SpendError` 
-  - `OutputError` 
+  - `SpendError`
+  - `OutputError`
 
 ### Changed
 - MSRV is now 1.60.0.

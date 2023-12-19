@@ -42,7 +42,7 @@ impl<T> Action<T> {
 }
 
 /// Orchard-specific flags.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Flags {
     /// Flag denoting whether Orchard spends are enabled in the transaction.
     ///
@@ -64,12 +64,30 @@ const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED);
 
 impl Flags {
     /// Construct a set of flags from its constituent parts
-    pub fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
+    pub(crate) fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
         }
     }
+
+    /// The flag set with both spends and outputs enabled.
+    pub const ENABLED: Flags = Flags {
+        spends_enabled: true,
+        outputs_enabled: true,
+    };
+
+    /// The flag set with spends disabled.
+    pub const SPENDS_DISABLED: Flags = Flags {
+        spends_enabled: false,
+        outputs_enabled: true,
+    };
+
+    /// The flag set with outputs disabled.
+    pub const OUTPUTS_DISABLED: Flags = Flags {
+        spends_enabled: true,
+        outputs_enabled: false,
+    };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
     ///
@@ -113,10 +131,10 @@ impl Flags {
     pub fn from_byte(value: u8) -> Option<Self> {
         // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
         if value & FLAGS_EXPECTED_UNSET == 0 {
-            Some(Self::from_parts(
-                value & FLAG_SPENDS_ENABLED != 0,
-                value & FLAG_OUTPUTS_ENABLED != 0,
-            ))
+            Some(Self {
+                spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
+                outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
+            })
         } else {
             None
         }

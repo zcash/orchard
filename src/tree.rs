@@ -58,12 +58,14 @@ impl From<MerkleHashOrchard> for Anchor {
 }
 
 impl Anchor {
+    pub(crate) fn empty_tree() -> Anchor {
+        Anchor(MerkleHashOrchard::empty_root(Level::from(MERKLE_DEPTH_ORCHARD as u8)).0)
+    }
+
     pub(crate) fn inner(&self) -> pallas::Base {
         self.0
     }
-}
 
-impl Anchor {
     /// Parses an Orchard anchor from a byte encoding.
     pub fn from_bytes(bytes: [u8; 32]) -> CtOption<Anchor> {
         pallas::Base::from_repr(bytes).map(Anchor)

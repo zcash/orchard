@@ -7,7 +7,7 @@ use criterion::{BenchmarkId, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
 use orchard::{
-    builder::Builder,
+    builder::{Builder, BundleType},
     bundle::Flags,
     circuit::{ProvingKey, VerifyingKey},
     keys::{FullViewingKey, Scope, SpendingKey},
@@ -26,16 +26,16 @@ fn criterion_benchmark(c: &mut Criterion) {
     let pk = ProvingKey::build();
 
     let create_bundle = |num_recipients| {
-        let mut builder = Builder::new(
-            Flags::from_parts(true, true),
+        let mut builder = Builder::new(BundleType::Transactional(
+            Flags::ENABLED,
             Anchor::from_bytes([0; 32]).unwrap(),
-        );
+        ));
         for _ in 0..num_recipients {
             builder
-                .add_recipient(None, recipient, NoteValue::from_raw(10), None)
+                .add_output(None, recipient, NoteValue::from_raw(10), None)
                 .unwrap();
         }
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap();
+        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap();
 
         let instances: Vec<_> = bundle
             .actions()
