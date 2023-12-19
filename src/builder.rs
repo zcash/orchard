@@ -27,7 +27,7 @@ use crate::{
 
 const MIN_ACTIONS: usize = 2;
 
-/// An enumeration of rules Orchard bundle construction.
+/// An enumeration of rules for Orchard bundle construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
@@ -60,7 +60,13 @@ impl BundleType {
                     Ok(core::cmp::max(num_requested_actions, MIN_ACTIONS))
                 }
             }
-            BundleType::Coinbase => Ok(num_outputs),
+            BundleType::Coinbase => {
+                if num_spends > 0 {
+                    Err("Coinbase bundles have spends disabled, so num_spends must be zero")
+                } else {
+                    Ok(num_outputs)
+                }
+            }
         }
     }
 
@@ -80,7 +86,7 @@ pub enum BuildError {
     SpendsDisabled,
     /// Spends are disabled for the provided bundle type.
     OutputsDisabled,
-    /// The anchor provided to this builder doesn't match the merkle path used to add a spend.
+    /// The anchor provided to this builder doesn't match the Merkle path used to add a spend.
     AnchorMismatch,
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
@@ -217,6 +223,16 @@ impl SpendInfo {
             merkle_path,
         }
     }
+
+    fn has_matching_anchor(&self, anchor: Anchor) -> bool {
+        if self.note.value() == NoteValue::zero() {
+            true
+        } else {
+            let cm = self.note.commitment();
+            let path_root = self.merkle_path.root(cm.into());
+            path_root == anchor
+        }
+    }
 }
 
 /// Information about a specific output to receive funds in an [`Action`].
@@ -324,6 +340,11 @@ impl ActionInfo {
     }
 }
 
+/// Type alias for an in-progress bundle that has no proofs or signatures.
+///
+/// This is returned by [`Builder::build`].
+pub type UnauthorizedBundle<V> = Bundle<InProgress<Unproven, Unauthorized>, V>;
+
 /// A builder that constructs a [`Bundle`] from a set of notes to be spent, and outputs
 /// to receive funds.
 #[derive(Debug)]
@@ -366,15 +387,14 @@ impl Builder {
             return Err(SpendError::SpendsDisabled);
         }
 
+        let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
+
         // Consistency check: all anchors must be equal.
-        let cm = note.commitment();
-        let path_root = merkle_path.root(cm.into());
-        if path_root != anchor {
+        if !spend.has_matching_anchor(anchor) {
             return Err(SpendError::AnchorMismatch);
         }
 
-        self.spends
-            .push(SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?);
+        self.spends.push(spend);
 
         Ok(())
     }
@@ -442,7 +462,7 @@ impl Builder {
     pub fn build<V: TryFrom<i64>>(
         self,
         rng: impl RngCore,
-    ) -> Result<Option<Bundle<InProgress<Unproven, Unauthorized>, V>>, BuildError> {
+    ) -> Result<Option<UnauthorizedBundle<V>>, BuildError> {
         bundle(rng, self.spends, self.outputs, self.bundle_type)
     }
 }
@@ -456,7 +476,7 @@ pub fn bundle<V: TryFrom<i64>>(
     mut spends: Vec<SpendInfo>,
     mut outputs: Vec<OutputInfo>,
     bundle_type: BundleType,
-) -> Result<Option<Bundle<InProgress<Unproven, Unauthorized>, V>>, BuildError> {
+) -> Result<Option<UnauthorizedBundle<V>>, BuildError> {
     let (flags, anchor) = bundle_type.bundle_config();
 
     let num_requested_spends = spends.len();
@@ -465,12 +485,8 @@ pub fn bundle<V: TryFrom<i64>>(
     }
 
     for spend in &spends {
-        if spend.note.value() != NoteValue::zero() {
-            let cm = spend.note.commitment();
-            let path_root = spend.merkle_path.root(cm.into());
-            if path_root != anchor {
-                return Err(BuildError::AnchorMismatch);
-            }
+        if !spend.has_matching_anchor(anchor) {
+            return Err(BuildError::AnchorMismatch);
         }
     }
 
