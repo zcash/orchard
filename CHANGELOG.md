@@ -6,6 +6,14 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Licensing
+- The license for this crate is now "MIT OR Apache-2.0". The license
+  exception that applied to the Zcash and Zebra projects, other projects
+  designed to integrate with Zcash, and certain forks of Zcash, is no longer
+  necessary. For clarity, this is intended to be a strict relaxation of the
+  previous licensing, i.e. it permits all usage that was previously possible
+  with or without use of the license exception.
+
 ### Added
 - `orchard::builder::bundle`
 - `orchard::builder::BundleType`
