@@ -61,7 +61,7 @@ and this project adheres to Rust's notion of
   - `PreparedEphemeralPublicKey`
   - `PreparedIncomingViewingKey`
 - impls of `memuse::DynamicUsage` for:
-  - `orchard::note::nullifier::Nullifier`
+  - `orchard::note::Nullifier`
   - `orchard::note_encryption::OrchardDomain`
 - impls of `Eq` for:
   - `orchard::zip32::ChildIndex`
