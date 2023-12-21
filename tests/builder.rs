@@ -42,7 +42,13 @@ fn bundle_chain() {
         // Use the empty tree.
         let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
-        let mut builder = Builder::new(BundleType::Transactional(Flags::SPENDS_DISABLED, anchor));
+        let mut builder = Builder::new(
+            BundleType::Transactional {
+                flags: Flags::SPENDS_DISABLED,
+                bundle_required: false,
+            },
+            anchor,
+        );
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
             Ok(())
@@ -83,7 +89,7 @@ fn bundle_chain() {
         let anchor = root.into();
         assert_eq!(anchor, merkle_path.root(cmx));
 
-        let mut builder = Builder::new(BundleType::Transactional(Flags::ENABLED, anchor));
+        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), None),

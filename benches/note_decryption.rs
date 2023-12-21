@@ -1,7 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::Flags,
     circuit::ProvingKey,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note_encryption::{CompactAction, OrchardDomain},
@@ -45,10 +44,7 @@ fn bench_note_decryption(c: &mut Criterion) {
         .collect();
 
     let bundle = {
-        let mut builder = Builder::new(BundleType::Transactional(
-            Flags::ENABLED,
-            Anchor::from_bytes([0; 32]).unwrap(),
-        ));
+        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
         // The builder pads to two actions, and shuffles their order. Add two recipients
         // so the first action is always decryptable.
         builder

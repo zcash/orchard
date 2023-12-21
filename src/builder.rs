@@ -32,12 +32,33 @@ const MIN_ACTIONS: usize = 2;
 pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
     /// irrespective of whether any genuine actions are required.
-    Transactional(Flags, Anchor),
+    Transactional {
+        /// The flags that control whether spends and/or outputs are enabled for the bundle.
+        flags: Flags,
+        /// A flag that, when set to `true`, indicates that a bundle should be produced even if no
+        /// spends or outputs have been added to the bundle; in such a circumstance, all of the
+        /// actions in the resulting bundle will be dummies.
+        bundle_required: bool,
+    },
     /// A coinbase bundle is required to have no non-dummy spends. No padding is performed.
     Coinbase,
 }
 
 impl BundleType {
+    /// The default bundle type has all flags enabled, and does not require a bundle to be produced
+    /// if no spends or outputs have been added to the bundle.
+    pub const DEFAULT: BundleType = BundleType::Transactional {
+        flags: Flags::ENABLED,
+        bundle_required: false,
+    };
+
+    /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
+    /// builder will prevent any spends or outputs from being added.
+    pub const DISABLED: BundleType = BundleType::Transactional {
+        flags: Flags::from_parts(false, false),
+        bundle_required: false,
+    };
+
     /// Returns the number of logical actions that builder will produce in constructing a bundle
     /// of this type, given the specified numbers of spends and outputs.
     ///
@@ -51,13 +72,20 @@ impl BundleType {
         let num_requested_actions = core::cmp::max(num_spends, num_outputs);
 
         match self {
-            BundleType::Transactional(flags, _) => {
+            BundleType::Transactional {
+                flags,
+                bundle_required,
+            } => {
                 if !flags.spends_enabled() && num_spends > 0 {
                     Err("Spends are disabled, so num_spends must be zero")
                 } else if !flags.outputs_enabled() && num_outputs > 0 {
                     Err("Outputs are disabled, so num_outputs must be zero")
                 } else {
-                    Ok(core::cmp::max(num_requested_actions, MIN_ACTIONS))
+                    Ok(if *bundle_required || num_requested_actions > 0 {
+                        core::cmp::max(num_requested_actions, MIN_ACTIONS)
+                    } else {
+                        0
+                    })
                 }
             }
             BundleType::Coinbase => {
@@ -71,10 +99,10 @@ impl BundleType {
     }
 
     /// Returns the set of flags and the anchor that will be used for bundle construction.
-    pub fn bundle_config(&self) -> (Flags, Anchor) {
+    pub fn flags(&self) -> Flags {
         match self {
-            BundleType::Transactional(flags, anchor) => (*flags, *anchor),
-            BundleType::Coinbase => (Flags::SPENDS_DISABLED, Anchor::empty_tree()),
+            BundleType::Transactional { flags, .. } => *flags,
+            BundleType::Coinbase => Flags::SPENDS_DISABLED,
         }
     }
 }
@@ -224,13 +252,13 @@ impl SpendInfo {
         }
     }
 
-    fn has_matching_anchor(&self, anchor: Anchor) -> bool {
+    fn has_matching_anchor(&self, anchor: &Anchor) -> bool {
         if self.note.value() == NoteValue::zero() {
             true
         } else {
             let cm = self.note.commitment();
             let path_root = self.merkle_path.root(cm.into());
-            path_root == anchor
+            &path_root == anchor
         }
     }
 }
@@ -352,15 +380,17 @@ pub struct Builder {
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     bundle_type: BundleType,
+    anchor: Anchor,
 }
 
 impl Builder {
     /// Constructs a new empty builder for an Orchard bundle.
-    pub fn new(bundle_type: BundleType) -> Self {
+    pub fn new(bundle_type: BundleType, anchor: Anchor) -> Self {
         Builder {
             spends: vec![],
             outputs: vec![],
             bundle_type,
+            anchor,
         }
     }
 
@@ -382,7 +412,7 @@ impl Builder {
         note: Note,
         merkle_path: MerklePath,
     ) -> Result<(), SpendError> {
-        let (flags, anchor) = self.bundle_type.bundle_config();
+        let flags = self.bundle_type.flags();
         if !flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
@@ -390,7 +420,7 @@ impl Builder {
         let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
 
         // Consistency check: all anchors must be equal.
-        if !spend.has_matching_anchor(anchor) {
+        if !spend.has_matching_anchor(&self.anchor) {
             return Err(SpendError::AnchorMismatch);
         }
 
@@ -407,7 +437,7 @@ impl Builder {
         value: NoteValue,
         memo: Option<[u8; 512]>,
     ) -> Result<(), OutputError> {
-        let (flags, _) = self.bundle_type.bundle_config();
+        let flags = self.bundle_type.flags();
         if !flags.outputs_enabled() {
             return Err(OutputError);
         }
@@ -463,7 +493,13 @@ impl Builder {
         self,
         rng: impl RngCore,
     ) -> Result<Option<UnauthorizedBundle<V>>, BuildError> {
-        bundle(rng, self.spends, self.outputs, self.bundle_type)
+        bundle(
+            rng,
+            self.anchor,
+            self.bundle_type,
+            self.spends,
+            self.outputs,
+        )
     }
 }
 
@@ -473,11 +509,12 @@ impl Builder {
 /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
 pub fn bundle<V: TryFrom<i64>>(
     mut rng: impl RngCore,
+    anchor: Anchor,
+    bundle_type: BundleType,
     mut spends: Vec<SpendInfo>,
     mut outputs: Vec<OutputInfo>,
-    bundle_type: BundleType,
 ) -> Result<Option<UnauthorizedBundle<V>>, BuildError> {
-    let (flags, anchor) = bundle_type.bundle_config();
+    let flags = bundle_type.flags();
 
     let num_requested_spends = spends.len();
     if !flags.spends_enabled() && num_requested_spends > 0 {
@@ -485,7 +522,7 @@ pub fn bundle<V: TryFrom<i64>>(
     }
 
     for spend in &spends {
-        if !spend.has_matching_anchor(anchor) {
+        if !spend.has_matching_anchor(&anchor) {
             return Err(BuildError::AnchorMismatch);
         }
     }
@@ -868,7 +905,7 @@ pub mod testing {
 
     use crate::{
         address::testing::arb_address,
-        bundle::{Authorized, Bundle, Flags},
+        bundle::{Authorized, Bundle},
         circuit::ProvingKey,
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
@@ -900,8 +937,7 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let flags = Flags::from_parts(true, true);
-            let mut builder = Builder::new(BundleType::Transactional(flags, self.anchor));
+            let mut builder = Builder::new(BundleType::DEFAULT, self.anchor);
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -1001,7 +1037,7 @@ mod tests {
     use super::Builder;
     use crate::{
         builder::BundleType,
-        bundle::{Authorized, Bundle, Flags},
+        bundle::{Authorized, Bundle},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendingKey},
@@ -1018,10 +1054,10 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let mut builder = Builder::new(BundleType::Transactional(
-            Flags::from_parts(true, true),
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        ));
+        );
 
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), None)

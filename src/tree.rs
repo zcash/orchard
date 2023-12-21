@@ -58,7 +58,12 @@ impl From<MerkleHashOrchard> for Anchor {
 }
 
 impl Anchor {
-    pub(crate) fn empty_tree() -> Anchor {
+    /// The anchor of the empty Orchard note commitment tree.
+    ///
+    /// This anchor does not correspond to any valid anchor for a spend, so it
+    /// may only be used for coinbase bundles or in circumstances where Orchard
+    /// functionality is not active.
+    pub fn empty_tree() -> Anchor {
         Anchor(MerkleHashOrchard::empty_root(Level::from(MERKLE_DEPTH_ORCHARD as u8)).0)
     }
 
