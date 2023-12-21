@@ -64,7 +64,7 @@ const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED);
 
 impl Flags {
     /// Construct a set of flags from its constituent parts
-    pub(crate) fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
+    pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,

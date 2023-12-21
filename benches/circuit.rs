@@ -8,7 +8,6 @@ use pprof::criterion::{Output, PProfProfiler};
 
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::Flags,
     circuit::{ProvingKey, VerifyingKey},
     keys::{FullViewingKey, Scope, SpendingKey},
     value::NoteValue,
@@ -26,10 +25,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let pk = ProvingKey::build();
 
     let create_bundle = |num_recipients| {
-        let mut builder = Builder::new(BundleType::Transactional(
-            Flags::ENABLED,
-            Anchor::from_bytes([0; 32]).unwrap(),
-        ));
+        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
         for _ in 0..num_recipients {
             builder
                 .add_output(None, recipient, NoteValue::from_raw(10), None)
