@@ -11,6 +11,7 @@ and this project adheres to Rust's notion of
 - `orchard::builder::BundleType`
 - `orchard::builder::OutputInfo`
 - `orchard::bundle::Flags::{ENABLED, SPENDS_DISABLED, OUTPUTS_DISABLED}`
+- `orchard::tree::Anchor::empty_tree`
 
 ### Changed
 - `orchard::builder::Builder::new` now takes the bundle type to be used
