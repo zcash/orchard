@@ -7,7 +7,7 @@ pub use fixed_bases::{NullifierK, OrchardFixedBases, OrchardFixedBasesFull, Valu
 pub use sinsemilla::{OrchardCommitDomains, OrchardHashDomains};
 
 /// $\mathsf{MerkleDepth^{Orchard}}$
-pub(crate) const MERKLE_DEPTH_ORCHARD: usize = 32;
+pub const MERKLE_DEPTH_ORCHARD: usize = 32;
 
 /// The Pallas scalar field modulus is $q = 2^{254} + \mathsf{t_q}$.
 /// <https://github.com/zcash/pasta>
