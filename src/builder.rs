@@ -373,8 +373,12 @@ impl ActionInfo {
 /// This is returned by [`Builder::build`].
 pub type UnauthorizedBundle<V> = Bundle<InProgress<Unproven, Unauthorized>, V>;
 
-/// Metadata about a how a transaction created by a [`bundle`] ordered actions relative to the
-/// order in which spends and outputs were provided
+/// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not
+/// necessarily recoverable from the bundle itself.
+///
+/// This includes information about how [`Action`]s within the bundle are ordered (after
+/// padding and randomization) relative to the order in which spends and outputs were
+/// provided (to [`bundle`]), or the order in which [`Builder`] mutations were performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleMetadata {
     spend_indices: Vec<usize>,
@@ -389,29 +393,31 @@ impl BundleMetadata {
         }
     }
 
-    /// Returns a new empty [`BundleMetadata`].
+    /// Returns the metadata for a [`Bundle`] that contains only dummy actions, if any.
     pub fn empty() -> Self {
         Self::new(0, 0)
     }
 
-    /// Returns the index within the transaction of the [`Action`] corresponding to the `n`-th
-    /// spend specified in bundle construction. If a [`Builder`] was used, this refers to the spend
-    /// added by the `n`-th call to [`Builder::add_spend`].
+    /// Returns the index within the bundle of the [`Action`] corresponding to the `n`-th
+    /// spend specified in bundle construction. If a [`Builder`] was used, this refers to
+    /// the spend added by the `n`-th call to [`Builder::add_spend`].
     ///
-    /// Note positions are randomized when building transactions for indistinguishability.
-    /// This means that the transaction consumer cannot assume that e.g. the first spend
-    /// they added corresponds to the first [`Action`] in the transaction.
+    /// For the purpose of improving indistinguishability, actions are padded and note
+    /// positions are randomized when building bundles. This means that the bundle
+    /// consumer cannot assume that e.g. the first spend they added corresponds to the
+    /// first action in the bundle.
     pub fn spend_action_index(&self, n: usize) -> Option<usize> {
         self.spend_indices.get(n).copied()
     }
 
-    /// Returns the index within the transaction of the [`Action`] corresponding to the `n`-th
-    /// output specified in bundle construction. If a [`Builder`] was used, this refers to the
-    /// output added by the `n`-th call to [`Builder::add_output`].
+    /// Returns the index within the bundle of the [`Action`] corresponding to the `n`-th
+    /// output specified in bundle construction. If a [`Builder`] was used, this refers to
+    /// the output added by the `n`-th call to [`Builder::add_output`].
     ///
-    /// Note positions are randomized when building transactions for indistinguishability.
-    /// This means that the transaction consumer cannot assume that e.g. the first output
-    /// they added corresponds to the first [`Action`] in the transaction.
+    /// For the purpose of improving indistinguishability, actions are padded and note
+    /// positions are randomized when building bundles. This means that the bundle
+    /// consumer cannot assume that e.g. the first output they added corresponds to the
+    /// first action in the bundle.
     pub fn output_action_index(&self, n: usize) -> Option<usize> {
         self.output_indices.get(n).copied()
     }
