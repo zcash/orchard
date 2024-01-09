@@ -373,6 +373,56 @@ impl ActionInfo {
 /// This is returned by [`Builder::build`].
 pub type UnauthorizedBundle<V> = Bundle<InProgress<Unproven, Unauthorized>, V>;
 
+/// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not
+/// necessarily recoverable from the bundle itself.
+///
+/// This includes information about how [`Action`]s within the bundle are ordered (after
+/// padding and randomization) relative to the order in which spends and outputs were
+/// provided (to [`bundle`]), or the order in which [`Builder`] mutations were performed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BundleMetadata {
+    spend_indices: Vec<usize>,
+    output_indices: Vec<usize>,
+}
+
+impl BundleMetadata {
+    fn new(num_requested_spends: usize, num_requested_outputs: usize) -> Self {
+        BundleMetadata {
+            spend_indices: vec![0; num_requested_spends],
+            output_indices: vec![0; num_requested_outputs],
+        }
+    }
+
+    /// Returns the metadata for a [`Bundle`] that contains only dummy actions, if any.
+    pub fn empty() -> Self {
+        Self::new(0, 0)
+    }
+
+    /// Returns the index within the bundle of the [`Action`] corresponding to the `n`-th
+    /// spend specified in bundle construction. If a [`Builder`] was used, this refers to
+    /// the spend added by the `n`-th call to [`Builder::add_spend`].
+    ///
+    /// For the purpose of improving indistinguishability, actions are padded and note
+    /// positions are randomized when building bundles. This means that the bundle
+    /// consumer cannot assume that e.g. the first spend they added corresponds to the
+    /// first action in the bundle.
+    pub fn spend_action_index(&self, n: usize) -> Option<usize> {
+        self.spend_indices.get(n).copied()
+    }
+
+    /// Returns the index within the bundle of the [`Action`] corresponding to the `n`-th
+    /// output specified in bundle construction. If a [`Builder`] was used, this refers to
+    /// the output added by the `n`-th call to [`Builder::add_output`].
+    ///
+    /// For the purpose of improving indistinguishability, actions are padded and note
+    /// positions are randomized when building bundles. This means that the bundle
+    /// consumer cannot assume that e.g. the first output they added corresponds to the
+    /// first action in the bundle.
+    pub fn output_action_index(&self, n: usize) -> Option<usize> {
+        self.output_indices.get(n).copied()
+    }
+}
+
 /// A builder that constructs a [`Bundle`] from a set of notes to be spent, and outputs
 /// to receive funds.
 #[derive(Debug)]
@@ -492,7 +542,7 @@ impl Builder {
     pub fn build<V: TryFrom<i64>>(
         self,
         rng: impl RngCore,
-    ) -> Result<Option<UnauthorizedBundle<V>>, BuildError> {
+    ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
         bundle(
             rng,
             self.anchor,
@@ -511,9 +561,9 @@ pub fn bundle<V: TryFrom<i64>>(
     mut rng: impl RngCore,
     anchor: Anchor,
     bundle_type: BundleType,
-    mut spends: Vec<SpendInfo>,
-    mut outputs: Vec<OutputInfo>,
-) -> Result<Option<UnauthorizedBundle<V>>, BuildError> {
+    spends: Vec<SpendInfo>,
+    outputs: Vec<OutputInfo>,
+) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
     let flags = bundle_type.flags();
 
     let num_requested_spends = spends.len();
@@ -537,27 +587,48 @@ pub fn bundle<V: TryFrom<i64>>(
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
     // Pair up the spends and outputs, extending with dummy values as necessary.
-    let pre_actions: Vec<_> = {
-        spends.extend(
-            iter::repeat_with(|| SpendInfo::dummy(&mut rng))
-                .take(num_actions - num_requested_spends),
-        );
-        outputs.extend(
-            iter::repeat_with(|| OutputInfo::dummy(&mut rng))
-                .take(num_actions - num_requested_outputs),
-        );
+    let (pre_actions, bundle_meta) = {
+        let mut indexed_spends = spends
+            .into_iter()
+            .chain(iter::repeat_with(|| SpendInfo::dummy(&mut rng)))
+            .enumerate()
+            .take(num_actions)
+            .collect::<Vec<_>>();
+
+        let mut indexed_outputs = outputs
+            .into_iter()
+            .chain(iter::repeat_with(|| OutputInfo::dummy(&mut rng)))
+            .enumerate()
+            .take(num_actions)
+            .collect::<Vec<_>>();
 
         // Shuffle the spends and outputs, so that learning the position of a
         // specific spent note or output note doesn't reveal anything on its own about
         // the meaning of that note in the transaction context.
-        spends.shuffle(&mut rng);
-        outputs.shuffle(&mut rng);
+        indexed_spends.shuffle(&mut rng);
+        indexed_outputs.shuffle(&mut rng);
 
-        spends
+        let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
+        let pre_actions = indexed_spends
             .into_iter()
-            .zip(outputs.into_iter())
-            .map(|(spend, output)| ActionInfo::new(spend, output, &mut rng))
-            .collect()
+            .zip(indexed_outputs.into_iter())
+            .enumerate()
+            .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
+                // Record the post-randomization spend location
+                if spend_idx < num_requested_spends {
+                    bundle_meta.spend_indices[spend_idx] = action_idx;
+                }
+
+                // Record the post-randomization output location
+                if out_idx < num_requested_outputs {
+                    bundle_meta.output_indices[out_idx] = action_idx;
+                }
+
+                ActionInfo::new(spend, output, &mut rng)
+            })
+            .collect::<Vec<_>>();
+
+        (pre_actions, bundle_meta)
     };
 
     // Determine the value balance for this bundle, ensuring it is valid.
@@ -590,15 +661,18 @@ pub fn bundle<V: TryFrom<i64>>(
     assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
     Ok(NonEmpty::from_vec(actions).map(|actions| {
-        Bundle::from_parts(
-            actions,
-            flags,
-            result_value_balance,
-            anchor,
-            InProgress {
-                proof: Unproven { circuits },
-                sigs: Unauthorized { bsk },
-            },
+        (
+            Bundle::from_parts(
+                actions,
+                flags,
+                result_value_balance,
+                anchor,
+                InProgress {
+                    proof: Unproven { circuits },
+                    sigs: Unauthorized { bsk },
+                },
+            ),
+            bundle_meta,
         )
     }))
 }
@@ -957,6 +1031,7 @@ pub mod testing {
                 .build(&mut self.rng)
                 .unwrap()
                 .unwrap()
+                .0
                 .create_proof(&pk, &mut self.rng)
                 .unwrap()
                 .prepare(&mut self.rng, [0; 32])
@@ -1069,6 +1144,7 @@ mod tests {
             .build(&mut rng)
             .unwrap()
             .unwrap()
+            .0
             .create_proof(&pk, &mut rng)
             .unwrap()
             .prepare(rng, [0; 32])

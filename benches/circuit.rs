@@ -31,7 +31,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 .add_output(None, recipient, NoteValue::from_raw(10), None)
                 .unwrap();
         }
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap();
+        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;
 
         let instances: Vec<_> = bundle
             .actions()

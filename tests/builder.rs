@@ -49,11 +49,25 @@ fn bundle_chain() {
             },
             anchor,
         );
+        let note_value = NoteValue::from_raw(5000);
         assert_eq!(
-            builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
+            builder.add_output(None, recipient, note_value, None),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap().unwrap();
+        let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
+
+        assert_eq!(
+            unauthorized
+                .decrypt_output_with_key(
+                    bundle_meta
+                        .output_action_index(0)
+                        .expect("Output 0 can be found"),
+                    &fvk.to_ivk(Scope::External)
+                )
+                .map(|(note, _, _)| note.value()),
+            Some(note_value)
+        );
+
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
@@ -95,7 +109,7 @@ fn bundle_chain() {
             builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap().unwrap();
+        let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven

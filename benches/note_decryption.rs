@@ -53,7 +53,7 @@ fn bench_note_decryption(c: &mut Criterion) {
         builder
             .add_output(None, recipient, NoteValue::from_raw(10), None)
             .unwrap();
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap();
+        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;
         bundle
             .create_proof(&pk, rng)
             .unwrap()

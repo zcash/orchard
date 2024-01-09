@@ -16,6 +16,7 @@ and this project adheres to Rust's notion of
 
 ### Added
 - `orchard::builder::bundle`
+- `orchard::builder::BundleMetadata`
 - `orchard::builder::BundleType`
 - `orchard::builder::OutputInfo`
 - `orchard::bundle::Flags::{ENABLED, SPENDS_DISABLED, OUTPUTS_DISABLED}`
@@ -29,7 +30,7 @@ and this project adheres to Rust's notion of
   sent to the same recipient.
 - `orchard::builder::Builder::build` now takes an additional `BundleType` argument
   that specifies how actions should be padded, instead of using hardcoded padding.
-  It also now returns a `Result<Option<Bundle<...>>, ...>` instead of a 
+  It also now returns a `Result<Option<(Bundle<...>, BundleMetadata)>, ...>` instead of a 
   `Result<Bundle<...>, ...>`.
 - `orchard::builder::BuildError` has additional variants:
   - `SpendsDisabled`
