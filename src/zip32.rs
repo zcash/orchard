@@ -3,12 +3,15 @@
 use core::fmt;
 
 use blake2b_simd::Params as Blake2bParams;
-use subtle::{Choice, ConstantTimeEq};
+use subtle::{Choice, ConstantTimeEq, CtOption};
+use zip32::ChainCode;
 
 use crate::{
     keys::{FullViewingKey, SpendingKey},
     spec::PrfExpand,
 };
+
+pub use zip32::ChildIndex;
 
 const ZIP32_ORCHARD_PERSONALIZATION: &[u8; 16] = b"ZcashIP32Orchard";
 const ZIP32_ORCHARD_FVFP_PERSONALIZATION: &[u8; 16] = b"ZcashOrchardFVFP";
@@ -64,26 +67,54 @@ impl FvkTag {
     }
 }
 
-/// A hardened child index for a derived key.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct ChildIndex(u32);
+/// The derivation index associated with a key.
+///
+/// Master keys are never derived via the ZIP 32 child derivation process, but they have
+/// an index in their encoding. This type allows the encoding to be represented, while
+/// also enabling the derivation methods to only accept [`ChildIndex`].
+#[derive(Clone, Copy, Debug)]
+struct KeyIndex(CtOption<ChildIndex>);
 
-impl TryFrom<u32> for ChildIndex {
-    type Error = Error;
-
-    /// `index` must be less than 2^31
-    fn try_from(index: u32) -> Result<Self, Self::Error> {
-        if index < (1 << 31) {
-            Ok(Self(index + (1 << 31)))
-        } else {
-            Err(Error::InvalidChildIndex(32))
-        }
+impl ConstantTimeEq for KeyIndex {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        // We use a `CtOption` above instead of an enum so that we can implement this.
+        self.0.ct_eq(&other.0)
     }
 }
 
-/// The chain code forming the second half of an Orchard extended key.
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct ChainCode([u8; 32]);
+impl PartialEq for KeyIndex {
+    fn eq(&self, other: &Self) -> bool {
+        self.ct_eq(other).into()
+    }
+}
+
+impl Eq for KeyIndex {}
+
+impl KeyIndex {
+    fn master() -> Self {
+        Self(CtOption::new(ChildIndex::hardened(0), 0.into()))
+    }
+
+    fn child(i: ChildIndex) -> Self {
+        Self(CtOption::new(i, 1.into()))
+    }
+
+    fn new(depth: u8, i: u32) -> Option<Self> {
+        match (depth == 0, i) {
+            (true, 0) => Some(KeyIndex::master()),
+            (false, _) => ChildIndex::from_index(i).map(KeyIndex::child),
+            _ => None,
+        }
+    }
+
+    fn index(&self) -> u32 {
+        if self.0.is_some().into() {
+            self.0.unwrap().index()
+        } else {
+            0
+        }
+    }
+}
 
 /// An Orchard extended spending key.
 ///
@@ -94,7 +125,7 @@ struct ChainCode([u8; 32]);
 pub(crate) struct ExtendedSpendingKey {
     depth: u8,
     parent_fvk_tag: FvkTag,
-    child_index: ChildIndex,
+    child_index: KeyIndex,
     chain_code: ChainCode,
     sk: SpendingKey,
 }
@@ -103,8 +134,8 @@ impl ConstantTimeEq for ExtendedSpendingKey {
     fn ct_eq(&self, rhs: &Self) -> Choice {
         self.depth.ct_eq(&rhs.depth)
             & self.parent_fvk_tag.0.ct_eq(&rhs.parent_fvk_tag.0)
-            & self.child_index.0.ct_eq(&rhs.child_index.0)
-            & self.chain_code.0.ct_eq(&rhs.chain_code.0)
+            & self.child_index.ct_eq(&rhs.child_index)
+            & self.chain_code.ct_eq(&rhs.chain_code)
             & self.sk.ct_eq(&rhs.sk)
     }
 }
@@ -153,13 +184,13 @@ impl ExtendedSpendingKey {
         let sk_m = sk_m.unwrap();
 
         // I_R is used as the master chain code c_m.
-        let c_m = ChainCode(I[32..].try_into().unwrap());
+        let c_m = ChainCode::new(I[32..].try_into().unwrap());
 
         // For the master extended spending key, depth is 0, parent_fvk_tag is 4 zero bytes, and i is 0.
         Ok(Self {
             depth: 0,
             parent_fvk_tag: FvkTag([0; 4]),
-            child_index: ChildIndex(0),
+            child_index: KeyIndex::master(),
             chain_code: c_m,
             sk: sk_m,
         })
@@ -175,9 +206,9 @@ impl ExtendedSpendingKey {
     fn derive_child(&self, index: ChildIndex) -> Result<Self, Error> {
         // I := PRF^Expand(c_par, [0x81] || sk_par || I2LEOSP(i))
         let I: [u8; 64] = PrfExpand::ORCHARD_ZIP32_CHILD.with(
-            &self.chain_code.0,
+            self.chain_code.as_bytes(),
             self.sk.to_bytes(),
-            &index.0.to_le_bytes(),
+            &index.index().to_le_bytes(),
         );
 
         // I_L is used as the child spending key sk_i.
@@ -188,14 +219,14 @@ impl ExtendedSpendingKey {
         let sk_i = sk_i.unwrap();
 
         // I_R is used as the child chain code c_i.
-        let c_i = ChainCode(I[32..].try_into().unwrap());
+        let c_i = ChainCode::new(I[32..].try_into().unwrap());
 
         let fvk: FullViewingKey = self.into();
 
         Ok(Self {
             depth: self.depth + 1,
             parent_fvk_tag: FvkFingerprint::from(&fvk).tag(),
-            child_index: index,
+            child_index: KeyIndex::child(index),
             chain_code: c_i,
             sk: sk_i,
         })
@@ -216,8 +247,8 @@ mod tests {
         let seed = [0; 32];
         let xsk_m = ExtendedSpendingKey::master(&seed).unwrap();
 
-        let i_5 = 5;
-        let xsk_5 = xsk_m.derive_child(i_5.try_into().unwrap());
+        let i_5 = ChildIndex::hardened(5);
+        let xsk_5 = xsk_m.derive_child(i_5);
 
         assert!(xsk_5.is_ok());
     }
@@ -227,18 +258,21 @@ mod tests {
         let seed = [0; 32];
         let xsk_m = ExtendedSpendingKey::master(&seed).unwrap();
 
-        let xsk_5h = xsk_m.derive_child(5.try_into().unwrap()).unwrap();
+        let xsk_5h = xsk_m.derive_child(ChildIndex::hardened(5)).unwrap();
         assert!(bool::from(
-            ExtendedSpendingKey::from_path(&seed, &[5.try_into().unwrap()])
+            ExtendedSpendingKey::from_path(&seed, &[ChildIndex::hardened(5)])
                 .unwrap()
                 .ct_eq(&xsk_5h)
         ));
 
-        let xsk_5h_7 = xsk_5h.derive_child(7.try_into().unwrap()).unwrap();
+        let xsk_5h_7 = xsk_5h.derive_child(ChildIndex::hardened(7)).unwrap();
         assert!(bool::from(
-            ExtendedSpendingKey::from_path(&seed, &[5.try_into().unwrap(), 7.try_into().unwrap()])
-                .unwrap()
-                .ct_eq(&xsk_5h_7)
+            ExtendedSpendingKey::from_path(
+                &seed,
+                &[ChildIndex::hardened(5), ChildIndex::hardened(7)]
+            )
+            .unwrap()
+            .ct_eq(&xsk_5h_7)
         ));
     }
 }

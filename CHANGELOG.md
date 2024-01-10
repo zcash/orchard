@@ -24,6 +24,10 @@ and this project adheres to Rust's notion of
 - `orchard::tree::Anchor::empty_tree`
 
 ### Changed
+- Migrated to the `zip32` crate. The following types have been replaced by the
+  equivalent ones in that crate are now re-exported from there:
+  - `orchard::keys::DiversifierIndex`
+  - `orchard::zip32::ChildIndex`
 - `orchard::builder`:
   - `Builder::new` now takes the bundle type to be used in bundle construction,
     instead of taking the flags and anchor separately.
@@ -40,6 +44,7 @@ and this project adheres to Rust's notion of
     - `AnchorMismatch`
   - `SpendInfo::new` now returns a `Result<SpendInfo, SpendError>` instead of an
     `Option`.
+- `orchard::keys::SpendingKey::from_zip32_seed` now takes a `zip32::AccountId`.
 
 ### Removed
 - `orchard::bundle::Flags::from_parts`
