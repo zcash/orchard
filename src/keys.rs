@@ -115,7 +115,7 @@ pub struct SpendAuthorizingKey(redpallas::SigningKey<SpendAuth>);
 impl SpendAuthorizingKey {
     /// Derives ask from sk. Internal use only, does not enforce all constraints.
     fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
-        to_scalar(PrfExpand::OrchardAsk.expand(&sk.0))
+        to_scalar(PrfExpand::ORCHARD_ASK.with(&sk.0))
     }
 
     /// Randomizes this spend authorizing key with the given `randomizer`.
@@ -222,7 +222,7 @@ impl NullifierDerivingKey {
 
 impl From<&SpendingKey> for NullifierDerivingKey {
     fn from(sk: &SpendingKey) -> Self {
-        NullifierDerivingKey(to_base(PrfExpand::OrchardNk.expand(&sk.0)))
+        NullifierDerivingKey(to_base(PrfExpand::ORCHARD_NK.with(&sk.0)))
     }
 }
 
@@ -257,7 +257,7 @@ pub(crate) struct CommitIvkRandomness(pallas::Scalar);
 
 impl From<&SpendingKey> for CommitIvkRandomness {
     fn from(sk: &SpendingKey) -> Self {
-        CommitIvkRandomness(to_scalar(PrfExpand::OrchardRivk.expand(&sk.0)))
+        CommitIvkRandomness(to_scalar(PrfExpand::ORCHARD_RIVK.with(&sk.0)))
     }
 }
 
@@ -351,7 +351,7 @@ impl FullViewingKey {
                 let ak = self.ak.to_bytes();
                 let nk = self.nk.to_bytes();
                 CommitIvkRandomness(to_scalar(
-                    PrfExpand::OrchardRivkInternal.with_ad_slices(&k, &[&ak, &nk]),
+                    PrfExpand::ORCHARD_RIVK_INTERNAL.with(&k, &ak, &nk),
                 ))
             }
         }
@@ -363,7 +363,7 @@ impl FullViewingKey {
     fn derive_dk_ovk(&self) -> (DiversifierKey, OutgoingViewingKey) {
         let k = self.rivk.0.to_repr();
         let b = [(&self.ak.0).into(), self.nk.0.to_repr()];
-        let r = PrfExpand::OrchardDkOvk.with_ad_slices(&k, &[&b[0][..], &b[1][..]]);
+        let r = PrfExpand::ORCHARD_DK_OVK.with(&k, &b[0], &b[1]);
         (
             DiversifierKey(r[..32].try_into().unwrap()),
             OutgoingViewingKey(r[32..].try_into().unwrap()),

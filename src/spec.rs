@@ -16,8 +16,7 @@ use crate::constants::{
     KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
 };
 
-mod prf_expand;
-pub(crate) use prf_expand::PrfExpand;
+pub(crate) use zcash_spec::PrfExpand;
 
 /// A Pallas point that is guaranteed to not be the identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
