@@ -53,7 +53,7 @@ impl RandomSeed {
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     pub(crate) fn psi(&self, rho: &Nullifier) -> pallas::Base {
-        to_base(PrfExpand::Psi.with_ad(&self.0, &rho.to_bytes()[..]))
+        to_base(PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
     }
 
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
@@ -61,7 +61,7 @@ impl RandomSeed {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn esk_inner(&self, rho: &Nullifier) -> CtOption<NonZeroPallasScalar> {
         NonZeroPallasScalar::from_scalar(to_scalar(
-            PrfExpand::Esk.with_ad(&self.0, &rho.to_bytes()[..]),
+            PrfExpand::ORCHARD_ESK.with(&self.0, &rho.to_bytes()),
         ))
     }
 
@@ -78,7 +78,7 @@ impl RandomSeed {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     pub(crate) fn rcm(&self, rho: &Nullifier) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
-            PrfExpand::Rcm.with_ad(&self.0, &rho.to_bytes()[..]),
+            PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
         ))
     }
 }

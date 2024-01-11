@@ -174,9 +174,10 @@ impl ExtendedSpendingKey {
     /// Discards index if it results in an invalid sk
     fn derive_child(&self, index: ChildIndex) -> Result<Self, Error> {
         // I := PRF^Expand(c_par, [0x81] || sk_par || I2LEOSP(i))
-        let I: [u8; 64] = PrfExpand::OrchardZip32Child.with_ad_slices(
+        let I: [u8; 64] = PrfExpand::ORCHARD_ZIP32_CHILD.with(
             &self.chain_code.0,
-            &[self.sk.to_bytes(), &index.0.to_le_bytes()],
+            self.sk.to_bytes(),
+            &index.0.to_le_bytes(),
         );
 
         // I_L is used as the child spending key sk_i.
