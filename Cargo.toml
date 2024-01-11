@@ -44,6 +44,7 @@ subtle = "2.3"
 zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.5"
 zcash_spec = "0.1"
+zip32 = "0.1"
 
 # Logging
 tracing = "0.1"

@@ -1,8 +1,8 @@
 //! Key structures for Orchard.
 
-use core::mem;
 use std::io::{self, Read, Write};
 
+use ::zip32::{AccountId, ChildIndex};
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
@@ -24,8 +24,10 @@ use crate::{
         to_scalar, NonIdentityPallasPoint, NonZeroPallasBase, NonZeroPallasScalar,
         PreparedNonIdentityBase, PreparedNonZeroScalar, PrfExpand,
     },
-    zip32::{self, ChildIndex, ExtendedSpendingKey},
+    zip32::{self, ExtendedSpendingKey},
 };
+
+pub use ::zip32::DiversifierIndex;
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
@@ -91,13 +93,17 @@ impl SpendingKey {
     pub fn from_zip32_seed(
         seed: &[u8],
         coin_type: u32,
-        account: u32,
+        account: AccountId,
     ) -> Result<Self, zip32::Error> {
+        if coin_type >= (1 << 31) {
+            return Err(zip32::Error::InvalidChildIndex(coin_type));
+        }
+
         // Call zip32 logic
         let path = &[
-            ChildIndex::try_from(ZIP32_PURPOSE)?,
-            ChildIndex::try_from(coin_type)?,
-            ChildIndex::try_from(account)?,
+            ChildIndex::hardened(ZIP32_PURPOSE),
+            ChildIndex::hardened(coin_type),
+            ChildIndex::hardened(account.into()),
         ];
         ExtendedSpendingKey::from_path(seed, path).map(|esk| esk.sk())
     }
@@ -481,44 +487,15 @@ impl FullViewingKey {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct DiversifierKey([u8; 32]);
 
-/// The index for a particular diversifier.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DiversifierIndex([u8; 11]);
-
-macro_rules! di_from {
-    ($n:ident) => {
-        impl From<$n> for DiversifierIndex {
-            fn from(j: $n) -> Self {
-                let mut j_bytes = [0; 11];
-                j_bytes[..mem::size_of::<$n>()].copy_from_slice(&j.to_le_bytes());
-                DiversifierIndex(j_bytes)
-            }
-        }
-    };
-}
-di_from!(u32);
-di_from!(u64);
-di_from!(usize);
-
-impl From<[u8; 11]> for DiversifierIndex {
-    fn from(j_bytes: [u8; 11]) -> Self {
-        DiversifierIndex(j_bytes)
-    }
-}
-
-impl DiversifierIndex {
-    /// Returns the raw bytes of the diversifier index.
-    pub fn to_bytes(&self) -> &[u8; 11] {
-        &self.0
-    }
-}
-
 impl DiversifierKey {
     /// Returns the diversifier at the given index.
     pub fn get(&self, j: impl Into<DiversifierIndex>) -> Diversifier {
         let ff = FF1::<Aes256>::new(&self.0, 2).expect("valid radix");
         let enc = ff
-            .encrypt(&[], &BinaryNumeralString::from_bytes_le(&j.into().0[..]))
+            .encrypt(
+                &[],
+                &BinaryNumeralString::from_bytes_le(j.into().as_bytes()),
+            )
             .unwrap();
         Diversifier(enc.to_bytes_le().try_into().unwrap())
     }

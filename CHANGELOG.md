@@ -15,29 +15,36 @@ and this project adheres to Rust's notion of
   with or without use of the license exception.
 
 ### Added
-- `orchard::builder::bundle`
-- `orchard::builder::BundleMetadata`
-- `orchard::builder::BundleType`
-- `orchard::builder::OutputInfo`
+- `orchard::builder`:
+  - `bundle`
+  - `BundleMetadata`
+  - `BundleType`
+  - `OutputInfo`
 - `orchard::bundle::Flags::{ENABLED, SPENDS_DISABLED, OUTPUTS_DISABLED}`
 - `orchard::tree::Anchor::empty_tree`
 
 ### Changed
-- `orchard::builder::Builder::new` now takes the bundle type to be used
-  in bundle construction, instead of taking the flags and anchor separately.
-- `orchard::builder::Builder::add_recipient` has been renamed to `add_output`
-  in order to clarify than more than one output of a given transaction may be
-  sent to the same recipient.
-- `orchard::builder::Builder::build` now takes an additional `BundleType` argument
-  that specifies how actions should be padded, instead of using hardcoded padding.
-  It also now returns a `Result<Option<(Bundle<...>, BundleMetadata)>, ...>` instead of a 
-  `Result<Bundle<...>, ...>`.
-- `orchard::builder::BuildError` has additional variants:
-  - `SpendsDisabled`
-  - `OutputsDisabled`
-  - `AnchorMismatch`
-- `orchard::builder::SpendInfo::new` now returns a `Result<SpendInfo, SpendError>`
-  instead of an `Option`.
+- Migrated to the `zip32` crate. The following types have been replaced by the
+  equivalent ones in that crate are now re-exported from there:
+  - `orchard::keys::DiversifierIndex`
+  - `orchard::zip32::ChildIndex`
+- `orchard::builder`:
+  - `Builder::new` now takes the bundle type to be used in bundle construction,
+    instead of taking the flags and anchor separately.
+  - `Builder::add_recipient` has been renamed to `add_output` in order to
+    clarify than more than one output of a given transaction may be sent to the
+    same recipient.
+  - `Builder::build` now takes an additional `BundleType` argument that
+    specifies how actions should be padded, instead of using hardcoded padding.
+    It also now returns a `Result<Option<(Bundle<...>, BundleMetadata)>, ...>`
+    instead of a  `Result<Bundle<...>, ...>`.
+  - `BuildError` has additional variants:
+    - `SpendsDisabled`
+    - `OutputsDisabled`
+    - `AnchorMismatch`
+  - `SpendInfo::new` now returns a `Result<SpendInfo, SpendError>` instead of an
+    `Option`.
+- `orchard::keys::SpendingKey::from_zip32_seed` now takes a `zip32::AccountId`.
 
 ### Removed
 - `orchard::bundle::Flags::from_parts`
