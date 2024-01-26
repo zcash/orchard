@@ -26,7 +26,7 @@ and this project adheres to Rust's notion of
 ### Changed
 - Migrated to the `zip32` crate. The following types have been replaced by the
   equivalent ones in that crate are now re-exported from there:
-  - `orchard::keys::DiversifierIndex`
+  - `orchard::keys::{DiversifierIndex, Scope}`
   - `orchard::zip32::ChildIndex`
 - `orchard::builder`:
   - `Builder::new` now takes the bundle type to be used in bundle construction,
