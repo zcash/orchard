@@ -6,6 +6,8 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.7.0] - 2024-01-26
 ### Licensing
 - The license for this crate is now "MIT OR Apache-2.0". The license
   exception that applied to the Zcash and Zebra projects, other projects
