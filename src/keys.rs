@@ -27,7 +27,7 @@ use crate::{
     zip32::{self, ExtendedSpendingKey},
 };
 
-pub use ::zip32::DiversifierIndex;
+pub use ::zip32::{DiversifierIndex, Scope};
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
@@ -286,24 +286,6 @@ impl CommitIvkRandomness {
             None
         }
     }
-}
-
-/// The scope of a viewing key or address.
-///
-/// A "scope" narrows the visibility or usage to a level below "full".
-///
-/// Consistent usage of `Scope` enables the user to provide consistent views over a wallet
-/// to other people. For example, a user can give an external [`IncomingViewingKey`] to a
-/// merchant terminal, enabling it to only detect "real" transactions from customers and
-/// not internal transactions from the wallet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Scope {
-    /// A scope used for wallet-external operations, namely deriving addresses to give to
-    /// other users in order to receive funds.
-    External,
-    /// A scope used for wallet-internal operations, such as creating change notes,
-    /// auto-shielding, and note management.
-    Internal,
 }
 
 /// A key that provides the capability to view incoming and outgoing transactions.
