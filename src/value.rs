@@ -462,7 +462,7 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use crate::note::asset_base::testing::{arb_asset_id, native_asset_id};
+    use crate::note::asset_base::testing::{arb_asset_base, native_asset_base};
 
     use crate::note::AssetBase;
     use proptest::prelude::*;
@@ -532,17 +532,17 @@ mod tests {
         fn bsk_consistent_with_bvk_native_with_zsa_transfer_and_burning(
             native_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_asset_id()), n_values)
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), native_asset_base()), n_values)
                 )
             ),
             (asset_values, neg_trapdoors) in (1usize..10).prop_flat_map(|n_values|
                 (arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_id()), n_values)
+                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_base()), n_values)
                 ), prop::collection::vec(arb_trapdoor(), n_values))
             ),
             burn_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64)
-                .prop_flat_map(move |bound| prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_id()), n_values))
+                .prop_flat_map(move |bound| prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_base()), n_values))
             )
         ) {
             check_binding_signature(&native_values, &[], &[], &[]);

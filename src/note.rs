@@ -334,7 +334,7 @@ impl fmt::Debug for TransmittedNoteCiphertext {
 pub mod testing {
     use proptest::prelude::*;
 
-    use crate::note::asset_base::testing::arb_asset_id;
+    use crate::note::asset_base::testing::arb_asset_base;
     use crate::note::AssetBase;
     use crate::value::testing::arb_note_value;
     use crate::{
@@ -358,7 +358,7 @@ pub mod testing {
             recipient in arb_address(),
             rho in arb_nullifier(),
             rseed in arb_rseed(),
-            asset in arb_asset_id(),
+            asset in arb_asset_base(),
         ) -> Note {
             Note {
                 recipient,

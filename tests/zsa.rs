@@ -58,7 +58,7 @@ fn prepare_keys() -> Keychain {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let isk = IssuanceAuthorizingKey::from_bytes([0; 32]).unwrap();
+    let isk = IssuanceAuthorizingKey::from_bytes([1u8; 32]).unwrap();
     let ik = IssuanceValidatingKey::from(&isk);
     Keychain {
         pk,
@@ -73,12 +73,11 @@ fn prepare_keys() -> Keychain {
 
 fn sign_issue_bundle(
     unauthorized: IssueBundle<Unauthorized>,
-    rng: OsRng,
     isk: &IssuanceAuthorizingKey,
 ) -> IssueBundle<Signed> {
     let sighash = unauthorized.commitment().into();
     let proven = unauthorized.prepare(sighash);
-    proven.sign(rng, isk).unwrap()
+    proven.sign(isk).unwrap()
 }
 
 fn build_and_sign_bundle(
@@ -161,7 +160,7 @@ fn issue_zsa_notes(asset_descr: &str, keys: &Keychain) -> (Note, Note) {
         )
         .is_ok());
 
-    let issue_bundle = sign_issue_bundle(unauthorized, rng, keys.isk());
+    let issue_bundle = sign_issue_bundle(unauthorized, keys.isk());
 
     // Take notes from first action
     let notes = issue_bundle.get_all_notes();

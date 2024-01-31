@@ -1,7 +1,10 @@
 //! Key structures for Orchard.
 
 use core::mem;
-use std::io::{self, Read, Write};
+use std::{
+    fmt::{Debug, Formatter},
+    io::{self, Read, Write},
+};
 
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
@@ -11,8 +14,16 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
+use k256::{
+    schnorr,
+    schnorr::{
+        signature::hazmat::{PrehashSigner, PrehashVerifier},
+        Signature, VerifyingKey,
+    },
+    NonZeroScalar,
+};
 use pasta_curves::{pallas, pallas::Scalar};
-use rand::{CryptoRng, RngCore};
+use rand::{rngs::OsRng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption_zsa::EphemeralKeyBytes;
 
@@ -218,28 +229,13 @@ fn check_structural_validity(
     }
 }
 
-/// We currently use `SpendAuth` as the `IssuanceAuth`.
-type IssuanceAuth = SpendAuth;
-
 /// An issuance key, from which all key material is derived.
 ///
 /// $\mathsf{isk}$ as defined in [ZIP 227][issuancekeycomponents].
 ///
 /// [issuancekeycomponents]: https://qed-it.github.io/zips/zip-0227#issuance-key-derivation
-#[derive(Debug, Copy, Clone)]
-pub struct IssuanceAuthorizingKey([u8; 32]);
-
-impl From<SpendingKey> for IssuanceAuthorizingKey {
-    fn from(sk: SpendingKey) -> Self {
-        IssuanceAuthorizingKey(*sk.to_bytes())
-    }
-}
-
-impl ConstantTimeEq for IssuanceAuthorizingKey {
-    fn ct_eq(&self, other: &Self) -> Choice {
-        self.to_bytes().ct_eq(other.to_bytes())
-    }
-}
+#[derive(Copy, Clone)]
+pub struct IssuanceAuthorizingKey(NonZeroScalar);
 
 impl IssuanceAuthorizingKey {
     /// Generates a random issuance key.
@@ -248,21 +244,23 @@ impl IssuanceAuthorizingKey {
     /// Real issuance keys should be derived according to [ZIP 32].
     ///
     /// [ZIP 32]: https://zips.z.cash/zip-0032
-    pub(crate) fn random(rng: &mut impl RngCore) -> Self {
-        SpendingKey::random(rng).into()
+    pub(crate) fn random() -> Self {
+        IssuanceAuthorizingKey(NonZeroScalar::random(&mut OsRng))
     }
 
     /// Constructs an Orchard issuance key from uniformly-random bytes.
     ///
     /// Returns `None` if the bytes do not correspond to a valid Orchard issuance key.
-    pub fn from_bytes(isk_bytes: [u8; 32]) -> CtOption<Self> {
-        let isk = IssuanceAuthorizingKey(isk_bytes);
-        CtOption::new(isk, 1u8.into())
+    pub fn from_bytes(isk_bytes: [u8; 32]) -> Option<Self> {
+        NonZeroScalar::try_from(&isk_bytes as &[u8])
+            .ok()
+            .map(IssuanceAuthorizingKey)
     }
 
     /// Returns the raw bytes of the issuance key.
-    pub fn to_bytes(&self) -> &[u8; 32] {
-        &self.0
+    /// Unwrap call never fails since the issuance authorizing key is exactly 32 bytes.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_bytes().try_into().unwrap()
     }
 
     /// Derives the Orchard-ZSA issuance key for the given seed, coin type, and account.
@@ -277,81 +275,74 @@ impl IssuanceAuthorizingKey {
             ChildIndex::try_from(coin_type)?,
             ChildIndex::try_from(account)?,
         ];
-        ExtendedSpendingKey::from_path(seed, path, ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE)
-            .map(|esk| esk.sk().into())
-    }
 
-    /// Derives the RedPallas signing key from isk. Internal use only, does not enforce all constraints.
-    fn derive_inner(&self) -> pallas::Scalar {
-        to_scalar(PrfExpand::ZsaIsk.expand(&self.0))
+        // we are reusing zip32 logic for deriving the key, zip32 should be updated as discussed
+        let &isk_bytes =
+            ExtendedSpendingKey::from_path(seed, path, ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE)?
+                .sk()
+                .to_bytes();
+
+        IssuanceAuthorizingKey::from_bytes(isk_bytes).ok_or(zip32::Error::InvalidSpendingKey)
     }
 
     /// Sign the provided message using the `IssuanceAuthorizingKey`.
-    pub fn sign(
-        &self,
-        rng: &mut (impl RngCore + CryptoRng),
-        msg: &[u8],
-    ) -> redpallas::Signature<IssuanceAuth> {
-        conditionally_negate(self.derive_inner()).sign(rng, msg)
+    /// Only supports signing of messages of length 32 bytes, since we will only be using it to sign 32 byte SIGHASH values.
+    pub fn try_sign(&self, msg: &[u8; 32]) -> Result<Signature, schnorr::Error> {
+        schnorr::SigningKey::from(self.0).sign_prehash(msg)
+    }
+}
+
+impl Debug for IssuanceAuthorizingKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("IssuanceAuthorizingKey")
+            .field(&self.0.to_bytes())
+            .finish()
     }
 }
 
 /// A key used to validate issuance authorization signatures.
 ///
 /// Defined in [ZIP 227: Issuance of Zcash Shielded Assets § Issuance Key Generation][IssuanceZSA].
-/// Note that this is $\mathsf{ik}^\mathbb{P}$, which by construction is equivalent to
-/// $\mathsf{ik}$ but stored here as a RedPallas verification key.
 ///
 /// [IssuanceZSA]: https://qed-it.github.io/zips/zip-0227#issuance-key-derivation
-#[derive(Debug, Clone, PartialOrd, Ord)]
-pub struct IssuanceValidatingKey(VerificationKey<IssuanceAuth>);
+#[derive(Debug, Clone)]
+pub struct IssuanceValidatingKey(schnorr::VerifyingKey);
 
 impl From<&IssuanceAuthorizingKey> for IssuanceValidatingKey {
     fn from(isk: &IssuanceAuthorizingKey) -> Self {
-        IssuanceValidatingKey((&(conditionally_negate(isk.derive_inner()))).into())
-    }
-}
-
-impl From<&IssuanceValidatingKey> for pallas::Point {
-    fn from(issuance_validating_key: &IssuanceValidatingKey) -> pallas::Point {
-        pallas::Point::from_bytes(&(&issuance_validating_key.0).into()).unwrap()
+        IssuanceValidatingKey(*schnorr::SigningKey::from(isk.0).verifying_key())
     }
 }
 
 impl PartialEq for IssuanceValidatingKey {
     fn eq(&self, other: &Self) -> bool {
-        <[u8; 32]>::from(&self.0).eq(&<[u8; 32]>::from(&other.0))
+        self.to_bytes().eq(&other.to_bytes())
     }
 }
 
 impl Eq for IssuanceValidatingKey {}
 
 impl IssuanceValidatingKey {
-    /// Converts this spend validating key to its serialized form,
-    /// I2LEOSP_256(ik).
+    /// Converts this issuance validating key to its serialized form,
+    /// in big-endian order as defined in BIP 340.
+    /// Unwrap call never fails since the issuance validating key is exactly 32 bytes.
     pub fn to_bytes(&self) -> [u8; 32] {
-        // This is correct because the wrapped point must have ỹ = 0, and
-        // so the point repr is the same as I2LEOSP of its x-coordinate.
-        <[u8; 32]>::from(&self.0)
+        self.0.to_bytes().try_into().unwrap()
     }
 
-    /// Constructs an Orchard issuance validating key from uniformly-random bytes.
+    /// Constructs an Orchard issuance validating key from the provided bytes.
+    /// The bytes are assumed to be encoded in big-endian order.
     ///
     /// Returns `None` if the bytes do not correspond to a valid key.
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        <[u8; 32]>::try_from(bytes)
+        VerifyingKey::from_bytes(bytes)
             .ok()
-            .and_then(check_structural_validity)
             .map(IssuanceValidatingKey)
     }
 
     /// Verifies a purported `signature` over `msg` made by this verification key.
-    pub fn verify(
-        &self,
-        msg: &[u8],
-        signature: &redpallas::Signature<IssuanceAuth>,
-    ) -> Result<(), reddsa::Error> {
-        self.0.verify(msg, signature)
+    pub fn verify(&self, msg: &[u8], signature: &Signature) -> Result<(), schnorr::Error> {
+        self.0.verify_prehash(msg, signature)
     }
 }
 
@@ -1118,8 +1109,8 @@ pub mod testing {
             key in prop::array::uniform32(prop::num::u8::ANY)
                 .prop_map(IssuanceAuthorizingKey::from_bytes)
                 .prop_filter(
-                    "Values must correspond to valid Orchard issuance keys.",
-                    |opt| bool::from(opt.is_some())
+                    "Values must correspond to valid Orchard-ZSA issuance keys.",
+                    |opt| opt.is_some()
                 )
         ) -> IssuanceAuthorizingKey {
             key.unwrap()
@@ -1198,6 +1189,21 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn issuance_authorizing_key_from_bytes_fail_on_zero() {
+        // isk must not be the zero scalar.
+        let isk = IssuanceAuthorizingKey::from_bytes([0; 32]);
+        assert!(isk.is_none());
+    }
+
+    #[test]
+    fn issuance_authorizing_key_from_bytes_to_bytes_roundtrip() {
+        let isk = IssuanceAuthorizingKey::random();
+        let isk_bytes = isk.to_bytes();
+        let isk_roundtrip = IssuanceAuthorizingKey::from_bytes(isk_bytes).unwrap();
+        assert_eq!(isk_bytes, isk_roundtrip.to_bytes());
+    }
+
     proptest! {
         #[test]
         fn key_agreement(
@@ -1235,13 +1241,13 @@ mod tests {
             let ask: SpendAuthorizingKey = (&sk).into();
             assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
 
-            let isk = IssuanceAuthorizingKey::from_bytes(tv.sk).unwrap();
+            let isk = IssuanceAuthorizingKey::from_bytes(tv.isk).unwrap();
 
             let ak: SpendValidatingKey = (&ask).into();
             assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
 
             let ik: IssuanceValidatingKey = (&isk).into();
-            assert_eq!(<[u8; 32]>::from(ik.0), tv.ik);
+            assert_eq!(ik.to_bytes(), tv.ik);
 
             let nk: NullifierDerivingKey = (&sk).into();
             assert_eq!(nk.0.to_repr(), tv.nk);
@@ -1286,6 +1292,24 @@ mod tests {
 
             let internal_ovk = fvk.to_ovk(Scope::Internal);
             assert_eq!(internal_ovk.0, tv.internal_ovk);
+        }
+    }
+
+    #[test]
+    fn issuance_auth_sig_test_vectors() {
+        for tv in crate::test_vectors::issuance_auth_sig::test_vectors() {
+            let isk = IssuanceAuthorizingKey::from_bytes(tv.isk).unwrap();
+
+            let ik = IssuanceValidatingKey::from(&isk);
+            assert_eq!(ik.to_bytes(), tv.ik);
+
+            let message = tv.msg;
+
+            let signature = isk.try_sign(&message).unwrap();
+            let sig_bytes: [u8; 64] = signature.to_bytes();
+            assert_eq!(sig_bytes, tv.sig);
+
+            assert!(ik.verify(&message, &signature).is_ok());
         }
     }
 }

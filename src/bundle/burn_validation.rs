@@ -83,7 +83,7 @@ mod tests {
     pub fn get_burn_tuple(asset_desc: &str, value: i64) -> (AssetBase, i64) {
         use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 
-        let isk = IssuanceAuthorizingKey::from_bytes([0u8; 32]).unwrap();
+        let isk = IssuanceAuthorizingKey::from_bytes([1u8; 32]).unwrap();
 
         (
             AssetBase::derive(&IssuanceValidatingKey::from(&isk), asset_desc),

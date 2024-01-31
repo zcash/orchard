@@ -305,7 +305,7 @@ mod tests {
         let mut circuits = vec![];
         let mut instances = vec![];
         let native_asset = AssetBase::native();
-        let random_asset = AssetBase::random(&mut rng);
+        let random_asset = AssetBase::random();
         for split_flag in [false, true] {
             for asset in [native_asset, random_asset] {
                 let v_old = NoteValue::from_raw(rng.next_u64());

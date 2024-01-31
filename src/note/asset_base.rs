@@ -2,7 +2,6 @@ use blake2b_simd::{Hash as Blake2bHash, Params};
 use group::{Group, GroupEncoding};
 use halo2_proofs::arithmetic::CurveExt;
 use pasta_curves::pallas;
-use rand::RngCore;
 use std::hash::{Hash, Hasher};
 
 use subtle::{Choice, ConstantTimeEq, CtOption};
@@ -101,8 +100,8 @@ impl AssetBase {
     /// Generates a ZSA random asset.
     ///
     /// This is only used in tests.
-    pub(crate) fn random(rng: &mut impl RngCore) -> Self {
-        let isk = IssuanceAuthorizingKey::random(rng);
+    pub(crate) fn random() -> Self {
+        let isk = IssuanceAuthorizingKey::random();
         let ik = IssuanceValidatingKey::from(&isk);
         let asset_descr = "zsa_asset";
         AssetBase::derive(&ik, asset_descr)
@@ -139,7 +138,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate a uniformly distributed note type
-        pub fn arb_asset_id()(
+        pub fn arb_asset_base()(
             is_native in prop::bool::ANY,
             isk in arb_issuance_authorizing_key(),
             str in "[A-Za-z]{255}",
@@ -154,7 +153,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate the native note type
-        pub fn native_asset_id()(_i in 0..10) -> AssetBase {
+        pub fn native_asset_base()(_i in 0..10) -> AssetBase {
             // TODO: remove _i
             AssetBase::native()
         }
@@ -162,7 +161,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an asset ID
-        pub fn arb_zsa_asset_id()(
+        pub fn arb_zsa_asset_base()(
             isk in arb_issuance_authorizing_key(),
             str in "[A-Za-z]{255}"
         ) -> AssetBase {
@@ -172,7 +171,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an asset ID using a specific description
-        pub fn zsa_asset_id(asset_desc: String)(
+        pub fn zsa_asset_base(asset_desc: String)(
             isk in arb_issuance_authorizing_key(),
         ) -> AssetBase {
             assert!(super::is_asset_desc_of_valid_size(&asset_desc));
@@ -182,7 +181,7 @@ pub mod testing {
 
     #[test]
     fn test_vectors() {
-        let test_vectors = crate::test_vectors::asset_id::test_vectors();
+        let test_vectors = crate::test_vectors::asset_base::test_vectors();
 
         for tv in test_vectors {
             let description = std::str::from_utf8(&tv.description).unwrap();

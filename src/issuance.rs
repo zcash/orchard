@@ -1,8 +1,9 @@
 //! Structs related to issuance bundles and the associated logic.
 use blake2b_simd::Hash as Blake2bHash;
 use group::Group;
+use k256::schnorr;
 use nonempty::NonEmpty;
-use rand::{CryptoRng, RngCore};
+use rand::RngCore;
 use std::collections::HashSet;
 use std::fmt;
 
@@ -15,13 +16,9 @@ use crate::issuance::Error::{
 use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use crate::note::asset_base::is_asset_desc_of_valid_size;
 use crate::note::{AssetBase, Nullifier};
-use crate::primitives::redpallas::Signature;
 
 use crate::value::{NoteValue, ValueSum};
-use crate::{
-    primitives::redpallas::{self, SpendAuth},
-    Address, Note,
-};
+use crate::{Address, Note};
 
 use crate::supply_info::{AssetSupply, SupplyInfo};
 
@@ -183,18 +180,13 @@ pub struct Prepared {
 /// Marker for an authorized bundle.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed {
-    signature: redpallas::Signature<SpendAuth>,
+    signature: schnorr::Signature,
 }
 
 impl Signed {
     /// Returns the signature for this authorization.
-    pub fn signature(&self) -> &redpallas::Signature<SpendAuth> {
+    pub fn signature(&self) -> &schnorr::Signature {
         &self.signature
-    }
-
-    /// Constructs an `Signed` from its constituent parts.
-    pub fn from_parts(signature: Signature<SpendAuth>) -> Self {
-        Signed { signature }
     }
 }
 
@@ -408,12 +400,8 @@ impl IssueBundle<Unauthorized> {
 
 impl IssueBundle<Prepared> {
     /// Sign the `IssueBundle`.
-    /// The call makes sure that the provided `isk` matches the `ik` and the driven `asset` for each note in the bundle.
-    pub fn sign<R: RngCore + CryptoRng>(
-        self,
-        mut rng: R,
-        isk: &IssuanceAuthorizingKey,
-    ) -> Result<IssueBundle<Signed>, Error> {
+    /// The call makes sure that the provided `isk` matches the `ik` and the derived `asset` for each note in the bundle.
+    pub fn sign(self, isk: &IssuanceAuthorizingKey) -> Result<IssueBundle<Signed>, Error> {
         let expected_ik: IssuanceValidatingKey = (isk).into();
 
         // Make sure the `expected_ik` matches the `asset` for all notes.
@@ -422,12 +410,15 @@ impl IssueBundle<Prepared> {
             Ok(())
         })?;
 
+        // Make sure the signature can be generated.
+        let signature = isk
+            .try_sign(&self.authorization.sighash)
+            .map_err(|_| IssueBundleInvalidSignature)?;
+
         Ok(IssueBundle {
             ik: self.ik,
             actions: self.actions,
-            authorization: Signed {
-                signature: isk.sign(&mut rng, &self.authorization.sighash),
-            },
+            authorization: Signed { signature },
         })
     }
 }
@@ -501,7 +492,7 @@ pub fn verify_issue_bundle(
     bundle
         .ik
         .verify(&sighash, &bundle.authorization.signature)
-        .map_err(IssueBundleInvalidSignature)?;
+        .map_err(|_| IssueBundleInvalidSignature)?;
 
     let supply_info =
         bundle
@@ -543,15 +534,13 @@ pub enum Error {
 
     /// Verification errors:
     /// Invalid signature.
-    IssueBundleInvalidSignature(reddsa::Error),
+    IssueBundleInvalidSignature,
     /// The provided `AssetBase` has been previously finalized.
     IssueActionPreviouslyFinalizedAssetBase(AssetBase),
 
     /// Overflow error occurred while calculating the value of the asset
     ValueSumOverflow,
 }
-
-impl std::error::Error for Error {}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -580,7 +569,7 @@ impl fmt::Display for Error {
                     "the AssetBase is the identity point of the Pallas curve, which is invalid."
                 )
             }
-            IssueBundleInvalidSignature(_) => {
+            IssueBundleInvalidSignature => {
                 write!(f, "invalid signature")
             }
             IssueActionPreviouslyFinalizedAssetBase(_) => {
@@ -616,7 +605,6 @@ mod tests {
     use pasta_curves::pallas::{Point, Scalar};
     use rand::rngs::OsRng;
     use rand::RngCore;
-    use reddsa::Error::InvalidSignature;
     use std::collections::HashSet;
 
     fn setup_params() -> (
@@ -628,7 +616,7 @@ mod tests {
     ) {
         let mut rng = OsRng;
 
-        let isk = IssuanceAuthorizingKey::random(&mut rng);
+        let isk = IssuanceAuthorizingKey::random();
         let ik: IssuanceValidatingKey = (&isk).into();
 
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
@@ -684,12 +672,7 @@ mod tests {
     fn identity_point_test_params(
         note1_value: u64,
         note2_value: u64,
-    ) -> (
-        OsRng,
-        IssuanceAuthorizingKey,
-        IssueBundle<Unauthorized>,
-        [u8; 32],
-    ) {
+    ) -> (IssuanceAuthorizingKey, IssueBundle<Unauthorized>, [u8; 32]) {
         let (mut rng, isk, ik, recipient, sighash) = setup_params();
 
         let note1 = Note::new(
@@ -713,7 +696,7 @@ mod tests {
 
         let bundle = IssueBundle::from_parts(ik, NonEmpty::new(action), Unauthorized);
 
-        (rng, isk, bundle, sighash)
+        (isk, bundle, sighash)
     }
 
     #[test]
@@ -734,7 +717,7 @@ mod tests {
 
     #[test]
     fn verify_supply_invalid_for_asset_base_as_identity() {
-        let (_, _, bundle, _) = identity_point_test_params(10, 20);
+        let (_, bundle, _) = identity_point_test_params(10, 20);
 
         assert_eq!(
             bundle.actions.head.verify_supply(&bundle.ik),
@@ -928,7 +911,7 @@ mod tests {
         )
         .unwrap();
 
-        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let signed = bundle.prepare(sighash).sign(&isk).unwrap();
 
         ik.verify(&sighash, &signed.authorization.signature)
             .expect("signature should be valid");
@@ -949,11 +932,11 @@ mod tests {
         )
         .unwrap();
 
-        let wrong_isk: IssuanceAuthorizingKey = IssuanceAuthorizingKey::random(&mut OsRng);
+        let wrong_isk: IssuanceAuthorizingKey = IssuanceAuthorizingKey::random();
 
         let err = bundle
             .prepare([0; 32])
-            .sign(rng, &wrong_isk)
+            .sign(&wrong_isk)
             .expect_err("should not be able to sign");
 
         assert_eq!(err, IssueBundleIkMismatchAssetBase);
@@ -987,7 +970,7 @@ mod tests {
 
         let err = bundle
             .prepare([0; 32])
-            .sign(rng, &isk)
+            .sign(&isk)
             .expect_err("should not be able to sign");
 
         assert_eq!(err, IssueBundleIkMismatchAssetBase);
@@ -1008,7 +991,7 @@ mod tests {
         )
         .unwrap();
 
-        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let signed = bundle.prepare(sighash).sign(&isk).unwrap();
         let prev_finalized = &mut HashSet::new();
 
         let supply_info = verify_issue_bundle(&signed, sighash, prev_finalized).unwrap();
@@ -1037,7 +1020,7 @@ mod tests {
             .finalize_action(String::from("Verify with finalize"))
             .unwrap();
 
-        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let signed = bundle.prepare(sighash).sign(&isk).unwrap();
         let prev_finalized = &mut HashSet::new();
 
         let supply_info = verify_issue_bundle(&signed, sighash, prev_finalized).unwrap();
@@ -1102,7 +1085,7 @@ mod tests {
             )
             .unwrap();
 
-        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let signed = bundle.prepare(sighash).sign(&isk).unwrap();
         let prev_finalized = &mut HashSet::new();
 
         let supply_info = verify_issue_bundle(&signed, sighash, prev_finalized).unwrap();
@@ -1146,7 +1129,7 @@ mod tests {
         )
         .unwrap();
 
-        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let signed = bundle.prepare(sighash).sign(&isk).unwrap();
         let prev_finalized = &mut HashSet::new();
 
         let final_type = AssetBase::derive(&ik, &String::from("already final"));
@@ -1168,7 +1151,7 @@ mod tests {
             }
         }
 
-        let (mut rng, isk, ik, recipient, sighash) = setup_params();
+        let (rng, isk, ik, recipient, sighash) = setup_params();
 
         let (bundle, _) = IssueBundle::new(
             ik,
@@ -1181,19 +1164,19 @@ mod tests {
         )
         .unwrap();
 
-        let wrong_isk: IssuanceAuthorizingKey = IssuanceAuthorizingKey::random(&mut rng);
+        let wrong_isk: IssuanceAuthorizingKey = IssuanceAuthorizingKey::random();
 
-        let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let mut signed = bundle.prepare(sighash).sign(&isk).unwrap();
 
         signed.set_authorization(Signed {
-            signature: wrong_isk.sign(&mut rng, &sighash),
+            signature: wrong_isk.try_sign(&sighash).unwrap(),
         });
 
         let prev_finalized = &HashSet::new();
 
         assert_eq!(
             verify_issue_bundle(&signed, sighash, prev_finalized).unwrap_err(),
-            IssueBundleInvalidSignature(InvalidSignature)
+            IssueBundleInvalidSignature
         );
     }
 
@@ -1212,12 +1195,12 @@ mod tests {
         .unwrap();
 
         let sighash: [u8; 32] = bundle.commitment().into();
-        let signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let signed = bundle.prepare(sighash).sign(&isk).unwrap();
         let prev_finalized = &HashSet::new();
 
         assert_eq!(
             verify_issue_bundle(&signed, random_sighash, prev_finalized).unwrap_err(),
-            IssueBundleInvalidSignature(InvalidSignature)
+            IssueBundleInvalidSignature
         );
     }
 
@@ -1236,7 +1219,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let mut signed = bundle.prepare(sighash).sign(&isk).unwrap();
 
         // Add "bad" note
         let note = Note::new(
@@ -1274,9 +1257,9 @@ mod tests {
         )
         .unwrap();
 
-        let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let mut signed = bundle.prepare(sighash).sign(&isk).unwrap();
 
-        let incorrect_isk = IssuanceAuthorizingKey::random(&mut rng);
+        let incorrect_isk = IssuanceAuthorizingKey::random();
         let incorrect_ik: IssuanceValidatingKey = (&incorrect_isk).into();
 
         // Add "bad" note
@@ -1320,7 +1303,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut signed = bundle.prepare(sighash).sign(rng, &isk).unwrap();
+        let mut signed = bundle.prepare(sighash).sign(&isk).unwrap();
         let prev_finalized = HashSet::new();
 
         // 1. Try too long description
@@ -1345,23 +1328,23 @@ mod tests {
 
     #[test]
     fn issue_bundle_cannot_be_signed_with_asset_base_identity_point() {
-        let (rng, isk, bundle, sighash) = identity_point_test_params(10, 20);
+        let (isk, bundle, sighash) = identity_point_test_params(10, 20);
 
         assert_eq!(
-            bundle.prepare(sighash).sign(rng, &isk).unwrap_err(),
+            bundle.prepare(sighash).sign(&isk).unwrap_err(),
             AssetBaseCannotBeIdentityPoint
         );
     }
 
     #[test]
     fn issue_bundle_verify_fail_asset_base_identity_point() {
-        let (mut rng, isk, bundle, sighash) = identity_point_test_params(10, 20);
+        let (isk, bundle, sighash) = identity_point_test_params(10, 20);
 
         let signed = IssueBundle {
             ik: bundle.ik,
             actions: bundle.actions,
             authorization: Signed {
-                signature: isk.sign(&mut rng, &sighash),
+                signature: isk.try_sign(&sighash).unwrap(),
             },
         };
 
@@ -1398,24 +1381,20 @@ mod tests {
 pub mod testing {
     use crate::issuance::{IssueAction, IssueBundle, Prepared, Signed, Unauthorized};
     use crate::keys::testing::arb_issuance_validating_key;
-    use crate::note::asset_base::testing::zsa_asset_id;
+    use crate::note::asset_base::testing::zsa_asset_base;
     use crate::note::testing::arb_zsa_note;
-    use crate::primitives::redpallas::Signature;
+    use k256::schnorr;
     use nonempty::NonEmpty;
     use proptest::collection::vec;
     use proptest::prelude::*;
     use proptest::prop_compose;
-    use reddsa::orchard::SpendAuth;
 
     prop_compose! {
         /// Generate a uniformly distributed signature
         pub(crate) fn arb_signature()(
-            half_bytes in prop::array::uniform32(prop::num::u8::ANY)
-        ) -> Signature<SpendAuth> {
-            // prop::array can only generate 32 elements max, so we duplicate it
-            let sig_bytes: [u8; 64] = [half_bytes, half_bytes].concat().try_into().unwrap();
-            let sig: Signature<SpendAuth> = Signature::from(sig_bytes);
-            sig
+            sig_bytes in vec(prop::num::u8::ANY, 64)
+        ) -> schnorr::Signature {
+            schnorr::Signature::try_from(sig_bytes.as_slice()).unwrap()
         }
     }
 
@@ -1423,7 +1402,7 @@ pub mod testing {
         /// Generate an issue action
         pub fn arb_issue_action(asset_desc: String)
         (
-            asset in zsa_asset_id(asset_desc.clone()),
+            asset in zsa_asset_base(asset_desc.clone()),
         )
         (
             note in arb_zsa_note(asset),

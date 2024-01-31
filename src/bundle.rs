@@ -553,7 +553,7 @@ pub mod testing {
     use super::{Action, Authorization, Authorized, Bundle, Flags};
 
     pub use crate::action::testing::{arb_action, arb_unauthorized_action};
-    use crate::note::asset_base::testing::arb_zsa_asset_id;
+    use crate::note::asset_base::testing::arb_zsa_asset_base;
     use crate::note::AssetBase;
     use crate::value::testing::arb_value_sum;
 
@@ -619,10 +619,10 @@ pub mod testing {
         /// Create an arbitrary vector of assets to burn.
         pub fn arb_asset_to_burn()
         (
-            asset_id in arb_zsa_asset_id(),
+            asset_base in arb_zsa_asset_base(),
             value in arb_value_sum()
         ) -> (AssetBase, ValueSum) {
-            (asset_id, value)
+            (asset_base, value)
         }
     }
 

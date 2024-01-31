@@ -2596,7 +2596,7 @@ mod tests {
 
         let two_pow_254 = pallas::Base::from_u128(1 << 127).square();
         let mut rng = OsRng;
-        let random_asset = AssetBase::random(&mut rng);
+        let random_asset = AssetBase::random();
 
         // Test different values of `ak`, `nk`
         let mut circuits = vec![];
