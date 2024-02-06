@@ -1,6 +1,7 @@
 use group::ff::PrimeField;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
+/// Generator used as $\mathcal{K}^{\mathsf{Orchard}}$ in DeriveNullifier.
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     [
         117, 202, 71, 228, 167, 106, 111, 211, 155, 219, 181, 204, 146, 177, 126, 94, 207, 201,
@@ -12,7 +13,8 @@ pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-/// Full-width z-values for GENERATOR
+/// Full-width z-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const Z: [u64; super::NUM_WINDOWS] = [
     34374, 173069, 40776, 220066, 45494, 37762, 5245, 11979, 33386, 238556, 128731, 12128, 89982,
     85351, 9804, 12820, 80455, 100009, 24382, 17854, 26367, 7067, 102106, 64293, 114999, 172304,
@@ -24,6 +26,7 @@ pub const Z: [u64; super::NUM_WINDOWS] = [
 ];
 
 /// Full-width u-values for GENERATOR
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     [
         [

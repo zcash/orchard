@@ -1,8 +1,7 @@
 use group::ff::PrimeField;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
-/// The value commitment is used to check balance between inputs and outputs. The value is
-/// placed over this generator.
+/// Generator used as $\mathcal{G}^{\mathsf{Orchard}}$ in Spend authorization signatures.
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     [
         99, 201, 117, 184, 132, 114, 26, 141, 12, 161, 112, 123, 227, 12, 127, 12, 95, 68, 95, 62,
@@ -14,7 +13,8 @@ pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-/// Full-width z-values for GENERATOR
+/// Full-width z-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const Z: [u64; super::NUM_WINDOWS] = [
     49707, 15701, 45931, 163127, 41654, 212130, 34473, 25205, 4118, 10240, 12264, 22866, 203610,
     18808, 13851, 62448, 62380, 94497, 39496, 73216, 32037, 32774, 61690, 39173, 74580, 84678,
@@ -25,7 +25,8 @@ pub const Z: [u64; super::NUM_WINDOWS] = [
     100797, 80349, 87315, 77372, 96572, 18965,
 ];
 
-/// Full-width u-values for GENERATOR
+/// Full-width u-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     [
         [

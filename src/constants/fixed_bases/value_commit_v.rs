@@ -1,8 +1,8 @@
 use group::ff::PrimeField;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
-/// The value commitment is used to check balance between inputs and outputs. The value is
-/// placed over this generator.
+/// The value commitment is a homomorphic Pedersen commitment used to check balance between inputs
+/// and outputs. This is its value base, $\mathcal{V}^{\mathsf{Orchard}}$.
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     [
         103, 67, 249, 58, 110, 189, 167, 42, 140, 124, 90, 43, 127, 163, 4, 254, 50, 178, 155, 79,
@@ -14,13 +14,15 @@ pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-/// Short signed z-values for GENERATOR
+/// Short signed z-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const Z_SHORT: [u64; super::NUM_WINDOWS_SHORT] = [
     163547, 76040, 88852, 128479, 54088, 89871, 39598, 144309, 43471, 102492, 741, 55288, 33756,
     77312, 12095, 48253, 45718, 202901, 33132, 71081, 152108, 169712,
 ];
 
-/// Short signed u-values for GENERATOR
+/// Short signed u-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const U_SHORT: [[[u8; 32]; super::H]; super::NUM_WINDOWS_SHORT] = [
     [
         [
