@@ -1,7 +1,7 @@
 use group::ff::PrimeField;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
-/// Generator used in SinsemillaCommit randomness for IVK commitment
+/// Generator used in SinsemillaCommit randomness for IVK commitment.
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     [
         24, 161, 248, 95, 110, 72, 35, 152, 199, 237, 26, 211, 226, 127, 149, 2, 72, 137, 128, 64,
@@ -13,7 +13,8 @@ pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-/// Full-width z-values for GENERATOR
+/// Full-width z-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const Z: [u64; super::NUM_WINDOWS] = [
     18172, 17390, 61749, 65182, 33835, 155942, 26189, 52444, 40096, 139582, 99218, 20669, 291337,
     12465, 132211, 75527, 68003, 95835, 237325, 21348, 35494, 215451, 49456, 6332, 99036, 224845,
@@ -24,7 +25,8 @@ pub const Z: [u64; super::NUM_WINDOWS] = [
     7870, 143575, 13058, 27070, 30734, 41157, 2955,
 ];
 
-/// Full-width u-values for GENERATOR
+/// Full-width u-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     [
         [
