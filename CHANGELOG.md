@@ -7,6 +7,9 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `impl subtle::ConstantTimeEq for note::Nullifier`
+
 ## [0.7.0] - 2024-01-26
 ### Licensing
 - The license for this crate is now "MIT OR Apache-2.0". The license
