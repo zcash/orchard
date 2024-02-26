@@ -269,6 +269,7 @@ impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
 }
 
 /// A compact Action for light clients.
+#[derive(Clone)]
 pub struct CompactAction {
     nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
