@@ -10,6 +10,7 @@ and this project adheres to Rust's notion of
 ### Added
 - `impl subtle::ConstantTimeEq for note::Nullifier`
 - `impl Clone for note_encryption::CompactAction`
+- `note_encryption::CompactAction::cmx`
 
 ## [0.7.0] - 2024-01-26
 ### Licensing

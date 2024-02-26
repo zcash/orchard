@@ -326,9 +326,14 @@ impl CompactAction {
         }
     }
 
-    ///Returns the nullifier of the note being spent.
+    /// Returns the nullifier of the note being spent.
     pub fn nullifier(&self) -> Nullifier {
         self.nullifier
+    }
+
+    /// Returns the commitment to the new note being created.
+    pub fn cmx(&self) -> ExtractedNoteCommitment {
+        self.cmx
     }
 }
 
