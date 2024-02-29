@@ -7,10 +7,12 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.7.1] - 2024-02-29
 ### Added
-- `impl subtle::ConstantTimeEq for note::Nullifier`
-- `impl Clone for note_encryption::CompactAction`
-- `note_encryption::CompactAction::cmx`
+- `impl subtle::ConstantTimeEq for orchard::note::Nullifier`
+- `orchard::note_encryption`:
+  - `CompactAction::cmx`
+  - `impl Clone for CompactAction`
 
 ## [0.7.0] - 2024-01-26
 ### Licensing
