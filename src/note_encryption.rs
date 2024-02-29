@@ -269,6 +269,7 @@ impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
 }
 
 /// A compact Action for light clients.
+#[derive(Clone)]
 pub struct CompactAction {
     nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
@@ -325,9 +326,14 @@ impl CompactAction {
         }
     }
 
-    ///Returns the nullifier of the note being spent.
+    /// Returns the nullifier of the note being spent.
     pub fn nullifier(&self) -> Nullifier {
         self.nullifier
+    }
+
+    /// Returns the commitment to the new note being created.
+    pub fn cmx(&self) -> ExtractedNoteCommitment {
+        self.cmx
     }
 }
 
