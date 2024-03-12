@@ -260,6 +260,22 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
     }
 }
 
+/// Test utilities available under the `test-dependencies` feature flag.
+#[cfg(feature = "test-dependencies")]
+pub mod testing {
+    use ff::Field;
+    use rand::RngCore;
+
+    use super::MerkleHashOrchard;
+
+    impl MerkleHashOrchard {
+        /// Return a random fake `MerkleHashOrchard`.
+        pub fn random(rng: &mut impl RngCore) -> Self {
+            Self(pasta_curves::Fp::random(rng))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
