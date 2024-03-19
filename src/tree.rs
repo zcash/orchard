@@ -264,14 +264,23 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
 #[cfg(feature = "test-dependencies")]
 pub mod testing {
     use ff::Field;
-    use rand::RngCore;
+    use rand::{
+        distributions::{Distribution, Standard},
+        RngCore,
+    };
 
     use super::MerkleHashOrchard;
 
     impl MerkleHashOrchard {
         /// Return a random fake `MerkleHashOrchard`.
         pub fn random(rng: &mut impl RngCore) -> Self {
-            Self(pasta_curves::Fp::random(rng))
+            Standard.sample(rng)
+        }
+    }
+
+    impl Distribution<MerkleHashOrchard> for Standard {
+        fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> MerkleHashOrchard {
+            MerkleHashOrchard(pasta_curves::Fp::random(rng))
         }
     }
 }
