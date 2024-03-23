@@ -663,6 +663,11 @@ impl IncomingViewingKey {
     pub fn address(&self, d: Diversifier) -> Address {
         self.ivk.address(d)
     }
+
+    /// Returns the [`PreparedIncomingViewingKey`] for this [`IncomingViewingKey`].
+    pub fn prepare(&self) -> PreparedIncomingViewingKey {
+        PreparedIncomingViewingKey::new(self)
+    }
 }
 
 /// An Orchard incoming viewing key that has been precomputed for trial decryption.

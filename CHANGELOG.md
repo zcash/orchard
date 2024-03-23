@@ -8,6 +8,7 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
+- `orchard::keys::IncomingViewingKey::prepare`
 - `orchard::note::Rho`
 - `orchard::action::Action::rho`
 - `orchard::note_encryption::CompactAction::rho`
