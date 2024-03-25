@@ -10,6 +10,7 @@ and this project adheres to Rust's notion of
 ## [0.8.0] - 2024-03-25
 
 ### Added
+- `orchard::keys::IncomingViewingKey::prepare`
 - `orchard::note::Rho`
 - `orchard::action::Action::rho`
 - `orchard::note_encryption::CompactAction::rho`
