@@ -7,11 +7,16 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.8.0] - 2024-03-25
+
 ### Added
 - `orchard::note::Rho`
 - `orchard::action::Action::rho`
 - `orchard::note_encryption::CompactAction::rho`
 - `orchard::note_encryption::OrchardDomain::for_compact_action`
+- Additions under the `test-dependencies` feature flag:
+  - `orchard::tree::MerkleHashOrchard::random`
+  - `impl Distribution<MerkleHashOrchard> for Standard`
 
 ### Changed
 - The following methods have their `Nullifier`-typed argument or return value
