@@ -1,6 +1,8 @@
 //! Data structures used for note construction.
 use core::fmt;
+use memuse::DynamicUsage;
 
+use ff::PrimeField;
 use group::GroupEncoding;
 use pasta_curves::pallas;
 use rand::RngCore;
@@ -19,6 +21,44 @@ pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 pub(crate) mod nullifier;
 pub use self::nullifier::Nullifier;
 
+/// The randomness used to construct a note.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Rho(pallas::Base);
+
+// We know that `pallas::Base` doesn't allocate internally.
+memuse::impl_no_dynamic_usage!(Rho);
+
+impl Rho {
+    /// Deserialize the rho value from a byte array.
+    ///
+    /// This should only be used in cases where the components of a `Note` are being serialized and
+    /// stored individually. Use [`Action::rho`] or [`CompactAction::rho`] to obtain the [`Rho`]
+    /// value otherwise.
+    ///
+    /// [`Action::rho`]: crate::action::Action::rho
+    /// [`CompactAction::rho`]: crate::note_encryption::CompactAction::rho
+    pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
+        pallas::Base::from_repr(*bytes).map(Rho)
+    }
+
+    /// Serialize the rho value to its canonical byte representation.
+    pub fn to_bytes(self) -> [u8; 32] {
+        self.0.to_repr()
+    }
+
+    /// Constructs the [`Rho`] value to be used to construct a new note from the revealed nullifier
+    /// of the note being spent in the [`Action`] under construction.
+    ///
+    /// [`Action`]: crate::action::Action
+    pub(crate) fn from_nf_old(nf: Nullifier) -> Self {
+        Rho(nf.0)
+    }
+
+    pub(crate) fn into_inner(self) -> pallas::Base {
+        self.0
+    }
+}
+
 pub(crate) mod asset_base;
 pub use self::asset_base::AssetBase;
 
@@ -27,7 +67,7 @@ pub use self::asset_base::AssetBase;
 pub struct RandomSeed([u8; 32]);
 
 impl RandomSeed {
-    pub(crate) fn random(rng: &mut impl RngCore, rho: &Nullifier) -> Self {
+    pub(crate) fn random(rng: &mut impl RngCore, rho: &Rho) -> Self {
         loop {
             let mut bytes = [0; 32];
             rng.fill_bytes(&mut bytes);
@@ -38,10 +78,10 @@ impl RandomSeed {
         }
     }
 
-    /// Reads a note's random seed from bytes, given the note's nullifier.
+    /// Reads a note's random seed from bytes, given the note's rho value.
     ///
-    /// Returns `None` if the nullifier is not for the same note as the seed.
-    pub fn from_bytes(rseed: [u8; 32], rho: &Nullifier) -> CtOption<Self> {
+    /// Returns `None` if the rho value is not for the same note as the seed.
+    pub fn from_bytes(rseed: [u8; 32], rho: &Rho) -> CtOption<Self> {
         let rseed = RandomSeed(rseed);
         let esk = rseed.esk_inner(rho);
         CtOption::new(rseed, esk.is_some())
@@ -55,23 +95,23 @@ impl RandomSeed {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    pub(crate) fn psi(&self, rho: &Nullifier) -> pallas::Base {
-        to_base(PrfExpand::Psi.with_ad(&self.0, &rho.to_bytes()[..]))
+    pub(crate) fn psi(&self, rho: &Rho) -> pallas::Base {
+        to_base(PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
     }
 
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    fn esk_inner(&self, rho: &Nullifier) -> CtOption<NonZeroPallasScalar> {
+    fn esk_inner(&self, rho: &Rho) -> CtOption<NonZeroPallasScalar> {
         NonZeroPallasScalar::from_scalar(to_scalar(
-            PrfExpand::Esk.with_ad(&self.0, &rho.to_bytes()[..]),
+            PrfExpand::ORCHARD_ESK.with(&self.0, &rho.to_bytes()),
         ))
     }
 
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    fn esk(&self, rho: &Nullifier) -> NonZeroPallasScalar {
+    fn esk(&self, rho: &Rho) -> NonZeroPallasScalar {
         // We can't construct a RandomSeed for which this unwrap fails.
         self.esk_inner(rho).unwrap()
     }
@@ -79,9 +119,9 @@ impl RandomSeed {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    pub(crate) fn rcm(&self, rho: &Nullifier) -> commitment::NoteCommitTrapdoor {
+    pub(crate) fn rcm(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
-            PrfExpand::Rcm.with_ad(&self.0, &rho.to_bytes()[..]),
+            PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
         ))
     }
 }
@@ -108,11 +148,11 @@ pub struct Note {
     asset: AssetBase,
     /// A unique creation ID for this note.
     ///
-    /// This is set to the nullifier of the note that was spent in the [`Action`] that
-    /// created this note.
+    /// This is produced from the nullifier of the note that will be spent in the [`Action`] that
+    /// creates this note.
     ///
     /// [`Action`]: crate::action::Action
-    rho: Nullifier,
+    rho: Rho,
     /// The seed randomness for various note components.
     rseed: RandomSeed,
     /// The seed randomness for split notes.
@@ -150,7 +190,7 @@ impl Note {
         recipient: Address,
         value: NoteValue,
         asset: AssetBase,
-        rho: Nullifier,
+        rho: Rho,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
         let note = Note {
@@ -173,7 +213,7 @@ impl Note {
         recipient: Address,
         value: NoteValue,
         asset: AssetBase,
-        rho: Nullifier,
+        rho: Rho,
         mut rng: impl RngCore,
     ) -> Self {
         loop {
@@ -197,7 +237,7 @@ impl Note {
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
-        rho: Option<Nullifier>,
+        rho: Option<Rho>,
         asset: AssetBase,
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
@@ -208,7 +248,7 @@ impl Note {
             recipient,
             NoteValue::zero(),
             asset,
-            rho.unwrap_or_else(|| Nullifier::dummy(rng)),
+            rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
         );
 
@@ -246,7 +286,7 @@ impl Note {
     }
 
     /// Returns rho of this note.
-    pub fn rho(&self) -> Nullifier {
+    pub fn rho(&self) -> Rho {
         self.rho
     }
 
@@ -343,7 +383,7 @@ pub mod testing {
 
     use subtle::CtOption;
 
-    use super::{Note, RandomSeed};
+    use super::{Note, RandomSeed, Rho};
 
     prop_compose! {
         /// Generate an arbitrary random seed
@@ -356,7 +396,7 @@ pub mod testing {
         /// Generate an arbitrary note
         pub fn arb_note(value: NoteValue)(
             recipient in arb_address(),
-            rho in arb_nullifier(),
+            rho in arb_nullifier().prop_map(Rho::from_nf_old),
             rseed in arb_rseed(),
             asset in arb_asset_base(),
         ) -> Note {

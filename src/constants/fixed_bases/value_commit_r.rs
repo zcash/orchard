@@ -1,8 +1,8 @@
 use group::ff::PrimeField;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
-/// The value commitment is used to check balance between inputs and outputs. The value is
-/// placed over this generator.
+/// The value commitment is a homomorphic Pedersen commitment used to check balance between inputs
+/// and outputs. This is its randomness base, $\mathcal{R}^{\mathsf{Orchard}}$.
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     [
         145, 90, 60, 136, 104, 198, 195, 14, 47, 128, 144, 238, 69, 215, 110, 64, 72, 32, 141, 234,
@@ -14,7 +14,8 @@ pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-/// Full-width z-values for GENERATOR
+/// Full-width z-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const Z: [u64; super::NUM_WINDOWS] = [
     181916, 22148, 340526, 80718, 104958, 86894, 43381, 1060, 82130, 4741, 55897, 4304, 114469,
     20503, 25001, 62408, 52978, 35893, 72071, 154369, 67304, 7299, 27960, 42929, 51869, 89967,
@@ -25,7 +26,8 @@ pub const Z: [u64; super::NUM_WINDOWS] = [
     22632, 163228, 12997, 4461, 32320, 13430,
 ];
 
-/// Full-width u-values for GENERATOR
+/// Full-width u-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     [
         [

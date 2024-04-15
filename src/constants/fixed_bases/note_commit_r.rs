@@ -1,7 +1,7 @@
 use group::ff::PrimeField;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
-/// Generator used in SinsemillaCommit randomness for note commitment
+/// Generator used in SinsemillaCommit randomness for note commitment.
 pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     [
         19, 110, 252, 15, 72, 44, 2, 44, 124, 164, 20, 252, 92, 197, 158, 35, 242, 61, 111, 147,
@@ -13,7 +13,8 @@ pub const GENERATOR: ([u8; 32], [u8; 32]) = (
     ],
 );
 
-/// Full-width z-values for GENERATOR
+/// Full-width z-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const Z: [u64; super::NUM_WINDOWS] = [
     253356, 149209, 114903, 10575, 6973, 30969, 55415, 206450, 18453, 24528, 13099, 213949, 29959,
     49929, 80867, 17465, 43715, 80241, 55983, 132629, 66101, 24136, 31372, 107975, 161748, 24107,
@@ -24,7 +25,8 @@ pub const Z: [u64; super::NUM_WINDOWS] = [
     41201, 40964, 8563, 36035, 6334, 176,
 ];
 
-/// Full-width u-values for GENERATOR
+/// Full-width u-values for GENERATOR.
+/// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
 pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     [
         [

@@ -1,19 +1,15 @@
 use memuse::DynamicUsage;
 
 use crate::{
-    note::{ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
+    note::{ExtractedNoteCommitment, Nullifier, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, SpendAuth},
     value::ValueCommitment,
 };
 
 /// An action applied to the global ledger.
 ///
-/// Externally, this both creates a note (adding a commitment to the global ledger),
-/// and consumes some note created prior to this action (adding a nullifier to the
-/// global ledger).
-///
-/// Internally, this may both consume a note and create a note, or it may do only one of
-/// the two. TODO: Determine which is more efficient (circuit size vs bundle size).
+/// This both creates a note (adding a commitment to the global ledger), and consumes
+/// some note created prior to this action (adding a nullifier to the global ledger).
 #[derive(Debug, Clone)]
 pub struct Action<A> {
     /// The nullifier of the note being spent.
@@ -68,6 +64,11 @@ impl<T> Action<T> {
     /// Returns the encrypted note ciphertext.
     pub fn encrypted_note(&self) -> &TransmittedNoteCiphertext {
         &self.encrypted_note
+    }
+
+    /// Obtains the [`Rho`] value that was used to construct the new note being created.
+    pub fn rho(&self) -> Rho {
+        Rho::from_nf_old(self.nf)
     }
 
     /// Returns the commitment to the net value created or consumed by this action.

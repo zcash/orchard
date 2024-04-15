@@ -7,6 +7,84 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.8.0] - 2024-03-25
+
+### Added
+- `orchard::note::Rho`
+- `orchard::action::Action::rho`
+- `orchard::note_encryption::CompactAction::rho`
+- `orchard::note_encryption::OrchardDomain::for_compact_action`
+- Additions under the `test-dependencies` feature flag:
+  - `orchard::tree::MerkleHashOrchard::random`
+  - `impl Distribution<MerkleHashOrchard> for Standard`
+
+### Changed
+- The following methods have their `Nullifier`-typed argument or return value
+  now take or return `note::Rho` instead:
+  - `orchard::note::RandomSeed::from_bytes`
+  - `orchard::note::Note::from_parts`
+  - `orchard::note::Note::rho`
+
+### Removed
+- `orchard::note_encryption::OrchardDomain::for_nullifier` (use `for_action`
+  or `for_compact_action` instead).
+
+## [0.7.1] - 2024-02-29
+### Added
+- `impl subtle::ConstantTimeEq for orchard::note::Nullifier`
+- `orchard::note_encryption`:
+  - `CompactAction::cmx`
+  - `impl Clone for CompactAction`
+
+## [0.7.0] - 2024-01-26
+### Licensing
+- The license for this crate is now "MIT OR Apache-2.0". The license
+  exception that applied to the Zcash and Zebra projects, other projects
+  designed to integrate with Zcash, and certain forks of Zcash, is no longer
+  necessary. For clarity, this is intended to be a strict relaxation of the
+  previous licensing, i.e. it permits all usage that was previously possible
+  with or without use of the license exception.
+
+### Added
+- `orchard::builder`:
+  - `bundle`
+  - `BundleMetadata`
+  - `BundleType`
+  - `OutputInfo`
+- `orchard::bundle::Flags::{ENABLED, SPENDS_DISABLED, OUTPUTS_DISABLED}`
+- `orchard::tree::Anchor::empty_tree`
+
+### Changed
+- Migrated to the `zip32` crate. The following types have been replaced by the
+  equivalent ones in that crate are now re-exported from there:
+  - `orchard::keys::{DiversifierIndex, Scope}`
+  - `orchard::zip32::ChildIndex`
+- `orchard::builder`:
+  - `Builder::new` now takes the bundle type to be used in bundle construction,
+    instead of taking the flags and anchor separately.
+  - `Builder::add_recipient` has been renamed to `add_output` in order to
+    clarify than more than one output of a given transaction may be sent to the
+    same recipient.
+  - `Builder::build` now takes an additional `BundleType` argument that
+    specifies how actions should be padded, instead of using hardcoded padding.
+    It also now returns a `Result<Option<(Bundle<...>, BundleMetadata)>, ...>`
+    instead of a  `Result<Bundle<...>, ...>`.
+  - `BuildError` has additional variants:
+    - `SpendsDisabled`
+    - `OutputsDisabled`
+    - `AnchorMismatch`
+  - `SpendInfo::new` now returns a `Result<SpendInfo, SpendError>` instead of an
+    `Option`.
+- `orchard::keys::SpendingKey::from_zip32_seed` now takes a `zip32::AccountId`.
+
+### Removed
+- `orchard::bundle::Flags::from_parts`
+
+## [0.6.0] - 2023-09-08
+### Changed
+- MSRV is now 1.65.0.
+- Migrated to `incrementalmerkletree 0.5`.
+
 ## [0.5.0] - 2023-06-06
 ### Changed
 - Migrated to `zcash_note_encryption 0.4`, `incrementalmerkletree 0.4`, `bridgetree 0.3`.
@@ -17,8 +95,17 @@ and this project adheres to Rust's notion of
 - `orchard::builder`:
   - `{SpendInfo::new, InputView, OutputView}`
   - `Builder::{spends, outputs}`
-  - `SpendError` 
-  - `OutputError` 
+  - `SpendError`
+  - `OutputError`
+- `orchard::keys`:
+  - `PreparedEphemeralPublicKey`
+  - `PreparedIncomingViewingKey`
+- impls of `memuse::DynamicUsage` for:
+  - `orchard::note::Nullifier`
+  - `orchard::note_encryption::OrchardDomain`
+- impls of `Eq` for:
+  - `orchard::zip32::ChildIndex`
+  - `orchard::value::ValueSum`
 
 ### Changed
 - MSRV is now 1.60.0.
@@ -39,20 +126,11 @@ and this project adheres to Rust's notion of
 ### Added
 - `orchard::Proof::add_to_batch`
 - `orchard::address::Address::diversifier`
-- `orchard::keys:`:
-  - `Diversifier::from_bytes`
-  - `PreparedEphemeralPublicKey`
-  - `PreparedIncomingViewingKey`
+- `orchard::keys::Diversifier::from_bytes`
 - `orchard::note`:
   - `RandomSeed`
   - `Note::{from_parts, rseed}`
-  - `impl memuse::DynamicUsage for Nullifier`
-- `orchard::note_encryption`:
-  - `impl memuse::DynamicUsage for OrchardDomain`
 - `orchard::circuit::Circuit::from_action_context`
-- impls of `Eq` for:
-  - `orchard::zip32::ChildIndex`
-  - `orchard::value::ValueSum`
 
 ### Changed
 - Migrated to `zcash_note_encryption 0.2`.

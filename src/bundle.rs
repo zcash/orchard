@@ -45,7 +45,7 @@ impl<T> Action<T> {
 }
 
 /// Orchard-specific flags.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Flags {
     /// Flag denoting whether Orchard spends are enabled in the transaction.
     ///
@@ -73,13 +73,47 @@ const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED | 
 
 impl Flags {
     /// Construct a set of flags from its constituent parts
-    pub fn from_parts(spends_enabled: bool, outputs_enabled: bool, zsa_enabled: bool) -> Self {
+    pub(crate) const fn from_parts(
+        spends_enabled: bool,
+        outputs_enabled: bool,
+        zsa_enabled: bool,
+    ) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
             zsa_enabled,
         }
     }
+
+    /// The flag set with both spends and outputs enabled.
+    // FIXME: mention id doc that zsa is disabled?
+    pub const ENABLED_VANILLA: Flags = Flags {
+        spends_enabled: true,
+        outputs_enabled: true,
+        zsa_enabled: false,
+    };
+
+    /// The flag set with both spends and outputs enabled.
+    // FIXME: mention id doc that zsa is enabled?
+    pub const ENABLED_ZSA: Flags = Flags {
+        spends_enabled: true,
+        outputs_enabled: true,
+        zsa_enabled: true,
+    };
+
+    /// The flag set with spends disabled.
+    pub const SPENDS_DISABLED: Flags = Flags {
+        spends_enabled: false,
+        outputs_enabled: true,
+        zsa_enabled: false, // FIXME: is this correct?
+    };
+
+    /// The flag set with outputs disabled.
+    pub const OUTPUTS_DISABLED: Flags = Flags {
+        spends_enabled: true,
+        outputs_enabled: false,
+        zsa_enabled: false, // FIXME: is this correct?
+    };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
     ///
@@ -132,12 +166,13 @@ impl Flags {
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8) -> Option<Self> {
+        // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
         if value & FLAGS_EXPECTED_UNSET == 0 {
-            Some(Self::from_parts(
-                value & FLAG_SPENDS_ENABLED != 0,
-                value & FLAG_OUTPUTS_ENABLED != 0,
-                value & FLAG_ZSA_ENABLED != 0,
-            ))
+            Some(Self {
+                spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
+                outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
+                zsa_enabled: value & FLAG_ZSA_ENABLED != 0,
+            })
         } else {
             None
         }
@@ -414,6 +449,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
     /// [`Bundle::authorization`].
     pub fn binding_validating_key(&self) -> redpallas::VerificationKey<Binding> {
+        // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
         (self
             .actions
             .iter()

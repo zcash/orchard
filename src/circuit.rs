@@ -38,7 +38,7 @@ use crate::{
     note::{
         commitment::{NoteCommitTrapdoor, NoteCommitment},
         nullifier::Nullifier,
-        AssetBase, ExtractedNoteCommitment, Note,
+        AssetBase, ExtractedNoteCommitment, Note, Rho,
     },
     primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
@@ -114,7 +114,7 @@ pub struct Circuit {
     pub(crate) g_d_old: Value<NonIdentityPallasPoint>,
     pub(crate) pk_d_old: Value<DiversifiedTransmissionKey>,
     pub(crate) v_old: Value<NoteValue>,
-    pub(crate) rho_old: Value<Nullifier>,
+    pub(crate) rho_old: Value<Rho>,
     pub(crate) psi_old: Value<pallas::Base>,
     pub(crate) rcm_old: Value<NoteCommitTrapdoor>,
     pub(crate) cm_old: Value<NoteCommitment>,
@@ -155,7 +155,7 @@ impl Circuit {
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
     ) -> Option<Circuit> {
-        (spend.note.nullifier(&spend.fvk) == output_note.rho())
+        (Rho::from_nf_old(spend.note.nullifier(&spend.fvk)) == output_note.rho())
             .then(|| Self::from_action_context_unchecked(spend, output_note, alpha, rcv))
     }
 
@@ -507,7 +507,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let rho_old = assign_free_advice(
                 layouter.namespace(|| "witness rho_old"),
                 config.advices[0],
-                self.rho_old.map(|rho| rho.0),
+                self.rho_old.map(|rho| rho.into_inner()),
             )?;
 
             // Witness cm_old
@@ -1198,7 +1198,7 @@ mod tests {
     use crate::primitives::redpallas::VerificationKey;
     use crate::{
         keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
-        note::{Note, NoteCommitment},
+        note::{Note, NoteCommitment, Rho},
         tree::MerklePath,
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
     };
@@ -1210,6 +1210,7 @@ mod tests {
         let nk = *fvk.nk();
         let rivk = fvk.rivk(fvk.scope_for_address(&spent_note.recipient()).unwrap());
         let nf_old = spent_note.nullifier(&fvk);
+        let rho = Rho::from_nf_old(nf_old);
         let ak: SpendValidatingKey = fvk.into();
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);

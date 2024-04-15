@@ -1,7 +1,7 @@
 use bridgetree::BridgeTree;
 use incrementalmerkletree::Hashable;
 use orchard::{
-    builder::Builder,
+    builder::{Builder, BundleType},
     bundle::{Authorized, Flags},
     circuit::{ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -62,18 +62,32 @@ fn bundle_chain() {
         // Use the empty tree.
         let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
-        let mut builder = Builder::new(Flags::from_parts(false, true, false), anchor);
+        let mut builder = Builder::new(
+            BundleType::Transactional {
+                flags: Flags::SPENDS_DISABLED,
+                bundle_required: false,
+            },
+            anchor,
+        );
+        let note_value = NoteValue::from_raw(5000);
         assert_eq!(
-            builder.add_recipient(
-                None,
-                recipient,
-                NoteValue::from_raw(5000),
-                AssetBase::native(),
-                None
-            ),
+            builder.add_output(None, recipient, note_value, AssetBase::native(), None),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap();
+        let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
+
+        assert_eq!(
+            unauthorized
+                .decrypt_output_with_key(
+                    bundle_meta
+                        .output_action_index(0)
+                        .expect("Output 0 can be found"),
+                    &fvk.to_ivk(Scope::External)
+                )
+                .map(|(note, _, _)| note.value()),
+            Some(note_value)
+        );
+
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
@@ -96,10 +110,10 @@ fn bundle_chain() {
 
         let (merkle_path, anchor) = build_merkle_path(&note);
 
-        let mut builder = Builder::new(Flags::from_parts(true, true, false), anchor);
+        let mut builder = Builder::new(BundleType::DEFAULT_VANILLA, anchor);
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
-            builder.add_recipient(
+            builder.add_output(
                 None,
                 recipient,
                 NoteValue::from_raw(5000),
@@ -108,7 +122,7 @@ fn bundle_chain() {
             ),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap();
+        let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
