@@ -10,7 +10,6 @@ use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
-use crate::note::AssetBase;
 use crate::{
     action::Action,
     address::Address,
@@ -20,7 +19,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{Note, Rho, TransmittedNoteCiphertext},
+    note::{AssetBase, Note, Rho, TransmittedNoteCiphertext},
     note_encryption_v3::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -54,7 +53,7 @@ impl BundleType {
         bundle_required: false,
     };
 
-    // FIXME: add doc
+    /// FIXME: add doc
     pub const DEFAULT_ZSA: BundleType = BundleType::Transactional {
         flags: Flags::ENABLED_ZSA,
         bundle_required: false,
@@ -64,6 +63,12 @@ impl BundleType {
     /// builder will prevent any spends or outputs from being added.
     pub const DISABLED: BundleType = BundleType::Transactional {
         flags: Flags::from_parts(false, false, false), // FIXME: is this correct?
+        bundle_required: false,
+    };
+
+    /// FIXME: add doc
+    pub const ZSA_DISABLED: BundleType = BundleType::Transactional {
+        flags: Flags::from_parts(true, true, false),
         bundle_required: false,
     };
 
@@ -299,7 +304,7 @@ impl SpendInfo {
 }
 
 /// Information about a specific output to receive funds in an [`Action`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutputInfo {
     ovk: Option<OutgoingViewingKey>,
     recipient: Address,
@@ -532,7 +537,7 @@ impl Builder {
             return Err(SpendError::SpendsDisabled);
         }
 
-        let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
+        let spend = SpendInfo::new(fvk, note, merkle_path, false).ok_or(SpendError::FvkMismatch)?;
 
         // Consistency check: all anchors must be equal.
         if !spend.has_matching_anchor(&self.anchor) {
@@ -621,7 +626,7 @@ impl Builder {
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
-    pub fn build<V: TryFrom<i64>>(
+    pub fn build<V: Copy + Into<i64> + TryFrom<i64>>(
         self,
         rng: impl RngCore,
     ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
@@ -631,20 +636,85 @@ impl Builder {
             self.bundle_type,
             self.spends,
             self.outputs,
+            self.burn,
         )
     }
 }
+
+/// Partition a list of spends and recipients by note types.
+/// Method creates single dummy ZEC note if spends and recipients are both empty.
+fn partition_by_asset(
+    spends: &[SpendInfo],
+    outputs: &[OutputInfo],
+    rng: &mut impl RngCore,
+) -> HashMap<
+    AssetBase,
+    (
+        Vec<(Option<usize>, SpendInfo)>,
+        Vec<(Option<usize>, OutputInfo)>,
+    ),
+> {
+    let mut hm: HashMap<
+        AssetBase,
+        (
+            Vec<(Option<usize>, SpendInfo)>,
+            Vec<(Option<usize>, OutputInfo)>,
+        ),
+    > = HashMap::new();
+
+    for (i, s) in spends.into_iter().enumerate() {
+        hm.entry(s.note.asset())
+            .or_insert((vec![], vec![]))
+            .0
+            .push((Some(i), s.clone()));
+    }
+
+    for (i, o) in outputs.into_iter().enumerate() {
+        hm.entry(o.asset)
+            .or_insert((vec![], vec![]))
+            .1
+            .push((Some(i), o.clone()));
+    }
+
+    if hm.is_empty() {
+        let dummy_spend = SpendInfo::dummy(AssetBase::native(), rng);
+        hm.insert(
+            dummy_spend.note.asset(),
+            (vec![(None, dummy_spend)], vec![]),
+        );
+    }
+
+    hm
+}
+
+/// Returns a dummy/split notes to extend the spends.
+fn pad_spend(spend: Option<&SpendInfo>, asset: AssetBase, mut rng: impl RngCore) -> SpendInfo {
+    if asset.is_native().into() {
+        // For native asset, extends with dummy notes
+        SpendInfo::dummy(asset, &mut rng)
+    } else {
+        // For ZSA asset, extends with
+        // - dummy notes if first spend is empty
+        // - split notes otherwise.
+        let dummy = SpendInfo::dummy(asset, &mut rng);
+        spend.map_or_else(|| dummy, |s| s.create_split_spend(&mut rng))
+    }
+}
+
+// FIXME: the order of the arguments doesn't correspond the order of the fields of the Builder
+// struct - is that okay?
 
 /// Builds a bundle containing the given spent notes and outputs.
 ///
 /// The returned bundle will have no proof or signatures; these can be applied with
 /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
-pub fn bundle<V: TryFrom<i64>>(
+pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
     mut rng: impl RngCore,
     anchor: Anchor,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
+    burn: HashMap<AssetBase, ValueSum>,
 ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
     let flags = bundle_type.flags();
 
@@ -670,39 +740,51 @@ pub fn bundle<V: TryFrom<i64>>(
 
     // Pair up the spends and outputs, extending with dummy values as necessary.
     let (pre_actions, bundle_meta) = {
-        let mut indexed_spends = spends
-            .into_iter()
-            .chain(iter::repeat_with(|| SpendInfo::dummy(&mut rng)))
-            .enumerate()
-            .take(num_actions)
-            .collect::<Vec<_>>();
-
-        let mut indexed_outputs = outputs
-            .into_iter()
-            .chain(iter::repeat_with(|| OutputInfo::dummy(&mut rng)))
-            .enumerate()
-            .take(num_actions)
-            .collect::<Vec<_>>();
-
-        // Shuffle the spends and outputs, so that learning the position of a
-        // specific spent note or output note doesn't reveal anything on its own about
-        // the meaning of that note in the transaction context.
-        indexed_spends.shuffle(&mut rng);
-        indexed_outputs.shuffle(&mut rng);
-
         let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
-        let pre_actions = indexed_spends
+
+        let pre_actions = partition_by_asset(&spends, &outputs, &mut rng)
             .into_iter()
-            .zip(indexed_outputs.into_iter())
+            .flat_map(|(asset, (spends, outputs))| {
+                let first_spend = spends.first().map(|(_, s)| s).cloned();
+
+                let mut indexed_spends = spends
+                    .into_iter()
+                    .chain(iter::repeat_with(|| {
+                        (None, pad_spend(first_spend.as_ref(), asset, &mut rng))
+                    }))
+                    .take(num_actions)
+                    .collect::<Vec<_>>();
+
+                let mut indexed_outputs = outputs
+                    .into_iter()
+                    .chain(iter::repeat_with(|| {
+                        (None, OutputInfo::dummy(&mut rng, asset))
+                    }))
+                    .take(num_actions)
+                    .collect::<Vec<_>>();
+
+                // Shuffle the spends and outputs, so that learning the position of a
+                // specific spent note or output note doesn't reveal anything on its own about
+                // the meaning of that note in the transaction context.
+                indexed_spends.shuffle(&mut rng);
+                indexed_outputs.shuffle(&mut rng);
+
+                indexed_spends.into_iter().zip(indexed_outputs.into_iter())
+            })
+            // FIXME: this collect is used to release the borrow of rng
+            // - try to find another way to do that, as there's the second
+            // collect below - two collects don't look good
+            .collect::<Vec<_>>()
+            .into_iter()
             .enumerate()
             .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
                 // Record the post-randomization spend location
-                if spend_idx < num_requested_spends {
+                if let Some(spend_idx) = spend_idx {
                     bundle_meta.spend_indices[spend_idx] = action_idx;
                 }
 
                 // Record the post-randomization output location
-                if out_idx < num_requested_outputs {
+                if let Some(out_idx) = out_idx {
                     bundle_meta.output_indices[out_idx] = action_idx;
                 }
 
@@ -736,18 +818,18 @@ pub fn bundle<V: TryFrom<i64>>(
     let (actions, circuits): (Vec<_>, Vec<_>) =
         pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
 
-    // Verify that bsk and bvk are consistent.
-    let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-        - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
-    .into_bvk();
-    assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+    let burn = burn
+        .into_iter()
+        .map(|(asset, value)| Ok((asset, value.into()?)))
+        .collect::<Result<_, BuildError>>()?;
 
-    Ok(NonEmpty::from_vec(actions).map(|actions| {
+    let bundle = NonEmpty::from_vec(actions).map(|actions| {
         (
             Bundle::from_parts(
                 actions,
                 flags,
                 result_value_balance,
+                burn,
                 anchor,
                 InProgress {
                     proof: Unproven { circuits },
@@ -756,7 +838,17 @@ pub fn bundle<V: TryFrom<i64>>(
             ),
             bundle_meta,
         )
-    }))
+    });
+
+    // Verify that bsk and bvk are consistent.
+    if let Some((bundle, _)) = &bundle {
+        assert_eq!(
+            redpallas::VerificationKey::from(&bundle.authorization().sigs.bsk),
+            bundle.binding_validating_key()
+        )
+    }
+
+    Ok(bundle)
 }
 
 /// Marker trait representing bundle signatures in the process of being created.

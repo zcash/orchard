@@ -1210,12 +1210,17 @@ mod tests {
         let nk = *fvk.nk();
         let rivk = fvk.rivk(fvk.scope_for_address(&spent_note.recipient()).unwrap());
         let nf_old = spent_note.nullifier(&fvk);
-        let rho = Rho::from_nf_old(nf_old);
+        // FIXME: why it became unused?
+        //let rho = Rho::from_nf_old(nf_old);
         let ak: SpendValidatingKey = fvk.into();
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), AssetBase::native());
+        let (_, _, output_note) = Note::dummy(
+            &mut rng,
+            Some(Rho::from_nf_old(nf_old)),
+            AssetBase::native(),
+        );
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
@@ -1495,7 +1500,7 @@ mod tests {
             let sk = SpendingKey::random(&mut rng);
             let fvk: FullViewingKey = (&sk).into();
             let sender_address = fvk.address_at(0u32, Scope::External);
-            let rho_old = Nullifier::dummy(&mut rng);
+            let rho_old = Rho::from_nf_old(Nullifier::dummy(&mut rng));
             let note = Note::new(
                 sender_address,
                 NoteValue::from_raw(40),
@@ -1539,7 +1544,13 @@ mod tests {
             let fvk: FullViewingKey = (&sk).into();
             let sender_address = fvk.address_at(0u32, Scope::External);
 
-            Note::new(sender_address, output_value, asset_base, nf_old, &mut rng)
+            Note::new(
+                sender_address,
+                output_value,
+                asset_base,
+                Rho::from_nf_old(nf_old),
+                &mut rng,
+            )
         };
 
         let cmx = output_note.commitment().into();

@@ -416,7 +416,7 @@ pub mod testing {
         pub fn arb_native_note()(
             recipient in arb_address(),
             value in arb_note_value(),
-            rho in arb_nullifier(),
+            rho in arb_nullifier().prop_map(Rho::from_nf_old),
             rseed in arb_rseed(),
         ) -> Note {
             Note {
@@ -435,7 +435,7 @@ pub mod testing {
         pub fn arb_zsa_note(asset: AssetBase)(
             recipient in arb_address(),
             value in arb_note_value(),
-            rho in arb_nullifier(),
+            rho in arb_nullifier().prop_map(Rho::from_nf_old),
             rseed in arb_rseed(),
         ) -> Note {
             Note {

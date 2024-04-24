@@ -280,7 +280,7 @@ mod tests {
         assert!(bool::from(
             ExtendedSpendingKey::from_path(
                 &seed,
-                &[ChildIndex::hardened(5), ChildIndex::hardened(7)]
+                &[ChildIndex::hardened(5), ChildIndex::hardened(7)],
                 ZIP32_ORCHARD_PERSONALIZATION
             )
             .unwrap()

@@ -1,6 +1,5 @@
 //! Key structures for Orchard.
 
-use core::mem;
 use std::{
     fmt::{Debug, Formatter},
     io::{self, Read, Write},
@@ -26,7 +25,7 @@ use pasta_curves::{pallas, pallas::Scalar};
 use rand::{rngs::OsRng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption_zsa::EphemeralKeyBytes;
-use zip32::{AccountId, ChildIndex};
+//use zip32::{AccountId, ChildIndex};
 
 use crate::{
     address::Address,
@@ -37,12 +36,12 @@ use crate::{
         PreparedNonIdentityBase, PreparedNonZeroScalar, PrfExpand,
     },
     zip32::{
-        self, ChildIndex, ExtendedSpendingKey, ZIP32_ORCHARD_PERSONALIZATION,
+        self, ExtendedSpendingKey, ZIP32_ORCHARD_PERSONALIZATION,
         ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE,
     },
 };
 
-pub use zip32::{DiversifierIndex, Scope};
+pub use ::zip32::{AccountId, ChildIndex, DiversifierIndex, Scope};
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
@@ -278,9 +277,9 @@ impl IssuanceAuthorizingKey {
     ) -> Result<Self, zip32::Error> {
         // Call zip32 logic
         let path = &[
-            ChildIndex::try_from(ZIP32_PURPOSE_FOR_ISSUANCE)?,
-            ChildIndex::try_from(coin_type)?,
-            ChildIndex::try_from(account)?,
+            ChildIndex::hardened(ZIP32_PURPOSE_FOR_ISSUANCE),
+            ChildIndex::hardened(coin_type),
+            ChildIndex::hardened(account),
         ];
 
         // we are reusing zip32 logic for deriving the key, zip32 should be updated as discussed

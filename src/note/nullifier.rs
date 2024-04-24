@@ -3,7 +3,7 @@ use halo2_proofs::arithmetic::CurveExt;
 use memuse::DynamicUsage;
 use pasta_curves::pallas;
 use rand::RngCore;
-use subtle::{Choice, ConstantTimeEq, CtOption};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::NoteCommitment;
 use crate::{
