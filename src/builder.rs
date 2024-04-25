@@ -643,45 +643,31 @@ impl Builder {
 
 /// Partition a list of spends and recipients by note types.
 /// Method creates single dummy ZEC note if spends and recipients are both empty.
+#[allow(clippy::type_complexity)]
 fn partition_by_asset(
     spends: &[SpendInfo],
     outputs: &[OutputInfo],
     rng: &mut impl RngCore,
-) -> HashMap<
-    AssetBase,
-    (
-        Vec<(Option<usize>, SpendInfo)>,
-        Vec<(Option<usize>, OutputInfo)>,
-    ),
-> {
-    let mut hm: HashMap<
-        AssetBase,
-        (
-            Vec<(Option<usize>, SpendInfo)>,
-            Vec<(Option<usize>, OutputInfo)>,
-        ),
-    > = HashMap::new();
+) -> HashMap<AssetBase, (Vec<(usize, SpendInfo)>, Vec<(usize, OutputInfo)>)> {
+    let mut hm = HashMap::new();
 
-    for (i, s) in spends.into_iter().enumerate() {
+    for (i, s) in spends.iter().enumerate() {
         hm.entry(s.note.asset())
             .or_insert((vec![], vec![]))
             .0
-            .push((Some(i), s.clone()));
+            .push((i, s.clone()));
     }
 
-    for (i, o) in outputs.into_iter().enumerate() {
+    for (i, o) in outputs.iter().enumerate() {
         hm.entry(o.asset)
             .or_insert((vec![], vec![]))
             .1
-            .push((Some(i), o.clone()));
+            .push((i, o.clone()));
     }
 
     if hm.is_empty() {
         let dummy_spend = SpendInfo::dummy(AssetBase::native(), rng);
-        hm.insert(
-            dummy_spend.note.asset(),
-            (vec![(None, dummy_spend)], vec![]),
-        );
+        hm.insert(dummy_spend.note.asset(), (vec![(0, dummy_spend)], vec![]));
     }
 
     hm
@@ -739,52 +725,55 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
     // Pair up the spends and outputs, extending with dummy values as necessary.
+    // FIXME: cargo clippy suggests to avoid using collect for spends
+    // but the direct fix causes compilation error (bacause of rbg borrowing)
+    #[allow(clippy::needless_collect)]
     let (pre_actions, bundle_meta) = {
+        let (mut indexed_spends, mut indexed_outputs): (Vec<_>, Vec<_>) =
+            partition_by_asset(&spends, &outputs, &mut rng)
+                .into_iter()
+                .flat_map(|(asset, (spends, outputs))| {
+                    let first_spend = spends.first().map(|(_, s)| s.clone());
+
+                    let indexed_spends = spends
+                        .into_iter()
+                        .chain(iter::repeat_with(|| {
+                            (0, pad_spend(first_spend.as_ref(), asset, &mut rng))
+                        }))
+                        .take(num_actions)
+                        .collect::<Vec<_>>();
+
+                    let indexed_outputs = outputs
+                        .into_iter()
+                        .chain(iter::repeat_with(|| {
+                            (0, OutputInfo::dummy(&mut rng, asset))
+                        }))
+                        .take(num_actions)
+                        .collect::<Vec<_>>();
+
+                    indexed_spends.into_iter().zip(indexed_outputs)
+                })
+                .unzip();
+
+        // Shuffle the spends and outputs, so that learning the position of a
+        // specific spent note or output note doesn't reveal anything on its own about
+        // the meaning of that note in the transaction context.
+        indexed_spends.shuffle(&mut rng);
+        indexed_outputs.shuffle(&mut rng);
+
         let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
-
-        let pre_actions = partition_by_asset(&spends, &outputs, &mut rng)
+        let pre_actions = indexed_spends
             .into_iter()
-            .flat_map(|(asset, (spends, outputs))| {
-                let first_spend = spends.first().map(|(_, s)| s).cloned();
-
-                let mut indexed_spends = spends
-                    .into_iter()
-                    .chain(iter::repeat_with(|| {
-                        (None, pad_spend(first_spend.as_ref(), asset, &mut rng))
-                    }))
-                    .take(num_actions)
-                    .collect::<Vec<_>>();
-
-                let mut indexed_outputs = outputs
-                    .into_iter()
-                    .chain(iter::repeat_with(|| {
-                        (None, OutputInfo::dummy(&mut rng, asset))
-                    }))
-                    .take(num_actions)
-                    .collect::<Vec<_>>();
-
-                // Shuffle the spends and outputs, so that learning the position of a
-                // specific spent note or output note doesn't reveal anything on its own about
-                // the meaning of that note in the transaction context.
-                indexed_spends.shuffle(&mut rng);
-                indexed_outputs.shuffle(&mut rng);
-
-                indexed_spends.into_iter().zip(indexed_outputs.into_iter())
-            })
-            // FIXME: this collect is used to release the borrow of rng
-            // - try to find another way to do that, as there's the second
-            // collect below - two collects don't look good
-            .collect::<Vec<_>>()
-            .into_iter()
+            .zip(indexed_outputs.into_iter())
             .enumerate()
             .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
                 // Record the post-randomization spend location
-                if let Some(spend_idx) = spend_idx {
+                if spend_idx < num_requested_spends {
                     bundle_meta.spend_indices[spend_idx] = action_idx;
                 }
 
                 // Record the post-randomization output location
-                if let Some(out_idx) = out_idx {
+                if out_idx < num_requested_outputs {
                     bundle_meta.output_indices[out_idx] = action_idx;
                 }
 
