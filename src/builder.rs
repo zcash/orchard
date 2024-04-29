@@ -667,7 +667,10 @@ fn partition_by_asset(
 
     if hm.is_empty() {
         let dummy_spend = SpendInfo::dummy(AssetBase::native(), rng);
-        hm.insert(dummy_spend.note.asset(), (vec![(0, dummy_spend)], vec![]));
+        hm.insert(
+            dummy_spend.note.asset(),
+            (vec![(usize::MAX, dummy_spend)], vec![]),
+        );
     }
 
     hm
@@ -720,81 +723,86 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
         return Err(BuildError::OutputsDisabled);
     }
 
-    let num_actions = bundle_type
-        .num_actions(num_requested_spends, num_requested_outputs)
-        .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
+    // The number of actions to add to this bundle in order to contain at least MIN_ACTION actions.
+    let num_missing_actions = MIN_ACTIONS.saturating_sub(spends.len().max(outputs.len()));
 
     // Pair up the spends and outputs, extending with dummy values as necessary.
-    // FIXME: cargo clippy suggests to avoid using collect for spends
-    // but the direct fix causes compilation error (bacause of rbg borrowing)
-    #[allow(clippy::needless_collect)]
-    let (pre_actions, bundle_meta) = {
-        let (mut indexed_spends, mut indexed_outputs): (Vec<_>, Vec<_>) =
-            partition_by_asset(&spends, &outputs, &mut rng)
-                .into_iter()
-                .flat_map(|(asset, (spends, outputs))| {
-                    let first_spend = spends.first().map(|(_, s)| s.clone());
+    let (pre_actions, bundle_meta, _) = partition_by_asset(&spends, &outputs, &mut rng)
+        .into_iter()
+        .fold(
+            (
+                Vec::new(),
+                BundleMetadata::new(num_requested_spends, num_requested_outputs),
+                // We might have to add dummy/split actions only for the first asset to reach MIN_ACTIONS.
+                num_missing_actions,
+            ),
+            |(mut pre_actions, mut bundle_meta, num_missing_actions),
+             (asset, (spends, outputs))| {
+                let num_actions = spends.len().max(outputs.len()) + num_missing_actions;
 
-                    let indexed_spends = spends
-                        .into_iter()
-                        .chain(iter::repeat_with(|| {
-                            (0, pad_spend(first_spend.as_ref(), asset, &mut rng))
-                        }))
-                        .take(num_actions)
-                        .collect::<Vec<_>>();
+                let first_spend = spends.first().map(|(_, s)| s.clone());
 
-                    let indexed_outputs = outputs
-                        .into_iter()
-                        .chain(iter::repeat_with(|| {
-                            (0, OutputInfo::dummy(&mut rng, asset))
-                        }))
-                        .take(num_actions)
-                        .collect::<Vec<_>>();
+                let mut indexed_spends = spends
+                    .into_iter()
+                    .chain(iter::repeat_with(|| {
+                        (usize::MAX, pad_spend(first_spend.as_ref(), asset, &mut rng))
+                    }))
+                    .take(num_actions)
+                    .collect::<Vec<_>>();
 
-                    indexed_spends.into_iter().zip(indexed_outputs)
-                })
-                .unzip();
+                let mut indexed_outputs = outputs
+                    .into_iter()
+                    .chain(iter::repeat_with(|| {
+                        (usize::MAX, OutputInfo::dummy(&mut rng, asset))
+                    }))
+                    .take(num_actions)
+                    .collect::<Vec<_>>();
 
-        // Shuffle the spends and outputs, so that learning the position of a
-        // specific spent note or output note doesn't reveal anything on its own about
-        // the meaning of that note in the transaction context.
-        indexed_spends.shuffle(&mut rng);
-        indexed_outputs.shuffle(&mut rng);
+                // Shuffle the spends and outputs, so that learning the position of a
+                // specific spent note or output note doesn't reveal anything on its own about
+                // the meaning of that note in the transaction context.
+                indexed_spends.shuffle(&mut rng);
+                indexed_outputs.shuffle(&mut rng);
 
-        let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
-        let pre_actions = indexed_spends
-            .into_iter()
-            .zip(indexed_outputs.into_iter())
-            .enumerate()
-            .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
-                // Record the post-randomization spend location
-                if spend_idx < num_requested_spends {
-                    bundle_meta.spend_indices[spend_idx] = action_idx;
-                }
+                assert_eq!(indexed_spends.len(), indexed_outputs.len());
 
-                // Record the post-randomization output location
-                if out_idx < num_requested_outputs {
-                    bundle_meta.output_indices[out_idx] = action_idx;
-                }
+                let pre_actions_len = pre_actions.len();
 
-                ActionInfo::new(spend, output, &mut rng)
-            })
-            .collect::<Vec<_>>();
+                let new_actions = indexed_spends
+                    .into_iter()
+                    .zip(indexed_outputs.into_iter())
+                    .enumerate()
+                    .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
+                        let action_idx = action_idx + pre_actions_len;
 
-        (pre_actions, bundle_meta)
-    };
+                        // Record the post-randomization spend location
+                        if spend_idx < num_requested_spends {
+                            bundle_meta.spend_indices[spend_idx] = action_idx;
+                        }
+
+                        // Record the post-randomization output location
+                        if out_idx < num_requested_outputs {
+                            bundle_meta.output_indices[out_idx] = action_idx;
+                        }
+
+                        ActionInfo::new(spend, output, &mut rng)
+                    });
+
+                pre_actions.extend(new_actions);
+
+                (pre_actions, bundle_meta, 0)
+            },
+        );
 
     // Determine the value balance for this bundle, ensuring it is valid.
-    let value_balance = pre_actions
+    let native_value_balance: V = pre_actions
         .iter()
+        .filter(|action| action.spend.note.asset().is_native().into())
         .fold(Some(ValueSum::zero()), |acc, action| {
             acc? + action.value_sum()
         })
-        .ok_or(OverflowError)?;
-
-    let result_value_balance: V = i64::try_from(value_balance)
-        .map_err(BuildError::ValueSum)
-        .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError)))?;
+        .ok_or(OverflowError)?
+        .into()?;
 
     // Compute the transaction binding signing key.
     let bsk = pre_actions
@@ -807,37 +815,25 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
     let (actions, circuits): (Vec<_>, Vec<_>) =
         pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
 
-    let burn = burn
-        .into_iter()
-        .map(|(asset, value)| Ok((asset, value.into()?)))
-        .collect::<Result<_, BuildError>>()?;
+    let bundle = Bundle::from_parts(
+        NonEmpty::from_vec(actions).unwrap(),
+        flags,
+        native_value_balance,
+        burn.into_iter()
+            .map(|(asset, value)| Ok((asset, value.into()?)))
+            .collect::<Result<_, BuildError>>()?,
+        anchor,
+        InProgress {
+            proof: Unproven { circuits },
+            sigs: Unauthorized { bsk },
+        },
+    );
 
-    let bundle = NonEmpty::from_vec(actions).map(|actions| {
-        (
-            Bundle::from_parts(
-                actions,
-                flags,
-                result_value_balance,
-                burn,
-                anchor,
-                InProgress {
-                    proof: Unproven { circuits },
-                    sigs: Unauthorized { bsk },
-                },
-            ),
-            bundle_meta,
-        )
-    });
-
-    // Verify that bsk and bvk are consistent.
-    if let Some((bundle, _)) = &bundle {
-        assert_eq!(
-            redpallas::VerificationKey::from(&bundle.authorization().sigs.bsk),
-            bundle.binding_validating_key()
-        )
-    }
-
-    Ok(bundle)
+    assert_eq!(
+        redpallas::VerificationKey::from(&bundle.authorization().sigs.bsk),
+        bundle.binding_validating_key()
+    );
+    Ok(Some((bundle, bundle_meta)))
 }
 
 /// Marker trait representing bundle signatures in the process of being created.
