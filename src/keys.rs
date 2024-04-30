@@ -25,7 +25,6 @@ use pasta_curves::{pallas, pallas::Scalar};
 use rand::{rngs::OsRng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption_zsa::EphemeralKeyBytes;
-//use zip32::{AccountId, ChildIndex};
 
 use crate::{
     address::Address,
@@ -41,6 +40,9 @@ use crate::{
     },
 };
 
+// Disable rustfmt to preserve '::' which specifies the external 'zip32' crate,
+// avoiding confusion with a local module of the same name.
+#[rustfmt::skip]
 pub use ::zip32::{AccountId, ChildIndex, DiversifierIndex, Scope};
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
