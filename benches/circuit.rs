@@ -27,7 +27,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let create_bundle = |num_recipients| {
         let mut builder = Builder::new(
-            BundleType::DEFAULT_VANILLA,
+            BundleType::DEFAULT_WITHOUT_ZSA,
             Anchor::from_bytes([0; 32]).unwrap(),
         );
         for _ in 0..num_recipients {
