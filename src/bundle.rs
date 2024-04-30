@@ -85,17 +85,15 @@ impl Flags {
         }
     }
 
-    /// The flag set with both spends and outputs enabled.
-    // FIXME: mention id doc that zsa is disabled?
-    pub const ENABLED_VANILLA: Flags = Flags {
+    /// The flag set with both spends and outputs enabled and ZSA disabled.
+    pub const ENABLED_WITHOUT_ZSA: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
         zsa_enabled: false,
     };
 
-    /// The flag set with both spends and outputs enabled.
-    // FIXME: mention id doc that zsa is enabled?
-    pub const ENABLED_ZSA: Flags = Flags {
+    /// The flag set with both spends and outputs enabled and ZSA enabled.
+    pub const ENABLED_WITH_ZSA: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
         zsa_enabled: true,

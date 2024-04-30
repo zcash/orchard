@@ -110,7 +110,7 @@ fn bundle_chain() {
 
         let (merkle_path, anchor) = build_merkle_path(&note);
 
-        let mut builder = Builder::new(BundleType::DEFAULT_VANILLA, anchor);
+        let mut builder = Builder::new(BundleType::DEFAULT_WITHOUT_ZSA, anchor);
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_output(

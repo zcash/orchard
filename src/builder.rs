@@ -46,29 +46,23 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type has all flags enabled, and does not require a bundle to be produced
-    /// if no spends or outputs have been added to the bundle.
-    pub const DEFAULT_VANILLA: BundleType = BundleType::Transactional {
-        flags: Flags::ENABLED_VANILLA,
+    /// The default bundle type has all flags enabled but ZSA disabled, and does not require a bundle
+    /// to be produced if no spends or outputs have been added to the bundle.
+    pub const DEFAULT_WITHOUT_ZSA: BundleType = BundleType::Transactional {
+        flags: Flags::ENABLED_WITHOUT_ZSA,
         bundle_required: false,
     };
 
-    /// FIXME: add doc
-    pub const DEFAULT_ZSA: BundleType = BundleType::Transactional {
-        flags: Flags::ENABLED_ZSA,
+    /// The default bundle with all flags enabled, including ZSA.
+    pub const DEFAULT_WITH_ZSA: BundleType = BundleType::Transactional {
+        flags: Flags::ENABLED_WITH_ZSA,
         bundle_required: false,
     };
 
     /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
     /// builder will prevent any spends or outputs from being added.
     pub const DISABLED: BundleType = BundleType::Transactional {
-        flags: Flags::from_parts(false, false, false), // FIXME: is this correct?
-        bundle_required: false,
-    };
-
-    /// FIXME: add doc
-    pub const ZSA_DISABLED: BundleType = BundleType::Transactional {
-        flags: Flags::from_parts(true, true, false),
+        flags: Flags::from_parts(false, false, false), // FIXME: is `false` value for ZSA flag correct here?
         bundle_required: false,
     };
 
@@ -690,8 +684,8 @@ fn pad_spend(spend: Option<&SpendInfo>, asset: AssetBase, mut rng: impl RngCore)
     }
 }
 
-// FIXME: the order of the arguments doesn't correspond the order of the fields of the Builder
-// struct - is that okay?
+// FIXME: the order of the arguments of the `bundle` function doesn't correspond the order
+// of the fields of the `Builder` struct - is that okay?
 
 /// Builds a bundle containing the given spent notes and outputs.
 ///
@@ -1171,7 +1165,7 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64> + Copy + Into<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let mut builder = Builder::new(BundleType::DEFAULT_ZSA, self.anchor);
+            let mut builder = Builder::new(BundleType::DEFAULT_WITH_ZSA, self.anchor);
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -1294,7 +1288,7 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleType::ZSA_DISABLED,
+            BundleType::DEFAULT_WITHOUT_ZSA,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
 

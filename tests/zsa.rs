@@ -238,7 +238,7 @@ fn build_and_verify_bundle(
 ) -> Result<(), String> {
     let rng = OsRng;
     let shielded_bundle: Bundle<_, i64> = {
-        let mut builder = Builder::new(BundleType::DEFAULT_ZSA, anchor);
+        let mut builder = Builder::new(BundleType::DEFAULT_WITH_ZSA, anchor);
 
         spends
             .iter()
