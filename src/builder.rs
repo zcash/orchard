@@ -46,15 +46,15 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type has all flags enabled but ZSA disabled, and does not require a bundle
-    /// to be produced if no spends or outputs have been added to the bundle.
-    pub const DEFAULT_WITHOUT_ZSA: BundleType = BundleType::Transactional {
+    /// The default bundle type has all flags enabled, ZSA disabled, and does not require a bundle
+    /// to be produced.
+    pub const DEFAULT_VANILLA: BundleType = BundleType::Transactional {
         flags: Flags::ENABLED_WITHOUT_ZSA,
         bundle_required: false,
     };
 
     /// The default bundle with all flags enabled, including ZSA.
-    pub const DEFAULT_WITH_ZSA: BundleType = BundleType::Transactional {
+    pub const DEFAULT_ZSA: BundleType = BundleType::Transactional {
         flags: Flags::ENABLED_WITH_ZSA,
         bundle_required: false,
     };
@@ -62,7 +62,7 @@ impl BundleType {
     /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
     /// builder will prevent any spends or outputs from being added.
     pub const DISABLED: BundleType = BundleType::Transactional {
-        flags: Flags::from_parts(false, false, false), // FIXME: is `false` value for ZSA flag correct here?
+        flags: Flags::from_parts(false, false, false),
         bundle_required: false,
     };
 
@@ -670,22 +670,19 @@ fn partition_by_asset(
     hm
 }
 
-/// Returns a dummy/split notes to extend the spends.
+/// Returns the appropriate SpendInfo for padding.
 fn pad_spend(spend: Option<&SpendInfo>, asset: AssetBase, mut rng: impl RngCore) -> SpendInfo {
     if asset.is_native().into() {
         // For native asset, extends with dummy notes
         SpendInfo::dummy(asset, &mut rng)
     } else {
         // For ZSA asset, extends with
-        // - dummy notes if first spend is empty
+        // - dummy note if SpendInfo is None
         // - split notes otherwise.
         let dummy = SpendInfo::dummy(asset, &mut rng);
         spend.map_or_else(|| dummy, |s| s.create_split_spend(&mut rng))
     }
 }
-
-// FIXME: the order of the arguments of the `bundle` function doesn't correspond the order
-// of the fields of the `Builder` struct - is that okay?
 
 /// Builds a bundle containing the given spent notes and outputs.
 ///
@@ -717,7 +714,6 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
         return Err(BuildError::OutputsDisabled);
     }
 
-    // The number of actions to add to this bundle in order to contain at least MIN_ACTION actions.
     let num_missing_actions = MIN_ACTIONS.saturating_sub(spends.len().max(outputs.len()));
 
     // Pair up the spends and outputs, extending with dummy values as necessary.
@@ -1165,7 +1161,7 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64> + Copy + Into<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let mut builder = Builder::new(BundleType::DEFAULT_WITH_ZSA, self.anchor);
+            let mut builder = Builder::new(BundleType::DEFAULT_ZSA, self.anchor);
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -1288,7 +1284,7 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleType::DEFAULT_WITHOUT_ZSA,
+            BundleType::DEFAULT_VANILLA,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
 

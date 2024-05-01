@@ -40,8 +40,7 @@ use crate::{
     },
 };
 
-// Disable rustfmt to preserve '::' which specifies the external 'zip32' crate,
-// avoiding confusion with a local module of the same name.
+// Preserve '::' which specifies the EXTERNAL 'zip32' crate
 #[rustfmt::skip]
 pub use ::zip32::{AccountId, ChildIndex, DiversifierIndex, Scope};
 
