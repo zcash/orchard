@@ -642,28 +642,34 @@ fn partition_by_asset(
     spends: &[SpendInfo],
     outputs: &[OutputInfo],
     rng: &mut impl RngCore,
-) -> HashMap<AssetBase, (Vec<(usize, SpendInfo)>, Vec<(usize, OutputInfo)>)> {
+) -> HashMap<
+    AssetBase,
+    (
+        Vec<(Option<usize>, SpendInfo)>,
+        Vec<(Option<usize>, OutputInfo)>,
+    ),
+> {
     let mut hm = HashMap::new();
 
     for (i, s) in spends.iter().enumerate() {
         hm.entry(s.note.asset())
             .or_insert((vec![], vec![]))
             .0
-            .push((i, s.clone()));
+            .push((Some(i), s.clone()));
     }
 
     for (i, o) in outputs.iter().enumerate() {
         hm.entry(o.asset)
             .or_insert((vec![], vec![]))
             .1
-            .push((i, o.clone()));
+            .push((Some(i), o.clone()));
     }
 
     if hm.is_empty() {
-        let dummy_spend = SpendInfo::dummy(AssetBase::native(), rng);
+        let dummy_spend = pad_spend(None, AssetBase::native(), rng);
         hm.insert(
             dummy_spend.note.asset(),
-            (vec![(usize::MAX, dummy_spend)], vec![]),
+            (vec![(None, dummy_spend)], vec![]),
         );
     }
 
@@ -714,75 +720,84 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
         return Err(BuildError::OutputsDisabled);
     }
 
-    let num_missing_actions = MIN_ACTIONS.saturating_sub(spends.len().max(outputs.len()));
-
     // Pair up the spends and outputs, extending with dummy values as necessary.
-    let (pre_actions, bundle_meta, _) = partition_by_asset(&spends, &outputs, &mut rng)
-        .into_iter()
-        .fold(
-            (
-                Vec::new(),
-                BundleMetadata::new(num_requested_spends, num_requested_outputs),
-                // We might have to add dummy/split actions only for the first asset to reach MIN_ACTIONS.
-                num_missing_actions,
-            ),
-            |(mut pre_actions, mut bundle_meta, num_missing_actions),
-             (asset, (spends, outputs))| {
-                let num_actions = spends.len().max(outputs.len()) + num_missing_actions;
+    let (pre_actions, bundle_meta) = {
+        // FIXME: use Vec::with_capacity().extend(...) instead of ...collect() as we can estimate
+        // the size of the resulting vector beforehand. Rust can't do that autimatically in this
+        // particular case, and possibly realloicates the vector during the collecting.
+        // Moreover, even if we use "colect" intstead of the first "extend", we still have to make
+        // the vector mutable and then potentially extend it with missing dummy elements to pad to
+        // MIN_ACTIONS elements.
+        let mut indexed_spends_outputs =
+            Vec::with_capacity(spends.len().max(outputs.len()).max(MIN_ACTIONS));
 
-                let first_spend = spends.first().map(|(_, s)| s.clone());
+        indexed_spends_outputs.extend(
+            partition_by_asset(&spends, &outputs, &mut rng)
+                .into_iter()
+                .flat_map(|(asset, (spends, outputs))| {
+                    let num_asset_pre_actions = spends.len().max(outputs.len());
 
-                let mut indexed_spends = spends
-                    .into_iter()
-                    .chain(iter::repeat_with(|| {
-                        (usize::MAX, pad_spend(first_spend.as_ref(), asset, &mut rng))
-                    }))
-                    .take(num_actions)
-                    .collect::<Vec<_>>();
+                    let first_spend = spends.first().map(|(_, s)| s.clone());
 
-                let mut indexed_outputs = outputs
-                    .into_iter()
-                    .chain(iter::repeat_with(|| {
-                        (usize::MAX, OutputInfo::dummy(&mut rng, asset))
-                    }))
-                    .take(num_actions)
-                    .collect::<Vec<_>>();
+                    let mut indexed_spends = spends
+                        .into_iter()
+                        .chain(iter::repeat_with(|| {
+                            (None, pad_spend(first_spend.as_ref(), asset, &mut rng))
+                        }))
+                        .take(num_asset_pre_actions)
+                        .collect::<Vec<_>>();
 
-                // Shuffle the spends and outputs, so that learning the position of a
-                // specific spent note or output note doesn't reveal anything on its own about
-                // the meaning of that note in the transaction context.
-                indexed_spends.shuffle(&mut rng);
-                indexed_outputs.shuffle(&mut rng);
+                    let mut indexed_outputs = outputs
+                        .into_iter()
+                        .chain(iter::repeat_with(|| {
+                            (None, OutputInfo::dummy(&mut rng, asset))
+                        }))
+                        .take(num_asset_pre_actions)
+                        .collect::<Vec<_>>();
 
-                assert_eq!(indexed_spends.len(), indexed_outputs.len());
+                    // Shuffle the spends and outputs, so that learning the position of a
+                    // specific spent note or output note doesn't reveal anything on its own about
+                    // the meaning of that note in the transaction context.
+                    indexed_spends.shuffle(&mut rng);
+                    indexed_outputs.shuffle(&mut rng);
 
-                let pre_actions_len = pre_actions.len();
+                    assert_eq!(indexed_spends.len(), indexed_outputs.len());
 
-                let new_actions = indexed_spends
-                    .into_iter()
-                    .zip(indexed_outputs.into_iter())
-                    .enumerate()
-                    .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
-                        let action_idx = action_idx + pre_actions_len;
-
-                        // Record the post-randomization spend location
-                        if spend_idx < num_requested_spends {
-                            bundle_meta.spend_indices[spend_idx] = action_idx;
-                        }
-
-                        // Record the post-randomization output location
-                        if out_idx < num_requested_outputs {
-                            bundle_meta.output_indices[out_idx] = action_idx;
-                        }
-
-                        ActionInfo::new(spend, output, &mut rng)
-                    });
-
-                pre_actions.extend(new_actions);
-
-                (pre_actions, bundle_meta, 0)
-            },
+                    indexed_spends.into_iter().zip(indexed_outputs)
+                }),
         );
+
+        indexed_spends_outputs.extend(
+            iter::repeat_with(|| {
+                (
+                    (None, pad_spend(None, AssetBase::native(), &mut rng)),
+                    (None, OutputInfo::dummy(&mut rng, AssetBase::native())),
+                )
+            })
+            .take(MIN_ACTIONS.saturating_sub(indexed_spends_outputs.len())),
+        );
+
+        let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
+        let pre_actions = indexed_spends_outputs
+            .into_iter()
+            .enumerate()
+            .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
+                // Record the post-randomization spend location
+                if let Some(spend_idx) = spend_idx {
+                    bundle_meta.spend_indices[spend_idx] = action_idx;
+                }
+
+                // Record the post-randomization output location
+                if let Some(out_idx) = out_idx {
+                    bundle_meta.output_indices[out_idx] = action_idx;
+                }
+
+                ActionInfo::new(spend, output, &mut rng)
+            })
+            .collect::<Vec<_>>();
+
+        (pre_actions, bundle_meta)
+    };
 
     // Determine the value balance for this bundle, ensuring it is valid.
     let native_value_balance: V = pre_actions
