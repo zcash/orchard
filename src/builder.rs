@@ -13,7 +13,7 @@ use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 use crate::{
     action::Action,
     address::Address,
-    bundle::{Authorization, Authorized, Bundle, Flags},
+    bundle::{derive_bvk, Authorization, Authorized, Bundle, Flags},
     circuit::{Circuit, Instance, Proof, ProvingKey},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
@@ -620,7 +620,7 @@ impl Builder {
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
-    pub fn build<V: Copy + Into<i64> + TryFrom<i64>>(
+    pub fn build<V: TryFrom<i64>>(
         self,
         rng: impl RngCore,
     ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
@@ -694,7 +694,7 @@ fn pad_spend(spend: Option<&SpendInfo>, asset: AssetBase, mut rng: impl RngCore)
 ///
 /// The returned bundle will have no proof or signatures; these can be applied with
 /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
-pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
+pub fn bundle<V: TryFrom<i64>>(
     mut rng: impl RngCore,
     anchor: Anchor,
     bundle_type: BundleType,
@@ -800,7 +800,7 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
     };
 
     // Determine the value balance for this bundle, ensuring it is valid.
-    let native_value_balance: V = pre_actions
+    let native_value_balance: i64 = pre_actions
         .iter()
         .filter(|action| action.spend.note.asset().is_native().into())
         .fold(Some(ValueSum::zero()), |acc, action| {
@@ -808,6 +808,9 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
         })
         .ok_or(OverflowError)?
         .into()?;
+
+    let result_value_balance = V::try_from(native_value_balance)
+        .map_err(|_| BuildError::ValueSum(value::OverflowError))?;
 
     // Compute the transaction binding signing key.
     let bsk = pre_actions
@@ -820,25 +823,36 @@ pub fn bundle<V: Copy + Into<i64> + TryFrom<i64>>(
     let (actions, circuits): (Vec<_>, Vec<_>) =
         pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
 
-    let bundle = Bundle::from_parts(
-        NonEmpty::from_vec(actions).unwrap(),
-        flags,
+    // Verify that bsk and bvk are consistent.
+    let bvk = derive_bvk(
+        &actions,
         native_value_balance,
-        burn.into_iter()
-            .map(|(asset, value)| Ok((asset, value.into()?)))
-            .collect::<Result<_, BuildError>>()?,
-        anchor,
-        InProgress {
-            proof: Unproven { circuits },
-            sigs: Unauthorized { bsk },
-        },
+        burn.iter()
+            .flat_map(|(asset, value)| -> Result<_, BuildError> { Ok((*asset, (*value).into()?)) }),
     );
+    assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
-    assert_eq!(
-        redpallas::VerificationKey::from(&bundle.authorization().sigs.bsk),
-        bundle.binding_validating_key()
-    );
-    Ok(Some((bundle, bundle_meta)))
+    let burn = burn
+        .into_iter()
+        .map(|(asset, value)| Ok((asset, value.into()?)))
+        .collect::<Result<Vec<(AssetBase, V)>, BuildError>>()?;
+
+    Ok(NonEmpty::from_vec(actions).map(|actions| {
+        (
+            Bundle::from_parts(
+                actions,
+                flags,
+                result_value_balance,
+                burn,
+                anchor,
+                InProgress {
+                    proof: Unproven { circuits },
+                    sigs: Unauthorized { bsk },
+                },
+            ),
+            bundle_meta,
+        )
+    }))
 }
 
 /// Marker trait representing bundle signatures in the process of being created.

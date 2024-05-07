@@ -435,6 +435,33 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 }
 
+pub(crate) fn derive_bvk<'a, A: 'a, V: Clone + Into<i64>>(
+    actions: impl IntoIterator<Item = &'a Action<A>>, //&NonEmpty<Action<A>>,
+    value_balance: V,
+    burn: impl Iterator<Item = (AssetBase, V)>,
+) -> redpallas::VerificationKey<Binding> {
+    // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
+    (actions
+        .into_iter()
+        .map(|a| a.cv_net())
+        .sum::<ValueCommitment>()
+        - ValueCommitment::derive(
+            ValueSum::from_raw(value_balance.into()),
+            ValueCommitTrapdoor::zero(),
+            AssetBase::native(),
+        )
+        - burn
+            .map(|(asset, value)| {
+                ValueCommitment::derive(
+                    ValueSum::from_raw(value.into()),
+                    ValueCommitTrapdoor::zero(),
+                    asset,
+                )
+            })
+            .sum::<ValueCommitment>())
+    .into_bvk()
+}
+
 impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// Computes a commitment to the effects of this bundle, suitable for inclusion within
     /// a transaction ID.
@@ -447,30 +474,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
     /// [`Bundle::authorization`].
     pub fn binding_validating_key(&self) -> redpallas::VerificationKey<Binding> {
-        // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
-        (self
-            .actions
-            .iter()
-            .map(|a| a.cv_net())
-            .sum::<ValueCommitment>()
-            - ValueCommitment::derive(
-                ValueSum::from_raw(self.value_balance.into()),
-                ValueCommitTrapdoor::zero(),
-                AssetBase::native(),
-            )
-            - self
-                .burn
-                .clone()
-                .into_iter()
-                .map(|(asset, value)| {
-                    ValueCommitment::derive(
-                        ValueSum::from_raw(value.into()),
-                        ValueCommitTrapdoor::zero(),
-                        asset,
-                    )
-                })
-                .sum::<ValueCommitment>())
-        .into_bvk()
+        derive_bvk(&self.actions, self.value_balance, self.burn.iter().cloned())
     }
 }
 
