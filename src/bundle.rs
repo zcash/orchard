@@ -436,7 +436,7 @@ impl<T: Authorization, V> Bundle<T, V> {
 }
 
 pub(crate) fn derive_bvk<'a, A: 'a, V: Clone + Into<i64>>(
-    actions: impl IntoIterator<Item = &'a Action<A>>, //&NonEmpty<Action<A>>,
+    actions: impl IntoIterator<Item = &'a Action<A>>,
     value_balance: V,
     burn: impl Iterator<Item = (AssetBase, V)>,
 ) -> redpallas::VerificationKey<Binding> {
