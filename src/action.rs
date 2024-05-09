@@ -127,6 +127,7 @@ pub(crate) mod testing {
 
     use proptest::prelude::*;
 
+    use crate::note::asset_base::testing::arb_asset_base;
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
@@ -147,16 +148,18 @@ pub(crate) mod testing {
             nf in arb_nullifier(),
             rk in arb_spendauth_verification_key(),
             note in arb_note(output_value),
+            asset in arb_asset_base()
         ) -> Action<()> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
                 spend_value - output_value,
-                ValueCommitTrapdoor::zero()
+                ValueCommitTrapdoor::zero(),
+                asset
             );
             // FIXME: make a real one from the note.
             let encrypted_note = TransmittedNoteCiphertext {
                 epk_bytes: [0u8; 32],
-                enc_ciphertext: [0u8; 580],
+                enc_ciphertext: [0u8; 612],
                 out_ciphertext: [0u8; 80]
             };
             Action {
@@ -178,17 +181,19 @@ pub(crate) mod testing {
             note in arb_note(output_value),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
+            asset in arb_asset_base()
         ) -> Action<redpallas::Signature<SpendAuth>> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
                 spend_value - output_value,
-                ValueCommitTrapdoor::zero()
+                ValueCommitTrapdoor::zero(),
+                asset
             );
 
             // FIXME: make a real one from the note.
             let encrypted_note = TransmittedNoteCiphertext {
                 epk_bytes: [0u8; 32],
-                enc_ciphertext: [0u8; 580],
+                enc_ciphertext: [0u8; 612],
                 out_ciphertext: [0u8; 80]
             };
 

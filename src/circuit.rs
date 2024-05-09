@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use ff::Field;
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
@@ -20,12 +21,13 @@ use self::{
     commit_ivk::{CommitIvkChip, CommitIvkConfig},
     gadget::{
         add_chip::{AddChip, AddConfig},
-        assign_free_advice,
+        assign_free_advice, assign_is_native_asset, assign_split_flag,
     },
     note_commit::{NoteCommitChip, NoteCommitConfig},
 };
 use crate::{
     builder::SpendInfo,
+    bundle::Flags,
     constants::{
         OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
         MERKLE_DEPTH_ORCHARD,
@@ -36,7 +38,7 @@ use crate::{
     note::{
         commitment::{NoteCommitTrapdoor, NoteCommitment},
         nullifier::Nullifier,
-        ExtractedNoteCommitment, Note, Rho,
+        AssetBase, ExtractedNoteCommitment, Note, Rho,
     },
     primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
@@ -46,7 +48,7 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
+        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar,
     },
     poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
     sinsemilla::{
@@ -56,12 +58,17 @@ use halo2_gadgets::{
             MerklePath,
         },
     },
-    utilities::lookup_range_check::LookupRangeCheckConfig,
+    utilities::{
+        bool_check,
+        cond_swap::{CondSwapChip, CondSwapConfig},
+        lookup_range_check::LookupRangeCheckConfig,
+    },
 };
 
 mod commit_ivk;
 pub mod gadget;
 mod note_commit;
+mod value_commit_orchard;
 
 /// Size of the Orchard circuit.
 const K: u32 = 11;
@@ -76,6 +83,7 @@ const RK_Y: usize = 5;
 const CMX: usize = 6;
 const ENABLE_SPEND: usize = 7;
 const ENABLE_OUTPUT: usize = 8;
+const ENABLE_ZSA: usize = 9;
 
 /// Configuration needed to use the Orchard Action circuit.
 #[derive(Clone, Debug)]
@@ -95,6 +103,7 @@ pub struct Config {
     commit_ivk_config: CommitIvkConfig,
     old_note_commit_config: NoteCommitConfig,
     new_note_commit_config: NoteCommitConfig,
+    cond_swap_config: CondSwapConfig,
 }
 
 /// The Orchard Action circuit.
@@ -109,6 +118,7 @@ pub struct Circuit {
     pub(crate) psi_old: Value<pallas::Base>,
     pub(crate) rcm_old: Value<NoteCommitTrapdoor>,
     pub(crate) cm_old: Value<NoteCommitment>,
+    pub(crate) psi_nf: Value<pallas::Base>,
     pub(crate) alpha: Value<pallas::Scalar>,
     pub(crate) ak: Value<SpendValidatingKey>,
     pub(crate) nk: Value<NullifierDerivingKey>,
@@ -119,6 +129,8 @@ pub struct Circuit {
     pub(crate) psi_new: Value<pallas::Base>,
     pub(crate) rcm_new: Value<NoteCommitTrapdoor>,
     pub(crate) rcv: Value<ValueCommitTrapdoor>,
+    pub(crate) asset: Value<AssetBase>,
+    pub(crate) split_flag: Value<bool>,
 }
 
 impl Circuit {
@@ -158,6 +170,9 @@ impl Circuit {
         let psi_old = spend.note.rseed().psi(&rho_old);
         let rcm_old = spend.note.rseed().rcm(&rho_old);
 
+        let nf_rseed = spend.note.rseed_split_note().unwrap_or(*spend.note.rseed());
+        let psi_nf = nf_rseed.psi(&rho_old);
+
         let rho_new = output_note.rho();
         let psi_new = output_note.rseed().psi(&rho_new);
         let rcm_new = output_note.rseed().rcm(&rho_new);
@@ -172,6 +187,7 @@ impl Circuit {
             psi_old: Value::known(psi_old),
             rcm_old: Value::known(rcm_old),
             cm_old: Value::known(spend.note.commitment()),
+            psi_nf: Value::known(psi_nf),
             alpha: Value::known(alpha),
             ak: Value::known(spend.fvk.clone().into()),
             nk: Value::known(*spend.fvk.nk()),
@@ -182,6 +198,8 @@ impl Circuit {
             psi_new: Value::known(psi_new),
             rcm_new: Value::known(rcm_new),
             rcv: Value::known(rcv),
+            asset: Value::known(spend.note.asset()),
+            split_flag: Value::known(spend.split_flag),
         }
     }
 }
@@ -209,10 +227,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             meta.advice_column(),
         ];
 
-        // Constrain v_old - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
-        // Either v_old = 0, or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
+        // Constrain split_flag to be boolean
+        // Constrain v_old * (1 - split_flag) - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
+        // Constrain (v_old = 0 and is_native_asset = 1) or (calculated root = anchor) (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
         // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
+        // Constrain is_native_asset to be boolean
+        // Constraint if is_native_asset = 1 then asset = native_asset else asset != native_asset
+        // Constraint if split_flag = 0 then psi_old = psi_nf
+        // Constraint if split_flag = 1, then is_native_asset = 0
+        // Constraint if enable_zsa = 0, then is_native_asset = 1
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -227,18 +251,47 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let enable_spends = meta.query_advice(advices[6], Rotation::cur());
             let enable_outputs = meta.query_advice(advices[7], Rotation::cur());
 
+            let split_flag = meta.query_advice(advices[8], Rotation::cur());
+
+            let is_native_asset = meta.query_advice(advices[9], Rotation::cur());
+            let asset_x = meta.query_advice(advices[0], Rotation::next());
+            let asset_y = meta.query_advice(advices[1], Rotation::next());
+            let diff_asset_x_inv = meta.query_advice(advices[2], Rotation::next());
+            let diff_asset_y_inv = meta.query_advice(advices[3], Rotation::next());
+
             let one = Expression::Constant(pallas::Base::one());
+
+            let native_asset = AssetBase::native()
+                .cv_base()
+                .to_affine()
+                .coordinates()
+                .unwrap();
+
+            let diff_asset_x = asset_x - Expression::Constant(*native_asset.x());
+            let diff_asset_y = asset_y - Expression::Constant(*native_asset.y());
+
+            let psi_old = meta.query_advice(advices[4], Rotation::next());
+            let psi_nf = meta.query_advice(advices[5], Rotation::next());
+
+            let enable_zsa = meta.query_advice(advices[6], Rotation::next());
 
             Constraints::with_selector(
                 q_orchard,
                 [
+                    ("bool_check split_flag", bool_check(split_flag.clone())),
                     (
-                        "v_old - v_new = magnitude * sign",
-                        v_old.clone() - v_new.clone() - magnitude * sign,
+                        "v_old * (1 - split_flag) - v_new = magnitude * sign",
+                        v_old.clone() * (one.clone() - split_flag.clone())
+                            - v_new.clone()
+                            - magnitude * sign,
                     ),
+                    // We already checked that
+                    // * is_native_asset is boolean (just below), and
+                    // * v_old is a 64 bit unsigned integer (in the note commitment evaluation).
+                    // So, 1 - is_native_asset + v_old = 0 only when (is_native_asset = 1 and v_old = 0), no overflow can occur.
                     (
-                        "Either v_old = 0, or root = anchor",
-                        v_old.clone() * (root - anchor),
+                        "(v_old = 0 and is_native_asset = 1) or (root = anchor)",
+                        (v_old.clone() + one.clone() - is_native_asset.clone()) * (root - anchor),
                     ),
                     (
                         "v_old = 0 or enable_spends = 1",
@@ -246,7 +299,42 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     ),
                     (
                         "v_new = 0 or enable_outputs = 1",
-                        v_new * (one - enable_outputs),
+                        v_new * (one.clone() - enable_outputs),
+                    ),
+                    (
+                        "bool_check is_native_asset",
+                        bool_check(is_native_asset.clone()),
+                    ),
+                    (
+                        "(is_native_asset = 1) =>  (asset_x = native_asset_x)",
+                        is_native_asset.clone() * diff_asset_x.clone(),
+                    ),
+                    (
+                        "(is_native_asset = 1) => (asset_y = native_asset_y)",
+                        is_native_asset.clone() * diff_asset_y.clone(),
+                    ),
+                    // To prove that `asset` is not equal to `native_asset`, we will prove that at
+                    // least one of `x(asset) - x(native_asset)` or `y(asset) - y(native_asset)` is
+                    // not equal to zero.
+                    // To prove that `x(asset) - x(native_asset)` (resp `y(asset) - y(native_asset)`)
+                    // is not equal to zero, we will prove that it is invertible.
+                    (
+                        "(is_native_asset = 0) => (asset != native_asset)",
+                        (one.clone() - is_native_asset.clone())
+                            * (diff_asset_x * diff_asset_x_inv - one.clone())
+                            * (diff_asset_y * diff_asset_y_inv - one.clone()),
+                    ),
+                    (
+                        "(split_flag = 0) => (psi_old = psi_nf)",
+                        (one.clone() - split_flag.clone()) * (psi_old - psi_nf),
+                    ),
+                    (
+                        "(split_flag = 1) => (is_native_asset = 0)",
+                        split_flag * is_native_asset.clone(),
+                    ),
+                    (
+                        "(enable_zsa = 0) => (is_native_asset = 1)",
+                        (one.clone() - enable_zsa) * (one - is_native_asset),
                     ),
                 ],
             )
@@ -257,10 +345,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Fixed columns for the Sinsemilla generator lookup table
         let table_idx = meta.lookup_table_column();
+        let table_range_check_tag = meta.lookup_table_column();
         let lookup = (
             table_idx,
             meta.lookup_table_column(),
             meta.lookup_table_column(),
+            table_range_check_tag,
         );
 
         // Instance column used for public inputs
@@ -296,7 +386,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // We have a lot of free space in the right-most advice columns; use one of them
         // for all of our range checks.
-        let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+        let range_check =
+            LookupRangeCheckConfig::configure(meta, advices[9], table_idx, table_range_check_tag);
 
         // Configuration for curve point operations.
         // This uses 10 advice columns and spans the whole circuit.
@@ -364,6 +455,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let new_note_commit_config =
             NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone());
 
+        let cond_swap_config = CondSwapChip::configure(meta, advices[0..5].try_into().unwrap());
+
         Config {
             primary,
             q_orchard,
@@ -378,6 +471,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             commit_ivk_config,
             old_note_commit_config,
             new_note_commit_config,
+            cond_swap_config,
         }
     }
 
@@ -394,7 +488,14 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let ecc_chip = config.ecc_chip();
 
         // Witness private inputs that are used across multiple checks.
-        let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new) = {
+        let (psi_nf, psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new, asset) = {
+            // Witness psi_nf
+            let psi_nf = assign_free_advice(
+                layouter.namespace(|| "witness psi_nf"),
+                config.advices[0],
+                self.psi_nf,
+            )?;
+
             // Witness psi_old
             let psi_old = assign_free_advice(
                 layouter.namespace(|| "witness psi_old"),
@@ -452,8 +553,33 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 self.v_new,
             )?;
 
-            (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new)
+            // Witness asset
+            let asset = NonIdentityPoint::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "witness asset"),
+                self.asset.map(|asset| asset.cv_base().to_affine()),
+            )?;
+
+            (
+                psi_nf, psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new, asset,
+            )
         };
+
+        // Witness split_flag
+        let split_flag = assign_split_flag(
+            layouter.namespace(|| "witness split_flag"),
+            config.advices[0],
+            self.split_flag,
+        )?;
+
+        // Witness is_native_asset which is equal to
+        // 1 if asset is equal to native asset, and
+        // 0 if asset is not equal to native asset.
+        let is_native_asset = assign_is_native_asset(
+            layouter.namespace(|| "witness is_native_asset"),
+            config.advices[0],
+            self.asset,
+        )?;
 
         // Merkle path validity check (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         let root = {
@@ -474,7 +600,17 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net_magnitude_sign = {
-                let v_net = self.v_old - self.v_new;
+                // v_net is equal to
+                //   (-v_new) if split_flag = true
+                //   v_old - v_new if split_flag = false
+                let v_net = self.split_flag.and_then(|split_flag| {
+                    if split_flag {
+                        Value::known(crate::value::NoteValue::zero()) - self.v_new
+                    } else {
+                        self.v_old - self.v_new
+                    }
+                });
+
                 let magnitude_sign = v_net.map(|v_net| {
                     let (magnitude, sign) = v_net.magnitude_sign();
 
@@ -502,11 +638,6 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 (magnitude, sign)
             };
 
-            let v_net = ScalarFixedShort::new(
-                ecc_chip.clone(),
-                layouter.namespace(|| "v_net"),
-                v_net_magnitude_sign.clone(),
-            )?;
             let rcv = ScalarFixed::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "rcv"),
@@ -514,10 +645,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             )?;
 
             let cv_net = gadget::value_commit_orchard(
-                layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net)"),
+                layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net_magnitude_sign)"),
+                config.sinsemilla_chip_1(),
                 ecc_chip.clone(),
-                v_net,
+                v_net_magnitude_sign.clone(),
                 rcv,
+                asset.clone(),
             )?;
 
             // Constrain cv_net to equal public input
@@ -531,14 +664,16 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         // Nullifier integrity (https://p.z.cash/ZKS:action-nullifier-integrity).
         let nf_old = {
             let nf_old = gadget::derive_nullifier(
-                layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_old, cm_old)"),
+                layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_nf, cm_old)"),
                 config.poseidon_chip(),
                 config.add_chip(),
                 ecc_chip.clone(),
+                config.cond_swap_chip(),
                 rho_old.clone(),
-                &psi_old,
+                &psi_nf,
                 &cm_old,
                 nk.clone(),
+                split_flag.clone(),
             )?;
 
             // Constrain nf_old to equal public input
@@ -629,12 +764,15 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.sinsemilla_chip_1(),
                 config.ecc_chip(),
                 config.note_commit_chip_old(),
+                config.cond_swap_chip(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
                 v_old.clone(),
                 rho_old,
-                psi_old,
+                psi_old.clone(),
+                asset.inner(),
                 rcm_old,
+                is_native_asset.clone(),
             )?;
 
             // Constrain derived cm_old to equal witnessed cm_old
@@ -687,12 +825,15 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 config.sinsemilla_chip_2(),
                 config.ecc_chip(),
                 config.note_commit_chip_new(),
+                config.cond_swap_chip(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
                 v_new.clone(),
                 rho_new,
                 psi_new,
+                asset.inner(),
                 rcm_new,
+                is_native_asset.clone(),
             )?;
 
             let cmx = cm_new.extract_p();
@@ -743,6 +884,85 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     ENABLE_OUTPUT,
                     config.advices[7],
                     0,
+                )?;
+
+                split_flag.copy_advice(|| "split_flag", &mut region, config.advices[8], 0)?;
+
+                is_native_asset.copy_advice(
+                    || "is_native_asset",
+                    &mut region,
+                    config.advices[9],
+                    0,
+                )?;
+                asset
+                    .inner()
+                    .x()
+                    .copy_advice(|| "asset_x", &mut region, config.advices[0], 1)?;
+                asset
+                    .inner()
+                    .y()
+                    .copy_advice(|| "asset_y", &mut region, config.advices[1], 1)?;
+
+                // `diff_asset_x_inv` and `diff_asset_y_inv` will be used to prove that
+                // if is_native_asset = 0, then asset != native_asset.
+                region.assign_advice(
+                    || "diff_asset_x_inv",
+                    config.advices[2],
+                    1,
+                    || {
+                        self.asset.map(|asset| {
+                            let asset_x = *asset.cv_base().to_affine().coordinates().unwrap().x();
+                            let native_asset_x = *AssetBase::native()
+                                .cv_base()
+                                .to_affine()
+                                .coordinates()
+                                .unwrap()
+                                .x();
+
+                            let diff_asset_x = asset_x - native_asset_x;
+
+                            if diff_asset_x == pallas::Base::zero() {
+                                pallas::Base::zero()
+                            } else {
+                                diff_asset_x.invert().unwrap()
+                            }
+                        })
+                    },
+                )?;
+                region.assign_advice(
+                    || "diff_asset_y_inv",
+                    config.advices[3],
+                    1,
+                    || {
+                        self.asset.map(|asset| {
+                            let asset_y = *asset.cv_base().to_affine().coordinates().unwrap().y();
+                            let native_asset_y = *AssetBase::native()
+                                .cv_base()
+                                .to_affine()
+                                .coordinates()
+                                .unwrap()
+                                .y();
+
+                            let diff_asset_y = asset_y - native_asset_y;
+
+                            if diff_asset_y == pallas::Base::zero() {
+                                pallas::Base::zero()
+                            } else {
+                                diff_asset_y.invert().unwrap()
+                            }
+                        })
+                    },
+                )?;
+
+                psi_old.copy_advice(|| "psi_old", &mut region, config.advices[4], 1)?;
+                psi_nf.copy_advice(|| "psi_nf", &mut region, config.advices[5], 1)?;
+
+                region.assign_advice_from_instance(
+                    || "enable zsa",
+                    config.primary,
+                    ENABLE_ZSA,
+                    config.advices[6],
+                    1,
                 )?;
 
                 config.q_orchard.enable(&mut region, 0)
@@ -802,6 +1022,7 @@ pub struct Instance {
     pub(crate) cmx: ExtractedNoteCommitment,
     pub(crate) enable_spend: bool,
     pub(crate) enable_output: bool,
+    pub(crate) enable_zsa: bool,
 }
 
 impl Instance {
@@ -818,8 +1039,7 @@ impl Instance {
         nf_old: Nullifier,
         rk: VerificationKey<SpendAuth>,
         cmx: ExtractedNoteCommitment,
-        enable_spend: bool,
-        enable_output: bool,
+        flags: Flags,
     ) -> Self {
         Instance {
             anchor,
@@ -827,13 +1047,14 @@ impl Instance {
             nf_old,
             rk,
             cmx,
-            enable_spend,
-            enable_output,
+            enable_spend: flags.spends_enabled(),
+            enable_output: flags.outputs_enabled(),
+            enable_zsa: flags.zsa_enabled(),
         }
     }
 
-    fn to_halo2_instance(&self) -> [[vesta::Scalar; 9]; 1] {
-        let mut instance = [vesta::Scalar::zero(); 9];
+    fn to_halo2_instance(&self) -> [[vesta::Scalar; 10]; 1] {
+        let mut instance = [vesta::Scalar::zero(); 10];
 
         instance[ANCHOR] = self.anchor.inner();
         instance[CV_NET_X] = self.cv_net.x();
@@ -851,6 +1072,7 @@ impl Instance {
         instance[CMX] = self.cmx.inner();
         instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(self.enable_spend));
         instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
+        instance[ENABLE_ZSA] = vesta::Scalar::from(u64::from(self.enable_zsa));
 
         [instance]
     }
@@ -963,39 +1185,50 @@ mod tests {
     use core::iter;
 
     use ff::Field;
+    use group::{Curve, Group, GroupEncoding};
     use halo2_proofs::{circuit::Value, dev::MockProver};
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
     use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
+    use crate::builder::SpendInfo;
+    use crate::bundle::Flags;
+    use crate::note::commitment::NoteCommitTrapdoor;
+    use crate::note::{AssetBase, Nullifier};
+    use crate::primitives::redpallas::VerificationKey;
     use crate::{
-        keys::SpendValidatingKey,
-        note::{Note, Rho},
+        keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
+        note::{Note, NoteCommitment, Rho},
         tree::MerklePath,
-        value::{ValueCommitTrapdoor, ValueCommitment},
+        value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
     };
 
-    fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
+    fn generate_dummy_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetBase::native());
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
         let rivk = fvk.rivk(fvk.scope_for_address(&spent_note.recipient()).unwrap());
         let nf_old = spent_note.nullifier(&fvk);
-        let rho = Rho::from_nf_old(nf_old);
         let ak: SpendValidatingKey = fvk.into();
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
+        let (_, _, output_note) = Note::dummy(
+            &mut rng,
+            Some(Rho::from_nf_old(nf_old)),
+            AssetBase::native(),
+        );
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv.clone());
+        let cv_net = ValueCommitment::derive(value, rcv, AssetBase::native());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());
+
+        let psi_old = spent_note.rseed().psi(&spent_note.rho());
 
         (
             Circuit {
@@ -1005,9 +1238,11 @@ mod tests {
                 pk_d_old: Value::known(*sender_address.pk_d()),
                 v_old: Value::known(spent_note.value()),
                 rho_old: Value::known(spent_note.rho()),
-                psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
+                psi_old: Value::known(psi_old),
                 rcm_old: Value::known(spent_note.rseed().rcm(&spent_note.rho())),
                 cm_old: Value::known(spent_note.commitment()),
+                // For non split note, psi_nf is equal to psi_old
+                psi_nf: Value::known(psi_old),
                 alpha: Value::known(alpha),
                 ak: Value::known(ak),
                 nk: Value::known(nk),
@@ -1018,6 +1253,8 @@ mod tests {
                 psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
                 rcm_new: Value::known(output_note.rseed().rcm(&output_note.rho())),
                 rcv: Value::known(rcv),
+                asset: Value::known(spent_note.asset()),
+                split_flag: Value::known(false),
             },
             Instance {
                 anchor,
@@ -1027,6 +1264,7 @@ mod tests {
                 cmx,
                 enable_spend: true,
                 enable_output: true,
+                enable_zsa: false,
             },
         )
     }
@@ -1037,7 +1275,7 @@ mod tests {
         let mut rng = OsRng;
 
         let (circuits, instances): (Vec<_>, Vec<_>) = iter::once(())
-            .map(|()| generate_circuit_instance(&mut rng))
+            .map(|()| generate_dummy_circuit_instance(&mut rng))
             .unzip();
 
         let vk = VerifyingKey::build();
@@ -1059,8 +1297,8 @@ mod tests {
                     K,
                     &circuits[0],
                 );
-            assert_eq!(usize::from(circuit_cost.proof_size(1)), 4992);
-            assert_eq!(usize::from(circuit_cost.proof_size(2)), 7264);
+            assert_eq!(usize::from(circuit_cost.proof_size(1)), 5120);
+            assert_eq!(usize::from(circuit_cost.proof_size(2)), 7392);
             usize::from(circuit_cost.proof_size(instances.len()))
         };
 
@@ -1089,6 +1327,7 @@ mod tests {
 
     #[test]
     fn serialized_proof_test_case() {
+        use std::fs;
         use std::io::{Read, Write};
 
         let vk = VerifyingKey::build();
@@ -1106,6 +1345,7 @@ mod tests {
             w.write_all(&[
                 u8::from(instance.enable_spend),
                 u8::from(instance.enable_output),
+                u8::from(instance.enable_zsa),
             ])?;
 
             w.write_all(proof.as_ref())?;
@@ -1136,8 +1376,15 @@ mod tests {
                 crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
             let enable_spend = read_bool(&mut r);
             let enable_output = read_bool(&mut r);
-            let instance =
-                Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output);
+            let enable_zsa = read_bool(&mut r);
+            let instance = Instance::from_parts(
+                anchor,
+                cv_net,
+                nf_old,
+                rk,
+                cmx,
+                Flags::from_parts(enable_spend, enable_output, enable_zsa),
+            );
 
             let mut proof_bytes = vec![];
             r.read_to_end(&mut proof_bytes)?;
@@ -1150,14 +1397,14 @@ mod tests {
             let create_proof = || -> std::io::Result<()> {
                 let mut rng = OsRng;
 
-                let (circuit, instance) = generate_circuit_instance(OsRng);
+                let (circuit, instance) = generate_dummy_circuit_instance(OsRng);
                 let instances = &[instance.clone()];
 
                 let pk = ProvingKey::build();
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
-                let file = std::fs::File::create("circuit_proof_test_case.bin")?;
+                let file = std::fs::File::create("src/circuit_proof_test_case.bin")?;
                 write_test_case(file, &instance, &proof)
             };
             create_proof().expect("should be able to write new proof");
@@ -1165,10 +1412,10 @@ mod tests {
 
         // Parse the hardcoded proof test case.
         let (instance, proof) = {
-            let test_case_bytes = include_bytes!("circuit_proof_test_case.bin");
+            let test_case_bytes = fs::read("src/circuit_proof_test_case.bin").unwrap();
             read_test_case(&test_case_bytes[..]).expect("proof must be valid")
         };
-        assert_eq!(proof.0.len(), 4992);
+        assert_eq!(proof.0.len(), 5120);
 
         assert!(proof.verify(&vk, &[instance]).is_ok());
     }
@@ -1194,6 +1441,7 @@ mod tests {
             psi_old: Value::unknown(),
             rcm_old: Value::unknown(),
             cm_old: Value::unknown(),
+            psi_nf: Value::unknown(),
             alpha: Value::unknown(),
             ak: Value::unknown(),
             nk: Value::unknown(),
@@ -1204,11 +1452,293 @@ mod tests {
             psi_new: Value::unknown(),
             rcm_new: Value::unknown(),
             rcv: Value::unknown(),
+            asset: Value::unknown(),
+            split_flag: Value::unknown(),
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
             .view_height(0..(1 << 11))
             .render(K, &circuit, &root)
             .unwrap();
+    }
+
+    fn check_proof_of_orchard_circuit(circuit: &Circuit, instance: &Instance, should_pass: bool) {
+        let proof_verify = MockProver::run(
+            K,
+            circuit,
+            instance
+                .to_halo2_instance()
+                .iter()
+                .map(|p| p.to_vec())
+                .collect(),
+        )
+        .unwrap()
+        .verify();
+        if should_pass {
+            assert!(proof_verify.is_ok());
+        } else {
+            assert!(proof_verify.is_err());
+        }
+    }
+
+    fn generate_circuit_instance<R: RngCore>(
+        is_native_asset: bool,
+        split_flag: bool,
+        mut rng: R,
+    ) -> (Circuit, Instance) {
+        // Create asset
+        let asset_base = if is_native_asset {
+            AssetBase::native()
+        } else {
+            AssetBase::random()
+        };
+
+        // Create spent_note
+        let (spent_note_fvk, spent_note) = {
+            let sk = SpendingKey::random(&mut rng);
+            let fvk: FullViewingKey = (&sk).into();
+            let sender_address = fvk.address_at(0u32, Scope::External);
+            let rho_old = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+            let note = Note::new(
+                sender_address,
+                NoteValue::from_raw(40),
+                asset_base,
+                rho_old,
+                &mut rng,
+            );
+            let spent_note = if split_flag {
+                note.create_split_note(&mut rng)
+            } else {
+                note
+            };
+            (fvk, spent_note)
+        };
+
+        let output_value = NoteValue::from_raw(10);
+
+        let (scope, v_net) = if split_flag {
+            (
+                Scope::External,
+                // Split notes do not contribute to v_net.
+                // Therefore, if split_flag is true, v_net = - output_value
+                NoteValue::zero() - output_value,
+            )
+        } else {
+            (
+                spent_note_fvk
+                    .scope_for_address(&spent_note.recipient())
+                    .unwrap(),
+                spent_note.value() - output_value,
+            )
+        };
+
+        let nf_old = spent_note.nullifier(&spent_note_fvk);
+        let ak: SpendValidatingKey = spent_note_fvk.clone().into();
+        let alpha = pallas::Scalar::random(&mut rng);
+        let rk = ak.randomize(&alpha);
+
+        let output_note = {
+            let sk = SpendingKey::random(&mut rng);
+            let fvk: FullViewingKey = (&sk).into();
+            let sender_address = fvk.address_at(0u32, Scope::External);
+
+            Note::new(
+                sender_address,
+                output_value,
+                asset_base,
+                Rho::from_nf_old(nf_old),
+                &mut rng,
+            )
+        };
+
+        let cmx = output_note.commitment().into();
+
+        let rcv = ValueCommitTrapdoor::random(&mut rng);
+        let cv_net = ValueCommitment::derive(v_net, rcv, asset_base);
+
+        let path = MerklePath::dummy(&mut rng);
+        let anchor = path.root(spent_note.commitment().into());
+
+        let spend_info = SpendInfo {
+            dummy_sk: None,
+            fvk: spent_note_fvk,
+            scope,
+            note: spent_note,
+            merkle_path: path,
+            split_flag,
+        };
+
+        (
+            Circuit::from_action_context_unchecked(spend_info, output_note, alpha, rcv),
+            Instance {
+                anchor,
+                cv_net,
+                nf_old,
+                rk,
+                cmx,
+                enable_spend: true,
+                enable_output: true,
+                enable_zsa: true,
+            },
+        )
+    }
+
+    fn random_note_commitment(mut rng: impl RngCore) -> NoteCommitment {
+        NoteCommitment::derive(
+            pallas::Point::random(&mut rng).to_affine().to_bytes(),
+            pallas::Point::random(&mut rng).to_affine().to_bytes(),
+            NoteValue::from_raw(rng.next_u64()),
+            AssetBase::random(),
+            pallas::Base::random(&mut rng),
+            pallas::Base::random(&mut rng),
+            NoteCommitTrapdoor(pallas::Scalar::random(&mut rng)),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn orchard_circuit_negative_test() {
+        let mut rng = OsRng;
+
+        for is_native_asset in [true, false] {
+            for split_flag in [true, false] {
+                let (circuit, instance) =
+                    generate_circuit_instance(is_native_asset, split_flag, &mut rng);
+
+                let should_pass = !(matches!((is_native_asset, split_flag), (true, true)));
+
+                check_proof_of_orchard_circuit(&circuit, &instance, should_pass);
+
+                // Set cv_net to be zero
+                // The proof should fail
+                let instance_wrong_cv_net = Instance {
+                    anchor: instance.anchor,
+                    cv_net: ValueCommitment::from_bytes(&[0u8; 32]).unwrap(),
+                    nf_old: instance.nf_old,
+                    rk: instance.rk.clone(),
+                    cmx: instance.cmx,
+                    enable_spend: instance.enable_spend,
+                    enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
+                };
+                check_proof_of_orchard_circuit(&circuit, &instance_wrong_cv_net, false);
+
+                // Set rk_pub to be a dummy VerificationKey
+                // The proof should fail
+                let instance_wrong_rk = Instance {
+                    anchor: instance.anchor,
+                    cv_net: instance.cv_net.clone(),
+                    nf_old: instance.nf_old,
+                    rk: VerificationKey::dummy(),
+                    cmx: instance.cmx,
+                    enable_spend: instance.enable_spend,
+                    enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
+                };
+                check_proof_of_orchard_circuit(&circuit, &instance_wrong_rk, false);
+
+                // Set cm_old to be a random NoteCommitment
+                // The proof should fail
+                let circuit_wrong_cm_old = Circuit {
+                    path: circuit.path,
+                    pos: circuit.pos,
+                    g_d_old: circuit.g_d_old,
+                    pk_d_old: circuit.pk_d_old,
+                    v_old: circuit.v_old,
+                    rho_old: circuit.rho_old,
+                    psi_old: circuit.psi_old,
+                    rcm_old: circuit.rcm_old.clone(),
+                    cm_old: Value::known(random_note_commitment(&mut rng)),
+                    psi_nf: circuit.psi_nf,
+                    alpha: circuit.alpha,
+                    ak: circuit.ak.clone(),
+                    nk: circuit.nk,
+                    rivk: circuit.rivk,
+                    g_d_new: circuit.g_d_new,
+                    pk_d_new: circuit.pk_d_new,
+                    v_new: circuit.v_new,
+                    psi_new: circuit.psi_new,
+                    rcm_new: circuit.rcm_new.clone(),
+                    rcv: circuit.rcv,
+                    asset: circuit.asset,
+                    split_flag: circuit.split_flag,
+                };
+                check_proof_of_orchard_circuit(&circuit_wrong_cm_old, &instance, false);
+
+                // Set cmx_pub to be a random NoteCommitment
+                // The proof should fail
+                let instance_wrong_cmx_pub = Instance {
+                    anchor: instance.anchor,
+                    cv_net: instance.cv_net.clone(),
+                    nf_old: instance.nf_old,
+                    rk: instance.rk.clone(),
+                    cmx: random_note_commitment(&mut rng).into(),
+                    enable_spend: instance.enable_spend,
+                    enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
+                };
+                check_proof_of_orchard_circuit(&circuit, &instance_wrong_cmx_pub, false);
+
+                // Set nf_old_pub to be a random Nullifier
+                // The proof should fail
+                let instance_wrong_nf_old_pub = Instance {
+                    anchor: instance.anchor,
+                    cv_net: instance.cv_net.clone(),
+                    nf_old: Nullifier::dummy(&mut rng),
+                    rk: instance.rk.clone(),
+                    cmx: instance.cmx,
+                    enable_spend: instance.enable_spend,
+                    enable_output: instance.enable_output,
+                    enable_zsa: instance.enable_zsa,
+                };
+                check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
+
+                // If split_flag = 0 , set psi_nf to be a random Pallas base element
+                // The proof should fail
+                if !split_flag {
+                    let circuit_wrong_psi_nf = Circuit {
+                        path: circuit.path,
+                        pos: circuit.pos,
+                        g_d_old: circuit.g_d_old,
+                        pk_d_old: circuit.pk_d_old,
+                        v_old: circuit.v_old,
+                        rho_old: circuit.rho_old,
+                        psi_old: circuit.psi_old,
+                        rcm_old: circuit.rcm_old.clone(),
+                        cm_old: circuit.cm_old.clone(),
+                        psi_nf: Value::known(pallas::Base::random(&mut rng)),
+                        alpha: circuit.alpha,
+                        ak: circuit.ak.clone(),
+                        nk: circuit.nk,
+                        rivk: circuit.rivk,
+                        g_d_new: circuit.g_d_new,
+                        pk_d_new: circuit.pk_d_new,
+                        v_new: circuit.v_new,
+                        psi_new: circuit.psi_new,
+                        rcm_new: circuit.rcm_new.clone(),
+                        rcv: circuit.rcv,
+                        asset: circuit.asset,
+                        split_flag: circuit.split_flag,
+                    };
+                    check_proof_of_orchard_circuit(&circuit_wrong_psi_nf, &instance, false);
+                }
+
+                // If asset is not equal to the native asset, set enable_zsa = 0
+                // The proof should fail
+                if !is_native_asset {
+                    let instance_wrong_enable_zsa = Instance {
+                        anchor: instance.anchor,
+                        cv_net: instance.cv_net.clone(),
+                        nf_old: instance.nf_old,
+                        rk: instance.rk.clone(),
+                        cmx: instance.cmx,
+                        enable_spend: instance.enable_spend,
+                        enable_output: instance.enable_output,
+                        enable_zsa: false,
+                    };
+                    check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
+                }
+            }
+        }
     }
 }

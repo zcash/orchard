@@ -5,17 +5,19 @@ use orchard::{
     bundle::{Authorized, Flags},
     circuit::{ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-    note::ExtractedNoteCommitment,
-    note_encryption::OrchardDomain,
+    note::{AssetBase, ExtractedNoteCommitment},
+    note_encryption_v3::OrchardDomainV3,
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
-    Bundle,
+    Anchor, Bundle, Note,
 };
 use rand::rngs::OsRng;
-use zcash_note_encryption::try_note_decryption;
+use zcash_note_encryption_zsa::try_note_decryption;
 
-fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
-    assert!(matches!(bundle.verify_proof(vk), Ok(())));
+pub fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, verify_proof: bool) {
+    if verify_proof {
+        assert!(matches!(bundle.verify_proof(vk), Ok(())));
+    }
     let sighash: [u8; 32] = bundle.commitment().into();
     let bvk = bundle.binding_validating_key();
     for action in bundle.actions() {
@@ -25,6 +27,24 @@ fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
         bvk.verify(&sighash, bundle.authorization().binding_signature()),
         Ok(())
     );
+}
+
+pub fn build_merkle_path(note: &Note) -> (MerklePath, Anchor) {
+    // Use the tree with a single leaf.
+    let cmx: ExtractedNoteCommitment = note.commitment().into();
+    let leaf = MerkleHashOrchard::from_cmx(&cmx);
+    let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100);
+    tree.append(leaf);
+    let position = tree.mark().unwrap();
+    let root = tree.root(0).unwrap();
+    let auth_path = tree.witness(position, 0).unwrap();
+    let merkle_path = MerklePath::from_parts(
+        u64::from(position).try_into().unwrap(),
+        auth_path[..].try_into().unwrap(),
+    );
+    let anchor = root.into();
+    assert_eq!(anchor, merkle_path.root(cmx));
+    (merkle_path, anchor)
 }
 
 #[test]
@@ -51,7 +71,7 @@ fn bundle_chain() {
         );
         let note_value = NoteValue::from_raw(5000);
         assert_eq!(
-            builder.add_output(None, recipient, note_value, None),
+            builder.add_output(None, recipient, note_value, AssetBase::native(), None),
             Ok(())
         );
         let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
@@ -74,7 +94,7 @@ fn bundle_chain() {
     };
 
     // Verify the shielding bundle.
-    verify_bundle(&shielding_bundle, &vk);
+    verify_bundle(&shielding_bundle, &vk, true);
 
     // Create a shielded bundle spending the previous output.
     let shielded_bundle: Bundle<_, i64> = {
@@ -83,30 +103,23 @@ fn bundle_chain() {
             .actions()
             .iter()
             .find_map(|action| {
-                let domain = OrchardDomain::for_action(action);
+                let domain = OrchardDomainV3::for_action(action);
                 try_note_decryption(&domain, &ivk, action)
             })
             .unwrap();
 
-        // Use the tree with a single leaf.
-        let cmx: ExtractedNoteCommitment = note.commitment().into();
-        let leaf = MerkleHashOrchard::from_cmx(&cmx);
-        let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100);
-        tree.append(leaf);
-        let position = tree.mark().unwrap();
-        let root = tree.root(0).unwrap();
-        let auth_path = tree.witness(position, 0).unwrap();
-        let merkle_path = MerklePath::from_parts(
-            u64::from(position).try_into().unwrap(),
-            auth_path[..].try_into().unwrap(),
-        );
-        let anchor = root.into();
-        assert_eq!(anchor, merkle_path.root(cmx));
+        let (merkle_path, anchor) = build_merkle_path(&note);
 
-        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(BundleType::DEFAULT_VANILLA, anchor);
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
-            builder.add_output(None, recipient, NoteValue::from_raw(5000), None),
+            builder.add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::native(),
+                None
+            ),
             Ok(())
         );
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
@@ -118,5 +131,5 @@ fn bundle_chain() {
     };
 
     // Verify the shielded bundle.
-    verify_bundle(&shielded_bundle, &vk);
+    verify_bundle(&shielded_bundle, &vk, true);
 }

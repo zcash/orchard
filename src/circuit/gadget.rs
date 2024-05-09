@@ -1,23 +1,21 @@
 //! Gadgets used in the Orchard circuit.
 
 use ff::Field;
+use group::Curve;
+use pasta_curves::arithmetic::CurveExt;
 use pasta_curves::pallas;
 
 use super::{commit_ivk::CommitIvkChip, note_commit::NoteCommitChip};
-use crate::constants::{
-    NullifierK, OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
-    ValueCommitV,
-};
+use crate::constants::{NullifierK, OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains};
+use crate::note::AssetBase;
 use halo2_gadgets::{
-    ecc::{
-        chip::EccChip, EccInstructions, FixedPoint, FixedPointBaseField, FixedPointShort, Point,
-        ScalarFixed, ScalarFixedShort, X,
-    },
+    ecc::{chip::EccChip, chip::EccPoint, EccInstructions, FixedPointBaseField, Point, X},
     poseidon::{
         primitives::{self as poseidon, ConstantLength},
         Hash as PoseidonHash, PoseidonSpongeInstructions, Pow5Chip as PoseidonChip,
     },
     sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip},
+    utilities::cond_swap::CondSwapChip,
 };
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter, Value},
@@ -74,6 +72,10 @@ impl super::Config {
     pub(super) fn note_commit_chip_old(&self) -> NoteCommitChip {
         NoteCommitChip::construct(self.old_note_commit_config.clone())
     }
+
+    pub(super) fn cond_swap_chip(&self) -> CondSwapChip<pallas::Base> {
+        CondSwapChip::construct(self.cond_swap_config.clone())
+    }
 }
 
 /// An instruction set for adding two circuit words (field elements).
@@ -106,39 +108,48 @@ where
     )
 }
 
-/// `ValueCommit^Orchard` from [Section 5.4.8.3 Homomorphic Pedersen commitments (Sapling and Orchard)].
-///
-/// [Section 5.4.8.3 Homomorphic Pedersen commitments (Sapling and Orchard)]: https://zips.z.cash/protocol/protocol.pdf#concretehomomorphiccommit
-pub(in crate::circuit) fn value_commit_orchard<
-    EccChip: EccInstructions<
-        pallas::Affine,
-        FixedPoints = OrchardFixedBases,
-        Var = AssignedCell<pallas::Base, pallas::Base>,
-    >,
->(
-    mut layouter: impl Layouter<pallas::Base>,
-    ecc_chip: EccChip,
-    v: ScalarFixedShort<pallas::Affine, EccChip>,
-    rcv: ScalarFixed<pallas::Affine, EccChip>,
-) -> Result<Point<pallas::Affine, EccChip>, plonk::Error> {
-    // commitment = [v] ValueCommitV
-    let (commitment, _) = {
-        let value_commit_v = ValueCommitV;
-        let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
-        value_commit_v.mul(layouter.namespace(|| "[v] ValueCommitV"), v)?
-    };
+/// Witnesses is_native_asset.
+pub(in crate::circuit) fn assign_is_native_asset<F: Field>(
+    layouter: impl Layouter<F>,
+    column: Column<Advice>,
+    asset: Value<AssetBase>,
+) -> Result<AssignedCell<pasta_curves::Fp, F>, plonk::Error>
+where
+    Assigned<F>: for<'v> From<&'v pasta_curves::Fp>,
+{
+    assign_free_advice(
+        layouter,
+        column,
+        asset.map(|asset| {
+            if bool::from(asset.is_native()) {
+                pallas::Base::one()
+            } else {
+                pallas::Base::zero()
+            }
+        }),
+    )
+}
 
-    // blind = [rcv] ValueCommitR
-    let (blind, _rcv) = {
-        let value_commit_r = OrchardFixedBasesFull::ValueCommitR;
-        let value_commit_r = FixedPoint::from_inner(ecc_chip, value_commit_r);
-
-        // [rcv] ValueCommitR
-        value_commit_r.mul(layouter.namespace(|| "[rcv] ValueCommitR"), rcv)?
-    };
-
-    // [v] ValueCommitV + [rcv] ValueCommitR
-    commitment.add(layouter.namespace(|| "cv"), &blind)
+/// Witnesses split_flag.
+pub(in crate::circuit) fn assign_split_flag<F: Field>(
+    layouter: impl Layouter<F>,
+    column: Column<Advice>,
+    split_flag: Value<bool>,
+) -> Result<AssignedCell<pasta_curves::Fp, F>, plonk::Error>
+where
+    Assigned<F>: for<'v> From<&'v pasta_curves::Fp>,
+{
+    assign_free_advice(
+        layouter,
+        column,
+        split_flag.map(|split_flag| {
+            if split_flag {
+                pallas::Base::one()
+            } else {
+                pallas::Base::zero()
+            }
+        }),
+    )
 }
 
 /// `DeriveNullifier` from [Section 4.16: Note Commitments and Nullifiers].
@@ -151,6 +162,7 @@ pub(in crate::circuit) fn derive_nullifier<
     EccChip: EccInstructions<
         pallas::Affine,
         FixedPoints = OrchardFixedBases,
+        Point = EccPoint,
         Var = AssignedCell<pallas::Base, pallas::Base>,
     >,
 >(
@@ -158,10 +170,12 @@ pub(in crate::circuit) fn derive_nullifier<
     poseidon_chip: PoseidonChip,
     add_chip: AddChip,
     ecc_chip: EccChip,
+    cond_swap_chip: CondSwapChip<pallas::Base>,
     rho: AssignedCell<pallas::Base, pallas::Base>,
     psi: &AssignedCell<pallas::Base, pallas::Base>,
     cm: &Point<pallas::Affine, EccChip>,
     nk: AssignedCell<pallas::Base, pallas::Base>,
+    split_flag: AssignedCell<pallas::Base, pallas::Base>,
 ) -> Result<X<pallas::Affine, EccChip>, plonk::Error> {
     // hash = poseidon_hash(nk, rho)
     let hash = {
@@ -186,18 +200,39 @@ pub(in crate::circuit) fn derive_nullifier<
     // `product` = [poseidon_hash(nk, rho) + psi] NullifierK.
     //
     let product = {
-        let nullifier_k = FixedPointBaseField::from_inner(ecc_chip, NullifierK);
+        let nullifier_k = FixedPointBaseField::from_inner(ecc_chip.clone(), NullifierK);
         nullifier_k.mul(
             layouter.namespace(|| "[poseidon_output + psi] NullifierK"),
             scalar,
         )?
     };
 
-    // Add cm to multiplied fixed base to get nf
-    // cm + [poseidon_output + psi] NullifierK
-    cm.add(layouter.namespace(|| "nf"), &product)
-        .map(|res| res.extract_p())
+    // Add cm to multiplied fixed base
+    // nf = cm + [poseidon_output + psi] NullifierK
+    let nf = cm.add(layouter.namespace(|| "nf"), &product)?;
+
+    // Add NullifierL to nf
+    // split_note_nf = NullifierL + nf
+    let nullifier_l = Point::new_from_constant(
+        ecc_chip.clone(),
+        layouter.namespace(|| "witness NullifierL constant"),
+        pallas::Point::hash_to_curve("z.cash:Orchard")(b"L").to_affine(),
+    )?;
+    let split_note_nf = nullifier_l.add(layouter.namespace(|| "split_note_nf"), &nf)?;
+
+    // Select the desired nullifier according to split_flag
+    Ok(Point::from_inner(
+        ecc_chip,
+        cond_swap_chip.mux_on_points(
+            layouter.namespace(|| "mux on nf"),
+            &split_flag,
+            nf.inner(),
+            split_note_nf.inner(),
+        )?,
+    )
+    .extract_p())
 }
 
 pub(in crate::circuit) use crate::circuit::commit_ivk::gadgets::commit_ivk;
 pub(in crate::circuit) use crate::circuit::note_commit::gadgets::note_commit;
+pub(in crate::circuit) use crate::circuit::value_commit_orchard::gadgets::value_commit_orchard;

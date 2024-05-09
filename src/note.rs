@@ -6,7 +6,7 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use pasta_curves::pallas;
 use rand::RngCore;
-use subtle::CtOption;
+use subtle::{Choice, ConditionallySelectable, CtOption};
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
@@ -36,7 +36,7 @@ impl Rho {
     /// value otherwise.
     ///
     /// [`Action::rho`]: crate::action::Action::rho
-    /// [`CompactAction::rho`]: crate::note_encryption::CompactAction::rho
+    /// [`CompactAction::rho`]: crate::note_encryption_v3::CompactAction::rho
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Base::from_repr(*bytes).map(Rho)
     }
@@ -58,6 +58,9 @@ impl Rho {
         self.0
     }
 }
+
+pub(crate) mod asset_base;
+pub use self::asset_base::AssetBase;
 
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
@@ -123,6 +126,17 @@ impl RandomSeed {
     }
 }
 
+impl ConditionallySelectable for RandomSeed {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        let result: Vec<u8> =
+            a.0.iter()
+                .zip(b.0.iter())
+                .map(|(a_i, b_i)| u8::conditional_select(a_i, b_i, choice))
+                .collect();
+        RandomSeed(<[u8; 32]>::try_from(result).unwrap())
+    }
+}
+
 /// A discrete amount of funds received by an address.
 #[derive(Debug, Copy, Clone)]
 pub struct Note {
@@ -130,6 +144,8 @@ pub struct Note {
     recipient: Address,
     /// The value of this note.
     value: NoteValue,
+    /// The asset id of this note.
+    asset: AssetBase,
     /// A unique creation ID for this note.
     ///
     /// This is produced from the nullifier of the note that will be spent in the [`Action`] that
@@ -139,6 +155,10 @@ pub struct Note {
     rho: Rho,
     /// The seed randomness for various note components.
     rseed: RandomSeed,
+    /// The seed randomness for split notes.
+    ///
+    /// If it is not a split note, this field is `None`.
+    rseed_split_note: CtOption<RandomSeed>,
 }
 
 impl PartialEq for Note {
@@ -169,14 +189,17 @@ impl Note {
     pub fn from_parts(
         recipient: Address,
         value: NoteValue,
+        asset: AssetBase,
         rho: Rho,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
         let note = Note {
             recipient,
             value,
+            asset,
             rho,
             rseed,
+            rseed_split_note: CtOption::new(rseed, 0u8.into()),
         };
         CtOption::new(note, note.commitment_inner().is_some())
     }
@@ -189,11 +212,18 @@ impl Note {
     pub(crate) fn new(
         recipient: Address,
         value: NoteValue,
+        asset: AssetBase,
         rho: Rho,
         mut rng: impl RngCore,
     ) -> Self {
         loop {
-            let note = Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho));
+            let note = Note::from_parts(
+                recipient,
+                value,
+                asset,
+                rho,
+                RandomSeed::random(&mut rng, &rho),
+            );
             if note.is_some().into() {
                 break note.unwrap();
             }
@@ -208,6 +238,7 @@ impl Note {
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Rho>,
+        asset: AssetBase,
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
@@ -216,6 +247,7 @@ impl Note {
         let note = Note::new(
             recipient,
             NoteValue::zero(),
+            asset,
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
         );
@@ -233,9 +265,19 @@ impl Note {
         self.value
     }
 
+    /// Returns the note type of this note.
+    pub fn asset(&self) -> AssetBase {
+        self.asset
+    }
+
     /// Returns the rseed value of this note.
     pub fn rseed(&self) -> &RandomSeed {
         &self.rseed
+    }
+
+    /// Returns the rseed_split_note value of this note.
+    pub fn rseed_split_note(&self) -> CtOption<RandomSeed> {
+        self.rseed_split_note
     }
 
     /// Derives the ephemeral secret key for this note.
@@ -274,6 +316,7 @@ impl Note {
             g_d.to_bytes(),
             self.recipient.pk_d().to_bytes(),
             self.value,
+            self.asset,
             self.rho.0,
             self.rseed.psi(&self.rho),
             self.rseed.rcm(&self.rho),
@@ -282,12 +325,24 @@ impl Note {
 
     /// Derives the nullifier for this note.
     pub fn nullifier(&self, fvk: &FullViewingKey) -> Nullifier {
+        let selected_rseed = self.rseed_split_note.unwrap_or(self.rseed);
+
         Nullifier::derive(
             fvk.nk(),
             self.rho.0,
-            self.rseed.psi(&self.rho),
+            selected_rseed.psi(&self.rho),
             self.commitment(),
+            self.rseed_split_note.is_some(),
         )
+    }
+
+    /// Create a split note which has the same values than the input note except for
+    /// `rseed_split_note` which is equal to a random seed.
+    pub fn create_split_note(self, rng: &mut impl RngCore) -> Self {
+        Note {
+            rseed_split_note: CtOption::new(RandomSeed::random(rng, &self.rho), 1u8.into()),
+            ..self
+        }
     }
 }
 
@@ -297,7 +352,7 @@ pub struct TransmittedNoteCiphertext {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
     /// The encrypted note ciphertext
-    pub enc_ciphertext: [u8; 580],
+    pub enc_ciphertext: [u8; 612],
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
@@ -319,9 +374,14 @@ impl fmt::Debug for TransmittedNoteCiphertext {
 pub mod testing {
     use proptest::prelude::*;
 
+    use crate::note::asset_base::testing::arb_asset_base;
+    use crate::note::AssetBase;
+    use crate::value::testing::arb_note_value;
     use crate::{
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
+
+    use subtle::CtOption;
 
     use super::{Note, RandomSeed, Rho};
 
@@ -333,17 +393,58 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an action without authorization data.
+        /// Generate an arbitrary note
         pub fn arb_note(value: NoteValue)(
             recipient in arb_address(),
+            rho in arb_nullifier().prop_map(Rho::from_nf_old),
+            rseed in arb_rseed(),
+            asset in arb_asset_base(),
+        ) -> Note {
+            Note {
+                recipient,
+                value,
+                asset,
+                rho,
+                rseed,
+                rseed_split_note: CtOption::new(rseed, 0u8.into()),
+            }
+        }
+    }
+
+    prop_compose! {
+        /// Generate an arbitrary native note
+        pub fn arb_native_note()(
+            recipient in arb_address(),
+            value in arb_note_value(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
             rseed in arb_rseed(),
         ) -> Note {
             Note {
                 recipient,
                 value,
+                asset: AssetBase::native(),
                 rho,
                 rseed,
+                rseed_split_note: CtOption::new(rseed, 0u8.into())
+            }
+        }
+    }
+
+    prop_compose! {
+        /// Generate an arbitrary zsa note
+        pub fn arb_zsa_note(asset: AssetBase)(
+            recipient in arb_address(),
+            value in arb_note_value(),
+            rho in arb_nullifier().prop_map(Rho::from_nf_old),
+            rseed in arb_rseed(),
+        ) -> Note {
+            Note {
+                recipient,
+                value,
+                asset,
+                rho,
+                rseed,
+                rseed_split_note: CtOption::new(rseed, 0u8.into()),
             }
         }
     }
