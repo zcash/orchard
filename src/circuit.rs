@@ -38,7 +38,7 @@ use crate::{
     note::{
         commitment::{NoteCommitTrapdoor, NoteCommitment},
         nullifier::Nullifier,
-        AssetBase, ExtractedNoteCommitment, Note,
+        AssetBase, ExtractedNoteCommitment, Note, Rho,
     },
     primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
@@ -114,7 +114,7 @@ pub struct Circuit {
     pub(crate) g_d_old: Value<NonIdentityPallasPoint>,
     pub(crate) pk_d_old: Value<DiversifiedTransmissionKey>,
     pub(crate) v_old: Value<NoteValue>,
-    pub(crate) rho_old: Value<Nullifier>,
+    pub(crate) rho_old: Value<Rho>,
     pub(crate) psi_old: Value<pallas::Base>,
     pub(crate) rcm_old: Value<NoteCommitTrapdoor>,
     pub(crate) cm_old: Value<NoteCommitment>,
@@ -155,7 +155,7 @@ impl Circuit {
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
     ) -> Option<Circuit> {
-        (spend.note.nullifier(&spend.fvk) == output_note.rho())
+        (Rho::from_nf_old(spend.note.nullifier(&spend.fvk)) == output_note.rho())
             .then(|| Self::from_action_context_unchecked(spend, output_note, alpha, rcv))
     }
 
@@ -507,7 +507,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let rho_old = assign_free_advice(
                 layouter.namespace(|| "witness rho_old"),
                 config.advices[0],
-                self.rho_old.map(|rho| rho.0),
+                self.rho_old.map(|rho| rho.into_inner()),
             )?;
 
             // Witness cm_old
@@ -1198,7 +1198,7 @@ mod tests {
     use crate::primitives::redpallas::VerificationKey;
     use crate::{
         keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
-        note::{Note, NoteCommitment},
+        note::{Note, NoteCommitment, Rho},
         tree::MerklePath,
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
     };
@@ -1214,7 +1214,11 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(nf_old), AssetBase::native());
+        let (_, _, output_note) = Note::dummy(
+            &mut rng,
+            Some(Rho::from_nf_old(nf_old)),
+            AssetBase::native(),
+        );
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
@@ -1494,7 +1498,7 @@ mod tests {
             let sk = SpendingKey::random(&mut rng);
             let fvk: FullViewingKey = (&sk).into();
             let sender_address = fvk.address_at(0u32, Scope::External);
-            let rho_old = Nullifier::dummy(&mut rng);
+            let rho_old = Rho::from_nf_old(Nullifier::dummy(&mut rng));
             let note = Note::new(
                 sender_address,
                 NoteValue::from_raw(40),
@@ -1538,7 +1542,13 @@ mod tests {
             let fvk: FullViewingKey = (&sk).into();
             let sender_address = fvk.address_at(0u32, Scope::External);
 
-            Note::new(sender_address, output_value, asset_base, nf_old, &mut rng)
+            Note::new(
+                sender_address,
+                output_value,
+                asset_base,
+                Rho::from_nf_old(nf_old),
+                &mut rng,
+            )
         };
 
         let cmx = output_note.commitment().into();

@@ -15,7 +15,7 @@ use crate::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
     },
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
+    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho},
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
@@ -72,6 +72,18 @@ impl From<&[u8]> for NotePlaintextBytes {
 impl AsRef<[u8]> for NoteCiphertextBytes {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
+    }
+}
+
+impl AsMut<[u8]> for NoteCiphertextBytes {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut()
+    }
+}
+
+impl From<(&[u8], &[u8])> for NoteCiphertextBytes {
+    fn from(s: (&[u8], &[u8])) -> Self {
+        Self([s.0, s.1].concat().try_into().unwrap())
     }
 }
 
@@ -177,20 +189,18 @@ where
 /// Orchard-specific note encryption logic.
 #[derive(Debug)]
 pub struct OrchardDomainV3 {
-    rho: Nullifier,
+    rho: Rho,
 }
 
 impl OrchardDomainV3 {
     /// Constructs a domain that can be used to trial-decrypt this action's output note.
     pub fn for_action<T>(act: &Action<T>) -> Self {
-        OrchardDomainV3 {
-            rho: *act.nullifier(),
-        }
+        Self { rho: act.rho() }
     }
 
-    /// Constructs a domain from a nullifier.
-    pub fn for_nullifier(nullifier: Nullifier) -> Self {
-        OrchardDomainV3 { rho: nullifier }
+    /// Constructs a domain that can be used to trial-decrypt this action's output note.
+    pub fn for_compact_action(act: &CompactAction) -> Self {
+        Self { rho: act.rho() }
     }
 }
 
@@ -443,6 +453,11 @@ impl CompactAction {
     pub fn nullifier(&self) -> Nullifier {
         self.nullifier
     }
+
+    /// Obtains the [`Rho`] value that was used to construct the new note being created.
+    pub fn rho(&self) -> Rho {
+        Rho::from_nf_old(self.nullifier)
+    }
 }
 
 #[cfg(test)]
@@ -465,7 +480,7 @@ mod tests {
             OutgoingViewingKey, PreparedIncomingViewingKey,
         },
         note::{
-            testing::arb_note, AssetBase, ExtractedNoteCommitment, Nullifier, RandomSeed,
+            testing::arb_note, AssetBase, ExtractedNoteCommitment, Nullifier, RandomSeed, Rho,
             TransmittedNoteCiphertext,
         },
         primitives::redpallas,
@@ -522,7 +537,8 @@ mod tests {
 
             // Received Action
             let cv_net = ValueCommitment::from_bytes(&tv.cv_net).unwrap();
-            let rho = Nullifier::from_bytes(&tv.rho).unwrap();
+            let nf_old = Nullifier::from_bytes(&tv.rho).unwrap();
+            let rho = Rho::from_nf_old(nf_old);
             let cmx = ExtractedNoteCommitment::from_bytes(&tv.cmx).unwrap();
 
             let esk = EphemeralSecretKey::from_bytes(&tv.esk).unwrap();
@@ -554,7 +570,7 @@ mod tests {
 
             let action = Action::from_parts(
                 // rho is the nullifier in the receiving Action.
-                rho,
+                nf_old,
                 // We don't need a valid rk for this test.
                 redpallas::VerificationKey::dummy(),
                 cmx,

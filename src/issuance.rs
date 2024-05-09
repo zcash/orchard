@@ -15,7 +15,7 @@ use crate::issuance::Error::{
 };
 use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use crate::note::asset_base::is_asset_desc_of_valid_size;
-use crate::note::{AssetBase, Nullifier};
+use crate::note::{AssetBase, Nullifier, Rho};
 
 use crate::value::{NoteValue, ValueSum};
 use crate::{Address, Note};
@@ -287,7 +287,7 @@ impl IssueBundle<Unauthorized> {
                     issue_info.recipient,
                     issue_info.value,
                     asset,
-                    Nullifier::dummy(&mut rng),
+                    Rho::from_nf_old(Nullifier::dummy(&mut rng)),
                     &mut rng,
                 );
 
@@ -335,7 +335,7 @@ impl IssueBundle<Unauthorized> {
             recipient,
             value,
             asset,
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
 
@@ -597,7 +597,7 @@ mod tests {
     use crate::keys::{
         FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
     };
-    use crate::note::{AssetBase, Nullifier};
+    use crate::note::{AssetBase, Nullifier, Rho};
     use crate::value::{NoteValue, ValueSum};
     use crate::{Address, Note};
     use group::{Group, GroupEncoding};
@@ -644,7 +644,7 @@ mod tests {
             recipient,
             NoteValue::from_raw(note1_value),
             asset,
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
 
@@ -652,7 +652,7 @@ mod tests {
             recipient,
             NoteValue::from_raw(note2_value),
             note2_asset,
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
 
@@ -679,7 +679,7 @@ mod tests {
             recipient,
             NoteValue::from_raw(note1_value),
             identity_point(),
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
 
@@ -687,7 +687,7 @@ mod tests {
             recipient,
             NoteValue::from_raw(note2_value),
             identity_point(),
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
 
@@ -963,7 +963,7 @@ mod tests {
             recipient,
             NoteValue::from_raw(5),
             AssetBase::derive(bundle.ik(), "zsa_asset"),
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
         bundle.actions.first_mut().notes.push(note);
@@ -1226,7 +1226,7 @@ mod tests {
             recipient,
             NoteValue::from_raw(5),
             AssetBase::derive(signed.ik(), "zsa_asset"),
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
 
@@ -1267,7 +1267,7 @@ mod tests {
             recipient,
             NoteValue::from_raw(55),
             AssetBase::derive(&incorrect_ik, asset_description),
-            Nullifier::dummy(&mut rng),
+            Rho::from_nf_old(Nullifier::dummy(&mut rng)),
             &mut rng,
         );
 

@@ -58,12 +58,19 @@ impl From<MerkleHashOrchard> for Anchor {
 }
 
 impl Anchor {
+    /// The anchor of the empty Orchard note commitment tree.
+    ///
+    /// This anchor does not correspond to any valid anchor for a spend, so it
+    /// may only be used for coinbase bundles or in circumstances where Orchard
+    /// functionality is not active.
+    pub fn empty_tree() -> Anchor {
+        Anchor(MerkleHashOrchard::empty_root(Level::from(MERKLE_DEPTH_ORCHARD as u8)).0)
+    }
+
     pub(crate) fn inner(&self) -> pallas::Base {
         self.0
     }
-}
 
-impl Anchor {
     /// Parses an Orchard anchor from a byte encoding.
     pub fn from_bytes(bytes: [u8; 32]) -> CtOption<Anchor> {
         pallas::Base::from_repr(bytes).map(Anchor)
@@ -250,6 +257,31 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
             "Attempted to deserialize a non-canonical representation of a Pallas base field element.",
         )
         })
+    }
+}
+
+/// Test utilities available under the `test-dependencies` feature flag.
+#[cfg(feature = "test-dependencies")]
+pub mod testing {
+    use ff::Field;
+    use rand::{
+        distributions::{Distribution, Standard},
+        RngCore,
+    };
+
+    use super::MerkleHashOrchard;
+
+    impl MerkleHashOrchard {
+        /// Return a random fake `MerkleHashOrchard`.
+        pub fn random(rng: &mut impl RngCore) -> Self {
+            Standard.sample(rng)
+        }
+    }
+
+    impl Distribution<MerkleHashOrchard> for Standard {
+        fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> MerkleHashOrchard {
+            MerkleHashOrchard(pasta_curves::Fp::random(rng))
+        }
     }
 }
 

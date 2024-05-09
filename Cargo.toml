@@ -1,17 +1,17 @@
 [package]
 name = "orchard"
-version = "0.5.0"
+version = "0.8.0"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Jack Grigg <jack@electriccoin.co>",
-    "Daira Hopwood <daira@jacaranda.org>",
-    "Ying Tong Lai <yingtong@electriccoin.co>",
+    "Daira-Emma Hopwood <daira@jacaranda.org>",
+    "Ying Tong Lai",
     "Kris Nuttycombe <kris@electriccoin.co>",
 ]
 edition = "2021"
 rust-version = "1.65"
 description = "The Orchard shielded transaction protocol"
-license-file = "LICENSE-BOSL"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/orchard"
 documentation = "https://docs.rs/orchard"
 readme = "README.md"
@@ -44,6 +44,8 @@ serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
 zcash_note_encryption_zsa = { package = "zcash_note_encryption", version = "0.4", git = "https://github.com/QED-it/zcash_note_encryption", branch = "zsa1" }
 incrementalmerkletree = "0.5"
+zcash_spec = "0.1"
+zip32 = "0.1"
 
 # Logging
 tracing = "0.1"
@@ -60,12 +62,12 @@ hex = "0.4"
 proptest = "1.0.0"
 zcash_note_encryption_zsa = { package = "zcash_note_encryption", version = "0.4", git = "https://github.com/QED-it/zcash_note_encryption", branch = "zsa1", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
-ahash = "=0.8.6" #Pinned: 0.8.7 depends on Rust 1.72
-half = "=2.2.1" #Pinned: 2.3.1 requires Rust 1.70
+#ahash = "=0.8.6" #Pinned: 0.8.7 depends on Rust 1.72
+#half = "=2.2.1" #Pinned: 2.3.1 requires Rust 1.70
 
 [target.'cfg(unix)'.dev-dependencies]
-inferno = "0.11" #Pinned
-clap = "=4.2.0" #Pinned: Used by inferno. Later version requires Rust 1.70
+inferno = { version = "0.11", default-features = false, features = ["multithreaded", "nameattr"] }
+#clap = "=4.2.0" #Pinned: Used by inferno. Later version requires Rust 1.70
 pprof = { version = "0.11", features = ["criterion", "flamegraph"] }
 
 [lib]

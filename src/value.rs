@@ -16,7 +16,7 @@
 //! - Define your `valueBalanceOrchard` type to enforce your valid value range. This can
 //!   be checked in its `TryFrom<i64>` implementation.
 //! - Define your own "amount" type for note values, and convert it to `NoteValue` prior
-//!   to calling [`Builder::add_recipient`].
+//!   to calling [`Builder::add_output`].
 //!
 //! Inside the circuit, note values are constrained to be unsigned 64-bit integers.
 //!
@@ -34,7 +34,7 @@
 //! [`Bundle`]: crate::bundle::Bundle
 //! [`Bundle::value_balance`]: crate::bundle::Bundle::value_balance
 //! [`Builder::value_balance`]: crate::builder::Builder::value_balance
-//! [`Builder::add_recipient`]: crate::builder::Builder::add_recipient
+//! [`Builder::add_output`]: crate::builder::Builder::add_output
 //! [Rust documentation]: https://doc.rust-lang.org/stable/std/primitive.i64.html
 
 use core::fmt::{self, Debug};
@@ -85,7 +85,7 @@ impl fmt::Display for OverflowError {
 impl std::error::Error for OverflowError {}
 
 /// The non-negative value of an individual Orchard note.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct NoteValue(u64);
 
 impl NoteValue {

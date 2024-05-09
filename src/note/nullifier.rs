@@ -3,7 +3,7 @@ use halo2_proofs::arithmetic::CurveExt;
 use memuse::DynamicUsage;
 use pasta_curves::pallas;
 use rand::RngCore;
-use subtle::{Choice, ConditionallySelectable, CtOption};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::NoteCommitment;
 use crate::{
@@ -67,6 +67,12 @@ impl Nullifier {
             pallas::Point::conditional_select(&nullifier, &split_note_nullifier, is_split_note);
 
         Nullifier(extract_p(&(selected_nullifier)))
+    }
+}
+
+impl ConstantTimeEq for Nullifier {
+    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+        self.0.ct_eq(&other.0)
     }
 }
 

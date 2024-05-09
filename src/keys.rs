@@ -1,6 +1,5 @@
 //! Key structures for Orchard.
 
-use core::mem;
 use std::{
     fmt::{Debug, Formatter},
     io::{self, Read, Write},
@@ -36,10 +35,14 @@ use crate::{
         PreparedNonIdentityBase, PreparedNonZeroScalar, PrfExpand,
     },
     zip32::{
-        self, ChildIndex, ExtendedSpendingKey, ZIP32_ORCHARD_PERSONALIZATION,
+        self, ExtendedSpendingKey, ZIP32_ORCHARD_PERSONALIZATION,
         ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE,
     },
 };
+
+// Preserve '::' which specifies the EXTERNAL 'zip32' crate
+#[rustfmt::skip]
+pub use ::zip32::{AccountId, ChildIndex, DiversifierIndex, Scope};
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
@@ -106,13 +109,17 @@ impl SpendingKey {
     pub fn from_zip32_seed(
         seed: &[u8],
         coin_type: u32,
-        account: u32,
+        account: AccountId,
     ) -> Result<Self, zip32::Error> {
+        if coin_type >= (1 << 31) {
+            return Err(zip32::Error::InvalidChildIndex(coin_type));
+        }
+
         // Call zip32 logic
         let path = &[
-            ChildIndex::try_from(ZIP32_PURPOSE)?,
-            ChildIndex::try_from(coin_type)?,
-            ChildIndex::try_from(account)?,
+            ChildIndex::hardened(ZIP32_PURPOSE),
+            ChildIndex::hardened(coin_type),
+            ChildIndex::hardened(account.into()),
         ];
         ExtendedSpendingKey::from_path(seed, path, ZIP32_ORCHARD_PERSONALIZATION)
             .map(|esk| esk.sk())
@@ -131,7 +138,7 @@ pub struct SpendAuthorizingKey(redpallas::SigningKey<SpendAuth>);
 impl SpendAuthorizingKey {
     /// Derives ask from sk. Internal use only, does not enforce all constraints.
     fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
-        to_scalar(PrfExpand::OrchardAsk.expand(&sk.0))
+        to_scalar(PrfExpand::ORCHARD_ASK.with(&sk.0))
     }
 
     /// Randomizes this spend authorizing key with the given `randomizer`.
@@ -271,9 +278,9 @@ impl IssuanceAuthorizingKey {
     ) -> Result<Self, zip32::Error> {
         // Call zip32 logic
         let path = &[
-            ChildIndex::try_from(ZIP32_PURPOSE_FOR_ISSUANCE)?,
-            ChildIndex::try_from(coin_type)?,
-            ChildIndex::try_from(account)?,
+            ChildIndex::hardened(ZIP32_PURPOSE_FOR_ISSUANCE),
+            ChildIndex::hardened(coin_type),
+            ChildIndex::hardened(account),
         ];
 
         // we are reusing zip32 logic for deriving the key, zip32 should be updated as discussed
@@ -364,7 +371,7 @@ impl NullifierDerivingKey {
 
 impl From<&SpendingKey> for NullifierDerivingKey {
     fn from(sk: &SpendingKey) -> Self {
-        NullifierDerivingKey(to_base(PrfExpand::OrchardNk.expand(&sk.0)))
+        NullifierDerivingKey(to_base(PrfExpand::ORCHARD_NK.with(&sk.0)))
     }
 }
 
@@ -399,7 +406,7 @@ pub(crate) struct CommitIvkRandomness(pallas::Scalar);
 
 impl From<&SpendingKey> for CommitIvkRandomness {
     fn from(sk: &SpendingKey) -> Self {
-        CommitIvkRandomness(to_scalar(PrfExpand::OrchardRivk.expand(&sk.0)))
+        CommitIvkRandomness(to_scalar(PrfExpand::ORCHARD_RIVK.with(&sk.0)))
     }
 }
 
@@ -422,24 +429,6 @@ impl CommitIvkRandomness {
             None
         }
     }
-}
-
-/// The scope of a viewing key or address.
-///
-/// A "scope" narrows the visibility or usage to a level below "full".
-///
-/// Consistent usage of `Scope` enables the user to provide consistent views over a wallet
-/// to other people. For example, a user can give an external [`IncomingViewingKey`] to a
-/// merchant terminal, enabling it to only detect "real" transactions from customers and
-/// not internal transactions from the wallet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Scope {
-    /// A scope used for wallet-external operations, namely deriving addresses to give to
-    /// other users in order to receive funds.
-    External,
-    /// A scope used for wallet-internal operations, such as creating change notes,
-    /// auto-shielding, and note management.
-    Internal,
 }
 
 /// A key that provides the capability to view incoming and outgoing transactions.
@@ -493,7 +482,7 @@ impl FullViewingKey {
                 let ak = self.ak.to_bytes();
                 let nk = self.nk.to_bytes();
                 CommitIvkRandomness(to_scalar(
-                    PrfExpand::OrchardRivkInternal.with_ad_slices(&k, &[&ak, &nk]),
+                    PrfExpand::ORCHARD_RIVK_INTERNAL.with(&k, &ak, &nk),
                 ))
             }
         }
@@ -505,7 +494,7 @@ impl FullViewingKey {
     fn derive_dk_ovk(&self) -> (DiversifierKey, OutgoingViewingKey) {
         let k = self.rivk.0.to_repr();
         let b = [(&self.ak.0).into(), self.nk.0.to_repr()];
-        let r = PrfExpand::OrchardDkOvk.with_ad_slices(&k, &[&b[0][..], &b[1][..]]);
+        let r = PrfExpand::ORCHARD_DK_OVK.with(&k, &b[0], &b[1]);
         (
             DiversifierKey(r[..32].try_into().unwrap()),
             OutgoingViewingKey(r[32..].try_into().unwrap()),
@@ -623,44 +612,15 @@ impl FullViewingKey {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct DiversifierKey([u8; 32]);
 
-/// The index for a particular diversifier.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct DiversifierIndex([u8; 11]);
-
-macro_rules! di_from {
-    ($n:ident) => {
-        impl From<$n> for DiversifierIndex {
-            fn from(j: $n) -> Self {
-                let mut j_bytes = [0; 11];
-                j_bytes[..mem::size_of::<$n>()].copy_from_slice(&j.to_le_bytes());
-                DiversifierIndex(j_bytes)
-            }
-        }
-    };
-}
-di_from!(u32);
-di_from!(u64);
-di_from!(usize);
-
-impl From<[u8; 11]> for DiversifierIndex {
-    fn from(j_bytes: [u8; 11]) -> Self {
-        DiversifierIndex(j_bytes)
-    }
-}
-
-impl DiversifierIndex {
-    /// Returns the raw bytes of the diversifier index.
-    pub fn to_bytes(&self) -> &[u8; 11] {
-        &self.0
-    }
-}
-
 impl DiversifierKey {
     /// Returns the diversifier at the given index.
     pub fn get(&self, j: impl Into<DiversifierIndex>) -> Diversifier {
         let ff = FF1::<Aes256>::new(&self.0, 2).expect("valid radix");
         let enc = ff
-            .encrypt(&[], &BinaryNumeralString::from_bytes_le(&j.into().0[..]))
+            .encrypt(
+                &[],
+                &BinaryNumeralString::from_bytes_le(j.into().as_bytes()),
+            )
             .unwrap();
         Diversifier(enc.to_bytes_le().try_into().unwrap())
     }
@@ -1168,7 +1128,7 @@ mod tests {
     };
     use crate::note::AssetBase;
     use crate::{
-        note::{ExtractedNoteCommitment, Nullifier, RandomSeed},
+        note::{ExtractedNoteCommitment, RandomSeed, Rho},
         value::NoteValue,
         Note,
     };
@@ -1268,7 +1228,7 @@ mod tests {
             let addr = fvk.address(diversifier, Scope::External);
             assert_eq!(&addr.pk_d().to_bytes(), &tv.default_pk_d);
 
-            let rho = Nullifier::from_bytes(&tv.note_rho).unwrap();
+            let rho = Rho::from_bytes(&tv.note_rho).unwrap();
             let note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),

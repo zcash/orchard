@@ -11,18 +11,31 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.65.0
-          override: true
+      - uses: actions/checkout@v4
       - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose
+        run: cargo test --verbose
+      - name: Verify working directory is clean
+        run: git diff --exit-code
 
-  build:
+  build-latest:
+    name: Latest build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        id: toolchain
+      - run: rustup override set ${{steps.toolchain.outputs.name}}
+      - name: Remove lockfile to build with latest dependencies
+        run: rm Cargo.lock
+      - name: Build crate
+        run: cargo build --all-features --verbose
+      - name: Verify working directory is clean (excluding lockfile)
+        run: git diff --exit-code ':!Cargo.lock'
+
+  build-nodefault:
     name: Build target ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
@@ -31,7 +44,7 @@ jobs:
           - wasm32-wasi
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Add target
         run: rustup target add ${{ matrix.target }}
       - run: cargo fetch
@@ -41,98 +54,53 @@ jobs:
   bitrot:
     name: Bitrot check
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.65.0
-          override: true
+      - uses: actions/checkout@v4
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --benches
+        run: cargo build --benches
 
   book:
     name: Book tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.65.0
-          override: true
-      - name: Setup mdBook
-        uses: peaceiris/actions-mdbook@v1
-        with:
-          mdbook-version: '0.4.5'
+      - uses: actions/checkout@v4
+      - name: Install mdbook
+        run: |
+          mkdir mdbook
+          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.35/mdbook-v0.4.35-x86_64-unknown-linux-gnu.tar.gz | tar -xz --directory=./mdbook
+          echo `pwd`/mdbook >> $GITHUB_PATH
       - name: Test Orchard book
         run: mdbook test book/
 
-#  disabled due to performance issues:
-#  codecov:
-#    name: Code coverage
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#      - uses: actions/checkout@v2
-#      # Use stable for this to ensure that cargo-tarpaulin can be built.
-#      - uses: actions-rs/toolchain@v1
-#        with:
-#          toolchain: stable
-#          override: true
-#      - name: Install cargo-tarpaulin
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: install
-#          args: cargo-tarpaulin
-#      - name: Generate coverage report
-#        uses: actions-rs/cargo@v1
-#        with:
-#          command: tarpaulin
-#          args: --all-features --timeout 1200 --out Xml
-#      - name: Upload coverage to Codecov
-#        uses: codecov/codecov-action@v1
-#        with:
-#          token: ${{secrets.CODECOV_TOKEN}}
+  codecov:
+    name: Code coverage
+    runs-on: ubuntu-latest
+    container:
+      image: xd009642/tarpaulin:develop-nightly
+      options: --security-opt seccomp=unconfined
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate coverage report
+        run: cargo tarpaulin --engine llvm --all-features --release --timeout 600 --out xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3.1.4
 
   doc-links:
     name: Intra-doc links
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.65.0
-          override: true
-      - name: cargo fetch
-        uses: actions-rs/cargo@v1
-        with:
-          command: fetch
-
-      # Ensure intra-documentation links all resolve correctly
-      # Requires #![deny(intra_doc_link_resolution_failure)] in crates.
+      - uses: actions/checkout@v4
+      - run: cargo fetch
+      # Requires #![deny(rustdoc::broken_intra_doc_links)] in crates.
       - name: Check intra-doc links
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --document-private-items
+        run: cargo doc --all-features --document-private-items
 
   fmt:
     name: Rustfmt
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: 1.65.0
-          override: true
-      - run: rustup component add rustfmt
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -- --check
+      - uses: actions/checkout@v4
+      - run: cargo fmt -- --check
