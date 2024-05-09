@@ -635,6 +635,11 @@ impl Builder {
     }
 }
 
+/// The index of the attached spend or output in the bundle.
+/// None indicates a dummy note.
+/// The index is used to track the position of the note in the bundle.
+type MetadataIdx = Option<usize>;
+
 /// Partition a list of spends and recipients by note types.
 /// Method creates single dummy ZEC note if spends and recipients are both empty.
 #[allow(clippy::type_complexity)]
@@ -645,8 +650,8 @@ fn partition_by_asset(
 ) -> HashMap<
     AssetBase,
     (
-        Vec<(Option<usize>, SpendInfo)>,
-        Vec<(Option<usize>, OutputInfo)>,
+        Vec<(SpendInfo, MetadataIdx)>,
+        Vec<(OutputInfo, MetadataIdx)>,
     ),
 > {
     let mut hm = HashMap::new();
@@ -655,21 +660,22 @@ fn partition_by_asset(
         hm.entry(s.note.asset())
             .or_insert((vec![], vec![]))
             .0
-            .push((Some(i), s.clone()));
+            .push((s.clone(), Some(i)));
     }
 
     for (i, o) in outputs.iter().enumerate() {
         hm.entry(o.asset)
             .or_insert((vec![], vec![]))
             .1
-            .push((Some(i), o.clone()));
+            .push((o.clone(), Some(i)));
     }
 
     if hm.is_empty() {
         let dummy_spend = pad_spend(None, AssetBase::native(), rng);
+        // dummy_spend should not be included in the indexing and marked as None.
         hm.insert(
             dummy_spend.note.asset(),
-            (vec![(None, dummy_spend)], vec![]),
+            (vec![(dummy_spend, None)], vec![]),
         );
     }
 
@@ -722,12 +728,8 @@ pub fn bundle<V: TryFrom<i64>>(
 
     // Pair up the spends and outputs, extending with dummy values as necessary.
     let (pre_actions, bundle_meta) = {
-        // FIXME: use Vec::with_capacity().extend(...) instead of ...collect() as we can estimate
-        // the size of the resulting vector beforehand. Rust can't do that autimatically in this
-        // particular case, and possibly realloicates the vector during the collecting.
-        // Moreover, even if we use "colect" intstead of the first "extend", we still have to make
-        // the vector mutable and then potentially extend it with missing dummy elements to pad to
-        // MIN_ACTIONS elements.
+        // Use Vec::with_capacity().extend(...) instead of .collect() to avoid reallocations,
+        // as we can estimate the vector size beforehand.
         let mut indexed_spends_outputs =
             Vec::with_capacity(spends.len().max(outputs.len()).max(MIN_ACTIONS));
 
@@ -737,12 +739,12 @@ pub fn bundle<V: TryFrom<i64>>(
                 .flat_map(|(asset, (spends, outputs))| {
                     let num_asset_pre_actions = spends.len().max(outputs.len());
 
-                    let first_spend = spends.first().map(|(_, s)| s.clone());
+                    let first_spend = spends.first().map(|(s, _)| s.clone());
 
                     let mut indexed_spends = spends
                         .into_iter()
                         .chain(iter::repeat_with(|| {
-                            (None, pad_spend(first_spend.as_ref(), asset, &mut rng))
+                            (pad_spend(first_spend.as_ref(), asset, &mut rng), None)
                         }))
                         .take(num_asset_pre_actions)
                         .collect::<Vec<_>>();
@@ -750,7 +752,7 @@ pub fn bundle<V: TryFrom<i64>>(
                     let mut indexed_outputs = outputs
                         .into_iter()
                         .chain(iter::repeat_with(|| {
-                            (None, OutputInfo::dummy(&mut rng, asset))
+                            (OutputInfo::dummy(&mut rng, asset), None)
                         }))
                         .take(num_asset_pre_actions)
                         .collect::<Vec<_>>();
@@ -770,8 +772,8 @@ pub fn bundle<V: TryFrom<i64>>(
         indexed_spends_outputs.extend(
             iter::repeat_with(|| {
                 (
-                    (None, pad_spend(None, AssetBase::native(), &mut rng)),
-                    (None, OutputInfo::dummy(&mut rng, AssetBase::native())),
+                    (pad_spend(None, AssetBase::native(), &mut rng), None),
+                    (OutputInfo::dummy(&mut rng, AssetBase::native()), None),
                 )
             })
             .take(MIN_ACTIONS.saturating_sub(indexed_spends_outputs.len())),
@@ -781,7 +783,7 @@ pub fn bundle<V: TryFrom<i64>>(
         let pre_actions = indexed_spends_outputs
             .into_iter()
             .enumerate()
-            .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
+            .map(|(action_idx, ((spend, spend_idx), (output, out_idx)))| {
                 // Record the post-randomization spend location
                 if let Some(spend_idx) = spend_idx {
                     bundle_meta.spend_indices[spend_idx] = action_idx;

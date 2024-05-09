@@ -103,14 +103,14 @@ impl Flags {
     pub const SPENDS_DISABLED: Flags = Flags {
         spends_enabled: false,
         outputs_enabled: true,
-        zsa_enabled: false, // FIXME: is this correct?
+        zsa_enabled: false,
     };
 
     /// The flag set with outputs disabled.
     pub const OUTPUTS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: false,
-        zsa_enabled: false, // FIXME: is this correct?
+        zsa_enabled: false,
     };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
