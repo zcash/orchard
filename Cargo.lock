@@ -964,7 +964,7 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "0.3.0"
-source = "git+https://github.com/QED-it/halo2?branch=improve-backward-compatability-without-zsa-default-generic-arg#5414d9526c0e774b0d0597b3fcfea06b656f4ab3"
+source = "git+https://github.com/QED-it/halo2?branch=improve-backward-compatability-without-zsa#9ecbd6513163175efb4b699f9e80e0a14e70c1e6"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -988,7 +988,7 @@ checksum = "47716fe1ae67969c5e0b2ef826f32db8c3be72be325e1aa3c1951d06b5575ec5"
 [[package]]
 name = "halo2_proofs"
 version = "0.3.0"
-source = "git+https://github.com/QED-it/halo2?branch=improve-backward-compatability-without-zsa-default-generic-arg#5414d9526c0e774b0d0597b3fcfea06b656f4ab3"
+source = "git+https://github.com/QED-it/halo2?branch=improve-backward-compatability-without-zsa#9ecbd6513163175efb4b699f9e80e0a14e70c1e6"
 dependencies = [
  "blake2b_simd",
  "ff",
