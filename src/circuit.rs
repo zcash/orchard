@@ -56,7 +56,7 @@ use halo2_gadgets::{
             MerklePath,
         },
     },
-    utilities::lookup_range_check::LookupRangeCheckConfig,
+    utilities::lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
 };
 
 mod commit_ivk;

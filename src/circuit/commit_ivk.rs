@@ -228,7 +228,10 @@ impl CommitIvkChip {
 }
 
 pub(in crate::circuit) mod gadgets {
-    use halo2_gadgets::utilities::{lookup_range_check::LookupRangeCheckConfig, RangeConstrained};
+    use halo2_gadgets::utilities::{
+        lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
+        RangeConstrained,
+    };
     use halo2_proofs::circuit::Chip;
 
     use super::*;
@@ -678,7 +681,10 @@ mod tests {
             chip::{SinsemillaChip, SinsemillaConfig},
             primitives::CommitDomain,
         },
-        utilities::{lookup_range_check::LookupRangeCheckConfig, UtilitiesInstructions},
+        utilities::{
+            lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
+            UtilitiesInstructions,
+        },
     };
     use halo2_proofs::{
         circuit::{AssignedCell, Layouter, SimpleFloorPlanner, Value},
