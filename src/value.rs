@@ -107,11 +107,13 @@ impl NoteValue {
         NoteValue(value)
     }
 
-    pub(crate) fn from_bytes(bytes: [u8; 8]) -> Self {
+    /// Creates a note value from a byte array.
+    pub fn from_bytes(bytes: [u8; 8]) -> Self {
         NoteValue(u64::from_le_bytes(bytes))
     }
 
-    pub(crate) fn to_bytes(self) -> [u8; 8] {
+    /// Converts the note value to a byte array.
+    pub fn to_bytes(self) -> [u8; 8] {
         self.0.to_le_bytes()
     }
 
@@ -222,14 +224,16 @@ impl Neg for ValueSum {
 }
 
 impl<'a> Sum<&'a ValueSum> for Result<ValueSum, OverflowError> {
-    fn sum<I: Iterator<Item = &'a ValueSum>>(iter: I) -> Self {
-        iter.fold(Ok(ValueSum(0)), |acc, v| (acc? + *v).ok_or(OverflowError))
+    fn sum<I: Iterator<Item = &'a ValueSum>>(mut iter: I) -> Self {
+        iter.try_fold(ValueSum(0), |acc, v| acc + *v)
+            .ok_or(OverflowError)
     }
 }
 
 impl Sum<ValueSum> for Result<ValueSum, OverflowError> {
-    fn sum<I: Iterator<Item = ValueSum>>(iter: I) -> Self {
-        iter.fold(Ok(ValueSum(0)), |acc, v| (acc? + v).ok_or(OverflowError))
+    fn sum<I: Iterator<Item = ValueSum>>(mut iter: I) -> Self {
+        iter.try_fold(ValueSum(0), |acc, v| acc + v)
+            .ok_or(OverflowError)
     }
 }
 
@@ -244,6 +248,12 @@ impl TryFrom<ValueSum> for i64 {
 impl From<ValueSum> for i128 {
     fn from(value: ValueSum) -> Self {
         value.0
+    }
+}
+
+impl From<NoteValue> for ValueSum {
+    fn from(value: NoteValue) -> Self {
+        Self(value.into())
     }
 }
 

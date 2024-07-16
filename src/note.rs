@@ -10,6 +10,7 @@ use subtle::{Choice, ConditionallySelectable, CtOption};
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
+    note_encryption::OrchardDomainCommon,
     spec::{to_base, to_scalar, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
     Address,
@@ -36,7 +37,7 @@ impl Rho {
     /// value otherwise.
     ///
     /// [`Action::rho`]: crate::action::Action::rho
-    /// [`CompactAction::rho`]: crate::note_encryption_v3::CompactAction::rho
+    /// [`CompactAction::rho`]: crate::note_encryption::CompactAction::rho
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Base::from_repr(*bytes).map(Rho)
     }
@@ -348,17 +349,17 @@ impl Note {
 
 /// An encrypted note.
 #[derive(Clone)]
-pub struct TransmittedNoteCiphertext {
+pub struct TransmittedNoteCiphertext<D: OrchardDomainCommon> {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
     /// The encrypted note ciphertext
-    pub enc_ciphertext: [u8; 612],
+    pub enc_ciphertext: D::NoteCiphertextBytes,
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
 }
 
-impl fmt::Debug for TransmittedNoteCiphertext {
+impl<D: OrchardDomainCommon> fmt::Debug for TransmittedNoteCiphertext<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransmittedNoteCiphertext")
             .field("epk_bytes", &self.epk_bytes)

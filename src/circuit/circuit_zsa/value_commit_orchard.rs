@@ -1,3 +1,5 @@
+//! Value commitment logic for the Orchard circuit (ZSA variation).
+
 pub(in crate::circuit) mod gadgets {
     use pasta_curves::pallas;
 
@@ -7,6 +9,7 @@ pub(in crate::circuit) mod gadgets {
     use halo2_gadgets::{
         ecc::{chip::EccChip, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar},
         sinsemilla::{self, chip::SinsemillaChip},
+        utilities::lookup_range_check::{LookupRangeCheck, PallasLookupRangeCheck45BConfig},
     };
     use halo2_proofs::{
         circuit::{AssignedCell, Chip, Layouter},
@@ -22,15 +25,25 @@ pub(in crate::circuit) mod gadgets {
             OrchardHashDomains,
             OrchardCommitDomains,
             OrchardFixedBases,
+            PallasLookupRangeCheck45BConfig,
         >,
-        ecc_chip: EccChip<OrchardFixedBases>,
+        ecc_chip: EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
         v_net_magnitude_sign: (
             AssignedCell<pallas::Base, pallas::Base>,
             AssignedCell<pallas::Base, pallas::Base>,
         ),
-        rcv: ScalarFixed<pallas::Affine, EccChip<OrchardFixedBases>>,
-        asset: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
-    ) -> Result<Point<pallas::Affine, EccChip<OrchardFixedBases>>, plonk::Error> {
+        rcv: ScalarFixed<
+            pallas::Affine,
+            EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
+        >,
+        asset: NonIdentityPoint<
+            pallas::Affine,
+            EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
+        >,
+    ) -> Result<
+        Point<pallas::Affine, EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>>,
+        plonk::Error,
+    > {
         // Check that magnitude is 64 bits.
         {
             let lookup_config = sinsemilla_chip.config().lookup_config();
@@ -92,7 +105,7 @@ pub(in crate::circuit) mod gadgets {
 #[cfg(test)]
 mod tests {
     use crate::{
-        circuit::gadget::{assign_free_advice, value_commit_orchard},
+        circuit::circuit_zsa::gadget::{assign_free_advice, value_commit_orchard},
         circuit::K,
         constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
         note::AssetBase,
@@ -104,7 +117,9 @@ mod tests {
             NonIdentityPoint, ScalarFixed,
         },
         sinsemilla::chip::{SinsemillaChip, SinsemillaConfig},
-        utilities::lookup_range_check::LookupRangeCheckConfig,
+        utilities::lookup_range_check::{
+            LookupRangeCheck45BConfig, PallasLookupRangeCheck45BConfig,
+        },
     };
 
     use group::Curve;
@@ -123,11 +138,15 @@ mod tests {
         pub struct MyConfig {
             primary: Column<Instance>,
             advices: [Column<Advice>; 10],
-            ecc_config: EccConfig<OrchardFixedBases>,
+            ecc_config: EccConfig<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
             // Sinsemilla  config is only used to initialize the table_idx lookup table in the same
             // way as in the Orchard circuit
-            sinsemilla_config:
-                SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
+            sinsemilla_config: SinsemillaConfig<
+                OrchardHashDomains,
+                OrchardCommitDomains,
+                OrchardFixedBases,
+                PallasLookupRangeCheck45BConfig,
+            >,
         }
         #[derive(Default)]
         struct MyCircuit {
@@ -174,7 +193,6 @@ mod tests {
                     table_idx,
                     meta.lookup_table_column(),
                     meta.lookup_table_column(),
-                    table_range_check_tag,
                 );
 
                 let lagrange_coeffs = [
@@ -189,7 +207,7 @@ mod tests {
                 ];
                 meta.enable_constant(lagrange_coeffs[0]);
 
-                let range_check = LookupRangeCheckConfig::configure(
+                let range_check = LookupRangeCheck45BConfig::configure_with_tag(
                     meta,
                     advices[9],
                     table_idx,
@@ -203,17 +221,19 @@ mod tests {
                     lagrange_coeffs[0],
                     lookup,
                     range_check,
+                    true,
                 );
 
                 MyConfig {
                     primary,
                     advices,
-                    ecc_config: EccChip::<OrchardFixedBases>::configure(
-                        meta,
-                        advices,
-                        lagrange_coeffs,
-                        range_check,
-                    ),
+                    ecc_config:
+                        EccChip::<OrchardFixedBases, PallasLookupRangeCheck45BConfig>::configure(
+                            meta,
+                            advices,
+                            lagrange_coeffs,
+                            range_check,
+                        ),
                     sinsemilla_config,
                 }
             }

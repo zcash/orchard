@@ -188,6 +188,13 @@ impl Signed {
     pub fn signature(&self) -> &schnorr::Signature {
         &self.signature
     }
+
+    /// Constructs a `Signed` from a byte array containing Schnorr signature bytes.
+    pub fn from_data(data: [u8; 64]) -> Self {
+        Signed {
+            signature: schnorr::Signature::try_from(data.as_ref()).unwrap(),
+        }
+    }
 }
 
 impl IssueAuth for Unauthorized {}
@@ -246,6 +253,19 @@ impl<T: IssueAuth> IssueBundle<T> {
             ik,
             actions,
             authorization,
+        }
+    }
+
+    /// Transitions this bundle from one authorization state to another.
+    pub fn map_authorization<T2: IssueAuth>(
+        self,
+        map_auth: impl FnOnce(T) -> T2,
+    ) -> IssueBundle<T2> {
+        let authorization = self.authorization;
+        IssueBundle {
+            ik: self.ik,
+            actions: self.actions,
+            authorization: map_auth(authorization),
         }
     }
 }
