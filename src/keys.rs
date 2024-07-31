@@ -334,6 +334,25 @@ impl From<FullViewingKey> for SpendValidatingKey {
 }
 
 impl FullViewingKey {
+    /// Create a FullViewingKey from the given SpendingKey `sk` and the given
+    /// SpendValidatingKey `ak`.
+    ///
+    /// When using FROST or any threshold signature scheme, we might need to
+    /// create a FullViewingKey from an specific SpendValidatingKey which was
+    /// not derived from a SpendingKey (since it might be generated using a DKG
+    /// protocol, which generates a random SpendValidatingKey). This method
+    /// achieves this by creating the FullViewingKey from the SpendingKey as
+    /// usual, with the exception of SpendValidatingKey which is provided by the
+    /// caller.
+    #[cfg(feature = "unstable-frost")]
+    pub fn from_sk_ak(sk: &SpendingKey, ak: SpendValidatingKey) -> Self {
+        FullViewingKey {
+            ak,
+            nk: sk.into(),
+            rivk: sk.into(),
+        }
+    }
+
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
     }
