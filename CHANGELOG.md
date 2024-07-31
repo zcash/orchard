@@ -6,6 +6,10 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Added `orchard::keys::FullViewingKey::from_sk_and_ak` under the
+`unstable-frost` feature flag
+- Added `orchard::keys::FullViewingKey::from_checked_parts` under the
+`unstable-frost` feature flag
 
 ## [0.9.1] - 2024-08-13
 
