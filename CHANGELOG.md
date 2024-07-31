@@ -12,6 +12,7 @@ visibility of methods and struct for the `unstable-frost` feature.
 - Added `SpendValidatingKey` serialization and deserialization from bytes
 visibility under the `unstable-frost` feature
   - `orchard::keys::SpendValidatingKey`
+- Added `SigningParts::{ak, alpha}` getters under the `unstable-frost` feature
 
 ## [0.8.0] - 2024-03-25
 
