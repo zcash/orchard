@@ -6,6 +6,16 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### added
+- Added [Visibility crate](https://crates.io/crates/visibility) to modify
+visibility of methods and struct for the `unstable-frost` feature.
+- Added `SpendValidatingKey` serialization and deserialization from bytes
+visibility under the `unstable-frost` feature
+  - `orchard::keys::SpendValidatingKey`
+- Added `orchard::keys::FullViewingKey::from_sk_and_ak` under the
+`unstable-frost` feature flag
+- Added `orchard::keys::FullViewingKey::from_checked_parts` under the
+`unstable-frost` feature flag
 
 ## [0.12.0] - 2025-12-05
 
