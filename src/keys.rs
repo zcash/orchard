@@ -225,6 +225,7 @@ impl SpendValidatingKey {
 /// [`Note`]: crate::note::Note
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
 pub(crate) struct NullifierDerivingKey(pallas::Base);
 
 impl NullifierDerivingKey {
@@ -266,6 +267,7 @@ impl NullifierDerivingKey {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
 pub(crate) struct CommitIvkRandomness(pallas::Scalar);
 
 impl From<&SpendingKey> for CommitIvkRandomness {
@@ -333,6 +335,32 @@ impl From<FullViewingKey> for SpendValidatingKey {
 }
 
 impl FullViewingKey {
+    /// Creates a `FullViewingKey` from a `SpendingKey` and `SpendValidatingKey`.
+    /// This is necessary for FROST key management.
+    ///
+    /// Note: See [FROST Book - Technical details](https://frost.zfnd.org/zcash/technical-details.html)
+    #[cfg(feature = "unstable-frost")]
+    pub fn from_sk_and_ak(sk: &SpendingKey, ak: SpendValidatingKey) -> FullViewingKey {
+        FullViewingKey {
+            ak,
+            nk: NullifierDerivingKey::from(sk),
+            rivk: CommitIvkRandomness::from(sk),
+        }
+    }
+
+    /// Creates a `FullViewingKey` from its checked parts. This is necessary for FROST
+    /// key management in order to avoid centralizing spend authority in a backup scheme.
+    ///
+    /// Note: See [FROST Book - Technical details - Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html)
+    #[cfg(feature = "unstable-frost")]
+    pub fn from_checked_parts(
+        ak: SpendValidatingKey,
+        nk: NullifierDerivingKey,
+        rivk: CommitIvkRandomness,
+    ) -> FullViewingKey {
+        FullViewingKey { ak, nk, rivk }
+    }
+
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
     }
