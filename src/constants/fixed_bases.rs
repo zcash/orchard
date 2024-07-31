@@ -21,14 +21,20 @@ pub const ORCHARD_PERSONALIZATION: &str = "z.cash:Orchard";
 /// SWU hash-to-curve personalization for the value commitment generator
 pub const VALUE_COMMITMENT_PERSONALIZATION: &str = "z.cash:Orchard-cv";
 
+/// SWU hash-to-curve personalization for the ZSA asset base generator
+pub const ZSA_ASSET_BASE_PERSONALIZATION: &str = "z.cash:OrchardZSA";
+
 /// SWU hash-to-curve value for the value commitment generator
-pub const VALUE_COMMITMENT_V_BYTES: [u8; 1] = *b"v";
+pub const NATIVE_ASSET_BASE_V_BYTES: [u8; 1] = *b"v";
 
 /// SWU hash-to-curve value for the value commitment generator
 pub const VALUE_COMMITMENT_R_BYTES: [u8; 1] = *b"r";
 
 /// SWU hash-to-curve personalization for the note commitment generator
 pub const NOTE_COMMITMENT_PERSONALIZATION: &str = "z.cash:Orchard-NoteCommit";
+
+/// SWU hash-to-curve personalization for the ZSA note commitment generator
+pub const NOTE_ZSA_COMMITMENT_PERSONALIZATION: &str = "z.cash:ZSA-NoteCommit";
 
 /// SWU hash-to-curve personalization for the IVK commitment generator
 pub const COMMIT_IVK_PERSONALIZATION: &str = "z.cash:Orchard-CommitIvk";

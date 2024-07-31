@@ -10,28 +10,43 @@ use orchard::{
     builder::{Builder, BundleType},
     circuit::{ProvingKey, VerifyingKey},
     keys::{FullViewingKey, Scope, SpendingKey},
+    note::AssetBase,
+    orchard_flavor::{OrchardVanilla, OrchardZSA},
     value::NoteValue,
     Anchor, Bundle,
 };
 use rand::rngs::OsRng;
 
-fn criterion_benchmark(c: &mut Criterion) {
+mod utils;
+
+use utils::OrchardFlavorBench;
+
+fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
     let rng = OsRng;
 
     let sk = SpendingKey::from_bytes([7; 32]).unwrap();
     let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
 
-    let vk = VerifyingKey::build();
-    let pk = ProvingKey::build();
+    let vk = VerifyingKey::build::<FL>();
+    let pk = ProvingKey::build::<FL>();
 
     let create_bundle = |num_recipients| {
-        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
+        let mut builder = Builder::new(
+            BundleType::DEFAULT_VANILLA,
+            Anchor::from_bytes([0; 32]).unwrap(),
+        );
         for _ in 0..num_recipients {
             builder
-                .add_output(None, recipient, NoteValue::from_raw(10), None)
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(10),
+                    AssetBase::native(),
+                    None,
+                )
                 .unwrap();
         }
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;
+        let bundle: Bundle<_, i64, FL> = builder.build(rng).unwrap().unwrap().0;
 
         let instances: Vec<_> = bundle
             .actions()
@@ -45,7 +60,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let recipients_range = 1..=4;
 
     {
-        let mut group = c.benchmark_group("proving");
+        let mut group = FL::benchmark_group(c, "proving");
         group.sample_size(10);
         for num_recipients in recipients_range.clone() {
             let (bundle, instances) = create_bundle(num_recipients);
@@ -61,7 +76,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     }
 
     {
-        let mut group = c.benchmark_group("verifying");
+        let mut group = FL::benchmark_group(c, "verifying");
         for num_recipients in recipients_range {
             let (bundle, instances) = create_bundle(num_recipients);
             let bundle = bundle
@@ -78,15 +93,25 @@ fn criterion_benchmark(c: &mut Criterion) {
 }
 
 #[cfg(unix)]
-criterion_group! {
-    name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
-    targets = criterion_benchmark
+fn create_config() -> Criterion {
+    Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
 }
+
 #[cfg(windows)]
-criterion_group! {
-    name = benches;
-    config = Criterion::default();
-    targets = criterion_benchmark
+fn create_config() -> Criterion {
+    Criterion::default()
 }
-criterion_main!(benches);
+
+criterion_group! {
+    name = benches_vanilla;
+    config = create_config();
+    targets = criterion_benchmark::<OrchardVanilla>
+}
+
+criterion_group! {
+    name = benches_zsa;
+    config = create_config();
+    targets = criterion_benchmark::<OrchardZSA>
+}
+
+criterion_main!(benches_vanilla, benches_zsa);

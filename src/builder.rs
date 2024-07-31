@@ -2,6 +2,7 @@
 
 use core::fmt;
 use core::iter;
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use ff::Field;
@@ -9,17 +10,21 @@ use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
+use zcash_note_encryption_zsa::NoteEncryption;
+
+use crate::builder::BuildError::{BurnNative, BurnZero};
 use crate::{
     action::Action,
     address::Address,
-    bundle::{Authorization, Authorized, Bundle, Flags},
-    circuit::{Circuit, Instance, Proof, ProvingKey},
+    bundle::{derive_bvk, Authorization, Authorized, Bundle, Flags},
+    circuit::{Circuit, Instance, OrchardCircuit, Proof, ProvingKey},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{Note, Rho, TransmittedNoteCiphertext},
-    note_encryption::OrchardNoteEncryption,
+    note::{AssetBase, Note, Rho, TransmittedNoteCiphertext},
+    note_encryption::{OrchardDomain, OrchardDomainCommon},
+    orchard_flavor::OrchardFlavor,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -45,17 +50,23 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type has all flags enabled, and does not require a bundle to be produced
-    /// if no spends or outputs have been added to the bundle.
-    pub const DEFAULT: BundleType = BundleType::Transactional {
-        flags: Flags::ENABLED,
+    /// The default bundle type has all flags enabled, ZSA disabled, and does not require a bundle
+    /// to be produced.
+    pub const DEFAULT_VANILLA: BundleType = BundleType::Transactional {
+        flags: Flags::ENABLED_WITHOUT_ZSA,
+        bundle_required: false,
+    };
+
+    /// The default bundle with all flags enabled, including ZSA.
+    pub const DEFAULT_ZSA: BundleType = BundleType::Transactional {
+        flags: Flags::ENABLED_WITH_ZSA,
         bundle_required: false,
     };
 
     /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
     /// builder will prevent any spends or outputs from being added.
     pub const DISABLED: BundleType = BundleType::Transactional {
-        flags: Flags::from_parts(false, false),
+        flags: Flags::from_parts(false, false, false),
         bundle_required: false,
     };
 
@@ -102,7 +113,7 @@ impl BundleType {
     pub fn flags(&self) -> Flags {
         match self {
             BundleType::Transactional { flags, .. } => *flags,
-            BundleType::Coinbase => Flags::SPENDS_DISABLED,
+            BundleType::Coinbase => Flags::SPENDS_DISABLED_WITHOUT_ZSA,
         }
     }
 }
@@ -130,6 +141,12 @@ pub enum BuildError {
     DuplicateSignature,
     /// The bundle being constructed violated the construction rules for the requested bundle type.
     BundleTypeNotSatisfiable,
+    /// Native asset cannot be burned
+    BurnNative,
+    /// The value to be burned cannot be zero
+    BurnZero,
+    /// The asset to be burned is duplicated.
+    BurnDuplicateAsset,
 }
 
 impl Display for BuildError {
@@ -149,6 +166,9 @@ impl Display for BuildError {
             AnchorMismatch => {
                 f.write_str("All spends must share the anchor requested for the transaction.")
             }
+            BurnNative => f.write_str("Burning is only possible for non-native assets"),
+            BurnZero => f.write_str("Burning is not possible for zero values"),
+            BurnDuplicateAsset => f.write_str("Duplicate assets are not allowed when burning"),
         }
     }
 }
@@ -204,13 +224,15 @@ impl Display for OutputError {
 impl std::error::Error for OutputError {}
 
 /// Information about a specific note to be spent in an [`Action`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SpendInfo {
     pub(crate) dummy_sk: Option<SpendingKey>,
     pub(crate) fvk: FullViewingKey,
     pub(crate) scope: Scope,
     pub(crate) note: Note,
     pub(crate) merkle_path: MerklePath,
+    // a flag to indicate whether the value of the note will be counted in the `ValueSum` of the action.
+    pub(crate) split_flag: bool,
 }
 
 impl SpendInfo {
@@ -223,7 +245,12 @@ impl SpendInfo {
     /// Returns `None` if the `fvk` does not own the `note`.
     ///
     /// [`Builder::add_spend`]: Builder::add_spend
-    pub fn new(fvk: FullViewingKey, note: Note, merkle_path: MerklePath) -> Option<Self> {
+    pub fn new(
+        fvk: FullViewingKey,
+        note: Note,
+        merkle_path: MerklePath,
+        split_flag: bool,
+    ) -> Option<Self> {
         let scope = fvk.scope_for_address(&note.recipient())?;
         Some(SpendInfo {
             dummy_sk: None,
@@ -231,14 +258,15 @@ impl SpendInfo {
             scope,
             note,
             merkle_path,
+            split_flag,
         })
     }
 
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(rng: &mut impl RngCore) -> Self {
-        let (sk, fvk, note) = Note::dummy(rng, None);
+    fn dummy(asset: AssetBase, rng: &mut impl RngCore) -> Self {
+        let (sk, fvk, note) = Note::dummy(rng, None, asset);
         let merkle_path = MerklePath::dummy(rng);
 
         SpendInfo {
@@ -249,6 +277,25 @@ impl SpendInfo {
             scope: Scope::External,
             note,
             merkle_path,
+            split_flag: false,
+        }
+    }
+
+    /// Creates a split spend, which is identical to origin normal spend except that
+    /// `rseed_split_note` contains a random seed. In addition, the split_flag is raised.
+    ///
+    /// Defined in [Transfer and Burn of Zcash Shielded Assets ZIP-0226 § Split Notes (DRAFT PR)][TransferZSA].
+    ///
+    /// [TransferZSA]: https://qed-it.github.io/zips/zip-0226.html#split-notes
+    fn create_split_spend(&self, rng: &mut impl RngCore) -> Self {
+        SpendInfo {
+            dummy_sk: None,
+            fvk: self.fvk.clone(),
+            // We use external scope to avoid unnecessary derivations
+            scope: Scope::External,
+            note: self.note.create_split_note(rng),
+            merkle_path: self.merkle_path.clone(),
+            split_flag: true,
         }
     }
 
@@ -264,11 +311,12 @@ impl SpendInfo {
 }
 
 /// Information about a specific output to receive funds in an [`Action`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OutputInfo {
     ovk: Option<OutgoingViewingKey>,
     recipient: Address,
     value: NoteValue,
+    asset: AssetBase,
     memo: [u8; 512],
 }
 
@@ -278,12 +326,14 @@ impl OutputInfo {
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
+        asset: AssetBase,
         memo: Option<[u8; 512]>,
     ) -> Self {
         Self {
             ovk,
             recipient,
             value,
+            asset,
             memo: memo.unwrap_or_else(|| {
                 let mut memo = [0; 512];
                 memo[0] = 0xf6;
@@ -295,11 +345,11 @@ impl OutputInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    pub fn dummy(rng: &mut impl RngCore) -> Self {
+    pub fn dummy(rng: &mut impl RngCore, asset: AssetBase) -> Self {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        Self::new(None, recipient, NoteValue::zero(), None)
+        Self::new(None, recipient, NoteValue::zero(), asset, None)
     }
 }
 
@@ -321,8 +371,15 @@ impl ActionInfo {
     }
 
     /// Returns the value sum for this action.
+    /// Split notes do not contribute to the value sum.
     fn value_sum(&self) -> ValueSum {
-        self.spend.note.value() - self.output.value
+        let spent_value = if self.spend.split_flag {
+            NoteValue::zero()
+        } else {
+            self.spend.note.value()
+        };
+
+        spent_value - self.output.value
     }
 
     /// Builds the action.
@@ -330,9 +387,23 @@ impl ActionInfo {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    fn build(self, mut rng: impl RngCore) -> (Action<SigningMetadata>, Circuit) {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the asset types of the spent and output notes do not match.
+    fn build<D: OrchardDomainCommon>(
+        self,
+        mut rng: impl RngCore,
+    ) -> (Action<SigningMetadata, D>, Circuit<D>) {
+        assert_eq!(
+            self.spend.note.asset(),
+            self.output.asset,
+            "spend and recipient note types must be equal"
+        );
+
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
+        let asset = self.output.asset;
+        let cv_net = ValueCommitment::derive(v_net, self.rcv, asset);
 
         let nf_old = self.spend.note.nullifier(&self.spend.fvk);
         let rho = Rho::from_nf_old(nf_old);
@@ -340,11 +411,18 @@ impl ActionInfo {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let note = Note::new(self.output.recipient, self.output.value, rho, &mut rng);
+        let note = Note::new(
+            self.output.recipient,
+            self.output.value,
+            self.output.asset,
+            rho,
+            &mut rng,
+        );
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
-        let encryptor = OrchardNoteEncryption::new(self.output.ovk, note, self.output.memo);
+        let encryptor =
+            NoteEncryption::<OrchardDomain<D>>::new(self.output.ovk, note, self.output.memo);
 
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: encryptor.epk().to_bytes().0,
@@ -364,7 +442,7 @@ impl ActionInfo {
                     parts: SigningParts { ak, alpha },
                 },
             ),
-            Circuit::from_action_context_unchecked(self.spend, note, alpha, self.rcv),
+            Circuit::<D>::from_action_context_unchecked(self.spend, note, alpha, self.rcv),
         )
     }
 }
@@ -372,7 +450,7 @@ impl ActionInfo {
 /// Type alias for an in-progress bundle that has no proofs or signatures.
 ///
 /// This is returned by [`Builder::build`].
-pub type UnauthorizedBundle<V> = Bundle<InProgress<Unproven, Unauthorized>, V>;
+pub type UnauthorizedBundle<V, D> = Bundle<InProgress<Unproven<D>, Unauthorized>, V, D>;
 
 /// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not
 /// necessarily recoverable from the bundle itself.
@@ -424,12 +502,16 @@ impl BundleMetadata {
     }
 }
 
+/// A tuple containing an in-progress bundle with no proofs or signatures, and its associated metadata.
+pub type UnauthorizedBundleWithMetadata<V, FL> = (UnauthorizedBundle<V, FL>, BundleMetadata);
+
 /// A builder that constructs a [`Bundle`] from a set of notes to be spent, and outputs
 /// to receive funds.
 #[derive(Debug)]
 pub struct Builder {
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
+    burn: HashMap<AssetBase, NoteValue>,
     bundle_type: BundleType,
     anchor: Anchor,
 }
@@ -440,6 +522,7 @@ impl Builder {
         Builder {
             spends: vec![],
             outputs: vec![],
+            burn: HashMap::new(),
             bundle_type,
             anchor,
         }
@@ -448,7 +531,7 @@ impl Builder {
     /// Adds a note to be spent in this transaction.
     ///
     /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`] using the
-    ///   [`zcash_note_encryption`] crate instantiated with [`OrchardDomain`].
+    ///   [`zcash_note_encryption_zsa`] crate instantiated with [`OrchardDomain`].
     /// - `merkle_path` can be obtained using the [`incrementalmerkletree`] crate
     ///   instantiated with [`MerkleHashOrchard`].
     ///
@@ -468,7 +551,7 @@ impl Builder {
             return Err(SpendError::SpendsDisabled);
         }
 
-        let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
+        let spend = SpendInfo::new(fvk, note, merkle_path, false).ok_or(SpendError::FvkMismatch)?;
 
         // Consistency check: all anchors must be equal.
         if !spend.has_matching_anchor(&self.anchor) {
@@ -486,6 +569,7 @@ impl Builder {
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
+        asset: AssetBase,
         memo: Option<[u8; 512]>,
     ) -> Result<(), OutputError> {
         let flags = self.bundle_type.flags();
@@ -494,9 +578,30 @@ impl Builder {
         }
 
         self.outputs
-            .push(OutputInfo::new(ovk, recipient, value, memo));
+            .push(OutputInfo::new(ovk, recipient, value, asset, memo));
 
         Ok(())
+    }
+
+    /// Add an instruction to burn a given amount of a specific asset.
+    pub fn add_burn(&mut self, asset: AssetBase, value: NoteValue) -> Result<(), BuildError> {
+        use std::collections::hash_map::Entry;
+
+        if asset.is_native().into() {
+            return Err(BurnNative);
+        }
+
+        if value.inner() == 0 {
+            return Err(BurnZero);
+        }
+
+        match self.burn.entry(asset) {
+            Entry::Occupied(_) => Err(BuildError::BurnDuplicateAsset),
+            Entry::Vacant(entry) => {
+                entry.insert(value);
+                Ok(())
+            }
+        }
     }
 
     /// Returns the action spend components that will be produced by the
@@ -531,7 +636,7 @@ impl Builder {
                     .iter()
                     .map(|output| NoteValue::zero() - output.value),
             )
-            .fold(Some(ValueSum::zero()), |acc, note_value| acc? + note_value)
+            .try_fold(ValueSum::zero(), |acc, note_value| acc + note_value)
             .ok_or(OverflowError)?;
         i64::try_from(value_balance).and_then(|i| V::try_from(i).map_err(|_| value::OverflowError))
     }
@@ -540,17 +645,79 @@ impl Builder {
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
-    pub fn build<V: TryFrom<i64>>(
+    pub fn build<V: TryFrom<i64>, FL: OrchardFlavor>(
         self,
         rng: impl RngCore,
-    ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
+    ) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
         bundle(
             rng,
             self.anchor,
             self.bundle_type,
             self.spends,
             self.outputs,
+            self.burn,
         )
+    }
+}
+
+/// The index of the attached spend or output in the bundle.
+/// None indicates a dummy note.
+/// The index is used to track the position of the note in the bundle.
+type MetadataIdx = Option<usize>;
+
+/// Partition a list of spends and outputs by note types.
+/// Method creates single dummy ZEC note if spends and outputs are both empty.
+#[allow(clippy::type_complexity)]
+fn partition_by_asset(
+    spends: &[SpendInfo],
+    outputs: &[OutputInfo],
+    rng: &mut impl RngCore,
+) -> HashMap<
+    AssetBase,
+    (
+        Vec<(SpendInfo, MetadataIdx)>,
+        Vec<(OutputInfo, MetadataIdx)>,
+    ),
+> {
+    let mut hm = HashMap::new();
+
+    for (i, s) in spends.iter().enumerate() {
+        hm.entry(s.note.asset())
+            .or_insert((vec![], vec![]))
+            .0
+            .push((s.clone(), Some(i)));
+    }
+
+    for (i, o) in outputs.iter().enumerate() {
+        hm.entry(o.asset)
+            .or_insert((vec![], vec![]))
+            .1
+            .push((o.clone(), Some(i)));
+    }
+
+    if hm.is_empty() {
+        let dummy_spend = pad_spend(None, AssetBase::native(), rng);
+        // dummy_spend should not be included in the indexing and marked as None.
+        hm.insert(
+            dummy_spend.note.asset(),
+            (vec![(dummy_spend, None)], vec![]),
+        );
+    }
+
+    hm
+}
+
+/// Returns the appropriate SpendInfo for padding.
+fn pad_spend(spend: Option<&SpendInfo>, asset: AssetBase, mut rng: impl RngCore) -> SpendInfo {
+    if asset.is_native().into() {
+        // For native asset, extends with dummy notes
+        SpendInfo::dummy(asset, &mut rng)
+    } else {
+        // For ZSA asset, extends with
+        // - dummy note if SpendInfo is None
+        // - split notes otherwise.
+        let dummy = SpendInfo::dummy(asset, &mut rng);
+        spend.map_or_else(|| dummy, |s| s.create_split_spend(&mut rng))
     }
 }
 
@@ -558,13 +725,15 @@ impl Builder {
 ///
 /// The returned bundle will have no proof or signatures; these can be applied with
 /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
-pub fn bundle<V: TryFrom<i64>>(
+#[allow(clippy::type_complexity)]
+pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
     mut rng: impl RngCore,
     anchor: Anchor,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
-) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
+    burn: HashMap<AssetBase, NoteValue>,
+) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
     let flags = bundle_type.flags();
 
     let num_requested_spends = spends.len();
@@ -583,45 +752,71 @@ pub fn bundle<V: TryFrom<i64>>(
         return Err(BuildError::OutputsDisabled);
     }
 
-    let num_actions = bundle_type
-        .num_actions(num_requested_spends, num_requested_outputs)
-        .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
-
     // Pair up the spends and outputs, extending with dummy values as necessary.
     let (pre_actions, bundle_meta) = {
-        let mut indexed_spends = spends
-            .into_iter()
-            .chain(iter::repeat_with(|| SpendInfo::dummy(&mut rng)))
-            .enumerate()
-            .take(num_actions)
-            .collect::<Vec<_>>();
+        // Use Vec::with_capacity().extend(...) instead of .collect() to avoid reallocations,
+        // as we can estimate the vector size beforehand.
+        let mut indexed_spends_outputs =
+            Vec::with_capacity(spends.len().max(outputs.len()).max(MIN_ACTIONS));
 
-        let mut indexed_outputs = outputs
-            .into_iter()
-            .chain(iter::repeat_with(|| OutputInfo::dummy(&mut rng)))
-            .enumerate()
-            .take(num_actions)
-            .collect::<Vec<_>>();
+        indexed_spends_outputs.extend(
+            partition_by_asset(&spends, &outputs, &mut rng)
+                .into_iter()
+                .flat_map(|(asset, (spends, outputs))| {
+                    let num_asset_pre_actions = spends.len().max(outputs.len());
 
-        // Shuffle the spends and outputs, so that learning the position of a
-        // specific spent note or output note doesn't reveal anything on its own about
-        // the meaning of that note in the transaction context.
-        indexed_spends.shuffle(&mut rng);
-        indexed_outputs.shuffle(&mut rng);
+                    let first_spend = spends.first().map(|(s, _)| s.clone());
+
+                    let mut indexed_spends = spends
+                        .into_iter()
+                        .chain(iter::repeat_with(|| {
+                            (pad_spend(first_spend.as_ref(), asset, &mut rng), None)
+                        }))
+                        .take(num_asset_pre_actions)
+                        .collect::<Vec<_>>();
+
+                    let mut indexed_outputs = outputs
+                        .into_iter()
+                        .chain(iter::repeat_with(|| {
+                            (OutputInfo::dummy(&mut rng, asset), None)
+                        }))
+                        .take(num_asset_pre_actions)
+                        .collect::<Vec<_>>();
+
+                    // Shuffle the spends and outputs, so that learning the position of a
+                    // specific spent note or output note doesn't reveal anything on its own about
+                    // the meaning of that note in the transaction context.
+                    indexed_spends.shuffle(&mut rng);
+                    indexed_outputs.shuffle(&mut rng);
+
+                    assert_eq!(indexed_spends.len(), indexed_outputs.len());
+
+                    indexed_spends.into_iter().zip(indexed_outputs)
+                }),
+        );
+
+        indexed_spends_outputs.extend(
+            iter::repeat_with(|| {
+                (
+                    (pad_spend(None, AssetBase::native(), &mut rng), None),
+                    (OutputInfo::dummy(&mut rng, AssetBase::native()), None),
+                )
+            })
+            .take(MIN_ACTIONS.saturating_sub(indexed_spends_outputs.len())),
+        );
 
         let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
-        let pre_actions = indexed_spends
+        let pre_actions = indexed_spends_outputs
             .into_iter()
-            .zip(indexed_outputs.into_iter())
             .enumerate()
-            .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
+            .map(|(action_idx, ((spend, spend_idx), (output, out_idx)))| {
                 // Record the post-randomization spend location
-                if spend_idx < num_requested_spends {
+                if let Some(spend_idx) = spend_idx {
                     bundle_meta.spend_indices[spend_idx] = action_idx;
                 }
 
                 // Record the post-randomization output location
-                if out_idx < num_requested_outputs {
+                if let Some(out_idx) = out_idx {
                     bundle_meta.output_indices[out_idx] = action_idx;
                 }
 
@@ -633,16 +828,17 @@ pub fn bundle<V: TryFrom<i64>>(
     };
 
     // Determine the value balance for this bundle, ensuring it is valid.
-    let value_balance = pre_actions
+    let native_value_balance: i64 = pre_actions
         .iter()
+        .filter(|action| action.spend.note.asset().is_native().into())
         .fold(Some(ValueSum::zero()), |acc, action| {
             acc? + action.value_sum()
         })
-        .ok_or(OverflowError)?;
+        .ok_or(OverflowError)?
+        .into()?;
 
-    let result_value_balance: V = i64::try_from(value_balance)
-        .map_err(BuildError::ValueSum)
-        .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError)))?;
+    let result_value_balance = V::try_from(native_value_balance)
+        .map_err(|_| BuildError::ValueSum(value::OverflowError))?;
 
     // Compute the transaction binding signing key.
     let bsk = pre_actions
@@ -655,10 +851,21 @@ pub fn bundle<V: TryFrom<i64>>(
     let (actions, circuits): (Vec<_>, Vec<_>) =
         pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
 
+    let burn = burn
+        .into_iter()
+        .map(|(asset, value)| {
+            Ok((
+                asset,
+                NoteValue::from_raw(
+                    u64::try_from(i128::from(value))
+                        .map_err(|_| BuildError::ValueSum(OverflowError))?,
+                ),
+            ))
+        })
+        .collect::<Result<Vec<(AssetBase, NoteValue)>, BuildError>>()?;
+
     // Verify that bsk and bvk are consistent.
-    let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-        - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
-    .into_bvk();
+    let bvk = derive_bvk(&actions, native_value_balance, burn.iter().cloned());
     assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
     Ok(NonEmpty::from_vec(actions).map(|actions| {
@@ -667,6 +874,7 @@ pub fn bundle<V: TryFrom<i64>>(
                 actions,
                 flags,
                 result_value_balance,
+                burn,
                 anchor,
                 InProgress {
                     proof: Unproven { circuits },
@@ -691,6 +899,19 @@ pub struct InProgress<P, S: InProgressSignatures> {
     sigs: S,
 }
 
+impl<P, S: InProgressSignatures> InProgress<P, S> {
+    /// Mutate the proof using the provided function.
+    pub fn map_proof<F, P2>(self, f: F) -> InProgress<P2, S>
+    where
+        F: FnOnce(P) -> P2,
+    {
+        InProgress {
+            proof: f(self.proof),
+            sigs: self.sigs,
+        }
+    }
+}
+
 impl<P: fmt::Debug, S: InProgressSignatures> Authorization for InProgress<P, S> {
     type SpendAuth = S::SpendAuth;
 }
@@ -699,11 +920,11 @@ impl<P: fmt::Debug, S: InProgressSignatures> Authorization for InProgress<P, S> 
 ///
 /// This struct contains the private data needed to create a [`Proof`] for a [`Bundle`].
 #[derive(Clone, Debug)]
-pub struct Unproven {
-    circuits: Vec<Circuit>,
+pub struct Unproven<C: OrchardCircuit> {
+    circuits: Vec<Circuit<C>>,
 }
 
-impl<S: InProgressSignatures> InProgress<Unproven, S> {
+impl<S: InProgressSignatures, C: OrchardCircuit> InProgress<Unproven<C>, S> {
     /// Creates the proof for this bundle.
     pub fn create_proof(
         &self,
@@ -715,13 +936,13 @@ impl<S: InProgressSignatures> InProgress<Unproven, S> {
     }
 }
 
-impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
+impl<S: InProgressSignatures, V, FL: OrchardFlavor> Bundle<InProgress<Unproven<FL>, S>, V, FL> {
     /// Creates the proof for this bundle.
     pub fn create_proof(
         self,
         pk: &ProvingKey,
         mut rng: impl RngCore,
-    ) -> Result<Bundle<InProgress<Proof, S>, V>, BuildError> {
+    ) -> Result<Bundle<InProgress<Proof, S>, V, FL>, BuildError> {
         let instances: Vec<_> = self
             .actions()
             .iter()
@@ -804,7 +1025,7 @@ impl MaybeSigned {
     }
 }
 
-impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
+impl<P: fmt::Debug, V, D: OrchardDomainCommon> Bundle<InProgress<P, Unauthorized>, V, D> {
     /// Loads the sighash into this bundle, preparing it for signing.
     ///
     /// This API ensures that all signatures are created over the same sighash.
@@ -812,7 +1033,7 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
         self,
         mut rng: R,
         sighash: [u8; 32],
-    ) -> Bundle<InProgress<P, PartiallyAuthorized>, V> {
+    ) -> Bundle<InProgress<P, PartiallyAuthorized>, V, D> {
         self.map_authorization(
             &mut rng,
             |rng, _, SigningMetadata { dummy_ask, parts }| {
@@ -833,7 +1054,7 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
     }
 }
 
-impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
+impl<V, D: OrchardDomainCommon> Bundle<InProgress<Proof, Unauthorized>, V, D> {
     /// Applies signatures to this bundle, in order to authorize it.
     ///
     /// This is a helper method that wraps [`Bundle::prepare`], [`Bundle::sign`], and
@@ -843,7 +1064,7 @@ impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
         mut rng: R,
         sighash: [u8; 32],
         signing_keys: &[SpendAuthorizingKey],
-    ) -> Result<Bundle<Authorized, V>, BuildError> {
+    ) -> Result<Bundle<Authorized, V, D>, BuildError> {
         signing_keys
             .iter()
             .fold(self.prepare(&mut rng, sighash), |partial, ask| {
@@ -853,7 +1074,7 @@ impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
     }
 }
 
-impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
+impl<P: fmt::Debug, V, D: OrchardDomainCommon> Bundle<InProgress<P, PartiallyAuthorized>, V, D> {
     /// Signs this bundle with the given [`SpendAuthorizingKey`].
     ///
     /// This will apply signatures for all notes controlled by this spending key.
@@ -916,11 +1137,11 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
     }
 }
 
-impl<V> Bundle<InProgress<Proof, PartiallyAuthorized>, V> {
+impl<V, D: OrchardDomainCommon> Bundle<InProgress<Proof, PartiallyAuthorized>, V, D> {
     /// Finalizes this bundle, enabling it to be included in a transaction.
     ///
     /// Returns an error if any signatures are missing.
-    pub fn finalize(self) -> Result<Bundle<Authorized, V>, BuildError> {
+    pub fn finalize(self) -> Result<Bundle<Authorized, V, D>, BuildError> {
         self.try_map_authorization(
             &mut (),
             |_, _, maybe| maybe.finalize(),
@@ -978,12 +1199,15 @@ pub mod testing {
     use proptest::collection::vec;
     use proptest::prelude::*;
 
+    use crate::note::AssetBase;
     use crate::{
         address::testing::arb_address,
         bundle::{Authorized, Bundle},
         circuit::ProvingKey,
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
+        note_encryption::OrchardDomainCommon,
+        orchard_flavor::OrchardFlavor,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
         Address, Note,
@@ -1005,29 +1229,31 @@ pub mod testing {
         sk: SpendingKey,
         anchor: Anchor,
         notes: Vec<(Note, MerklePath)>,
-        output_amounts: Vec<(Address, NoteValue)>,
+        output_amounts: Vec<(Address, NoteValue, AssetBase)>,
     }
 
     impl<R: RngCore + CryptoRng> ArbitraryBundleInputs<R> {
         /// Create a bundle from the set of arbitrary bundle inputs.
-        fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
+        fn into_bundle<V: TryFrom<i64> + Copy + Into<i64>, FL: OrchardFlavor>(
+            mut self,
+        ) -> Bundle<Authorized, V, FL> {
             let fvk = FullViewingKey::from(&self.sk);
-            let mut builder = Builder::new(BundleType::DEFAULT, self.anchor);
+            let mut builder = Builder::new(BundleType::DEFAULT_ZSA, self.anchor);
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
             }
 
-            for (addr, value) in self.output_amounts.into_iter() {
+            for (addr, value, asset) in self.output_amounts.into_iter() {
                 let scope = fvk.scope_for_address(&addr).unwrap();
                 let ovk = fvk.to_ovk(scope);
 
                 builder
-                    .add_output(Some(ovk.clone()), addr, value, None)
+                    .add_output(Some(ovk.clone()), addr, value, asset, None)
                     .unwrap();
             }
 
-            let pk = ProvingKey::build();
+            let pk = ProvingKey::build::<FL>();
             builder
                 .build(&mut self.rng)
                 .unwrap()
@@ -1042,67 +1268,78 @@ pub mod testing {
         }
     }
 
-    prop_compose! {
-        /// Produce a random valid Orchard bundle.
-        fn arb_bundle_inputs(sk: SpendingKey)
-        (
-            n_notes in 1usize..30,
-            n_outputs in 1..30,
+    /// `BuilderArb` adapts `arb_...` functions for both Vanilla and ZSA Orchard protocol variations
+    /// in property-based testing, addressing proptest crate limitations.    
+    #[derive(Debug)]
+    pub struct BuilderArb<D: OrchardDomainCommon> {
+        phantom: std::marker::PhantomData<D>,
+    }
 
-        )
-        (
-            // generate note values that we're certain won't exceed MAX_NOTE_VALUE in total
-            notes in vec(
-                arb_positive_note_value(MAX_NOTE_VALUE / n_notes as u64).prop_flat_map(arb_note),
-                n_notes
-            ),
-            output_amounts in vec(
-                arb_address().prop_flat_map(move |a| {
-                    arb_positive_note_value(MAX_NOTE_VALUE / n_outputs as u64)
-                        .prop_map(move |v| (a, v))
-                }),
-                n_outputs as usize
-            ),
-            rng_seed in prop::array::uniform32(prop::num::u8::ANY)
-        ) -> ArbitraryBundleInputs<StdRng> {
-            use crate::constants::MERKLE_DEPTH_ORCHARD;
-            let mut frontier = Frontier::<MerkleHashOrchard, { MERKLE_DEPTH_ORCHARD as u8 }>::empty();
-            let mut notes_and_auth_paths: Vec<(Note, MerklePath)> = Vec::new();
+    impl<FL: OrchardFlavor> BuilderArb<FL> {
+        prop_compose! {
+            /// Produce a random valid Orchard bundle.
+            fn arb_bundle_inputs(sk: SpendingKey)
+            (
+                n_notes in 1usize..30,
+                n_outputs in 1..30,
+            )
+            (
+                // generate note values that we're certain won't exceed MAX_NOTE_VALUE in total
+                notes in vec(
+                    arb_positive_note_value(MAX_NOTE_VALUE / n_notes as u64).prop_flat_map(arb_note),
+                    n_notes
+                ),
+                output_amounts in vec(
+                    arb_address().prop_flat_map(move |a| {
+                        arb_positive_note_value(MAX_NOTE_VALUE / n_outputs as u64)
+                            .prop_map(move |v| {
+                                (a,v, AssetBase::native())
+                            })
+                    }),
+                    n_outputs as usize,
+                ),
+                rng_seed in prop::array::uniform32(prop::num::u8::ANY)
+            ) -> ArbitraryBundleInputs<StdRng> {
+                use crate::constants::MERKLE_DEPTH_ORCHARD;
+                let mut frontier = Frontier::<MerkleHashOrchard, { MERKLE_DEPTH_ORCHARD as u8 }>::empty();
+                let mut notes_and_auth_paths: Vec<(Note, MerklePath)> = Vec::new();
 
-            for note in notes.iter() {
-                let leaf = MerkleHashOrchard::from_cmx(&note.commitment().into());
-                frontier.append(leaf);
+                for note in notes.iter() {
+                    let leaf = MerkleHashOrchard::from_cmx(&note.commitment().into());
+                    frontier.append(leaf);
 
-                let path = frontier
-                    .witness(|addr| Some(<MerkleHashOrchard as Hashable>::empty_root(addr.level())))
-                    .ok()
-                    .flatten()
-                    .expect("we can always construct a correct Merkle path");
-                notes_and_auth_paths.push((*note, path.into()));
-            }
+                    let path = frontier
+                        .witness(|addr| Some(<MerkleHashOrchard as Hashable>::empty_root(addr.level())))
+                        .ok()
+                        .flatten()
+                        .expect("we can always construct a correct Merkle path");
+                    notes_and_auth_paths.push((*note, path.into()));
+                }
 
-            ArbitraryBundleInputs {
-                rng: StdRng::from_seed(rng_seed),
-                sk,
-                anchor: frontier.root().into(),
-                notes: notes_and_auth_paths,
-                output_amounts
+                ArbitraryBundleInputs {
+                    rng: StdRng::from_seed(rng_seed),
+                    sk,
+                    anchor: frontier.root().into(),
+                    notes: notes_and_auth_paths,
+                    output_amounts
+                }
             }
         }
-    }
 
-    /// Produce an arbitrary valid Orchard bundle using a random spending key.
-    pub fn arb_bundle<V: TryFrom<i64> + Debug>() -> impl Strategy<Value = Bundle<Authorized, V>> {
-        arb_spending_key()
-            .prop_flat_map(arb_bundle_inputs)
-            .prop_map(|inputs| inputs.into_bundle::<V>())
-    }
+        /// Produce an arbitrary valid Orchard bundle using a random spending key.
+        pub fn arb_bundle<V: TryFrom<i64> + Debug + Copy + Into<i64>>(
+        ) -> impl Strategy<Value = Bundle<Authorized, V, FL>> {
+            arb_spending_key()
+                .prop_flat_map(BuilderArb::<FL>::arb_bundle_inputs)
+                .prop_map(|inputs| inputs.into_bundle::<V, FL>())
+        }
 
-    /// Produce an arbitrary valid Orchard bundle using a specified spending key.
-    pub fn arb_bundle_with_key<V: TryFrom<i64> + Debug>(
-        k: SpendingKey,
-    ) -> impl Strategy<Value = Bundle<Authorized, V>> {
-        arb_bundle_inputs(k).prop_map(|inputs| inputs.into_bundle::<V>())
+        /// Produce an arbitrary valid Orchard bundle using a specified spending key.
+        pub fn arb_bundle_with_key<V: TryFrom<i64> + Debug + Copy + Into<i64>>(
+            k: SpendingKey,
+        ) -> impl Strategy<Value = Bundle<Authorized, V, FL>> {
+            BuilderArb::<FL>::arb_bundle_inputs(k).prop_map(|inputs| inputs.into_bundle::<V, FL>())
+        }
     }
 }
 
@@ -1110,20 +1347,22 @@ pub mod testing {
 mod tests {
     use rand::rngs::OsRng;
 
-    use super::Builder;
     use crate::{
         builder::BundleType,
         bundle::{Authorized, Bundle},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendingKey},
+        note::AssetBase,
+        orchard_flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
         tree::EMPTY_ROOTS,
         value::NoteValue,
     };
 
-    #[test]
-    fn shielding_bundle() {
-        let pk = ProvingKey::build();
+    use super::Builder;
+
+    fn shielding_bundle<FL: OrchardFlavor>() {
+        let pk = ProvingKey::build::<FL>();
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -1131,17 +1370,23 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleType::DEFAULT,
+            BundleType::DEFAULT_VANILLA,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
 
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), None)
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::native(),
+                None,
+            )
             .unwrap();
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);
 
-        let bundle: Bundle<Authorized, i64> = builder
+        let bundle: Bundle<Authorized, i64, FL> = builder
             .build(&mut rng)
             .unwrap()
             .unwrap()
@@ -1152,5 +1397,15 @@ mod tests {
             .finalize()
             .unwrap();
         assert_eq!(bundle.value_balance(), &(-5000))
+    }
+
+    #[test]
+    fn shielding_bundle_vanilla() {
+        shielding_bundle::<OrchardVanilla>()
+    }
+
+    #[test]
+    fn shielding_bundle_zsa() {
+        shielding_bundle::<OrchardZSA>()
     }
 }

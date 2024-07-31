@@ -22,9 +22,15 @@ pub mod builder;
 pub mod bundle;
 pub mod circuit;
 mod constants;
+pub mod issuance;
 pub mod keys;
 pub mod note;
+pub mod supply_info;
+
 pub mod note_encryption;
+
+pub mod orchard_flavor;
+
 pub mod primitives;
 mod spec;
 pub mod tree;

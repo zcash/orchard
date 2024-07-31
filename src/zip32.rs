@@ -13,8 +13,11 @@ use crate::{
 
 pub use zip32::ChildIndex;
 
-const ZIP32_ORCHARD_PERSONALIZATION: &[u8; 16] = b"ZcashIP32Orchard";
 const ZIP32_ORCHARD_FVFP_PERSONALIZATION: &[u8; 16] = b"ZcashOrchardFVFP";
+/// Personalization for the master extended spending key
+pub const ZIP32_ORCHARD_PERSONALIZATION: &[u8; 16] = b"ZcashIP32Orchard";
+/// Personalization for the master extended issuance key
+pub const ZIP32_ORCHARD_PERSONALIZATION_FOR_ISSUANCE: &[u8; 16] = b"ZIP32ZSAIssue_V1";
 
 /// Errors produced in derivation of extended spending keys
 #[derive(Debug, PartialEq, Eq)]
@@ -148,8 +151,12 @@ impl ExtendedSpendingKey {
     /// # Panics
     ///
     /// Panics if seed results in invalid spending key.
-    pub fn from_path(seed: &[u8], path: &[ChildIndex]) -> Result<Self, Error> {
-        let mut xsk = Self::master(seed)?;
+    pub fn from_path(
+        seed: &[u8],
+        path: &[ChildIndex],
+        personalization: &[u8; 16],
+    ) -> Result<Self, Error> {
+        let mut xsk = Self::master(seed, personalization)?;
         for i in path {
             xsk = xsk.derive_child(*i)?;
         }
@@ -165,13 +172,13 @@ impl ExtendedSpendingKey {
     /// # Panics
     ///
     /// Panics if the seed is shorter than 32 bytes or longer than 252 bytes.
-    fn master(seed: &[u8]) -> Result<Self, Error> {
+    fn master(seed: &[u8], personalization: &[u8; 16]) -> Result<Self, Error> {
         assert!(seed.len() >= 32 && seed.len() <= 252);
         // I := BLAKE2b-512("ZcashIP32Orchard", seed)
         let I: [u8; 64] = {
             let mut I = Blake2bParams::new()
                 .hash_length(64)
-                .personal(ZIP32_ORCHARD_PERSONALIZATION)
+                .personal(personalization)
                 .to_state();
             I.update(seed);
             I.finalize().as_bytes().try_into().unwrap()
@@ -245,7 +252,7 @@ mod tests {
     #[test]
     fn derive_child() {
         let seed = [0; 32];
-        let xsk_m = ExtendedSpendingKey::master(&seed).unwrap();
+        let xsk_m = ExtendedSpendingKey::master(&seed, ZIP32_ORCHARD_PERSONALIZATION).unwrap();
 
         let i_5 = ChildIndex::hardened(5);
         let xsk_5 = xsk_m.derive_child(i_5);
@@ -256,20 +263,25 @@ mod tests {
     #[test]
     fn path() {
         let seed = [0; 32];
-        let xsk_m = ExtendedSpendingKey::master(&seed).unwrap();
+        let xsk_m = ExtendedSpendingKey::master(&seed, ZIP32_ORCHARD_PERSONALIZATION).unwrap();
 
         let xsk_5h = xsk_m.derive_child(ChildIndex::hardened(5)).unwrap();
         assert!(bool::from(
-            ExtendedSpendingKey::from_path(&seed, &[ChildIndex::hardened(5)])
-                .unwrap()
-                .ct_eq(&xsk_5h)
+            ExtendedSpendingKey::from_path(
+                &seed,
+                &[ChildIndex::hardened(5)],
+                ZIP32_ORCHARD_PERSONALIZATION
+            )
+            .unwrap()
+            .ct_eq(&xsk_5h)
         ));
 
         let xsk_5h_7 = xsk_5h.derive_child(ChildIndex::hardened(7)).unwrap();
         assert!(bool::from(
             ExtendedSpendingKey::from_path(
                 &seed,
-                &[ChildIndex::hardened(5), ChildIndex::hardened(7)]
+                &[ChildIndex::hardened(5), ChildIndex::hardened(7)],
+                ZIP32_ORCHARD_PERSONALIZATION
             )
             .unwrap()
             .ct_eq(&xsk_5h_7)

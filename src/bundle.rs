@@ -1,6 +1,7 @@
 //! Structs related to bundles of Orchard actions.
 
 mod batch;
+pub mod burn_validation;
 pub mod commitments;
 
 pub use batch::BatchValidator;
@@ -10,7 +11,7 @@ use core::fmt;
 use blake2b_simd::Hash as Blake2bHash;
 use memuse::DynamicUsage;
 use nonempty::NonEmpty;
-use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
+use zcash_note_encryption_zsa::{try_note_decryption, try_output_recovery_with_ovk};
 
 use crate::{
     action::Action,
@@ -18,14 +19,17 @@ use crate::{
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     circuit::{Instance, Proof, VerifyingKey},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
-    note::Note,
-    note_encryption::OrchardDomain,
+    note::{AssetBase, Note},
+    note_encryption::{OrchardDomain, OrchardDomainCommon},
+    orchard_flavor::OrchardFlavor,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
-    value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
+    value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
 };
 
-impl<T> Action<T> {
+pub(crate) use commitments::OrchardHash;
+
+impl<A, D: OrchardDomainCommon> Action<A, D> {
     /// Prepares the public instance for this action, for creating and verifying the
     /// bundle proof.
     pub fn to_instance(&self, flags: Flags, anchor: Anchor) -> Instance {
@@ -37,6 +41,7 @@ impl<T> Action<T> {
             cmx: *self.cmx(),
             enable_spend: flags.spends_enabled,
             enable_output: flags.outputs_enabled,
+            enable_zsa: flags.zsa_enabled,
         }
     }
 }
@@ -56,37 +61,65 @@ pub struct Flags {
     /// guaranteed to be dummy notes. If `true`, the created notes may be either real or
     /// dummy notes.
     outputs_enabled: bool,
+    /// Flag denoting whether ZSA transaction is enabled.
+    ///
+    /// If `false`,  all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with native asset.
+    zsa_enabled: bool,
 }
 
 const FLAG_SPENDS_ENABLED: u8 = 0b0000_0001;
 const FLAG_OUTPUTS_ENABLED: u8 = 0b0000_0010;
-const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED);
+const FLAG_ZSA_ENABLED: u8 = 0b0000_0100;
+const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED | FLAG_ZSA_ENABLED);
 
 impl Flags {
     /// Construct a set of flags from its constituent parts
-    pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
+    pub(crate) const fn from_parts(
+        spends_enabled: bool,
+        outputs_enabled: bool,
+        zsa_enabled: bool,
+    ) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
+            zsa_enabled,
         }
     }
 
-    /// The flag set with both spends and outputs enabled.
-    pub const ENABLED: Flags = Flags {
+    /// The flag set with both spends and outputs enabled and ZSA disabled.
+    pub const ENABLED_WITHOUT_ZSA: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
+        zsa_enabled: false,
     };
 
-    /// The flag set with spends disabled.
-    pub const SPENDS_DISABLED: Flags = Flags {
+    /// The flags set with spends, outputs and ZSA enabled.
+    pub const ENABLED_WITH_ZSA: Flags = Flags {
+        spends_enabled: true,
+        outputs_enabled: true,
+        zsa_enabled: true,
+    };
+
+    /// The flag set with spends and ZSA disabled.
+    pub const SPENDS_DISABLED_WITHOUT_ZSA: Flags = Flags {
         spends_enabled: false,
         outputs_enabled: true,
+        zsa_enabled: false,
+    };
+
+    /// The flag set with spends disabled and ZSA enabled.
+    pub const SPENDS_DISABLED_WITH_ZSA: Flags = Flags {
+        spends_enabled: false,
+        outputs_enabled: true,
+        zsa_enabled: true,
     };
 
     /// The flag set with outputs disabled.
     pub const OUTPUTS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: false,
+        zsa_enabled: false,
     };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
@@ -107,6 +140,14 @@ impl Flags {
         self.outputs_enabled
     }
 
+    /// Flag denoting whether ZSA transaction is enabled.
+    ///
+    /// If `false`,  all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with native asset.
+    pub fn zsa_enabled(&self) -> bool {
+        self.zsa_enabled
+    }
+
     /// Serialize flags to a byte as defined in [Zcash Protocol Spec § 7.1: Transaction
     /// Encoding And Consensus][txencoding].
     ///
@@ -118,6 +159,9 @@ impl Flags {
         }
         if self.outputs_enabled {
             value |= FLAG_OUTPUTS_ENABLED;
+        }
+        if self.zsa_enabled {
+            value |= FLAG_ZSA_ENABLED;
         }
         value
     }
@@ -134,6 +178,7 @@ impl Flags {
             Some(Self {
                 spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
                 outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
+                zsa_enabled: value & FLAG_ZSA_ENABLED != 0,
             })
         } else {
             None
@@ -149,26 +194,28 @@ pub trait Authorization: fmt::Debug {
 
 /// A bundle of actions to be applied to the ledger.
 #[derive(Clone)]
-pub struct Bundle<T: Authorization, V> {
+pub struct Bundle<A: Authorization, V, D: OrchardDomainCommon> {
     /// The list of actions that make up this bundle.
-    actions: NonEmpty<Action<T::SpendAuth>>,
+    actions: NonEmpty<Action<A::SpendAuth, D>>,
     /// Orchard-specific transaction-level flags for this bundle.
     flags: Flags,
     /// The net value moved out of the Orchard shielded pool.
     ///
     /// This is the sum of Orchard spends minus the sum of Orchard outputs.
     value_balance: V,
+    /// Assets intended for burning
+    burn: Vec<(AssetBase, NoteValue)>,
     /// The root of the Orchard commitment tree that this bundle commits to.
     anchor: Anchor,
     /// The authorization for this bundle.
-    authorization: T,
+    authorization: A,
 }
 
-impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
+impl<A: Authorization, V: fmt::Debug, D: OrchardDomainCommon> fmt::Debug for Bundle<A, V, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         /// Helper struct for debug-printing actions without exposing `NonEmpty`.
-        struct Actions<'a, T>(&'a NonEmpty<Action<T>>);
-        impl<'a, T: fmt::Debug> fmt::Debug for Actions<'a, T> {
+        struct Actions<'a, A, D: OrchardDomainCommon>(&'a NonEmpty<Action<A, D>>);
+        impl<'a, A: fmt::Debug, D: OrchardDomainCommon> fmt::Debug for Actions<'a, A, D> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_list().entries(self.0.iter()).finish()
             }
@@ -184,26 +231,28 @@ impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
     }
 }
 
-impl<T: Authorization, V> Bundle<T, V> {
+impl<A: Authorization, V, D: OrchardDomainCommon> Bundle<A, V, D> {
     /// Constructs a `Bundle` from its constituent parts.
     pub fn from_parts(
-        actions: NonEmpty<Action<T::SpendAuth>>,
+        actions: NonEmpty<Action<A::SpendAuth, D>>,
         flags: Flags,
         value_balance: V,
+        burn: Vec<(AssetBase, NoteValue)>,
         anchor: Anchor,
-        authorization: T,
+        authorization: A,
     ) -> Self {
         Bundle {
             actions,
             flags,
             value_balance,
+            burn,
             anchor,
             authorization,
         }
     }
 
     /// Returns the list of actions that make up this bundle.
-    pub fn actions(&self) -> &NonEmpty<Action<T::SpendAuth>> {
+    pub fn actions(&self) -> &NonEmpty<Action<A::SpendAuth, D>> {
         &self.actions
     }
 
@@ -219,6 +268,11 @@ impl<T: Authorization, V> Bundle<T, V> {
         &self.value_balance
     }
 
+    /// Returns assets intended for burning
+    pub fn burn(&self) -> &Vec<(AssetBase, NoteValue)> {
+        &self.burn
+    }
+
     /// Returns the root of the Orchard commitment tree that this bundle commits to.
     pub fn anchor(&self) -> &Anchor {
         &self.anchor
@@ -227,20 +281,21 @@ impl<T: Authorization, V> Bundle<T, V> {
     /// Returns the authorization for this bundle.
     ///
     /// In the case of a `Bundle<Authorized>`, this is the proof and binding signature.
-    pub fn authorization(&self) -> &T {
+    pub fn authorization(&self) -> &A {
         &self.authorization
     }
 
     /// Construct a new bundle by applying a transformation that might fail
-    /// to the value balance.
-    pub fn try_map_value_balance<V0, E, F: FnOnce(V) -> Result<V0, E>>(
+    /// to the value balance and balances of assets to burn.
+    pub fn try_map_value_balance<V0, E, F: Fn(V) -> Result<V0, E>>(
         self,
         f: F,
-    ) -> Result<Bundle<T, V0>, E> {
+    ) -> Result<Bundle<A, V0, D>, E> {
         Ok(Bundle {
             actions: self.actions,
             flags: self.flags,
             value_balance: f(self.value_balance)?,
+            burn: self.burn,
             anchor: self.anchor,
             authorization: self.authorization,
         })
@@ -250,9 +305,9 @@ impl<T: Authorization, V> Bundle<T, V> {
     pub fn map_authorization<R, U: Authorization>(
         self,
         context: &mut R,
-        mut spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> U::SpendAuth,
-        step: impl FnOnce(&mut R, T) -> U,
-    ) -> Bundle<U, V> {
+        mut spend_auth: impl FnMut(&mut R, &A, A::SpendAuth) -> U::SpendAuth,
+        step: impl FnOnce(&mut R, A) -> U,
+    ) -> Bundle<U, V, D> {
         let authorization = self.authorization;
         Bundle {
             actions: self
@@ -262,6 +317,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             value_balance: self.value_balance,
             anchor: self.anchor,
             authorization: step(context, authorization),
+            burn: self.burn,
         }
     }
 
@@ -269,9 +325,9 @@ impl<T: Authorization, V> Bundle<T, V> {
     pub fn try_map_authorization<R, U: Authorization, E>(
         self,
         context: &mut R,
-        mut spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> Result<U::SpendAuth, E>,
-        step: impl FnOnce(&mut R, T) -> Result<U, E>,
-    ) -> Result<Bundle<U, V>, E> {
+        mut spend_auth: impl FnMut(&mut R, &A, A::SpendAuth) -> Result<U::SpendAuth, E>,
+        step: impl FnOnce(&mut R, A) -> Result<U, E>,
+    ) -> Result<Bundle<U, V, D>, E> {
         let authorization = self.authorization;
         let new_actions = self
             .actions
@@ -285,6 +341,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             value_balance: self.value_balance,
             anchor: self.anchor,
             authorization: step(context, authorization)?,
+            burn: self.burn,
         })
     }
 
@@ -383,7 +440,30 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 }
 
-impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
+pub(crate) fn derive_bvk<'a, A: 'a, V: Clone + Into<i64>, FL: 'a + OrchardFlavor>(
+    actions: impl IntoIterator<Item = &'a Action<A, FL>>,
+    value_balance: V,
+    burn: impl Iterator<Item = (AssetBase, NoteValue)>,
+) -> redpallas::VerificationKey<Binding> {
+    // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
+    (actions
+        .into_iter()
+        .map(|a| a.cv_net())
+        .sum::<ValueCommitment>()
+        - ValueCommitment::derive(
+            ValueSum::from_raw(value_balance.into()),
+            ValueCommitTrapdoor::zero(),
+            AssetBase::native(),
+        )
+        - burn
+            .map(|(asset, value)| {
+                ValueCommitment::derive(ValueSum::from(value), ValueCommitTrapdoor::zero(), asset)
+            })
+            .sum::<ValueCommitment>())
+    .into_bvk()
+}
+
+impl<A: Authorization, V: Copy + Into<i64>, FL: OrchardFlavor> Bundle<A, V, FL> {
     /// Computes a commitment to the effects of this bundle, suitable for inclusion within
     /// a transaction ID.
     pub fn commitment(&self) -> BundleCommitment {
@@ -395,17 +475,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
     /// [`Bundle::authorization`].
     pub fn binding_validating_key(&self) -> redpallas::VerificationKey<Binding> {
-        // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
-        (self
-            .actions
-            .iter()
-            .map(|a| a.cv_net())
-            .sum::<ValueCommitment>()
-            - ValueCommitment::derive(
-                ValueSum::from_raw(self.value_balance.into()),
-                ValueCommitTrapdoor::zero(),
-            ))
-        .into_bvk()
+        derive_bvk(&self.actions, self.value_balance, self.burn.iter().cloned())
     }
 }
 
@@ -440,7 +510,7 @@ impl Authorized {
     }
 }
 
-impl<V> Bundle<Authorized, V> {
+impl<V, D: OrchardDomainCommon> Bundle<Authorized, V, D> {
     /// Computes a commitment to the authorizing data within for this bundle.
     ///
     /// This together with `Bundle::commitment` bind the entire bundle.
@@ -456,7 +526,7 @@ impl<V> Bundle<Authorized, V> {
     }
 }
 
-impl<V: DynamicUsage> DynamicUsage for Bundle<Authorized, V> {
+impl<V: DynamicUsage, D: OrchardDomainCommon> DynamicUsage for Bundle<Authorized, V, D> {
     fn dynamic_usage(&self) -> usize {
         self.actions.dynamic_usage()
             + self.value_balance.dynamic_usage()
@@ -521,7 +591,11 @@ pub mod testing {
 
     use super::{Action, Authorization, Authorized, Bundle, Flags};
 
-    pub use crate::action::testing::{arb_action, arb_unauthorized_action};
+    pub use crate::action::testing::ActionArb;
+    use crate::note::asset_base::testing::arb_zsa_asset_base;
+    use crate::note::AssetBase;
+    use crate::note_encryption::OrchardDomainCommon;
+    use crate::value::testing::arb_note_value;
 
     /// Marker for an unauthorized bundle with no proofs or signatures.
     #[derive(Debug)]
@@ -531,127 +605,151 @@ pub mod testing {
         type SpendAuth = ();
     }
 
-    /// Generate an unauthorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
-    pub fn arb_unauthorized_action_n(
-        n_actions: usize,
-        flags: Flags,
-    ) -> impl Strategy<Value = (ValueSum, Action<()>)> {
-        let spend_value_gen = if flags.spends_enabled {
-            Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
-        } else {
-            Strategy::boxed(Just(NoteValue::zero()))
-        };
+    /// `BundleArb` adapts `arb_...` functions for both Vanilla and ZSA Orchard protocol variations
+    /// in property-based testing, addressing proptest crate limitations.
+    #[derive(Debug)]
+    pub struct BundleArb<D: OrchardDomainCommon> {
+        phantom: std::marker::PhantomData<D>,
+    }
 
-        spend_value_gen.prop_flat_map(move |spend_value| {
-            let output_value_gen = if flags.outputs_enabled {
+    impl<D: OrchardDomainCommon + Default> BundleArb<D> {
+        /// Generate an unauthorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
+        pub fn arb_unauthorized_action_n(
+            n_actions: usize,
+            flags: Flags,
+        ) -> impl Strategy<Value = (ValueSum, Action<(), D>)> {
+            let spend_value_gen = if flags.spends_enabled {
                 Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
             } else {
                 Strategy::boxed(Just(NoteValue::zero()))
             };
 
-            output_value_gen.prop_flat_map(move |output_value| {
-                arb_unauthorized_action(spend_value, output_value)
-                    .prop_map(move |a| (spend_value - output_value, a))
+            spend_value_gen.prop_flat_map(move |spend_value| {
+                let output_value_gen = if flags.outputs_enabled {
+                    Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
+                } else {
+                    Strategy::boxed(Just(NoteValue::zero()))
+                };
+
+                output_value_gen.prop_flat_map(move |output_value| {
+                    ActionArb::arb_unauthorized_action(spend_value, output_value)
+                        .prop_map(move |a| (spend_value - output_value, a))
+                })
             })
-        })
-    }
+        }
 
-    /// Generate an authorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
-    pub fn arb_action_n(
-        n_actions: usize,
-        flags: Flags,
-    ) -> impl Strategy<Value = (ValueSum, Action<redpallas::Signature<SpendAuth>>)> {
-        let spend_value_gen = if flags.spends_enabled {
-            Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
-        } else {
-            Strategy::boxed(Just(NoteValue::zero()))
-        };
-
-        spend_value_gen.prop_flat_map(move |spend_value| {
-            let output_value_gen = if flags.outputs_enabled {
+        /// Generate an authorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
+        pub fn arb_action_n(
+            n_actions: usize,
+            flags: Flags,
+        ) -> impl Strategy<Value = (ValueSum, Action<redpallas::Signature<SpendAuth>, D>)> {
+            let spend_value_gen = if flags.spends_enabled {
                 Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
             } else {
                 Strategy::boxed(Just(NoteValue::zero()))
             };
 
-            output_value_gen.prop_flat_map(move |output_value| {
-                arb_action(spend_value, output_value)
-                    .prop_map(move |a| (spend_value - output_value, a))
+            spend_value_gen.prop_flat_map(move |spend_value| {
+                let output_value_gen = if flags.outputs_enabled {
+                    Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
+                } else {
+                    Strategy::boxed(Just(NoteValue::zero()))
+                };
+
+                output_value_gen.prop_flat_map(move |output_value| {
+                    ActionArb::arb_action(spend_value, output_value)
+                        .prop_map(move |a| (spend_value - output_value, a))
+                })
             })
-        })
-    }
-
-    prop_compose! {
-        /// Create an arbitrary set of flags.
-        pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY) -> Flags {
-            Flags::from_parts(spends_enabled, outputs_enabled)
         }
-    }
 
-    prop_compose! {
-        fn arb_base()(bytes in prop::array::uniform32(0u8..)) -> pallas::Base {
-            // Instead of rejecting out-of-range bytes, let's reduce them.
-            let mut buf = [0; 64];
-            buf[..32].copy_from_slice(&bytes);
-            pallas::Base::from_uniform_bytes(&buf)
+        prop_compose! {
+            /// Create an arbitrary vector of assets to burn.
+            pub fn arb_asset_to_burn()
+            (
+                asset_base in arb_zsa_asset_base(),
+                value in arb_note_value()
+            ) -> (AssetBase, NoteValue) {
+                (asset_base, value)
+            }
         }
-    }
 
-    prop_compose! {
-        /// Generate an arbitrary unauthorized bundle. This bundle does not
-        /// necessarily respect consensus rules; for that use
-        /// [`crate::builder::testing::arb_bundle`]
-        pub fn arb_unauthorized_bundle(n_actions: usize)
-        (
-            flags in arb_flags(),
-        )
-        (
-            acts in vec(arb_unauthorized_action_n(n_actions, flags), n_actions),
-            anchor in arb_base().prop_map(Anchor::from),
-            flags in Just(flags)
-        ) -> Bundle<Unauthorized, ValueSum> {
-            let (balances, actions): (Vec<ValueSum>, Vec<Action<_>>) = acts.into_iter().unzip();
+        prop_compose! {
+            /// Create an arbitrary set of flags.
+            pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY, zsa_enabled in prop::bool::ANY) -> Flags {
+                Flags::from_parts(spends_enabled, outputs_enabled, zsa_enabled)
+            }
+        }
 
-            Bundle::from_parts(
-                NonEmpty::from_vec(actions).unwrap(),
-                flags,
-                balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
-                anchor,
-                Unauthorized
+        prop_compose! {
+            fn arb_base()(bytes in prop::array::uniform32(0u8..)) -> pallas::Base {
+                // Instead of rejecting out-of-range bytes, let's reduce them.
+                let mut buf = [0; 64];
+                buf[..32].copy_from_slice(&bytes);
+                pallas::Base::from_uniform_bytes(&buf)
+            }
+        }
+
+        prop_compose! {
+            /// Generate an arbitrary unauthorized bundle. This bundle does not
+            /// necessarily respect consensus rules; for that use
+            /// [`crate::builder::testing::arb_bundle`]
+            pub fn arb_unauthorized_bundle(n_actions: usize)
+            (
+                flags in Self::arb_flags(),
             )
+            (
+                acts in vec(Self::arb_unauthorized_action_n(n_actions, flags), n_actions),
+                anchor in Self::arb_base().prop_map(Anchor::from),
+                flags in Just(flags),
+                burn in vec(Self::arb_asset_to_burn(), 1usize..10)
+            ) -> Bundle<Unauthorized, ValueSum, D> {
+                let (balances, actions): (Vec<ValueSum>, Vec<Action<_, _>>) = acts.into_iter().unzip();
+
+                Bundle::from_parts(
+                    NonEmpty::from_vec(actions).unwrap(),
+                    flags,
+                    balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
+                    burn,
+                    anchor,
+                    Unauthorized,
+                )
+            }
         }
-    }
 
-    prop_compose! {
-        /// Generate an arbitrary bundle with fake authorization data. This bundle does not
-        /// necessarily respect consensus rules; for that use
-        /// [`crate::builder::testing::arb_bundle`]
-        pub fn arb_bundle(n_actions: usize)
-        (
-            flags in arb_flags(),
-        )
-        (
-            acts in vec(arb_action_n(n_actions, flags), n_actions),
-            anchor in arb_base().prop_map(Anchor::from),
-            sk in arb_binding_signing_key(),
-            rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-            fake_proof in vec(prop::num::u8::ANY, 1973),
-            fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
-            flags in Just(flags)
-        ) -> Bundle<Authorized, ValueSum> {
-            let (balances, actions): (Vec<ValueSum>, Vec<Action<_>>) = acts.into_iter().unzip();
-            let rng = StdRng::from_seed(rng_seed);
-
-            Bundle::from_parts(
-                NonEmpty::from_vec(actions).unwrap(),
-                flags,
-                balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
-                anchor,
-                Authorized {
-                    proof: Proof::new(fake_proof),
-                    binding_signature: sk.sign(rng, &fake_sighash),
-                }
+        prop_compose! {
+            /// Generate an arbitrary bundle with fake authorization data. This bundle does not
+            /// necessarily respect consensus rules; for that use
+            /// [`crate::builder::testing::arb_bundle`]
+            pub fn arb_bundle(n_actions: usize)
+            (
+                flags in Self::arb_flags(),
             )
+            (
+                acts in vec(Self::arb_action_n(n_actions, flags), n_actions),
+                anchor in Self::arb_base().prop_map(Anchor::from),
+                sk in arb_binding_signing_key(),
+                rng_seed in prop::array::uniform32(prop::num::u8::ANY),
+                fake_proof in vec(prop::num::u8::ANY, 1973),
+                fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
+                flags in Just(flags),
+                burn in vec(Self::arb_asset_to_burn(), 1usize..10)
+            ) -> Bundle<Authorized, ValueSum, D> {
+                let (balances, actions): (Vec<ValueSum>, Vec<Action<_, _>, >) = acts.into_iter().unzip();
+                let rng = StdRng::from_seed(rng_seed);
+
+                Bundle::from_parts(
+                    NonEmpty::from_vec(actions).unwrap(),
+                    flags,
+                    balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
+                    burn,
+                    anchor,
+                    Authorized {
+                        proof: Proof::new(fake_proof),
+                        binding_signature: sk.sign(rng, &fake_sighash),
+                    },
+                )
+            }
         }
     }
 }
