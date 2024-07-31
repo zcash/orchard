@@ -334,6 +334,15 @@ impl From<FullViewingKey> for SpendValidatingKey {
 }
 
 impl FullViewingKey {
+    /// Create FVK from the given sk and ak.
+    pub fn from_sk_ak(sk: &SpendingKey, ak: SpendValidatingKey) -> Self {
+        FullViewingKey {
+            ak,
+            nk: sk.into(),
+            rivk: sk.into(),
+        }
+    }
+
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
     }

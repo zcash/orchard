@@ -7,6 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+- Added `SigningParts::{ak, alpha}` getters under the `unstable-frost` feature
+
 ## [0.10.1] - 2024-12-16
 
 ### Added
