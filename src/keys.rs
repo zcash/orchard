@@ -348,8 +348,8 @@ impl FullViewingKey {
     pub fn from_sk_and_ak(sk: &SpendingKey, ak: SpendValidatingKey) -> FullViewingKey {
         FullViewingKey {
             ak,
-            nk: NullifierDerivingKey::from(sk),
-            rivk: CommitIvkRandomness::from(sk),
+            nk:sk.into(),
+            rivk: sk.into(),
         }
     }
 

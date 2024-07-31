@@ -75,6 +75,8 @@ visibility under the `unstable-frost` feature
 - `orchard::builder::Builder::add_output` now takes a `[u8; 512]` for its
   `memo` argument instead of an optional value.
 
+- Added `SigningParts::{ak, alpha}` getters under the `unstable-frost` feature
+
 ## [0.10.1] - 2024-12-16
 
 ### Added
