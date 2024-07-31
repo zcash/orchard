@@ -7,8 +7,8 @@ use group::ff::PrimeField;
 use blake2b_simd::Params;
 
 use zcash_note_encryption_zsa::{
-    BatchDomain, Domain, EphemeralKeyBytes, OutPlaintextBytes, OutgoingCipherKey, MEMO_SIZE,
-    OUT_PLAINTEXT_SIZE,
+    note_bytes::NoteBytes, BatchDomain, Domain, EphemeralKeyBytes, OutPlaintextBytes,
+    OutgoingCipherKey, MEMO_SIZE, OUT_PLAINTEXT_SIZE,
 };
 
 use crate::{
@@ -255,12 +255,15 @@ impl<D: OrchardDomainCommon> Domain for OrchardDomain<D> {
         parse_note_plaintext_without_memo::<D, _>(self.rho, plaintext, |_| Some(*pk_d))
     }
 
-    fn extract_memo(
+    fn split_plaintext_at_memo(
         &self,
         plaintext: &D::NotePlaintextBytes,
-    ) -> (Self::CompactNotePlaintextBytes, Self::Memo) {
+    ) -> Option<(Self::CompactNotePlaintextBytes, Self::Memo)> {
         let (compact, memo) = plaintext.as_ref().split_at(D::COMPACT_NOTE_SIZE);
-        (compact.into(), memo.try_into().unwrap())
+        Some((
+            Self::CompactNotePlaintextBytes::from_slice(compact)?,
+            memo.try_into().ok()?,
+        ))
     }
 
     fn extract_pk_d(out_plaintext: &OutPlaintextBytes) -> Option<Self::DiversifiedTransmissionKey> {

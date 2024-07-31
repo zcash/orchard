@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use zcash_note_encryption_zsa::{EphemeralKeyBytes, ShieldedOutput};
+use zcash_note_encryption_zsa::{note_bytes::NoteBytes, EphemeralKeyBytes, ShieldedOutput};
 
 use crate::{
     action::Action,
@@ -25,7 +25,10 @@ impl<A, D: OrchardDomainCommon> ShieldedOutput<OrchardDomain<D>> for Action<A, D
     }
 
     fn enc_ciphertext_compact(&self) -> D::CompactNoteCiphertextBytes {
-        self.encrypted_note().enc_ciphertext.as_ref()[..D::COMPACT_NOTE_SIZE].into()
+        D::CompactNoteCiphertextBytes::from_slice(
+            &self.encrypted_note().enc_ciphertext.as_ref()[..D::COMPACT_NOTE_SIZE],
+        )
+        .unwrap()
     }
 }
 
@@ -71,7 +74,7 @@ impl<D: OrchardDomainCommon> ShieldedOutput<OrchardDomain<D>> for CompactAction<
     }
 
     fn enc_ciphertext_compact(&self) -> D::CompactNoteCiphertextBytes {
-        self.enc_ciphertext
+        D::CompactNoteCiphertextBytes::from_slice(self.enc_ciphertext.as_ref()).unwrap()
     }
 }
 
@@ -112,7 +115,7 @@ impl<D: OrchardDomainCommon> CompactAction<D> {
 pub mod testing {
     use rand::RngCore;
 
-    use zcash_note_encryption_zsa::{Domain, NoteEncryption};
+    use zcash_note_encryption_zsa::{note_bytes::NoteBytes, Domain, NoteEncryption, MEMO_SIZE};
 
     use crate::{
         address::Address,
@@ -145,7 +148,7 @@ pub mod testing {
             }
         };
         let note = Note::from_parts(recipient, value, AssetBase::native(), rho, rseed).unwrap();
-        let encryptor = NoteEncryption::<OrchardDomain<D>>::new(ovk, note, [0u8; 512]);
+        let encryptor = NoteEncryption::<OrchardDomain<D>>::new(ovk, note, [0u8; MEMO_SIZE]);
         let cmx = ExtractedNoteCommitment::from(note.commitment());
         let ephemeral_key = OrchardDomain::<D>::epk_bytes(encryptor.epk());
         let enc_ciphertext = encryptor.encrypt_note_plaintext();
@@ -155,7 +158,10 @@ pub mod testing {
                 nullifier: nf_old,
                 cmx,
                 ephemeral_key,
-                enc_ciphertext: enc_ciphertext.as_ref()[..52].try_into().unwrap(),
+                enc_ciphertext: D::CompactNoteCiphertextBytes::from_slice(
+                    &enc_ciphertext.as_ref()[..D::COMPACT_NOTE_SIZE],
+                )
+                .unwrap(),
             },
             note,
         )

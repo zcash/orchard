@@ -25,7 +25,7 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 [dependencies]
 aes = "0.8"
 bitvec = "1"
-blake2b_simd = "=1.0.1" # Last version required rust 1.66
+blake2b_simd = "1"
 half = "=2.2.1" # Last version requires Rust 1.70
 ff = "0.13"
 fpe = "0.6"
