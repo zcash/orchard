@@ -45,6 +45,7 @@ zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.5"
 zcash_spec = "0.1"
 zip32 = "0.1"
+visibility = "0.1.0"
 
 # Logging
 tracing = "0.1"
@@ -71,6 +72,7 @@ bench = false
 
 [features]
 default = ["multicore"]
+unstable-frost = []
 multicore = ["halo2_proofs/multicore"]
 dev-graph = ["halo2_proofs/dev-graph", "image", "plotters"]
 test-dependencies = ["proptest"]
