@@ -186,12 +186,19 @@ impl SpendValidatingKey {
 
     /// Converts this spend validating key to its serialized form,
     /// I2LEOSP_256(ak).
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn to_bytes(&self) -> [u8; 32] {
         // This is correct because the wrapped point must have ỹ = 0, and
         // so the point repr is the same as I2LEOSP of its x-coordinate.
-        <[u8; 32]>::from(&self.0)
+        let b = <[u8; 32]>::from(&self.0);
+        assert!(b[31] & 0x80 == 0);
+        b
     }
 
+    /// Attempts to parse a byte slice as a spend validating key, `I2LEOSP_256(ak)`.
+    ///
+    /// Returns `None` if the given slice does not contain a valid spend validating key.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         <[u8; 32]>::try_from(bytes)
             .ok()
