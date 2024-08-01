@@ -6,12 +6,11 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### added
-- Added [Visibility crate](https://crates.io/crates/visibility) to modify
-visibility of methods and struct for the `unstable-frost` feature.
-- Added `SpendValidatingKey` serialization and deserialization from bytes
-visibility under the `unstable-frost` feature
-  - `orchard::keys::SpendValidatingKey`
+### Added
+- `orchard::keys::SpendValidatingKey::{from_bytes, to_bytes}` behind the
+  `unstable-frost` feature flag. These are temporary APIs exposed for development
+  purposes, and will be replaced by type-safe FROST APIs once ZIP 312 key
+  generation is specified (https://github.com/zcash/zips/pull/883).
 
 ## [0.8.0] - 2024-03-25
 
