@@ -23,6 +23,18 @@ and this project adheres to Rust's notion of
   `unstable-frost` feature flag. These are temporary APIs exposed for development
   purposes, and will be replaced by type-safe FROST APIs once ZIP 312 key
   generation is specified (https://github.com/zcash/zips/pull/883).
+- `orchard::keys::SpendValidatingKey` exposes its composing parts through functions
+gated by the `unstable-frost` feature flag. These functions are intended to be used
+by FROST clients to backup the key elements.
+- `orchard::keys::NullifierDerivingKey::from_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+- `orchard::keys::NullifierDerivingKey::to_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+- `orchard::keys::CommitIvkRandomness::from_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+- `orchard::keys::CommitIvkRandomness::to_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+
 
 ### Changed
 - Migrated to `incrementalmerkletree 0.6`, `bridgetree 0.5`.
