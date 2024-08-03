@@ -246,10 +246,13 @@ impl NullifierDerivingKey {
     }
 
     /// Converts this nullifier deriving key to its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 
+    /// Converts this nullifier deriving key from its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let nk_bytes = <[u8; 32]>::try_from(bytes).ok()?;
         let nk = pallas::Base::from_repr(nk_bytes).map(NullifierDerivingKey);
@@ -281,11 +284,14 @@ impl CommitIvkRandomness {
         self.0
     }
 
-    /// Converts this nullifier deriving key to its serialized form.
+    /// Converts this [`CommitIvkRandomness`] to its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
+    /// Converts this [`CommitIvkRandomness`] from its serialized form.
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let rivk_bytes = <[u8; 32]>::try_from(bytes).ok()?;
         let rivk = pallas::Scalar::from_repr(rivk_bytes).map(CommitIvkRandomness);
@@ -361,11 +367,25 @@ impl FullViewingKey {
         FullViewingKey { ak, nk, rivk }
     }
 
+    /// Returns the `SpendValidatingKey` of this `FullViewingKey`
+    /// - Note: this is intended for the "unstable-frost" feature to
+    /// facilitate the DKG'd key backup scheme. See [Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html#backing-up-key-shares)
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
+    pub fn ak(&self) -> &SpendValidatingKey {
+        &self.ak
+    }
+    /// Returns the `NullifierDerivingKey` of this `FullViewingKey`
+    /// - Note: this is `pub` for the "unstable-frost" feature to
+    /// facilitate the DKG'd key backup scheme. See [Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html#backing-up-key-shares)
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
     }
 
     /// Returns either `rivk` or `rivk_internal` based on `scope`.
+    /// - Note: this is `pub` for the "unstable-frost" feature to
+    /// facilitate the DKG'd key backup scheme. See [Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html#backing-up-key-shares)
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn rivk(&self, scope: Scope) -> CommitIvkRandomness {
         match scope {
             Scope::External => self.rivk,
