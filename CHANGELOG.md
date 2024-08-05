@@ -6,11 +6,32 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Added
+### added
+- Added [Visibility crate](https://crates.io/crates/visibility) to modify
+visibility of methods and struct for the `unstable-frost` feature.
+- Added `SpendValidatingKey` serialization and deserialization from bytes
+visibility under the `unstable-frost` feature
+  - `orchard::keys::SpendValidatingKey`
+- Added `orchard::keys::FullViewingKey::from_sk_and_ak` under the
+`unstable-frost` feature flag
+- Added `orchard::keys::FullViewingKey::from_checked_parts` under the
+`unstable-frost` feature flag
 - `orchard::keys::SpendValidatingKey::{from_bytes, to_bytes}` behind the
   `unstable-frost` feature flag. These are temporary APIs exposed for development
   purposes, and will be replaced by type-safe FROST APIs once ZIP 312 key
   generation is specified (https://github.com/zcash/zips/pull/883).
+- `orchard::keys::SpendValidatingKey` exposes its composing parts through functions
+gated by the `unstable-frost` feature flag. These functions are intended to be used
+by FROST clients to backup the key elements.
+- `orchard::keys::NullifierDerivingKey::from_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+- `orchard::keys::NullifierDerivingKey::to_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+- `orchard::keys::CommitIvkRandomness::from_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+- `orchard::keys::CommitIvkRandomness::to_bytes` made `pub` behind the
+`unstable-frost` feature flag.
+
 
 ## [0.8.0] - 2024-03-25
 
