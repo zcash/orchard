@@ -290,8 +290,8 @@ impl CommitIvkRandomness {
         <[u8; 32]>::from(self.0)
     }
 
-    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     /// Converts this [`CommitIvkRandomness`] from its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let rivk_bytes = <[u8; 32]>::try_from(bytes).ok()?;
         let rivk = pallas::Scalar::from_repr(rivk_bytes).map(CommitIvkRandomness);
@@ -343,8 +343,6 @@ impl From<FullViewingKey> for SpendValidatingKey {
 impl FullViewingKey {
     /// Creates a `FullViewingKey` from a `SpendingKey` and `SpendValidatingKey`.
     /// This is necessary for FROST key management.
-    ///
-    /// Note: See [FROST Book - Technical details](https://frost.zfnd.org/zcash/technical-details.html)
     #[cfg(feature = "unstable-frost")]
     pub fn from_sk_and_ak(sk: &SpendingKey, ak: SpendValidatingKey) -> FullViewingKey {
         FullViewingKey {
@@ -356,8 +354,6 @@ impl FullViewingKey {
 
     /// Creates a `FullViewingKey` from its checked parts. This is necessary for FROST
     /// key management in order to avoid centralizing spend authority in a backup scheme.
-    ///
-    /// Note: See [FROST Book - Technical details - Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html)
     #[cfg(feature = "unstable-frost")]
     pub fn from_checked_parts(
         ak: SpendValidatingKey,
@@ -369,14 +365,14 @@ impl FullViewingKey {
 
     /// Returns the `SpendValidatingKey` of this `FullViewingKey`
     /// - Note: this is intended for the "unstable-frost" feature to
-    /// facilitate the DKG'd key backup scheme. See [Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html#backing-up-key-shares)
+    /// facilitate the DKG'd key backup scheme. 
     #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub fn ak(&self) -> &SpendValidatingKey {
         &self.ak
     }
     /// Returns the `NullifierDerivingKey` of this `FullViewingKey`
     /// - Note: this is `pub` for the "unstable-frost" feature to
-    /// facilitate the DKG'd key backup scheme. See [Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html#backing-up-key-shares)
+    /// facilitate the DKG'd key backup scheme.
     #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
@@ -384,7 +380,7 @@ impl FullViewingKey {
 
     /// Returns either `rivk` or `rivk_internal` based on `scope`.
     /// - Note: this is `pub` for the "unstable-frost" feature to
-    /// facilitate the DKG'd key backup scheme. See [Backing Up Key Shares](https://frost.zfnd.org/zcash/technical-details.html#backing-up-key-shares)
+    /// facilitate the DKG'd key backup scheme.
     #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn rivk(&self, scope: Scope) -> CommitIvkRandomness {
         match scope {
