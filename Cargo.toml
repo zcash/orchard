@@ -1,6 +1,6 @@
 [package]
 name = "orchard"
-version = "0.9.0"
+version = "0.9.1"
 authors = [
     "Sean Bowe <sean@electriccoin.co>",
     "Jack Grigg <jack@electriccoin.co>",
@@ -45,7 +45,7 @@ zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.6"
 zcash_spec = "0.1"
 zip32 = "0.1"
-visibility = "0.1.0"
+visibility = "0.1.1"
 
 # Logging
 tracing = "0.1"
