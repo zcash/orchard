@@ -2,13 +2,11 @@
 
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
 
-use zcash_note_encryption_zsa::MEMO_SIZE;
-
 use crate::{
     bundle::{Authorization, Authorized, Bundle},
     issuance::{IssueAuth, IssueBundle, Signed},
     note::AssetBase,
-    note_encryption::OrchardDomainCommon,
+    note_encryption::{OrchardDomainCommon, MEMO_SIZE},
     orchard_flavor::{OrchardVanilla, OrchardZSA},
     value::NoteValue,
 };

@@ -3,7 +3,7 @@
 
 use core::fmt;
 
-use zcash_note_encryption_zsa::{note_bytes::NoteBytes, AEAD_TAG_SIZE, MEMO_SIZE};
+use zcash_note_encryption_zsa::{note_bytes::NoteBytes, AEAD_TAG_SIZE};
 
 use crate::{
     action::Action,
@@ -11,7 +11,10 @@ use crate::{
     Note,
 };
 
-use super::{compact_action::CompactAction, domain::Memo};
+use super::{
+    compact_action::CompactAction,
+    domain::{Memo, MEMO_SIZE},
+};
 
 /// Represents the Orchard protocol domain specifics required for note encryption and decryption.
 pub trait OrchardDomainCommon: fmt::Debug + Clone {

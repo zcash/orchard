@@ -8,7 +8,7 @@ use blake2b_simd::Params;
 
 use zcash_note_encryption_zsa::{
     note_bytes::NoteBytes, BatchDomain, Domain, EphemeralKeyBytes, OutPlaintextBytes,
-    OutgoingCipherKey, MEMO_SIZE, OUT_PLAINTEXT_SIZE,
+    OutgoingCipherKey, OUT_PLAINTEXT_SIZE,
 };
 
 use crate::{
@@ -50,6 +50,9 @@ pub(super) const NOTE_VERSION_BYTE_V2: u8 = 0x02;
 
 /// The version byte for ZSA.
 pub(super) const NOTE_VERSION_BYTE_V3: u8 = 0x03;
+
+/// The size of the memo.
+pub(crate) const MEMO_SIZE: usize = 512;
 
 pub(super) type Memo = [u8; MEMO_SIZE];
 

@@ -20,8 +20,8 @@ impl<A, D: OrchardDomainCommon> ShieldedOutput<OrchardDomain<D>> for Action<A, D
         self.cmx().to_bytes()
     }
 
-    fn enc_ciphertext(&self) -> Option<D::NoteCiphertextBytes> {
-        Some(self.encrypted_note().enc_ciphertext)
+    fn enc_ciphertext(&self) -> Option<&D::NoteCiphertextBytes> {
+        Some(&self.encrypted_note().enc_ciphertext)
     }
 
     fn enc_ciphertext_compact(&self) -> D::CompactNoteCiphertextBytes {
@@ -69,7 +69,7 @@ impl<D: OrchardDomainCommon> ShieldedOutput<OrchardDomain<D>> for CompactAction<
         self.cmx.to_bytes()
     }
 
-    fn enc_ciphertext(&self) -> Option<D::NoteCiphertextBytes> {
+    fn enc_ciphertext(&self) -> Option<&D::NoteCiphertextBytes> {
         None
     }
 
@@ -115,12 +115,13 @@ impl<D: OrchardDomainCommon> CompactAction<D> {
 pub mod testing {
     use rand::RngCore;
 
-    use zcash_note_encryption_zsa::{note_bytes::NoteBytes, Domain, NoteEncryption, MEMO_SIZE};
+    use zcash_note_encryption_zsa::{note_bytes::NoteBytes, Domain, NoteEncryption};
 
     use crate::{
         address::Address,
         keys::OutgoingViewingKey,
         note::{AssetBase, ExtractedNoteCommitment, Note, Nullifier, RandomSeed, Rho},
+        note_encryption::MEMO_SIZE,
         value::NoteValue,
     };
 
