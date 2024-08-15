@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.9.1] - 2024-08-13
+
+### Changed
+- Migrated to `visibility 0.1.1`.
+
 ## [0.9.0] - 2024-08-12
 
 ### Added
