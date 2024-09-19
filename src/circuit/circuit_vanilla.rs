@@ -7,74 +7,42 @@ use group::Curve;
 use pasta_curves::pallas;
 
 use halo2_gadgets::{
-    ecc::{
-        chip::{EccChip, EccConfig},
-        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
-    },
-    poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    ecc::{chip::EccChip, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar},
+    poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip},
     sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig},
-        merkle::{
-            chip::{MerkleChip, MerkleConfig},
-            MerklePath,
-        },
+        chip::SinsemillaChip,
+        merkle::{chip::MerkleChip, MerklePath},
     },
-    utilities::lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
+    utilities::lookup_range_check::{
+        LookupRangeCheck, LookupRangeCheckConfig, PallasLookupRangeCheckConfig,
+    },
 };
-
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    plonk::{self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector},
+    plonk::{self, Constraints, Expression},
     poly::Rotation,
 };
 
 use crate::{
-    constants::{
-        OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
-    },
+    circuit::commit_ivk::gadgets::commit_ivk,
+    circuit::derive_nullifier::gadgets::derive_nullifier,
+    circuit::note_commit::gadgets::note_commit,
+    circuit::value_commit_orchard::gadgets::value_commit_orchard,
+    circuit::Config,
+    constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
     orchard_flavor::OrchardVanilla,
 };
 
 use super::{
-    commit_ivk::{self, CommitIvkChip, CommitIvkConfig},
-    gadget::{
-        add_chip::{self, AddChip, AddConfig},
-        AddInstruction,
-    },
+    commit_ivk::CommitIvkChip,
+    gadget::{add_chip::AddChip, assign_free_advice},
+    note_commit::NoteCommitChip,
     Circuit, OrchardCircuit, ANCHOR, CMX, CV_NET_X, CV_NET_Y, ENABLE_OUTPUT, ENABLE_SPEND, NF_OLD,
     RK_X, RK_Y,
 };
 
-use self::{
-    gadget::assign_free_advice,
-    note_commit::{NoteCommitChip, NoteCommitConfig},
-};
-
-mod gadget;
-mod note_commit;
-
-/// Configuration needed to use the Orchard Action circuit.
-#[derive(Clone, Debug)]
-pub struct Config {
-    primary: Column<InstanceColumn>,
-    q_orchard: Selector,
-    advices: [Column<Advice>; 10],
-    add_config: AddConfig,
-    ecc_config: EccConfig<OrchardFixedBases>,
-    poseidon_config: PoseidonConfig<pallas::Base, 3, 2>,
-    merkle_config_1: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
-    merkle_config_2: MerkleConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
-    sinsemilla_config_1:
-        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
-    sinsemilla_config_2:
-        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
-    commit_ivk_config: CommitIvkConfig,
-    old_note_commit_config: NoteCommitConfig,
-    new_note_commit_config: NoteCommitConfig,
-}
-
 impl OrchardCircuit for OrchardVanilla {
-    type Config = Config;
+    type Config = Config<PallasLookupRangeCheckConfig>;
 
     fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> Self::Config {
         // Advice columns used in the Orchard circuit.
@@ -241,12 +209,12 @@ impl OrchardCircuit for OrchardVanilla {
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_old.
         let old_note_commit_config =
-            NoteCommitChip::configure(meta, advices, sinsemilla_config_1.clone());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_1.clone(), false);
 
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_new.
         let new_note_commit_config =
-            NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone(), false);
 
         Config {
             primary,
@@ -386,22 +354,18 @@ impl OrchardCircuit for OrchardVanilla {
                 (magnitude, sign)
             };
 
-            let v_net = ScalarFixedShort::new(
-                ecc_chip.clone(),
-                layouter.namespace(|| "v_net"),
-                v_net_magnitude_sign.clone(),
-            )?;
             let rcv = ScalarFixed::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "rcv"),
                 circuit.rcv.as_ref().map(|rcv| rcv.inner()),
             )?;
 
-            let cv_net = gadget::value_commit_orchard(
+            let cv_net = value_commit_orchard(
                 layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net)"),
                 ecc_chip.clone(),
-                v_net,
+                v_net_magnitude_sign.clone(),
                 rcv,
+                None,
             )?;
 
             // Constrain cv_net to equal public input
@@ -414,8 +378,8 @@ impl OrchardCircuit for OrchardVanilla {
 
         // Nullifier integrity (https://p.z.cash/ZKS:action-nullifier-integrity).
         let nf_old = {
-            let nf_old = gadget::derive_nullifier(
-                layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_old, cm_old)"),
+            let nf_old = derive_nullifier(
+                &mut layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_old, cm_old)"),
                 config.poseidon_chip(),
                 config.add_chip(),
                 ecc_chip.clone(),
@@ -423,6 +387,7 @@ impl OrchardCircuit for OrchardVanilla {
                 &psi_old,
                 &cm_old,
                 nk.clone(),
+                None,
             )?;
 
             // Constrain nf_old to equal public input
@@ -464,7 +429,7 @@ impl OrchardCircuit for OrchardVanilla {
                     circuit.rivk.map(|rivk| rivk.inner()),
                 )?;
 
-                gadget::commit_ivk(
+                commit_ivk(
                     config.sinsemilla_chip_1(),
                     ecc_chip.clone(),
                     config.commit_ivk_chip(),
@@ -511,7 +476,7 @@ impl OrchardCircuit for OrchardVanilla {
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let derived_cm_old = gadget::note_commit(
+            let derived_cm_old = note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
@@ -524,6 +489,7 @@ impl OrchardCircuit for OrchardVanilla {
                 rho_old,
                 psi_old,
                 rcm_old,
+                None,
             )?;
 
             // Constrain derived cm_old to equal witnessed cm_old
@@ -571,7 +537,7 @@ impl OrchardCircuit for OrchardVanilla {
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let cm_new = gadget::note_commit(
+            let cm_new = note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
@@ -584,6 +550,7 @@ impl OrchardCircuit for OrchardVanilla {
                 rho_new,
                 psi_new,
                 rcm_new,
+                None,
             )?;
 
             let cmx = cm_new.extract_p();

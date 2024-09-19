@@ -1,16 +1,32 @@
-//! Value commitment logic for the Orchard circuit (ZSA variation).
+//! Value commitment logic for the Orchard circuit.
+
+use pasta_curves::pallas;
+
+use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains};
+
+use halo2_gadgets::utilities::lookup_range_check::PallasLookupRangeCheck;
+use halo2_gadgets::{
+    ecc::{chip::EccChip, NonIdentityPoint},
+    sinsemilla::chip::SinsemillaChip,
+};
+
+pub struct ZsaValueCommitParams<Lookup: PallasLookupRangeCheck> {
+    pub sinsemilla_chip:
+        SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
+    pub asset: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases, Lookup>>,
+}
 
 pub(in crate::circuit) mod gadgets {
-    use pasta_curves::pallas;
+    use super::*;
 
-    use crate::constants::{
-        OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
-    };
+    use crate::constants::{OrchardFixedBasesFull, ValueCommitV};
+
     use halo2_gadgets::{
-        ecc::{chip::EccChip, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar},
-        sinsemilla::{self, chip::SinsemillaChip},
-        utilities::lookup_range_check::{LookupRangeCheck, PallasLookupRangeCheck45BConfig},
+        ecc::{FixedPoint, FixedPointShort, Point, ScalarFixed, ScalarFixedShort, ScalarVar},
+        sinsemilla,
+        utilities::lookup_range_check::PallasLookupRangeCheck,
     };
+
     use halo2_proofs::{
         circuit::{AssignedCell, Chip, Layouter},
         plonk,
@@ -19,74 +35,83 @@ pub(in crate::circuit) mod gadgets {
     /// `ValueCommit^Orchard` from [Section 5.4.8.3 Homomorphic Pedersen commitments (Sapling and Orchard)].
     ///
     /// [Section 5.4.8.3 Homomorphic Pedersen commitments (Sapling and Orchard)]: https://zips.z.cash/protocol/protocol.pdf#concretehomomorphiccommit
-    pub(in crate::circuit) fn value_commit_orchard(
+    pub(in crate::circuit) fn value_commit_orchard<Lookup: PallasLookupRangeCheck>(
         mut layouter: impl Layouter<pallas::Base>,
-        sinsemilla_chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
-        ecc_chip: EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
+        ecc_chip: EccChip<OrchardFixedBases, Lookup>,
         v_net_magnitude_sign: (
             AssignedCell<pallas::Base, pallas::Base>,
             AssignedCell<pallas::Base, pallas::Base>,
         ),
-        rcv: ScalarFixed<
-            pallas::Affine,
-            EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
-        >,
-        asset: NonIdentityPoint<
-            pallas::Affine,
-            EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
-        >,
-    ) -> Result<
-        Point<pallas::Affine, EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>>,
-        plonk::Error,
-    > {
-        // Check that magnitude is 64 bits.
-        {
-            let lookup_config = sinsemilla_chip.config().lookup_config();
-            let (magnitude_words, magnitude_extra_bits) = (6, 4);
-            assert_eq!(
-                magnitude_words * sinsemilla::primitives::K + magnitude_extra_bits,
-                64
-            );
-            let magnitude_zs = lookup_config.copy_check(
-                layouter.namespace(|| "magnitude lowest 60 bits"),
-                v_net_magnitude_sign.0.clone(),
-                magnitude_words, // 6 windows of 10 bits.
-                false,           // Do not constrain the result here.
-            )?;
-            assert_eq!(magnitude_zs.len(), magnitude_words + 1);
-            lookup_config.copy_short_check(
-                layouter.namespace(|| "magnitude highest 4 bits"),
-                magnitude_zs[magnitude_words].clone(),
-                magnitude_extra_bits, // The 7th window must be a 4 bits value.
-            )?;
-        }
+        rcv: ScalarFixed<pallas::Affine, EccChip<OrchardFixedBases, Lookup>>,
+        zsa_params: Option<ZsaValueCommitParams<Lookup>>,
+    ) -> Result<Point<pallas::Affine, EccChip<OrchardFixedBases, Lookup>>, plonk::Error> {
+        // Evaluate commitment = [v_net_magnitude_sign] asset
+        let commitment = match zsa_params {
+            None => {
+                let v_net = ScalarFixedShort::new(
+                    ecc_chip.clone(),
+                    layouter.namespace(|| "v_net"),
+                    v_net_magnitude_sign,
+                )?;
 
-        // Multiply asset by magnitude, using the long scalar mul.
-        // TODO: implement a new variable base multiplication which is optimized for 64-bit scalar
-        // (the long scalar mul is optimized for pallas::Base scalar (~255-bits))
-        //
-        // commitment = [magnitude] asset
-        let commitment = {
-            let magnitude_scalar = ScalarVar::from_base(
-                ecc_chip.clone(),
-                layouter.namespace(|| "magnitude"),
-                &v_net_magnitude_sign.0,
-            )?;
-            let (commitment, _) =
-                asset.mul(layouter.namespace(|| "[magnitude] asset"), magnitude_scalar)?;
-            commitment
+                // commitment = [v_net] ValueCommitV
+                let (commitment, _) = {
+                    let value_commit_v = ValueCommitV;
+                    let value_commit_v =
+                        FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
+                    value_commit_v.mul(layouter.namespace(|| "[v] ValueCommitV"), v_net)?
+                };
+                commitment
+            }
+            Some(params) => {
+                // Check that magnitude is 64 bits
+                // Note: if zsa_params is not provided, this check will be performed inside the
+                // fixed-base short scalar multiplication.
+                {
+                    let lookup_config = params.sinsemilla_chip.config().lookup_config();
+                    let (magnitude_words, magnitude_extra_bits) = (6, 4);
+                    assert_eq!(
+                        magnitude_words * sinsemilla::primitives::K + magnitude_extra_bits,
+                        64
+                    );
+                    let magnitude_zs = lookup_config.copy_check(
+                        layouter.namespace(|| "magnitude lowest 60 bits"),
+                        v_net_magnitude_sign.0.clone(),
+                        magnitude_words, // 6 windows of 10 bits.
+                        false,           // Do not constrain the result here.
+                    )?;
+                    assert_eq!(magnitude_zs.len(), magnitude_words + 1);
+                    lookup_config.copy_short_check(
+                        layouter.namespace(|| "magnitude highest 4 bits"),
+                        magnitude_zs[magnitude_words].clone(),
+                        magnitude_extra_bits, // The 7th window must be a 4 bits value.
+                    )?;
+                }
+
+                // Multiply asset by magnitude, using the long scalar mul.
+                // TODO: implement a new variable base multiplication which is optimized for 64-bit scalar
+                // (the long scalar mul is optimized for pallas::Base scalar (~255-bits))
+                //
+                // magnitude_asset = [magnitude] asset
+                let magnitude_asset = {
+                    let magnitude_scalar = ScalarVar::from_base(
+                        ecc_chip.clone(),
+                        layouter.namespace(|| "magnitude"),
+                        &v_net_magnitude_sign.0,
+                    )?;
+                    let (magnitude_asset, _) = params
+                        .asset
+                        .mul(layouter.namespace(|| "[magnitude] asset"), magnitude_scalar)?;
+                    magnitude_asset
+                };
+
+                // commitment = [sign] magnitude_asset = [v_net_magnitude_sign] asset
+                magnitude_asset.mul_sign(
+                    layouter.namespace(|| "[sign] commitment"),
+                    &v_net_magnitude_sign.1,
+                )?
+            }
         };
-
-        // signed_commitment = [sign] commitment = [v_net_magnitude_sign] asset
-        let signed_commitment = commitment.mul_sign(
-            layouter.namespace(|| "[sign] commitment"),
-            &v_net_magnitude_sign.1,
-        )?;
 
         // blind = [rcv] ValueCommitR
         let (blind, _rcv) = {
@@ -98,14 +123,15 @@ pub(in crate::circuit) mod gadgets {
         };
 
         // [v] ValueCommitV + [rcv] ValueCommitR
-        signed_commitment.add(layouter.namespace(|| "cv"), &blind)
+        commitment.add(layouter.namespace(|| "cv"), &blind)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        circuit::circuit_zsa::gadget::{assign_free_advice, value_commit_orchard},
+        circuit::gadget::assign_free_advice,
+        circuit::value_commit_orchard::gadgets::value_commit_orchard,
         circuit::K,
         constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
         note::AssetBase,
@@ -118,7 +144,7 @@ mod tests {
         },
         sinsemilla::chip::{SinsemillaChip, SinsemillaConfig},
         utilities::lookup_range_check::{
-            LookupRangeCheck45BConfig, PallasLookupRangeCheck45BConfig,
+            LookupRangeCheck4_5BConfig, PallasLookupRangeCheck4_5BConfig,
         },
     };
 
@@ -130,6 +156,7 @@ mod tests {
     };
     use pasta_curves::pallas;
 
+    use crate::circuit::value_commit_orchard::ZsaValueCommitParams;
     use rand::{rngs::OsRng, RngCore};
 
     #[test]
@@ -138,14 +165,14 @@ mod tests {
         pub struct MyConfig {
             primary: Column<Instance>,
             advices: [Column<Advice>; 10],
-            ecc_config: EccConfig<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
+            ecc_config: EccConfig<OrchardFixedBases, PallasLookupRangeCheck4_5BConfig>,
             // Sinsemilla  config is only used to initialize the table_idx lookup table in the same
             // way as in the Orchard circuit
             sinsemilla_config: SinsemillaConfig<
                 OrchardHashDomains,
                 OrchardCommitDomains,
                 OrchardFixedBases,
-                PallasLookupRangeCheck45BConfig,
+                PallasLookupRangeCheck4_5BConfig,
             >,
         }
         #[derive(Default)]
@@ -207,7 +234,7 @@ mod tests {
                 ];
                 meta.enable_constant(lagrange_coeffs[0]);
 
-                let range_check = LookupRangeCheck45BConfig::configure_with_tag(
+                let range_check = LookupRangeCheck4_5BConfig::configure_with_tag(
                     meta,
                     advices[9],
                     table_idx,
@@ -228,7 +255,7 @@ mod tests {
                     primary,
                     advices,
                     ecc_config:
-                        EccChip::<OrchardFixedBases, PallasLookupRangeCheck45BConfig>::configure(
+                        EccChip::<OrchardFixedBases, PallasLookupRangeCheck4_5BConfig>::configure(
                             meta,
                             advices,
                             lagrange_coeffs,
@@ -307,11 +334,13 @@ mod tests {
                 // Evaluate cv_net with value_commit_orchard
                 let cv_net = value_commit_orchard(
                     layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net)"),
-                    sinsemilla_chip,
                     ecc_chip,
                     v_net_magnitude_sign,
                     rcv,
-                    asset,
+                    Some(ZsaValueCommitParams {
+                        sinsemilla_chip,
+                        asset,
+                    }),
                 )?;
 
                 // Constrain cv_net to equal public input

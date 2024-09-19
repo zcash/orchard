@@ -683,7 +683,7 @@ mod tests {
         },
         utilities::{
             lookup_range_check::{
-                PallasLookupRangeCheck, PallasLookupRangeCheck45BConfig,
+                PallasLookupRangeCheck, PallasLookupRangeCheck4_5BConfig,
                 PallasLookupRangeCheckConfig,
             },
             UtilitiesInstructions,
@@ -705,7 +705,7 @@ mod tests {
         const ENABLE_HASH_FROM_PRIVATE_POINT: bool = false;
     }
 
-    impl MyLookup for PallasLookupRangeCheck45BConfig {
+    impl MyLookup for PallasLookupRangeCheck4_5BConfig {
         const ENABLE_HASH_FROM_PRIVATE_POINT: bool = true;
     }
 
@@ -943,6 +943,6 @@ mod tests {
 
     #[test]
     fn commit_ivk_zsa() {
-        commit_ivk::<PallasLookupRangeCheck45BConfig>()
+        commit_ivk::<PallasLookupRangeCheck4_5BConfig>()
     }
 }

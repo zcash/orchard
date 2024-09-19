@@ -9,100 +9,47 @@ use group::Curve;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 use halo2_gadgets::{
-    ecc::{
-        chip::{EccChip, EccConfig},
-        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar,
-    },
-    poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    ecc::{chip::EccChip, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar},
+    poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip},
     sinsemilla::{
-        chip::{SinsemillaChip, SinsemillaConfig},
-        merkle::{
-            chip::{MerkleChip, MerkleConfig},
-            MerklePath,
-        },
+        chip::SinsemillaChip,
+        merkle::{chip::MerkleChip, MerklePath},
     },
     utilities::{
         bool_check,
-        cond_swap::{CondSwapChip, CondSwapConfig},
-        lookup_range_check::{LookupRangeCheck45BConfig, PallasLookupRangeCheck45BConfig},
+        lookup_range_check::{LookupRangeCheck4_5BConfig, PallasLookupRangeCheck4_5BConfig},
     },
 };
 
 use halo2_proofs::{
     circuit::{Layouter, Value},
-    plonk::{self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector},
+    plonk::{self, Constraints, Expression},
     poly::Rotation,
 };
 
+use super::{
+    commit_ivk::CommitIvkChip,
+    derive_nullifier::ZsaNullifierParams,
+    gadget::{add_chip::AddChip, assign_free_advice, assign_is_native_asset, assign_split_flag},
+    note_commit::NoteCommitChip,
+    value_commit_orchard::ZsaValueCommitParams,
+    Circuit, OrchardCircuit, ANCHOR, CMX, CV_NET_X, CV_NET_Y, ENABLE_OUTPUT, ENABLE_SPEND,
+    ENABLE_ZSA, NF_OLD, RK_X, RK_Y,
+};
 use crate::{
+    circuit::commit_ivk::gadgets::commit_ivk,
+    circuit::derive_nullifier::gadgets::derive_nullifier,
+    circuit::note_commit::{gadgets::note_commit, ZsaNoteCommitParams},
+    circuit::value_commit_orchard::gadgets::value_commit_orchard,
+    circuit::Config,
     constants::OrchardFixedBasesFull,
-    constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
+    constants::{OrchardFixedBases, OrchardHashDomains},
     note::AssetBase,
     orchard_flavor::OrchardZSA,
 };
 
-use super::{
-    commit_ivk::{
-        self, {CommitIvkChip, CommitIvkConfig},
-    },
-    gadget::{
-        add_chip::{self, AddChip, AddConfig},
-        AddInstruction,
-    },
-    Circuit, OrchardCircuit, ANCHOR, CMX, CV_NET_X, CV_NET_Y, ENABLE_OUTPUT, ENABLE_SPEND,
-    ENABLE_ZSA, NF_OLD, RK_X, RK_Y,
-};
-
-use self::{
-    gadget::{assign_free_advice, assign_is_native_asset, assign_split_flag},
-    note_commit::{NoteCommitChip, NoteCommitConfig},
-};
-
-pub mod gadget;
-mod note_commit;
-mod value_commit_orchard;
-
-/// Configuration needed to use the Orchard Action circuit.
-#[derive(Clone, Debug)]
-pub struct Config {
-    primary: Column<InstanceColumn>,
-    q_orchard: Selector,
-    advices: [Column<Advice>; 10],
-    add_config: AddConfig,
-    ecc_config: EccConfig<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
-    poseidon_config: PoseidonConfig<pallas::Base, 3, 2>,
-    merkle_config_1: MerkleConfig<
-        OrchardHashDomains,
-        OrchardCommitDomains,
-        OrchardFixedBases,
-        PallasLookupRangeCheck45BConfig,
-    >,
-    merkle_config_2: MerkleConfig<
-        OrchardHashDomains,
-        OrchardCommitDomains,
-        OrchardFixedBases,
-        PallasLookupRangeCheck45BConfig,
-    >,
-    sinsemilla_config_1: SinsemillaConfig<
-        OrchardHashDomains,
-        OrchardCommitDomains,
-        OrchardFixedBases,
-        PallasLookupRangeCheck45BConfig,
-    >,
-    sinsemilla_config_2: SinsemillaConfig<
-        OrchardHashDomains,
-        OrchardCommitDomains,
-        OrchardFixedBases,
-        PallasLookupRangeCheck45BConfig,
-    >,
-    commit_ivk_config: CommitIvkConfig,
-    old_note_commit_config: NoteCommitConfig,
-    new_note_commit_config: NoteCommitConfig,
-    cond_swap_config: CondSwapConfig,
-}
-
 impl OrchardCircuit for OrchardZSA {
-    type Config = Config;
+    type Config = Config<PallasLookupRangeCheck4_5BConfig>;
 
     fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> Self::Config {
         // Advice columns used in the Orchard circuit.
@@ -277,7 +224,7 @@ impl OrchardCircuit for OrchardZSA {
 
         // We have a lot of free space in the right-most advice columns; use one of them
         // for all of our range checks.
-        let range_check = LookupRangeCheck45BConfig::configure_with_tag(
+        let range_check = LookupRangeCheck4_5BConfig::configure_with_tag(
             meta,
             advices[9],
             table_idx,
@@ -286,7 +233,7 @@ impl OrchardCircuit for OrchardZSA {
 
         // Configuration for curve point operations.
         // This uses 10 advice columns and spans the whole circuit.
-        let ecc_config = EccChip::<OrchardFixedBases, PallasLookupRangeCheck45BConfig>::configure(
+        let ecc_config = EccChip::<OrchardFixedBases, PallasLookupRangeCheck4_5BConfig>::configure(
             meta,
             advices,
             lagrange_coeffs,
@@ -349,14 +296,12 @@ impl OrchardCircuit for OrchardZSA {
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_old.
         let old_note_commit_config =
-            NoteCommitChip::configure(meta, advices, sinsemilla_config_1.clone());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_1.clone(), true);
 
         // Configuration to handle decomposition and canonicity checking
         // for NoteCommit_new.
         let new_note_commit_config =
-            NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone());
-
-        let cond_swap_config = CondSwapChip::configure(meta, advices[0..5].try_into().unwrap());
+            NoteCommitChip::configure(meta, advices, sinsemilla_config_2.clone(), true);
 
         Config {
             primary,
@@ -372,7 +317,6 @@ impl OrchardCircuit for OrchardZSA {
             commit_ivk_config,
             old_note_commit_config,
             new_note_commit_config,
-            cond_swap_config,
         }
     }
 
@@ -545,13 +489,15 @@ impl OrchardCircuit for OrchardZSA {
                 circuit.rcv.as_ref().map(|rcv| rcv.inner()),
             )?;
 
-            let cv_net = gadget::value_commit_orchard(
+            let cv_net = value_commit_orchard(
                 layouter.namespace(|| "cv_net = ValueCommit^Orchard_rcv(v_net_magnitude_sign)"),
-                config.sinsemilla_chip_1(),
                 ecc_chip.clone(),
                 v_net_magnitude_sign.clone(),
                 rcv,
-                asset.clone(),
+                Some(ZsaValueCommitParams {
+                    sinsemilla_chip: config.sinsemilla_chip_1(),
+                    asset: asset.clone(),
+                }),
             )?;
 
             // Constrain cv_net to equal public input
@@ -564,17 +510,19 @@ impl OrchardCircuit for OrchardZSA {
 
         // Nullifier integrity (https://p.z.cash/ZKS:action-nullifier-integrity).
         let nf_old = {
-            let nf_old = gadget::derive_nullifier(
-                layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_nf, cm_old)"),
+            let nf_old = derive_nullifier(
+                &mut layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_nf, cm_old)"),
                 config.poseidon_chip(),
                 config.add_chip(),
                 ecc_chip.clone(),
-                config.cond_swap_chip(),
                 rho_old.clone(),
                 &psi_nf,
                 &cm_old,
                 nk.clone(),
-                split_flag.clone(),
+                Some(ZsaNullifierParams {
+                    cond_swap_chip: config.cond_swap_chip(),
+                    split_flag: split_flag.clone(),
+                }),
             )?;
 
             // Constrain nf_old to equal public input
@@ -616,7 +564,7 @@ impl OrchardCircuit for OrchardZSA {
                     circuit.rivk.map(|rivk| rivk.inner()),
                 )?;
 
-                gadget::commit_ivk(
+                commit_ivk(
                     config.sinsemilla_chip_1(),
                     ecc_chip.clone(),
                     config.commit_ivk_chip(),
@@ -663,22 +611,24 @@ impl OrchardCircuit for OrchardZSA {
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let derived_cm_old = gadget::note_commit(
+            let derived_cm_old = note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_1(),
                 config.ecc_chip(),
                 config.note_commit_chip_old(),
-                config.cond_swap_chip(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
                 v_old.clone(),
                 rho_old,
                 psi_old.clone(),
-                asset.inner(),
                 rcm_old,
-                is_native_asset.clone(),
+                Some(ZsaNoteCommitParams {
+                    cond_swap_chip: config.cond_swap_chip(),
+                    asset: asset.inner().clone(),
+                    is_native_asset: is_native_asset.clone(),
+                }),
             )?;
 
             // Constrain derived cm_old to equal witnessed cm_old
@@ -726,22 +676,24 @@ impl OrchardCircuit for OrchardZSA {
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
-            let cm_new = gadget::note_commit(
+            let cm_new = note_commit(
                 layouter.namespace(|| {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_2(),
                 config.ecc_chip(),
                 config.note_commit_chip_new(),
-                config.cond_swap_chip(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
                 v_new.clone(),
                 rho_new,
                 psi_new,
-                asset.inner(),
                 rcm_new,
-                is_native_asset.clone(),
+                Some(ZsaNoteCommitParams {
+                    cond_swap_chip: config.cond_swap_chip(),
+                    asset: asset.inner().clone(),
+                    is_native_asset: is_native_asset.clone(),
+                }),
             )?;
 
             let cmx = cm_new.extract_p();

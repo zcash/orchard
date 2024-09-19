@@ -1,44 +1,35 @@
-//! Note commitment logic for the Orchard circuit (ZSA variation).
-
-use core::iter;
-
-use group::ff::PrimeField;
-use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Value},
-    plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
-    poly::Rotation,
-};
-use pasta_curves::pallas;
+//! Note commitment logic for the Orchard circuit.
 
 use crate::{
     constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P},
     value::NoteValue,
 };
+use group::ff::PrimeField;
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, NonIdentityEccPoint},
-        NonIdentityPoint, Point, ScalarFixed,
+        {NonIdentityPoint, Point, ScalarFixed},
     },
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
         CommitDomain, Message, MessagePiece,
     },
     utilities::{
-        bool_check,
-        cond_swap::CondSwapChip,
-        lookup_range_check::{LookupRangeCheck, PallasLookupRangeCheck45BConfig},
+        bool_check, cond_swap::CondSwapChip, lookup_range_check::PallasLookupRangeCheck,
         FieldValue, RangeConstrained,
     },
 };
+use halo2_proofs::{
+    circuit::{AssignedCell, Chip, Layouter, Value},
+    plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
+    poly::Rotation,
+};
+use pasta_curves::pallas;
+use std::iter;
 
-type NoteCommitPiece = MessagePiece<
+type NoteCommitPiece<Lookup> = MessagePiece<
     pallas::Affine,
-    SinsemillaChip<
-        OrchardHashDomains,
-        OrchardCommitDomains,
-        OrchardFixedBases,
-        PallasLookupRangeCheck45BConfig,
-    >,
+    SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
     10,
     253,
 >;
@@ -73,14 +64,15 @@ type CanonicityBounds = (
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-decomposition-b?partial>
 #[derive(Clone, Debug)]
-struct DecomposeB {
+struct DecomposeB<Lookup: PallasLookupRangeCheck> {
     q_notecommit_b: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl DecomposeB {
+impl<Lookup: PallasLookupRangeCheck> DecomposeB<Lookup> {
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         col_l: Column<Advice>,
@@ -125,24 +117,20 @@ impl DecomposeB {
             col_l,
             col_m,
             col_r,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
     #[allow(clippy::type_complexity)]
     fn decompose(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
-        chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
+        lookup_config: &Lookup,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
         layouter: &mut impl Layouter<pallas::Base>,
         g_d: &NonIdentityEccPoint,
         pk_d: &NonIdentityEccPoint,
     ) -> Result<
         (
-            NoteCommitPiece,
+            NoteCommitPiece<Lookup>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
@@ -184,7 +172,7 @@ impl DecomposeB {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        b: NoteCommitPiece,
+        b: NoteCommitPiece<Lookup>,
         b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         b_1: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         b_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
@@ -223,14 +211,15 @@ impl DecomposeB {
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-decomposition-d?partial>
 #[derive(Clone, Debug)]
-struct DecomposeD {
+struct DecomposeD<Lookup: PallasLookupRangeCheck> {
     q_notecommit_d: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl DecomposeD {
+impl<Lookup: PallasLookupRangeCheck> DecomposeD<Lookup> {
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         col_l: Column<Advice>,
@@ -275,24 +264,20 @@ impl DecomposeD {
             col_l,
             col_m,
             col_r,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
     #[allow(clippy::type_complexity)]
     fn decompose(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
-        chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
+        lookup_config: &Lookup,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
         layouter: &mut impl Layouter<pallas::Base>,
         pk_d: &NonIdentityEccPoint,
         value: &AssignedCell<NoteValue, pallas::Base>,
     ) -> Result<
         (
-            NoteCommitPiece,
+            NoteCommitPiece<Lookup>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
@@ -328,7 +313,7 @@ impl DecomposeD {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        d: NoteCommitPiece,
+        d: NoteCommitPiece<Lookup>,
         d_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         d_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         d_2: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
@@ -364,14 +349,15 @@ impl DecomposeD {
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-decomposition-e?partial>
 #[derive(Clone, Debug)]
-struct DecomposeE {
+struct DecomposeE<Lookup: PallasLookupRangeCheck> {
     q_notecommit_e: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl DecomposeE {
+impl<Lookup: PallasLookupRangeCheck> DecomposeE<Lookup> {
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         col_l: Column<Advice>,
@@ -402,24 +388,20 @@ impl DecomposeE {
             col_l,
             col_m,
             col_r,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
     #[allow(clippy::type_complexity)]
     fn decompose(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
-        chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
+        lookup_config: &Lookup,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
         layouter: &mut impl Layouter<pallas::Base>,
         value: &AssignedCell<NoteValue, pallas::Base>,
         rho: &AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<
         (
-            NoteCommitPiece,
+            NoteCommitPiece<Lookup>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         ),
@@ -455,7 +437,7 @@ impl DecomposeE {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        e: NoteCommitPiece,
+        e: NoteCommitPiece<Lookup>,
         e_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     ) -> Result<(), Error> {
@@ -488,13 +470,14 @@ impl DecomposeE {
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-decomposition-g?partial>
 #[derive(Clone, Debug)]
-struct DecomposeG {
+struct DecomposeG<Lookup: PallasLookupRangeCheck> {
     q_notecommit_g: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl DecomposeG {
+impl<Lookup: PallasLookupRangeCheck> DecomposeG<Lookup> {
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         col_l: Column<Advice>,
@@ -532,24 +515,20 @@ impl DecomposeG {
             q_notecommit_g,
             col_l,
             col_m,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
     #[allow(clippy::type_complexity)]
     fn decompose(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
-        chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
+        lookup_config: &Lookup,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
         layouter: &mut impl Layouter<pallas::Base>,
         rho: &AssignedCell<pallas::Base, pallas::Base>,
         psi: &AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<
         (
-            NoteCommitPiece,
+            NoteCommitPiece<Lookup>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         ),
@@ -581,7 +560,7 @@ impl DecomposeG {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        g: NoteCommitPiece,
+        g: NoteCommitPiece<Lookup>,
         g_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         z1_g: AssignedCell<pallas::Base, pallas::Base>,
@@ -605,6 +584,130 @@ impl DecomposeG {
         )
     }
 }
+
+/// For Vanilla Orchard circuit,
+/// h = h_0 || h_1 || h_2
+///   = (bits 249..=253 of psi) || (bit 254 of psi) || 4 zero bits
+///
+/// | A_6 | A_7 | A_8 | q_notecommit_h |
+/// ------------------------------------
+/// |  h  | h_0 | h_1 |       1        |
+///
+/// <https://p.z.cash/orchard-0.1:note-commit-decomposition-h?partial>
+#[derive(Clone, Debug)]
+struct DecomposeHVanilla<Lookup: PallasLookupRangeCheck> {
+    q_notecommit_h: Selector,
+    col_l: Column<Advice>,
+    col_m: Column<Advice>,
+    col_r: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
+}
+
+impl<Lookup: PallasLookupRangeCheck> DecomposeHVanilla<Lookup> {
+    fn configure(
+        meta: &mut ConstraintSystem<pallas::Base>,
+        col_l: Column<Advice>,
+        col_m: Column<Advice>,
+        col_r: Column<Advice>,
+        two_pow_5: pallas::Base,
+    ) -> Self {
+        let q_notecommit_h = meta.selector();
+
+        meta.create_gate("NoteCommit MessagePiece h", |meta| {
+            let q_notecommit_h = meta.query_selector(q_notecommit_h);
+
+            // h has been constrained to 10 bits by the Sinsemilla hash.
+            let h = meta.query_advice(col_l, Rotation::cur());
+            // h_0 has been constrained to be 5 bits outside this gate.
+            let h_0 = meta.query_advice(col_m, Rotation::cur());
+            // This gate constrains h_1 to be boolean.
+            let h_1 = meta.query_advice(col_r, Rotation::cur());
+
+            // h = h_0 + (2^5) h_1
+            let decomposition_check = h - (h_0 + h_1.clone() * two_pow_5);
+
+            Constraints::with_selector(
+                q_notecommit_h,
+                [
+                    ("bool_check h_1", bool_check(h_1)),
+                    ("decomposition", decomposition_check),
+                ],
+            )
+        });
+
+        Self {
+            q_notecommit_h,
+            col_l,
+            col_m,
+            col_r,
+            _lookup_marker: std::marker::PhantomData,
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn decompose(
+        lookup_config: &Lookup,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
+        layouter: &mut impl Layouter<pallas::Base>,
+        psi: &AssignedCell<pallas::Base, pallas::Base>,
+    ) -> Result<
+        (
+            NoteCommitPiece<Lookup>,
+            RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+            RangeConstrained<pallas::Base, Value<pallas::Base>>,
+        ),
+        Error,
+    > {
+        // Constrain h_0 to be 5 bits.
+        let h_0 = RangeConstrained::witness_short(
+            lookup_config,
+            layouter.namespace(|| "h_0"),
+            psi.value(),
+            249..254,
+        )?;
+
+        // h_1 will be boolean-constrained in the gate.
+        let h_1 = RangeConstrained::bitrange_of(psi.value(), 254..255);
+
+        let h = MessagePiece::from_subpieces(
+            chip,
+            layouter.namespace(|| "h"),
+            [
+                h_0.value(),
+                h_1,
+                RangeConstrained::bitrange_of(Value::known(&pallas::Base::zero()), 0..4),
+            ],
+        )?;
+
+        Ok((h, h_0, h_1))
+    }
+
+    fn assign(
+        &self,
+        layouter: &mut impl Layouter<pallas::Base>,
+        h: NoteCommitPiece<Lookup>,
+        h_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+        h_1: RangeConstrained<pallas::Base, Value<pallas::Base>>,
+    ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
+        layouter.assign_region(
+            || "NoteCommit MessagePiece h",
+            |mut region| {
+                self.q_notecommit_h.enable(&mut region, 0)?;
+
+                h.inner()
+                    .cell_value()
+                    .copy_advice(|| "h", &mut region, self.col_l, 0)?;
+                h_0.inner()
+                    .copy_advice(|| "h_0", &mut region, self.col_m, 0)?;
+                let h_1 = region.assign_advice(|| "h_1", self.col_r, 0, || *h_1.inner())?;
+
+                Ok(h_1)
+            },
+        )
+    }
+}
+
+/// For ZSA Orchard circuit,
 /// h_zec = h_0 || h_1 || h_2_zec
 ///       = (bits 249..=253 of psi) || (bit 254 of psi) || 4 zero bits
 ///
@@ -618,14 +721,15 @@ impl DecomposeG {
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-decomposition-h?partial>
 #[derive(Clone, Debug)]
-struct DecomposeH {
+struct DecomposeHZsa<Lookup: PallasLookupRangeCheck> {
     q_notecommit_h: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl DecomposeH {
+impl<Lookup: PallasLookupRangeCheck> DecomposeHZsa<Lookup> {
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         col_l: Column<Advice>,
@@ -673,25 +777,21 @@ impl DecomposeH {
             col_l,
             col_m,
             col_r,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
     #[allow(clippy::type_complexity)]
     fn decompose(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
-        chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
+        lookup_config: &Lookup,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
         layouter: &mut impl Layouter<pallas::Base>,
         psi: &AssignedCell<pallas::Base, pallas::Base>,
         asset: &NonIdentityEccPoint,
     ) -> Result<
         (
-            NoteCommitPiece,
-            NoteCommitPiece,
+            NoteCommitPiece<Lookup>,
+            NoteCommitPiece<Lookup>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
@@ -739,8 +839,8 @@ impl DecomposeH {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        h_zec: NoteCommitPiece,
-        h_zsa: NoteCommitPiece,
+        h_zec: NoteCommitPiece<Lookup>,
+        h_zsa: NoteCommitPiece<Lookup>,
         h_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         h_1: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         h_2_zsa: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
@@ -782,14 +882,15 @@ impl DecomposeH {
 ///
 /// https://p.z.cash/orchard-0.1:note-commit-decomposition-j?partial
 #[derive(Clone, Debug)]
-struct DecomposeJ {
+struct DecomposeJ<Lookup: PallasLookupRangeCheck> {
     q_notecommit_j: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl DecomposeJ {
+impl<Lookup: PallasLookupRangeCheck> DecomposeJ<Lookup> {
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         col_l: Column<Advice>,
@@ -827,22 +928,18 @@ impl DecomposeJ {
             col_l,
             col_m,
             col_r,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
     #[allow(clippy::type_complexity)]
     fn decompose(
-        chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
         layouter: &mut impl Layouter<pallas::Base>,
         asset: &NonIdentityEccPoint,
     ) -> Result<
         (
-            NoteCommitPiece,
+            NoteCommitPiece<Lookup>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
             RangeConstrained<pallas::Base, Value<pallas::Base>>,
         ),
@@ -868,7 +965,7 @@ impl DecomposeJ {
     fn assign(
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
-        j: NoteCommitPiece,
+        j: NoteCommitPiece<Lookup>,
         j_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
         j_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
     ) -> Result<AssignedCell<pallas::Base, pallas::Base>, Error> {
@@ -897,15 +994,16 @@ impl DecomposeJ {
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-canonicity-g_d?partial>
 #[derive(Clone, Debug)]
-struct GdCanonicity {
+struct GdCanonicity<Lookup: PallasLookupRangeCheck> {
     q_notecommit_g_d: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
     col_z: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl GdCanonicity {
+impl<Lookup: PallasLookupRangeCheck> GdCanonicity<Lookup> {
     #[allow(clippy::too_many_arguments)]
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
@@ -969,6 +1067,7 @@ impl GdCanonicity {
             col_m,
             col_r,
             col_z,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
@@ -977,7 +1076,7 @@ impl GdCanonicity {
         &self,
         layouter: &mut impl Layouter<pallas::Base>,
         g_d: &NonIdentityEccPoint,
-        a: NoteCommitPiece,
+        a: NoteCommitPiece<Lookup>,
         b_0: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         b_1: AssignedCell<pallas::Base, pallas::Base>,
         a_prime: AssignedCell<pallas::Base, pallas::Base>,
@@ -1006,6 +1105,7 @@ impl GdCanonicity {
         )
     }
 }
+
 /// For pk_d
 /// |   A_6   | A_7 |    A_8     |      A_9       | q_notecommit_pk_d_asset |
 /// -------------------------------------------------------------------------
@@ -1020,15 +1120,16 @@ impl GdCanonicity {
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-canonicity-pk_d?partial>
 #[derive(Clone, Debug)]
-struct PkdAssetCanonicity {
+struct PkdAssetCanonicity<Lookup: PallasLookupRangeCheck> {
     q_notecommit_pk_d_asset: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
     col_z: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl PkdAssetCanonicity {
+impl<Lookup: PallasLookupRangeCheck> PkdAssetCanonicity<Lookup> {
     #[allow(clippy::too_many_arguments)]
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
@@ -1094,6 +1195,7 @@ impl PkdAssetCanonicity {
             col_m,
             col_r,
             col_z,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
@@ -1106,7 +1208,7 @@ impl PkdAssetCanonicity {
         layouter: &mut impl Layouter<pallas::Base>,
         pk_d: &NonIdentityEccPoint,
         b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-        c: NoteCommitPiece,
+        c: NoteCommitPiece<Lookup>,
         d_0: AssignedCell<pallas::Base, pallas::Base>,
         b3_c_prime: AssignedCell<pallas::Base, pallas::Base>,
         z13_c: AssignedCell<pallas::Base, pallas::Base>,
@@ -1220,15 +1322,16 @@ impl ValueCanonicity {
 ///
 /// <https://p.z.cash/orchard-0.1:note-commit-canonicity-rho?partial>
 #[derive(Clone, Debug)]
-struct RhoCanonicity {
+struct RhoCanonicity<Lookup: PallasLookupRangeCheck> {
     q_notecommit_rho: Selector,
     col_l: Column<Advice>,
     col_m: Column<Advice>,
     col_r: Column<Advice>,
     col_z: Column<Advice>,
+    _lookup_marker: std::marker::PhantomData<Lookup>,
 }
 
-impl RhoCanonicity {
+impl<Lookup: PallasLookupRangeCheck> RhoCanonicity<Lookup> {
     #[allow(clippy::too_many_arguments)]
     fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
@@ -1290,6 +1393,7 @@ impl RhoCanonicity {
             col_m,
             col_r,
             col_z,
+            _lookup_marker: std::marker::PhantomData,
         }
     }
 
@@ -1299,7 +1403,7 @@ impl RhoCanonicity {
         layouter: &mut impl Layouter<pallas::Base>,
         rho: AssignedCell<pallas::Base, pallas::Base>,
         e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-        f: NoteCommitPiece,
+        f: NoteCommitPiece<Lookup>,
         g_0: AssignedCell<pallas::Base, pallas::Base>,
         e1_f_prime: AssignedCell<pallas::Base, pallas::Base>,
         z13_f: AssignedCell<pallas::Base, pallas::Base>,
@@ -1619,34 +1723,46 @@ impl YCanonicity {
 
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
-pub struct NoteCommitConfig {
-    b: DecomposeB,
-    d: DecomposeD,
-    e: DecomposeE,
-    g: DecomposeG,
-    h: DecomposeH,
-    j: DecomposeJ,
-    g_d: GdCanonicity,
-    pk_d_asset: PkdAssetCanonicity,
+pub struct NoteCommitConfig<Lookup: PallasLookupRangeCheck> {
+    b: DecomposeB<Lookup>,
+    d: DecomposeD<Lookup>,
+    e: DecomposeE<Lookup>,
+    g: DecomposeG<Lookup>,
+    g_d: GdCanonicity<Lookup>,
+    pk_d_asset: PkdAssetCanonicity<Lookup>,
     value: ValueCanonicity,
-    rho: RhoCanonicity,
+    rho: RhoCanonicity<Lookup>,
     psi: PsiCanonicity,
     y_canon: YCanonicity,
     advices: [Column<Advice>; 10],
-    sinsemilla_config: SinsemillaConfig<
-        OrchardHashDomains,
-        OrchardCommitDomains,
-        OrchardFixedBases,
-        PallasLookupRangeCheck45BConfig,
-    >,
+    sinsemilla_config:
+        SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
+    specific_config_for_circuit: SpecificConfigForCircuit<Lookup>,
 }
 
 #[derive(Clone, Debug)]
-pub struct NoteCommitChip {
-    config: NoteCommitConfig,
+pub enum SpecificConfigForCircuit<Lookup: PallasLookupRangeCheck> {
+    Vanilla(NoteCommitConfigForVanillaCircuit<Lookup>),
+    Zsa(NoteCommitConfigForZsaCircuit<Lookup>),
 }
 
-impl NoteCommitChip {
+#[derive(Clone, Debug)]
+pub struct NoteCommitConfigForVanillaCircuit<Lookup: PallasLookupRangeCheck> {
+    h_vanilla: DecomposeHVanilla<Lookup>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NoteCommitConfigForZsaCircuit<Lookup: PallasLookupRangeCheck> {
+    h_zsa: DecomposeHZsa<Lookup>,
+    j: DecomposeJ<Lookup>,
+}
+
+#[derive(Clone, Debug)]
+pub struct NoteCommitChip<Lookup: PallasLookupRangeCheck> {
+    pub config: NoteCommitConfig<Lookup>,
+}
+
+impl<Lookup: PallasLookupRangeCheck> NoteCommitChip<Lookup> {
     #[allow(non_snake_case)]
     #[allow(clippy::many_single_char_names)]
     pub(in crate::circuit) fn configure(
@@ -1656,9 +1772,10 @@ impl NoteCommitChip {
             OrchardHashDomains,
             OrchardCommitDomains,
             OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
+            Lookup,
         >,
-    ) -> NoteCommitConfig {
+        is_zsa_circuit: bool,
+    ) -> NoteCommitConfig<Lookup> {
         // Useful constants
         let two = pallas::Base::from(2);
         let two_pow_2 = pallas::Base::from(1 << 2);
@@ -1687,8 +1804,14 @@ impl NoteCommitChip {
         let d = DecomposeD::configure(meta, col_l, col_m, col_r, two, two_pow_2, two_pow_10);
         let e = DecomposeE::configure(meta, col_l, col_m, col_r, two_pow_6);
         let g = DecomposeG::configure(meta, col_l, col_m, two, two_pow_10);
-        let h = DecomposeH::configure(meta, col_l, col_m, col_r, two_pow_5, two_pow_6);
-        let j = DecomposeJ::configure(meta, col_l, col_m, col_r, two);
+        let specific_config_for_circuit = if is_zsa_circuit {
+            let h = DecomposeHZsa::configure(meta, col_l, col_m, col_r, two_pow_5, two_pow_6);
+            let j = DecomposeJ::configure(meta, col_l, col_m, col_r, two);
+            SpecificConfigForCircuit::Zsa(NoteCommitConfigForZsaCircuit { h_zsa: h, j })
+        } else {
+            let h = DecomposeHVanilla::configure(meta, col_l, col_m, col_r, two_pow_5);
+            SpecificConfigForCircuit::Vanilla(NoteCommitConfigForVanillaCircuit { h_vanilla: h })
+        };
 
         let g_d = GdCanonicity::configure(
             meta,
@@ -1758,8 +1881,6 @@ impl NoteCommitChip {
             d,
             e,
             g,
-            h,
-            j,
             g_d,
             pk_d_asset,
             value,
@@ -1768,48 +1889,54 @@ impl NoteCommitChip {
             y_canon,
             advices,
             sinsemilla_config,
+            specific_config_for_circuit,
         }
     }
 
-    pub(in crate::circuit) fn construct(config: NoteCommitConfig) -> Self {
+    pub(in crate::circuit) fn construct(config: NoteCommitConfig<Lookup>) -> Self {
         Self { config }
     }
 }
 
-pub(in crate::circuit) mod gadgets {
-    use halo2_proofs::circuit::{Chip, Value};
+pub struct ZsaNoteCommitParams {
+    pub cond_swap_chip: CondSwapChip<pallas::Base>,
+    pub asset: NonIdentityEccPoint,
+    pub is_native_asset: AssignedCell<pallas::Base, pallas::Base>,
+}
+pub struct ZsaFinalDecomposition<Lookup: PallasLookupRangeCheck> {
+    pub h_zsa: NoteCommitPiece<Lookup>,
+    pub h_2_zsa: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    pub i: NoteCommitPiece<Lookup>,
+    pub j: NoteCommitPiece<Lookup>,
+    pub j_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
+    pub j_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+}
 
+pub(in crate::circuit) mod gadgets {
     use super::*;
 
     #[allow(clippy::many_single_char_names)]
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::circuit) fn note_commit(
+    pub(in crate::circuit) fn note_commit<Lookup: PallasLookupRangeCheck>(
         mut layouter: impl Layouter<pallas::Base>,
-        chip: SinsemillaChip<
-            OrchardHashDomains,
-            OrchardCommitDomains,
-            OrchardFixedBases,
-            PallasLookupRangeCheck45BConfig,
-        >,
-        ecc_chip: EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
-        note_commit_chip: NoteCommitChip,
-        cond_swap_chip: CondSwapChip<pallas::Base>,
+        chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
+        ecc_chip: EccChip<OrchardFixedBases, Lookup>,
+        note_commit_chip: NoteCommitChip<Lookup>,
         g_d: &NonIdentityEccPoint,
         pk_d: &NonIdentityEccPoint,
         value: AssignedCell<NoteValue, pallas::Base>,
         rho: AssignedCell<pallas::Base, pallas::Base>,
         psi: AssignedCell<pallas::Base, pallas::Base>,
-        asset: &NonIdentityEccPoint,
-        rcm: ScalarFixed<
-            pallas::Affine,
-            EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
-        >,
-        is_native_asset: AssignedCell<pallas::Base, pallas::Base>,
-    ) -> Result<
-        Point<pallas::Affine, EccChip<OrchardFixedBases, PallasLookupRangeCheck45BConfig>>,
-        Error,
-    > {
+        rcm: ScalarFixed<pallas::Affine, EccChip<OrchardFixedBases, Lookup>>,
+        zsa_params: Option<ZsaNoteCommitParams>,
+    ) -> Result<Point<pallas::Affine, EccChip<OrchardFixedBases, Lookup>>, Error> {
+        match (&zsa_params, &note_commit_chip.config.specific_config_for_circuit) {
+            (Some(_), SpecificConfigForCircuit::Zsa(_)) => {},
+            (None, SpecificConfigForCircuit::Vanilla(_)) => {},
+            _ => panic!("ZSA parameters must be provided for ZSA circuits, and must not be provided for vanilla circuits"),
+        }
+
         let lookup_config = chip.config().lookup_config();
 
         // `a` = bits 0..=249 of `x(g_d)`
@@ -1852,22 +1979,69 @@ pub(in crate::circuit) mod gadgets {
         let (g, g_0, g_1) =
             DecomposeG::decompose(&lookup_config, chip.clone(), &mut layouter, &rho, &psi)?;
 
-        // h_zec = h_0 || h_1 || h_2_zec
-        //   = (bits 249..=253 of psi) || (bit 254 of psi) || 4 zero bits
-        // h_zsa = h_0 || h_1 || h_2_zsa
-        //   = (bits 249..=253 of psi) || (bit 254 of psi) || (bits 0..=3 of x(asset))
-        let (h_zec, h_zsa, h_0, h_1, h_2_zsa) =
-            DecomposeH::decompose(&lookup_config, chip.clone(), &mut layouter, &psi, asset)?;
+        let (h_zec, h_0, h_1, zsa_decomposition) = match &zsa_params {
+            None => {
+                // h_zec = h_0 || h_1 || h_2
+                //       = (bits 249..=253 of psi) || (bit 254 of psi) || 4 zero bits
+                let (h_zec, h_0, h_1) = DecomposeHVanilla::decompose(
+                    &lookup_config,
+                    chip.clone(),
+                    &mut layouter,
+                    &psi,
+                )?;
+                (h_zec, h_0, h_1, None)
+            }
+            Some(zsa_params) => {
+                // h_zec = h_0 || h_1 || h_2_zec
+                //   = (bits 249..=253 of psi) || (bit 254 of psi) || 4 zero bits
+                // h_zsa = h_0 || h_1 || h_2_zsa
+                //   = (bits 249..=253 of psi) || (bit 254 of psi) || (bits 0..=3 of x(asset))
+                let (h_zec, h_zsa, h_0, h_1, h_2_zsa) = DecomposeHZsa::decompose(
+                    &lookup_config,
+                    chip.clone(),
+                    &mut layouter,
+                    &psi,
+                    &zsa_params.asset,
+                )?;
 
-        // i = bits 4..=253 of asset
-        let i = MessagePiece::from_subpieces(
-            chip.clone(),
-            layouter.namespace(|| "i"),
-            [RangeConstrained::bitrange_of(asset.x().value(), 4..254)],
-        )?;
+                // i = bits 4..=253 of asset
+                let i = MessagePiece::from_subpieces(
+                    chip.clone(),
+                    layouter.namespace(|| "i"),
+                    [RangeConstrained::bitrange_of(
+                        zsa_params.asset.x().value(),
+                        4..254,
+                    )],
+                )?;
 
-        // j = j_0 || j_1 || j_2 = (bit 254 of x(asset)) || (ỹ bit of asset) || 8 zero bits
-        let (j, j_0, j_1) = DecomposeJ::decompose(chip.clone(), &mut layouter, asset)?;
+                // j = j_0 || j_1 || j_2 = (bit 254 of x(asset)) || (ỹ bit of asset) || 8 zero bits
+                let (j, j_0, j_1) =
+                    DecomposeJ::decompose(chip.clone(), &mut layouter, &zsa_params.asset)?;
+
+                // Check decomposition of `y(asset)`.
+                let j_1 = y_canonicity(
+                    &lookup_config,
+                    &note_commit_chip.config.y_canon,
+                    layouter.namespace(|| "y(asset) decomposition"),
+                    zsa_params.asset.y(),
+                    j_1,
+                )?;
+
+                (
+                    h_zec,
+                    h_0,
+                    h_1,
+                    Some(ZsaFinalDecomposition {
+                        h_zsa,
+                        h_2_zsa,
+                        i,
+                        j,
+                        j_0,
+                        j_1,
+                    }),
+                )
+            }
+        };
 
         // Check decomposition of `y(g_d)`.
         let b_2 = y_canonicity(
@@ -1877,6 +2051,7 @@ pub(in crate::circuit) mod gadgets {
             g_d.y(),
             b_2,
         )?;
+
         // Check decomposition of `y(pk_d)`.
         let d_1 = y_canonicity(
             &lookup_config,
@@ -1885,129 +2060,162 @@ pub(in crate::circuit) mod gadgets {
             pk_d.y(),
             d_1,
         )?;
-        // Check decomposition of `y(asset)`.
-        let j_1 = y_canonicity(
-            &lookup_config,
-            &note_commit_chip.config.y_canon,
-            layouter.namespace(|| "y(asset) decomposition"),
-            asset.y(),
-            j_1,
-        )?;
 
-        // cm = NoteCommit^Orchard_rcm(g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi)
-        //
-        // `cm = ⊥` is handled internally to `CommitDomain::commit`: incomplete addition
-        // constraints allows ⊥ to occur, and then during synthesis it detects these edge
-        // cases and raises an error (aborting proof creation).
-        //
-        // https://p.z.cash/ZKS:action-cm-old-integrity?partial
-        // https://p.z.cash/ZKS:action-cmx-new-integrity?partial
-        let (cm, zs_common, zs_zsa_suffix) = {
-            let message_common_prefix = Message::from_pieces(
-                chip.clone(),
-                vec![
-                    a.clone(),
-                    b.clone(),
-                    c.clone(),
-                    d.clone(),
-                    e.clone(),
-                    f.clone(),
-                    g.clone(),
-                ],
-            );
+        let (cm, zs_common, zs_zsa_suffix) = match (&zsa_params, &zsa_decomposition) {
+            (None, None) => {
+                // cm = NoteCommit^Orchard_rcm(g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi)
+                //
+                // `cm = ⊥` is handled internally to `CommitDomain::commit`: incomplete addition
+                // constraints allows ⊥ to occur, and then during synthesis it detects these edge
+                // cases and raises an error (aborting proof creation).
+                //
+                // https://p.z.cash/ZKS:action-cm-old-integrity?partial
+                // https://p.z.cash/ZKS:action-cmx-new-integrity?partial
+                let message = Message::from_pieces(
+                    chip.clone(),
+                    vec![
+                        a.clone(),
+                        b.clone(),
+                        c.clone(),
+                        d.clone(),
+                        e.clone(),
+                        f.clone(),
+                        g.clone(),
+                        h_zec.clone(),
+                    ],
+                );
+                let domain = CommitDomain::new(chip, ecc_chip, &OrchardCommitDomains::NoteCommit);
+                let (cm, zs) = domain.commit(
+                    layouter.namespace(|| "Process NoteCommit inputs"),
+                    message,
+                    rcm,
+                )?;
+                (cm, zs, vec![])
+            }
+            (Some(zsa_params), Some(zsa_decomposition)) => {
+                // cm = NoteCommit^Orchard_rcm(g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi || asset)
+                //
+                // `cm = ⊥` is handled internally to `CommitDomain::commit`: incomplete addition
+                // constraints allows ⊥ to occur, and then during synthesis it detects these edge
+                // cases and raises an error (aborting proof creation).
+                //
+                // https://p.z.cash/ZKS:action-cm-old-integrity?partial
+                // https://p.z.cash/ZKS:action-cmx-new-integrity?partial
+                let message_common_prefix = Message::from_pieces(
+                    chip.clone(),
+                    vec![
+                        a.clone(),
+                        b.clone(),
+                        c.clone(),
+                        d.clone(),
+                        e.clone(),
+                        f.clone(),
+                        g.clone(),
+                    ],
+                );
 
-            let message_suffix_zec = Message::from_pieces(chip.clone(), vec![h_zec.clone()]);
+                let message_suffix_zec = Message::from_pieces(chip.clone(), vec![h_zec.clone()]);
 
-            let message_suffix_zsa =
-                Message::from_pieces(chip.clone(), vec![h_zsa.clone(), i.clone(), j.clone()]);
+                let message_suffix_zsa = Message::from_pieces(
+                    chip.clone(),
+                    vec![
+                        zsa_decomposition.h_zsa.clone(),
+                        zsa_decomposition.i.clone(),
+                        zsa_decomposition.j.clone(),
+                    ],
+                );
 
-            // We will evaluate
-            // - `hash_point_zec = hash(Q_ZEC, message_common_prefix || message_suffix_zec)`, and
-            // - `hash_point_zsa = hash(Q_ZSA, message_common_prefix || message_suffix_zsa)`.
-            // by sharing a portion of the hash evaluation process between `hash_point_zec` and
-            // `hash_point_zsa`:
-            // 1. Q = if (is_native_asset == 0) {Q_ZSA} else {Q_ZEC}
-            // 2. common_hash = hash(Q, message_common_prefix) // this part is shared
-            // 3. hash_point_zec = hash(common_hash, message_suffix_zec)
-            // 4. hash_point_zsa = hash(common_hash, message_suffix_zsa)
-            // 5. hash_point = if (is_native_asset == 0) {hash_point_zsa} else {hash_point_zec}
-            let zec_domain = CommitDomain::new(
-                chip.clone(),
-                ecc_chip.clone(),
-                &OrchardCommitDomains::NoteCommit,
-            );
-            let zsa_domain =
-                CommitDomain::new(chip, ecc_chip.clone(), &OrchardCommitDomains::NoteZsaCommit);
-
-            // Perform a MUX to select the desired initial Q point
-            // q_init = q_init_zec if is_native_asset is true
-            // q_init = q_init_zsa if is_native_asset is false
-            let q_init = {
-                let q_init_zec = NonIdentityPoint::new(
+                // We will evaluate
+                // - `hash_point_zec = hash(Q_ZEC, message_common_prefix || message_suffix_zec)`, and
+                // - `hash_point_zsa = hash(Q_ZSA, message_common_prefix || message_suffix_zsa)`.
+                // by sharing a portion of the hash evaluation process between `hash_point_zec` and
+                // `hash_point_zsa`:
+                // 1. Q = if (is_native_asset == 0) {Q_ZSA} else {Q_ZEC}
+                // 2. common_hash = hash(Q, message_common_prefix) // this part is shared
+                // 3. hash_point_zec = hash(common_hash, message_suffix_zec)
+                // 4. hash_point_zsa = hash(common_hash, message_suffix_zsa)
+                // 5. hash_point = if (is_native_asset == 0) {hash_point_zsa} else {hash_point_zec}
+                let zec_domain = CommitDomain::new(
+                    chip.clone(),
                     ecc_chip.clone(),
-                    layouter.namespace(|| "q_init_zec"),
-                    Value::known(zec_domain.q_init()),
+                    &OrchardCommitDomains::NoteCommit,
+                );
+                let zsa_domain =
+                    CommitDomain::new(chip, ecc_chip.clone(), &OrchardCommitDomains::NoteZsaCommit);
+
+                // Perform a MUX to select the desired initial Q point
+                // q_init = q_init_zec if is_native_asset is true
+                // q_init = q_init_zsa if is_native_asset is false
+                let q_init = {
+                    let q_init_zec = NonIdentityPoint::new(
+                        ecc_chip.clone(),
+                        layouter.namespace(|| "q_init_zec"),
+                        Value::known(zec_domain.q_init()),
+                    )?;
+
+                    let q_init_zsa = NonIdentityPoint::new(
+                        ecc_chip.clone(),
+                        layouter.namespace(|| "q_init_zsa"),
+                        Value::known(zsa_domain.q_init()),
+                    )?;
+
+                    zsa_params.cond_swap_chip.mux_on_non_identity_points(
+                        layouter.namespace(|| "mux on hash point"),
+                        &zsa_params.is_native_asset,
+                        q_init_zsa.inner(),
+                        q_init_zec.inner(),
+                    )?
+                };
+
+                // common_hash = hash(q_init, message_common_prefix)
+                //
+                // To evaluate the different hash, we could use either zec_domain or zsa_domain
+                // because we use a private initial point.
+                let (common_hash, zs_common) = zec_domain.hash_with_private_init(
+                    layouter.namespace(|| "hash common prefix note"),
+                    &q_init,
+                    message_common_prefix,
                 )?;
 
-                let q_init_zsa = NonIdentityPoint::new(
-                    ecc_chip.clone(),
-                    layouter.namespace(|| "q_init_zsa"),
-                    Value::known(zsa_domain.q_init()),
+                // hash_point_zec = hash(common_hash, message_suffix_zec) = hash(q_init, message_zec)
+                let (hash_point_zec, _zs_zec) = zec_domain.hash_with_private_init(
+                    layouter.namespace(|| "hash suffix ZEC note"),
+                    common_hash.inner(),
+                    message_suffix_zec,
                 )?;
 
-                cond_swap_chip.mux_on_non_identity_points(
-                    layouter.namespace(|| "mux on hash point"),
-                    &is_native_asset,
-                    q_init_zsa.inner(),
-                    q_init_zec.inner(),
-                )?
-            };
+                // hash_point_zsa = hash(common_hash, message_suffix_zsa) = hash(q_init, message_zsa)
+                let (hash_point_zsa, zs_zsa) = zec_domain.hash_with_private_init(
+                    layouter.namespace(|| "hash suffix ZSA note"),
+                    common_hash.inner(),
+                    message_suffix_zsa,
+                )?;
 
-            // common_hash = hash(q_init, message_common_prefix)
-            //
-            // To evaluate the different hash, we could use either zec_domain or zsa_domain
-            // because we use a private initial point.
-            let (common_hash, zs_common) = zec_domain.hash_with_private_init(
-                layouter.namespace(|| "hash common prefix note"),
-                &q_init,
-                message_common_prefix,
-            )?;
+                // Perform a MUX to select the desired hash point
+                // hash_point = hash_zec if is_native_asset is true
+                // hash_point = hash_zsa if is_native_asset is false
+                let hash_point = Point::from_inner(
+                    ecc_chip,
+                    zsa_params.cond_swap_chip.mux_on_points(
+                        layouter.namespace(|| "mux on hash point"),
+                        &zsa_params.is_native_asset,
+                        &(hash_point_zsa.inner().clone().into()),
+                        &(hash_point_zec.inner().clone().into()),
+                    )?,
+                );
 
-            // hash_point_zec = hash(common_hash, message_suffix_zec) = hash(q_init, message_zec)
-            let (hash_point_zec, _zs_zec) = zec_domain.hash_with_private_init(
-                layouter.namespace(|| "hash suffix ZEC note"),
-                common_hash.inner(),
-                message_suffix_zec,
-            )?;
+                // To evaluate the blinding factor, we could use either zec_domain or zsa_domain
+                // because they have both the same `R` constant.
+                let blinding_factor =
+                    zec_domain.blinding_factor(layouter.namespace(|| "[r] R"), rcm)?;
+                let commitment =
+                    hash_point.add(layouter.namespace(|| "M + [r] R"), &blinding_factor)?;
 
-            // hash_point_zsa = hash(common_hash, message_suffix_zsa) = hash(q_init, message_zsa)
-            let (hash_point_zsa, zs_zsa) = zec_domain.hash_with_private_init(
-                layouter.namespace(|| "hash suffix ZSA note"),
-                common_hash.inner(),
-                message_suffix_zsa,
-            )?;
-
-            // Perform a MUX to select the desired hash point
-            // hash_point = hash_zec if is_native_asset is true
-            // hash_point = hash_zsa if is_native_asset is false
-            let hash_point = Point::from_inner(
-                ecc_chip,
-                cond_swap_chip.mux_on_points(
-                    layouter.namespace(|| "mux on hash point"),
-                    &is_native_asset,
-                    &(hash_point_zsa.inner().clone().into()),
-                    &(hash_point_zec.inner().clone().into()),
-                )?,
-            );
-
-            // To evaluate the blinding factor, we could use either zec_domain or zsa_domain
-            // because they have both the same `R` constant.
-            let blinding_factor =
-                zec_domain.blinding_factor(layouter.namespace(|| "[r] R"), rcm)?;
-            let commitment =
-                hash_point.add(layouter.namespace(|| "M + [r] R"), &blinding_factor)?;
-
-            (commitment, zs_common, zs_zsa)
+                (commitment, zs_common, zs_zsa)
+            }
+            _ => {
+                panic!("Either both zsa_params and zsa_decomposition must be provided, or neither.")
+            }
         };
 
         // `CommitDomain::hash` returns the running sum for each `MessagePiece`. Grab
@@ -2019,7 +2227,6 @@ pub(in crate::circuit) mod gadgets {
         let z1_g = zs_common[6][1].clone();
         let g_2 = z1_g.clone();
         let z13_g = zs_common[6][13].clone();
-        let z13_i = zs_zsa_suffix[1][13].clone();
 
         // Witness and constrain the bounds we need to ensure canonicity.
         let (a_prime, z13_a_prime) = canon_bitshift_130(
@@ -2033,13 +2240,6 @@ pub(in crate::circuit) mod gadgets {
             layouter.namespace(|| "x(pk_d) canonicity"),
             b_3.clone(),
             c.inner().cell_value(),
-        )?;
-
-        let (h2_i_prime, z14_h2_i_prime) = pkd_asset_x_canonicity(
-            &lookup_config,
-            layouter.namespace(|| "x(asset) canonicity"),
-            h_2_zsa.clone(),
-            i.inner().cell_value(),
         )?;
 
         let (e1_f_prime, z14_e1_f_prime) = rho_canonicity(
@@ -2057,7 +2257,7 @@ pub(in crate::circuit) mod gadgets {
         )?;
 
         // Finally, assign values to all of the NoteCommit regions.
-        let cfg = note_commit_chip.config;
+        let cfg = note_commit_chip.config.clone();
 
         let b_1 = cfg
             .b
@@ -2073,16 +2273,25 @@ pub(in crate::circuit) mod gadgets {
             .g
             .assign(&mut layouter, g, g_0, g_1.clone(), z1_g.clone())?;
 
-        let h_1 = cfg.h.assign(
-            &mut layouter,
-            h_zec,
-            h_zsa,
-            h_0.clone(),
-            h_1,
-            h_2_zsa.clone(),
-        )?;
-
-        let j_0 = cfg.j.assign(&mut layouter, j, j_0, j_1)?;
+        let h_1 = match (
+            &zsa_decomposition,
+            &note_commit_chip.config.specific_config_for_circuit,
+        ) {
+            (None, SpecificConfigForCircuit::Vanilla(specific_config)) => specific_config
+                .h_vanilla
+                .assign(&mut layouter, h_zec, h_0.clone(), h_1)?,
+            (Some(zsa_decomposition), SpecificConfigForCircuit::Zsa(specific_config)) => {
+                specific_config.h_zsa.assign(
+                    &mut layouter,
+                    h_zec,
+                    zsa_decomposition.h_zsa.clone(),
+                    h_0.clone(),
+                    h_1,
+                    zsa_decomposition.h_2_zsa.clone(),
+                )?
+            }
+            _ => panic!("zsa_decomposition is required with a ZSA configuration but must be omitted with a Vanilla configuration."),
+        };
 
         cfg.g_d
             .assign(&mut layouter, g_d, a, b_0, b_1, a_prime, z13_a, z13_a_prime)?;
@@ -2096,17 +2305,6 @@ pub(in crate::circuit) mod gadgets {
             b3_c_prime,
             z13_c,
             z14_b3_c_prime,
-        )?;
-
-        cfg.pk_d_asset.assign(
-            &mut layouter,
-            asset,
-            h_2_zsa,
-            i,
-            j_0,
-            h2_i_prime,
-            z13_i,
-            z14_h2_i_prime,
         )?;
 
         cfg.value.assign(&mut layouter, value, d_2, z1_d, e_0)?;
@@ -2134,6 +2332,42 @@ pub(in crate::circuit) mod gadgets {
             z13_g1_g2_prime,
         )?;
 
+        if let (
+            Some(zsa_decomposition),
+            Some(zsa_params),
+            SpecificConfigForCircuit::Zsa(specific_config),
+        ) = (
+            zsa_decomposition,
+            &zsa_params,
+            &note_commit_chip.config.specific_config_for_circuit,
+        ) {
+            let j_0 = specific_config.j.assign(
+                &mut layouter,
+                zsa_decomposition.j,
+                zsa_decomposition.j_0,
+                zsa_decomposition.j_1,
+            )?;
+
+            let (h2_i_prime, z14_h2_i_prime) = pkd_asset_x_canonicity(
+                &lookup_config,
+                layouter.namespace(|| "x(asset) canonicity"),
+                zsa_decomposition.h_2_zsa.clone(),
+                zsa_decomposition.i.inner().cell_value(),
+            )?;
+
+            let z13_i = zs_zsa_suffix[1][13].clone();
+            cfg.pk_d_asset.assign(
+                &mut layouter,
+                &zsa_params.asset,
+                zsa_decomposition.h_2_zsa,
+                zsa_decomposition.i,
+                j_0,
+                h2_i_prime,
+                z13_i,
+                z14_h2_i_prime,
+            )?;
+        }
+
         Ok(cm)
     }
 
@@ -2142,8 +2376,8 @@ pub(in crate::circuit) mod gadgets {
     /// Specifications:
     /// - [`g_d` canonicity](https://p.z.cash/orchard-0.1:note-commit-canonicity-g_d?partial)
     /// - [`y` canonicity](https://p.z.cash/orchard-0.1:note-commit-canonicity-y?partial)
-    fn canon_bitshift_130(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
+    fn canon_bitshift_130<Lookup: PallasLookupRangeCheck>(
+        lookup_config: &Lookup,
         mut layouter: impl Layouter<pallas::Base>,
         a: AssignedCell<pallas::Base, pallas::Base>,
     ) -> Result<CanonicityBounds, Error> {
@@ -2176,8 +2410,8 @@ pub(in crate::circuit) mod gadgets {
     /// Check canonicity of `x(pk_d)` and `x(asset)` encoding.
     ///
     /// [Specification](https://p.z.cash/orchard-0.1:note-commit-canonicity-pk_d?partial).
-    fn pkd_asset_x_canonicity(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
+    fn pkd_asset_x_canonicity<Lookup: PallasLookupRangeCheck>(
+        lookup_config: &Lookup,
         mut layouter: impl Layouter<pallas::Base>,
         b_3: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         c: AssignedCell<pallas::Base, pallas::Base>,
@@ -2219,8 +2453,8 @@ pub(in crate::circuit) mod gadgets {
     /// Check canonicity of `rho` encoding.
     ///
     /// [Specification](https://p.z.cash/orchard-0.1:note-commit-canonicity-rho?partial).
-    fn rho_canonicity(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
+    fn rho_canonicity<Lookup: PallasLookupRangeCheck>(
+        lookup_config: &Lookup,
         mut layouter: impl Layouter<pallas::Base>,
         e_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         f: AssignedCell<pallas::Base, pallas::Base>,
@@ -2260,8 +2494,8 @@ pub(in crate::circuit) mod gadgets {
     /// Check canonicity of `psi` encoding.
     ///
     /// [Specification](https://p.z.cash/orchard-0.1:note-commit-canonicity-psi?partial).
-    fn psi_canonicity(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
+    fn psi_canonicity<Lookup: PallasLookupRangeCheck>(
+        lookup_config: &Lookup,
         mut layouter: impl Layouter<pallas::Base>,
         g_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
         g_2: AssignedCell<pallas::Base, pallas::Base>,
@@ -2302,8 +2536,8 @@ pub(in crate::circuit) mod gadgets {
     /// Specifications:
     /// - [`y` decomposition](https://p.z.cash/orchard-0.1:note-commit-decomposition-y?partial)
     /// - [`y` canonicity](https://p.z.cash/orchard-0.1:note-commit-canonicity-y?partial)
-    fn y_canonicity(
-        lookup_config: &PallasLookupRangeCheck45BConfig,
+    fn y_canonicity<Lookup: PallasLookupRangeCheck>(
+        lookup_config: &Lookup,
         y_canon: &YCanonicity,
         mut layouter: impl Layouter<pallas::Base>,
         y: AssignedCell<pallas::Base, pallas::Base>,
@@ -2378,13 +2612,16 @@ pub(in crate::circuit) mod gadgets {
 
 #[cfg(test)]
 mod tests {
-    use super::NoteCommitConfig;
+    use core::iter;
+
     use crate::{
-        circuit::circuit_zsa::{
-            gadget::{assign_free_advice, assign_is_native_asset},
-            note_commit::{gadgets, NoteCommitChip},
+        circuit::gadget::{assign_free_advice, assign_is_native_asset},
+        circuit::note_commit::gadgets,
+        circuit::note_commit::{NoteCommitChip, NoteCommitConfig},
+        constants::{
+            fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
+            OrchardHashDomains, L_ORCHARD_BASE, L_VALUE, T_Q,
         },
-        constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_Q},
         note::{commitment::NoteCommitTrapdoor, AssetBase, NoteCommitment},
         value::NoteValue,
     };
@@ -2393,14 +2630,17 @@ mod tests {
             chip::{EccChip, EccConfig},
             NonIdentityPoint, ScalarFixed,
         },
-        sinsemilla::chip::SinsemillaChip,
+        sinsemilla::{chip::SinsemillaChip, primitives::CommitDomain},
         utilities::{
             cond_swap::{CondSwapChip, CondSwapConfig},
-            lookup_range_check::PallasLookupRangeCheck45BConfig,
+            lookup_range_check::{
+                LookupRangeCheck, LookupRangeCheckConfig, PallasLookupRangeCheck4_5BConfig,
+                PallasLookupRangeCheckConfig,
+            },
         },
     };
 
-    use ff::{Field, PrimeField};
+    use ff::{Field, PrimeField, PrimeFieldBits};
     use group::{Curve, Group, GroupEncoding};
     use halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner, Value},
@@ -2409,10 +2649,326 @@ mod tests {
     };
     use pasta_curves::{arithmetic::CurveAffine, pallas, EpAffine};
 
+    use crate::circuit::note_commit::ZsaNoteCommitParams;
     use rand::{rngs::OsRng, RngCore};
 
     #[test]
-    fn note_commit() {
+    fn note_commit_vanilla() {
+        #[derive(Default)]
+        struct MyCircuit {
+            gd_x: Value<pallas::Base>,
+            gd_y_lsb: Value<pallas::Base>,
+            pkd_x: Value<pallas::Base>,
+            pkd_y_lsb: Value<pallas::Base>,
+            rho: Value<pallas::Base>,
+            psi: Value<pallas::Base>,
+        }
+
+        impl Circuit<pallas::Base> for MyCircuit {
+            type Config = (
+                NoteCommitConfig<PallasLookupRangeCheckConfig>,
+                EccConfig<OrchardFixedBases>,
+            );
+            type FloorPlanner = SimpleFloorPlanner;
+
+            fn without_witnesses(&self) -> Self {
+                Self::default()
+            }
+
+            fn configure(meta: &mut ConstraintSystem<pallas::Base>) -> Self::Config {
+                let advices = [
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                    meta.advice_column(),
+                ];
+
+                // Shared fixed column for loading constants.
+                let constants = meta.fixed_column();
+                meta.enable_constant(constants);
+
+                for advice in advices.iter() {
+                    meta.enable_equality(*advice);
+                }
+
+                let table_idx = meta.lookup_table_column();
+                let lookup = (
+                    table_idx,
+                    meta.lookup_table_column(),
+                    meta.lookup_table_column(),
+                );
+                let lagrange_coeffs = [
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                    meta.fixed_column(),
+                ];
+
+                let range_check = LookupRangeCheckConfig::configure(meta, advices[9], table_idx);
+                let sinsemilla_config = SinsemillaChip::<
+                    OrchardHashDomains,
+                    OrchardCommitDomains,
+                    OrchardFixedBases,
+                >::configure(
+                    meta,
+                    advices[..5].try_into().unwrap(),
+                    advices[2],
+                    lagrange_coeffs[0],
+                    lookup,
+                    range_check,
+                    false,
+                );
+                let note_commit_config =
+                    NoteCommitChip::configure(meta, advices, sinsemilla_config, false);
+
+                let ecc_config = EccChip::<OrchardFixedBases>::configure(
+                    meta,
+                    advices,
+                    lagrange_coeffs,
+                    range_check,
+                );
+
+                (note_commit_config, ecc_config)
+            }
+
+            fn synthesize(
+                &self,
+                config: Self::Config,
+                mut layouter: impl Layouter<pallas::Base>,
+            ) -> Result<(), Error> {
+                let (note_commit_config, ecc_config) = config;
+
+                // Load the Sinsemilla generator lookup table used by the whole circuit.
+                SinsemillaChip::<
+                    OrchardHashDomains,
+                    OrchardCommitDomains,
+                    OrchardFixedBases,
+                >::load(note_commit_config.sinsemilla_config.clone(), &mut layouter)?;
+
+                // Construct a Sinsemilla chip
+                let sinsemilla_chip =
+                    SinsemillaChip::construct(note_commit_config.sinsemilla_config.clone());
+
+                // Construct an ECC chip
+                let ecc_chip = EccChip::construct(ecc_config);
+
+                // Construct a NoteCommit chip
+                let note_commit_chip = NoteCommitChip::construct(note_commit_config.clone());
+
+                // Witness g_d
+                let g_d = {
+                    let g_d = self.gd_x.zip(self.gd_y_lsb).map(|(x, y_lsb)| {
+                        // Calculate y = (x^3 + 5).sqrt()
+                        let mut y = (x.square() * x + pallas::Affine::b()).sqrt().unwrap();
+                        if bool::from(y.is_odd() ^ y_lsb.is_odd()) {
+                            y = -y;
+                        }
+                        pallas::Affine::from_xy(x, y).unwrap()
+                    });
+
+                    NonIdentityPoint::new(
+                        ecc_chip.clone(),
+                        layouter.namespace(|| "witness g_d"),
+                        g_d,
+                    )?
+                };
+
+                // Witness pk_d
+                let pk_d = {
+                    let pk_d = self.pkd_x.zip(self.pkd_y_lsb).map(|(x, y_lsb)| {
+                        // Calculate y = (x^3 + 5).sqrt()
+                        let mut y = (x.square() * x + pallas::Affine::b()).sqrt().unwrap();
+                        if bool::from(y.is_odd() ^ y_lsb.is_odd()) {
+                            y = -y;
+                        }
+                        pallas::Affine::from_xy(x, y).unwrap()
+                    });
+
+                    NonIdentityPoint::new(
+                        ecc_chip.clone(),
+                        layouter.namespace(|| "witness pk_d"),
+                        pk_d,
+                    )?
+                };
+
+                // Witness a random non-negative u64 note value
+                // A note value cannot be negative.
+                let value = {
+                    let mut rng = OsRng;
+                    NoteValue::from_raw(rng.next_u64())
+                };
+                let value_var = {
+                    assign_free_advice(
+                        layouter.namespace(|| "witness value"),
+                        note_commit_config.advices[0],
+                        Value::known(value),
+                    )?
+                };
+
+                // Witness rho
+                let rho = assign_free_advice(
+                    layouter.namespace(|| "witness rho"),
+                    note_commit_config.advices[0],
+                    self.rho,
+                )?;
+
+                // Witness psi
+                let psi = assign_free_advice(
+                    layouter.namespace(|| "witness psi"),
+                    note_commit_config.advices[0],
+                    self.psi,
+                )?;
+
+                let rcm = pallas::Scalar::random(OsRng);
+                let rcm_gadget = ScalarFixed::new(
+                    ecc_chip.clone(),
+                    layouter.namespace(|| "rcm"),
+                    Value::known(rcm),
+                )?;
+
+                let cm = gadgets::note_commit(
+                    layouter.namespace(|| "Hash NoteCommit pieces"),
+                    sinsemilla_chip,
+                    ecc_chip.clone(),
+                    note_commit_chip,
+                    g_d.inner(),
+                    pk_d.inner(),
+                    value_var,
+                    rho,
+                    psi,
+                    rcm_gadget,
+                    None,
+                )?;
+                let expected_cm = {
+                    let domain = CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
+                    // Hash g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi
+                    let lsb = |y_lsb: pallas::Base| y_lsb == pallas::Base::one();
+                    let point = self
+                        .gd_x
+                        .zip(self.gd_y_lsb)
+                        .zip(self.pkd_x.zip(self.pkd_y_lsb))
+                        .zip(self.rho.zip(self.psi))
+                        .map(|(((gd_x, gd_y_lsb), (pkd_x, pkd_y_lsb)), (rho, psi))| {
+                            domain
+                                .commit(
+                                    iter::empty()
+                                        .chain(
+                                            gd_x.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        )
+                                        .chain(Some(lsb(gd_y_lsb)))
+                                        .chain(
+                                            pkd_x
+                                                .to_le_bits()
+                                                .iter()
+                                                .by_vals()
+                                                .take(L_ORCHARD_BASE),
+                                        )
+                                        .chain(Some(lsb(pkd_y_lsb)))
+                                        .chain(value.to_le_bits().iter().by_vals().take(L_VALUE))
+                                        .chain(
+                                            rho.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        )
+                                        .chain(
+                                            psi.to_le_bits().iter().by_vals().take(L_ORCHARD_BASE),
+                                        ),
+                                    &rcm,
+                                )
+                                .unwrap()
+                                .to_affine()
+                        });
+                    NonIdentityPoint::new(ecc_chip, layouter.namespace(|| "witness cm"), point)?
+                };
+                cm.constrain_equal(layouter.namespace(|| "cm == expected cm"), &expected_cm)
+            }
+        }
+
+        let two_pow_254 = pallas::Base::from_u128(1 << 127).square();
+        // Test different values of `ak`, `nk`
+        let circuits = [
+            // `gd_x` = -1, `pkd_x` = -1 (these have to be x-coordinates of curve points)
+            // `rho` = 0, `psi` = 0
+            MyCircuit {
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::one()),
+                rho: Value::known(pallas::Base::zero()),
+                psi: Value::known(pallas::Base::zero()),
+            },
+            // `rho` = T_Q - 1, `psi` = T_Q - 1
+            MyCircuit {
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::zero()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(pallas::Base::from_u128(T_Q - 1)),
+                psi: Value::known(pallas::Base::from_u128(T_Q - 1)),
+            },
+            // `rho` = T_Q, `psi` = T_Q
+            MyCircuit {
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(pallas::Base::from_u128(T_Q)),
+                psi: Value::known(pallas::Base::from_u128(T_Q)),
+            },
+            // `rho` = 2^127 - 1, `psi` = 2^127 - 1
+            MyCircuit {
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::zero()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::one()),
+                rho: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
+                psi: Value::known(pallas::Base::from_u128((1 << 127) - 1)),
+            },
+            // `rho` = 2^127, `psi` = 2^127
+            MyCircuit {
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::zero()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(pallas::Base::from_u128(1 << 127)),
+                psi: Value::known(pallas::Base::from_u128(1 << 127)),
+            },
+            // `rho` = 2^254 - 1, `psi` = 2^254 - 1
+            MyCircuit {
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::one()),
+                rho: Value::known(two_pow_254 - pallas::Base::one()),
+                psi: Value::known(two_pow_254 - pallas::Base::one()),
+            },
+            // `rho` = 2^254, `psi` = 2^254
+            MyCircuit {
+                gd_x: Value::known(-pallas::Base::one()),
+                gd_y_lsb: Value::known(pallas::Base::one()),
+                pkd_x: Value::known(-pallas::Base::one()),
+                pkd_y_lsb: Value::known(pallas::Base::zero()),
+                rho: Value::known(two_pow_254),
+                psi: Value::known(two_pow_254),
+            },
+        ];
+
+        for circuit in circuits.iter() {
+            let prover = MockProver::<pallas::Base>::run(11, circuit, vec![]).unwrap();
+            assert_eq!(prover.verify(), Ok(()));
+        }
+    }
+
+    #[test]
+    fn note_commit_zsa() {
         #[derive(Default)]
         struct MyCircuit {
             g_d: Value<EpAffine>,
@@ -2424,8 +2980,8 @@ mod tests {
 
         impl Circuit<pallas::Base> for MyCircuit {
             type Config = (
-                NoteCommitConfig,
-                EccConfig<OrchardFixedBases, PallasLookupRangeCheck45BConfig>,
+                NoteCommitConfig<PallasLookupRangeCheck4_5BConfig>,
+                EccConfig<OrchardFixedBases, PallasLookupRangeCheck4_5BConfig>,
                 CondSwapConfig,
             );
             type FloorPlanner = SimpleFloorPlanner;
@@ -2474,7 +3030,7 @@ mod tests {
                     meta.fixed_column(),
                 ];
 
-                let range_check = PallasLookupRangeCheck45BConfig::configure_with_tag(
+                let range_check = PallasLookupRangeCheck4_5BConfig::configure_with_tag(
                     meta,
                     advices[9],
                     table_idx,
@@ -2484,7 +3040,7 @@ mod tests {
                     OrchardHashDomains,
                     OrchardCommitDomains,
                     OrchardFixedBases,
-                    PallasLookupRangeCheck45BConfig,
+                    PallasLookupRangeCheck4_5BConfig,
                 >::configure(
                     meta,
                     advices[..5].try_into().unwrap(),
@@ -2495,10 +3051,10 @@ mod tests {
                     true,
                 );
                 let note_commit_config =
-                    NoteCommitChip::configure(meta, advices, sinsemilla_config);
+                    NoteCommitChip::configure(meta, advices, sinsemilla_config, true);
 
                 let ecc_config =
-                    EccChip::<OrchardFixedBases, PallasLookupRangeCheck45BConfig>::configure(
+                    EccChip::<OrchardFixedBases, PallasLookupRangeCheck4_5BConfig>::configure(
                         meta,
                         advices,
                         lagrange_coeffs,
@@ -2523,7 +3079,7 @@ mod tests {
                     OrchardHashDomains,
                     OrchardCommitDomains,
                     OrchardFixedBases,
-                    PallasLookupRangeCheck45BConfig,
+                    PallasLookupRangeCheck4_5BConfig,
                 >::load(
                     note_commit_config.sinsemilla_config.clone(), &mut layouter
                 )?;
@@ -2606,15 +3162,17 @@ mod tests {
                     sinsemilla_chip,
                     ecc_chip.clone(),
                     note_commit_chip,
-                    cond_swap_chip,
                     g_d.inner(),
                     pk_d.inner(),
                     value_var,
                     rho,
                     psi,
-                    asset.inner(),
                     rcm_gadget,
-                    is_native_asset,
+                    Some(ZsaNoteCommitParams {
+                        cond_swap_chip,
+                        asset: asset.inner().clone(),
+                        is_native_asset,
+                    }),
                 )?;
                 let expected_cm = {
                     // Hash g★_d || pk★_d || i2lebsp_{64}(v) || rho || psi
