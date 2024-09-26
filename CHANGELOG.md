@@ -7,6 +7,9 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- Migrated to `incrementalmerkletree 0.7`.
+
 ## [0.9.1] - 2024-08-13
 
 ### Changed
@@ -21,7 +24,7 @@ and this project adheres to Rust's notion of
   generation is specified (https://github.com/zcash/zips/pull/883).
 
 ### Changed
-- Migrated to `incrementalmerkletree 0.6`, `bridgetree 0.5`.
+- Migrated to `incrementalmerkletree 0.6`.
 
 ## [0.8.0] - 2024-03-25
 
