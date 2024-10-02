@@ -94,3 +94,7 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+zcash_spec = { git = "https://github.com/zcash/zcash_spec.git", rev = "569f92d01504deb7b092f4cff1c07a4f60ecfa11" }
+zip32 = { git = "https://github.com/zcash/zip32.git", rev = "a564f8cd92e23e20fa5e0b2b6cb868c60f9a3adf" }

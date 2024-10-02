@@ -2511,9 +2511,8 @@ dependencies = [
 
 [[package]]
 name = "zcash_spec"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7a3bf58b673cb3dacd8ae09ba345998923a197ab0da70d6239d8e8838949e9b"
+version = "0.1.1"
+source = "git+https://github.com/zcash/zcash_spec.git?rev=569f92d01504deb7b092f4cff1c07a4f60ecfa11#569f92d01504deb7b092f4cff1c07a4f60ecfa11"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2540,13 +2539,13 @@ dependencies = [
 
 [[package]]
 name = "zip32"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d724a63be4dfb50b7f3617e542984e22e4b4a5b8ca5de91f55613152885e6b22"
+version = "0.1.1"
+source = "git+https://github.com/zcash/zip32.git?rev=a564f8cd92e23e20fa5e0b2b6cb868c60f9a3adf#a564f8cd92e23e20fa5e0b2b6cb868c60f9a3adf"
 dependencies = [
  "blake2b_simd",
  "memuse",
  "subtle",
+ "zcash_spec",
 ]
 
 [[package]]
