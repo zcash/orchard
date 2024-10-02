@@ -277,4 +277,40 @@ mod tests {
             .ct_eq(&xsk_5h_7)
         ));
     }
+
+    #[test]
+    fn test_vectors() {
+        let test_vectors = crate::test_vectors::zip32::test_vectors();
+
+        let seed = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31,
+        ];
+
+        let i1h = ChildIndex::hardened(1);
+        let i2h = ChildIndex::hardened(2);
+        let i3h = ChildIndex::hardened(3);
+
+        let m = ExtendedSpendingKey::master(&seed).unwrap();
+        let m_1h = m.derive_child(i1h).unwrap();
+        let m_1h_2h = ExtendedSpendingKey::from_path(&seed, &[i1h, i2h]).unwrap();
+        let m_1h_2h_3h = m_1h_2h.derive_child(i3h).unwrap();
+
+        let xsks = [m, m_1h, m_1h_2h, m_1h_2h_3h];
+        assert_eq!(test_vectors.len(), xsks.len());
+
+        for (xsk, tv) in xsks.iter().zip(test_vectors.iter()) {
+            assert_eq!(xsk.sk.to_bytes(), &tv.sk);
+            assert_eq!(xsk.chain_code.as_bytes(), &tv.c);
+
+            assert_eq!(xsk.depth, tv.xsk[0]);
+            assert_eq!(&xsk.parent_fvk_tag.0, &tv.xsk[1..5]);
+            assert_eq!(&xsk.child_index.index().to_le_bytes(), &tv.xsk[5..9]);
+            assert_eq!(xsk.chain_code.as_bytes(), &tv.xsk[9..9 + 32]);
+            assert_eq!(xsk.sk.to_bytes(), &tv.xsk[9 + 32..]);
+
+            let fvk: FullViewingKey = (&xsk.sk).into();
+            assert_eq!(FvkFingerprint::from(&fvk).0, tv.fp);
+        }
+    }
 }
