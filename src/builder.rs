@@ -147,6 +147,8 @@ pub enum BuildError {
     BurnZero,
     /// The asset to be burned is duplicated.
     BurnDuplicateAsset,
+    /// There is no available split note for this asset.
+    NoSplitNoteAvailable,
 }
 
 impl Display for BuildError {
@@ -169,6 +171,7 @@ impl Display for BuildError {
             BurnNative => f.write_str("Burning is only possible for non-native assets"),
             BurnZero => f.write_str("Burning is not possible for zero values"),
             BurnDuplicateAsset => f.write_str("Duplicate assets are not allowed when burning"),
+            NoSplitNoteAvailable => f.write_str("No split note has been provided for this asset"),
         }
     }
 }
@@ -696,11 +699,13 @@ fn partition_by_asset(
     }
 
     if hm.is_empty() {
-        let dummy_spend = pad_spend(None, AssetBase::native(), rng);
         // dummy_spend should not be included in the indexing and marked as None.
         hm.insert(
-            dummy_spend.note.asset(),
-            (vec![(dummy_spend, None)], vec![]),
+            AssetBase::native(),
+            (
+                vec![(SpendInfo::dummy(AssetBase::native(), rng), None)],
+                vec![],
+            ),
         );
     }
 
@@ -708,16 +713,20 @@ fn partition_by_asset(
 }
 
 /// Returns the appropriate SpendInfo for padding.
-fn pad_spend(spend: Option<&SpendInfo>, asset: AssetBase, mut rng: impl RngCore) -> SpendInfo {
+fn pad_spend(
+    spend: Option<&SpendInfo>,
+    asset: AssetBase,
+    mut rng: impl RngCore,
+) -> Result<SpendInfo, BuildError> {
     if asset.is_native().into() {
         // For native asset, extends with dummy notes
-        SpendInfo::dummy(asset, &mut rng)
+        Ok(SpendInfo::dummy(AssetBase::native(), &mut rng))
     } else {
-        // For ZSA asset, extends with
-        // - dummy note if SpendInfo is None
-        // - split notes otherwise.
-        let dummy = SpendInfo::dummy(asset, &mut rng);
-        spend.map_or_else(|| dummy, |s| s.create_split_spend(&mut rng))
+        // For ZSA asset, extends with split_notes.
+        // If SpendInfo is none, return an error (no split note are available for this asset)
+        spend
+            .map(|s| s.create_split_spend(&mut rng))
+            .ok_or(BuildError::NoSplitNoteAvailable)
     }
 }
 
@@ -770,7 +779,11 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
                     let mut indexed_spends = spends
                         .into_iter()
                         .chain(iter::repeat_with(|| {
-                            (pad_spend(first_spend.as_ref(), asset, &mut rng), None)
+                            (
+                                pad_spend(first_spend.as_ref(), asset, &mut rng)
+                                    .unwrap_or_else(|err| panic!("{:?}", err)),
+                                None,
+                            )
                         }))
                         .take(num_asset_pre_actions)
                         .collect::<Vec<_>>();
@@ -798,7 +811,7 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
         indexed_spends_outputs.extend(
             iter::repeat_with(|| {
                 (
-                    (pad_spend(None, AssetBase::native(), &mut rng), None),
+                    (SpendInfo::dummy(AssetBase::native(), &mut rng), None),
                     (OutputInfo::dummy(&mut rng, AssetBase::native()), None),
                 )
             })
