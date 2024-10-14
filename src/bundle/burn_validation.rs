@@ -80,7 +80,7 @@ mod tests {
     ///
     /// A tuple `(AssetBase, Amount)` representing the burn list item.
     ///
-    pub fn get_burn_tuple(asset_desc: &str, value: i64) -> (AssetBase, i64) {
+    pub fn get_burn_tuple(asset_desc: &[u8], value: i64) -> (AssetBase, i64) {
         use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 
         let isk = IssuanceAuthorizingKey::from_bytes([1u8; 32]).unwrap();
@@ -94,9 +94,9 @@ mod tests {
     #[test]
     fn validate_bundle_burn_success() {
         let bundle_burn = vec![
-            get_burn_tuple("Asset 1", 10),
-            get_burn_tuple("Asset 2", 20),
-            get_burn_tuple("Asset 3", 10),
+            get_burn_tuple(b"Asset 1", 10),
+            get_burn_tuple(b"Asset 2", 20),
+            get_burn_tuple(b"Asset 3", 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -107,9 +107,9 @@ mod tests {
     #[test]
     fn validate_bundle_burn_duplicate_asset() {
         let bundle_burn = vec![
-            get_burn_tuple("Asset 1", 10),
-            get_burn_tuple("Asset 1", 20),
-            get_burn_tuple("Asset 3", 10),
+            get_burn_tuple(b"Asset 1", 10),
+            get_burn_tuple(b"Asset 1", 20),
+            get_burn_tuple(b"Asset 3", 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -120,9 +120,9 @@ mod tests {
     #[test]
     fn validate_bundle_burn_native_asset() {
         let bundle_burn = vec![
-            get_burn_tuple("Asset 1", 10),
+            get_burn_tuple(b"Asset 1", 10),
             (AssetBase::native(), 20),
-            get_burn_tuple("Asset 3", 10),
+            get_burn_tuple(b"Asset 3", 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -133,9 +133,9 @@ mod tests {
     #[test]
     fn validate_bundle_burn_zero_value() {
         let bundle_burn = vec![
-            get_burn_tuple("Asset 1", 10),
-            get_burn_tuple("Asset 2", 0),
-            get_burn_tuple("Asset 3", 10),
+            get_burn_tuple(b"Asset 1", 10),
+            get_burn_tuple(b"Asset 2", 0),
+            get_burn_tuple(b"Asset 3", 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);

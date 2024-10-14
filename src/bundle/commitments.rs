@@ -162,7 +162,7 @@ pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>)
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION);
     let mut ia = hasher(ZCASH_ORCHARD_ZSA_ISSUE_ACTION_PERSONALIZATION);
 
-    for action in bundle.actions().iter() {
+    for action in bundle.actions() {
         let mut ind = hasher(ZCASH_ORCHARD_ZSA_ISSUE_NOTE_PERSONALIZATION);
         for note in action.notes().iter() {
             ind.update(&note.recipient().to_raw_address_bytes());
@@ -172,7 +172,7 @@ pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>)
             ind.update(note.rseed().as_bytes());
         }
         ia.update(ind.finalize().as_bytes());
-        ia.update(action.asset_desc().as_bytes());
+        ia.update(action.asset_desc());
         ia.update(&[u8::from(action.is_finalized())]);
     }
     h.update(ia.finalize().as_bytes());

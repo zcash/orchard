@@ -136,12 +136,12 @@ pub fn build_merkle_path_with_two_leaves(
     (merkle_path1, merkle_path2, anchor)
 }
 
-fn issue_zsa_notes(asset_descr: &str, keys: &Keychain) -> (Note, Note) {
+fn issue_zsa_notes(asset_descr: &[u8], keys: &Keychain) -> (Note, Note) {
     let mut rng = OsRng;
     // Create a issuance bundle
     let unauthorized_asset = IssueBundle::new(
         keys.ik().clone(),
-        asset_descr.to_string(),
+        asset_descr.to_owned(),
         Some(IssueInfo {
             recipient: keys.recipient,
             value: NoteValue::from_raw(40),
@@ -155,7 +155,7 @@ fn issue_zsa_notes(asset_descr: &str, keys: &Keychain) -> (Note, Note) {
 
     assert!(unauthorized
         .add_recipient(
-            asset_descr.to_string(),
+            asset_descr,
             keys.recipient,
             NoteValue::from_raw(2),
             &mut rng,
@@ -166,8 +166,8 @@ fn issue_zsa_notes(asset_descr: &str, keys: &Keychain) -> (Note, Note) {
 
     // Take notes from first action
     let notes = issue_bundle.get_all_notes();
-    let note1 = notes.get(0).unwrap();
-    let note2 = notes.get(1).unwrap();
+    let note1 = notes[0];
+    let note2 = notes[1];
 
     assert!(verify_issue_bundle(
         &issue_bundle,
@@ -290,10 +290,10 @@ fn zsa_issue_and_transfer() {
     // --------------------------- Setup -----------------------------------------
 
     let keys = prepare_keys();
-    let asset_descr = "zsa_asset";
+    let asset_descr = b"zsa_asset".to_vec();
 
     // Prepare ZSA
-    let (zsa_note_1, zsa_note_2) = issue_zsa_notes(asset_descr, &keys);
+    let (zsa_note_1, zsa_note_2) = issue_zsa_notes(&asset_descr, &keys);
 
     let (merkle_path1, merkle_path2, anchor) =
         build_merkle_path_with_two_leaves(&zsa_note_1, &zsa_note_2);
@@ -446,7 +446,7 @@ fn zsa_issue_and_transfer() {
     .unwrap();
 
     // 7. Spend ZSA notes of different asset types
-    let (zsa_note_t7, _) = issue_zsa_notes("zsa_asset2", &keys);
+    let (zsa_note_t7, _) = issue_zsa_notes(b"zsa_asset2", &keys);
     let (merkle_path_t7_1, merkle_path_t7_2, anchor_t7) =
         build_merkle_path_with_two_leaves(&zsa_note_t7, &zsa_note_2);
     let zsa_spend_t7_1: TestSpendInfo = TestSpendInfo {

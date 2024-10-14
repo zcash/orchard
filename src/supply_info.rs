@@ -79,7 +79,7 @@ impl Default for SupplyInfo {
 mod tests {
     use super::*;
 
-    fn create_test_asset(asset_desc: &str) -> AssetBase {
+    fn create_test_asset(asset_desc: &[u8]) -> AssetBase {
         use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 
         let isk = IssuanceAuthorizingKey::from_bytes([1u8; 32]).unwrap();
@@ -98,8 +98,8 @@ mod tests {
     fn test_add_supply_valid() {
         let mut supply_info = SupplyInfo::new();
 
-        let asset1 = create_test_asset("Asset 1");
-        let asset2 = create_test_asset("Asset 2");
+        let asset1 = create_test_asset(b"Asset 1");
+        let asset2 = create_test_asset(b"Asset 2");
 
         let supply1 = AssetSupply::new(ValueSum::from_raw(20), false);
         let supply2 = AssetSupply::new(ValueSum::from_raw(30), true);
@@ -167,9 +167,9 @@ mod tests {
     fn test_update_finalization_set() {
         let mut supply_info = SupplyInfo::new();
 
-        let asset1 = create_test_asset("Asset 1");
-        let asset2 = create_test_asset("Asset 2");
-        let asset3 = create_test_asset("Asset 3");
+        let asset1 = create_test_asset(b"Asset 1");
+        let asset2 = create_test_asset(b"Asset 2");
+        let asset3 = create_test_asset(b"Asset 3");
 
         let supply1 = AssetSupply::new(ValueSum::from_raw(10), false);
         let supply2 = AssetSupply::new(ValueSum::from_raw(20), true);
