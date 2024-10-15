@@ -33,6 +33,7 @@ impl<A, D: OrchardDomainCommon> ShieldedOutput<OrchardDomain<D>> for Action<A, D
 }
 
 /// A compact Action for light clients.
+#[derive(Clone)]
 pub struct CompactAction<D: OrchardDomainCommon> {
     nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
