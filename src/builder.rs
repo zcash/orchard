@@ -619,7 +619,7 @@ impl Builder {
         &self.outputs
     }
 
-    /// The net value of the bundle to be built. The value of all spends,
+    /// The net native (ZEC) value of the bundle to be built. The value of all spends,
     /// minus the value of all outputs.
     ///
     /// Useful for balancing a transaction, as the value balance of an individual bundle
@@ -633,10 +633,12 @@ impl Builder {
         let value_balance = self
             .spends
             .iter()
+            .filter(|spend| spend.note.asset().is_native().into())
             .map(|spend| spend.note.value() - NoteValue::zero())
             .chain(
                 self.outputs
                     .iter()
+                    .filter(|output| output.asset.is_native().into())
                     .map(|output| NoteValue::zero() - output.value),
             )
             .try_fold(ValueSum::zero(), |acc, note_value| acc + note_value)
