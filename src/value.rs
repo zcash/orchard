@@ -232,6 +232,16 @@ impl ValueCommitTrapdoor {
     pub fn from_bytes(bytes: [u8; 32]) -> CtOption<Self> {
         pallas::Scalar::from_repr(bytes).map(ValueCommitTrapdoor)
     }
+
+    /// Returns the byte encoding of this trapdoor.
+    ///
+    /// This is a low-level API, requiring a detailed understanding of the
+    /// [use of value commitment trapdoors][orchardbalance] in the Zcash protocol
+    /// to use correctly and securely. It is intended to be used in combination
+    /// with [`ValueCommitment::derive`], and PCZTs.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_repr()
+    }
 }
 
 impl Add<&ValueCommitTrapdoor> for ValueCommitTrapdoor {

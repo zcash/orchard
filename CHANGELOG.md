@@ -7,6 +7,9 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::value::ValueCommitTrapdoor::to_bytes`
+
 ## [0.10.0] - 2024-10-02
 
 ### Changed
