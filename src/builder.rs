@@ -2,6 +2,7 @@
 
 use core::fmt;
 use core::iter;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use ff::Field;
@@ -18,7 +19,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{Note, Rho, TransmittedNoteCiphertext},
+    note::{ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -261,6 +262,48 @@ impl SpendInfo {
             &path_root == anchor
         }
     }
+
+    /// Builds the spend half of an action.
+    ///
+    /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
+    ///
+    /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
+    fn build(
+        &self,
+        mut rng: impl RngCore,
+    ) -> (
+        Nullifier,
+        SpendValidatingKey,
+        pallas::Scalar,
+        redpallas::VerificationKey<SpendAuth>,
+    ) {
+        let nf_old = self.note.nullifier(&self.fvk);
+        let ak: SpendValidatingKey = self.fvk.clone().into();
+        let alpha = pallas::Scalar::random(&mut rng);
+        let rk = ak.randomize(&alpha);
+
+        (nf_old, ak, alpha, rk)
+    }
+
+    fn into_pczt(self, rng: impl RngCore) -> crate::pczt::Spend {
+        let (nf_old, _, alpha, rk) = self.build(rng);
+
+        crate::pczt::Spend {
+            nullifier: nf_old,
+            rk,
+            spend_auth_sig: None,
+            recipient: Some(self.note.recipient()),
+            value: Some(self.note.value()),
+            rho: Some(self.note.rho()),
+            rseed: Some(*self.note.rseed()),
+            fvk: Some(self.fvk),
+            witness: Some(self.merkle_path),
+            alpha: Some(alpha),
+            zip32_derivation: None,
+            dummy_sk: self.dummy_sk,
+            proprietary: BTreeMap::new(),
+        }
+    }
 }
 
 /// Information about a specific output to receive funds in an [`Action`].
@@ -301,6 +344,54 @@ impl OutputInfo {
 
         Self::new(None, recipient, NoteValue::zero(), None)
     }
+
+    /// Builds the output half of an action.
+    ///
+    /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
+    ///
+    /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
+    fn build(
+        &self,
+        cv_net: &ValueCommitment,
+        nf_old: Nullifier,
+        mut rng: impl RngCore,
+    ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext) {
+        let rho = Rho::from_nf_old(nf_old);
+        let note = Note::new(self.recipient, self.value, rho, &mut rng);
+        let cm_new = note.commitment();
+        let cmx = cm_new.into();
+
+        let encryptor = OrchardNoteEncryption::new(self.ovk.clone(), note, self.memo);
+
+        let encrypted_note = TransmittedNoteCiphertext {
+            epk_bytes: encryptor.epk().to_bytes().0,
+            enc_ciphertext: encryptor.encrypt_note_plaintext(),
+            out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, &cmx, &mut rng),
+        };
+
+        (note, cmx, encrypted_note)
+    }
+
+    fn into_pczt(
+        self,
+        cv_net: &ValueCommitment,
+        nf_old: Nullifier,
+        rng: impl RngCore,
+    ) -> crate::pczt::Output {
+        let (note, cmx, encrypted_note) = self.build(cv_net, nf_old, rng);
+
+        crate::pczt::Output {
+            cmx,
+            encrypted_note,
+            recipient: Some(self.recipient),
+            value: Some(self.value),
+            rseed: Some(*note.rseed()),
+            // TODO: Save this?
+            ock: None,
+            zip32_derivation: None,
+            proprietary: BTreeMap::new(),
+        }
+    }
 }
 
 /// Information about a specific [`Action`] we plan to build.
@@ -334,23 +425,8 @@ impl ActionInfo {
         let v_net = self.value_sum();
         let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
 
-        let nf_old = self.spend.note.nullifier(&self.spend.fvk);
-        let rho = Rho::from_nf_old(nf_old);
-        let ak: SpendValidatingKey = self.spend.fvk.clone().into();
-        let alpha = pallas::Scalar::random(&mut rng);
-        let rk = ak.randomize(&alpha);
-
-        let note = Note::new(self.output.recipient, self.output.value, rho, &mut rng);
-        let cm_new = note.commitment();
-        let cmx = cm_new.into();
-
-        let encryptor = OrchardNoteEncryption::new(self.output.ovk, note, self.output.memo);
-
-        let encrypted_note = TransmittedNoteCiphertext {
-            epk_bytes: encryptor.epk().to_bytes().0,
-            enc_ciphertext: encryptor.encrypt_note_plaintext(),
-            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv_net, &cmx, &mut rng),
-        };
+        let (nf_old, ak, alpha, rk) = self.spend.build(&mut rng);
+        let (note, cmx, encrypted_note) = self.output.build(&cv_net, nf_old, &mut rng);
 
         (
             Action::from_parts(
@@ -366,6 +442,21 @@ impl ActionInfo {
             ),
             Circuit::from_action_context_unchecked(self.spend, note, alpha, self.rcv),
         )
+    }
+
+    fn build_for_pczt(self, mut rng: impl RngCore) -> crate::pczt::Action {
+        let v_net = self.value_sum();
+        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
+
+        let spend = self.spend.into_pczt(&mut rng);
+        let output = self.output.into_pczt(&cv_net, spend.nullifier, &mut rng);
+
+        crate::pczt::Action {
+            cv_net,
+            spend,
+            output,
+            rcv: Some(self.rcv),
+        }
     }
 }
 
@@ -552,6 +643,40 @@ impl Builder {
             self.outputs,
         )
     }
+
+    /// Builds a bundle containing the given spent notes and outputs along with their
+    /// metadata, for inclusion in a PCZT.
+    pub fn build_for_pczt(
+        self,
+        rng: impl RngCore,
+    ) -> Result<(crate::pczt::Bundle, BundleMetadata), BuildError> {
+        build_bundle(
+            rng,
+            self.anchor,
+            self.bundle_type,
+            self.spends,
+            self.outputs,
+            |pre_actions, flags, value_sum, bundle_meta, mut rng| {
+                // Create the actions.
+                let actions = pre_actions
+                    .into_iter()
+                    .map(|a| a.build_for_pczt(&mut rng))
+                    .collect::<Vec<_>>();
+
+                Ok((
+                    crate::pczt::Bundle {
+                        actions,
+                        flags,
+                        value_sum,
+                        anchor: self.anchor,
+                        zkproof: None,
+                        bsk: None,
+                    },
+                    bundle_meta,
+                ))
+            },
+        )
+    }
 }
 
 /// Builds a bundle containing the given spent notes and outputs.
@@ -559,12 +684,69 @@ impl Builder {
 /// The returned bundle will have no proof or signatures; these can be applied with
 /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
 pub fn bundle<V: TryFrom<i64>>(
-    mut rng: impl RngCore,
+    rng: impl RngCore,
     anchor: Anchor,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
 ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
+    build_bundle(
+        rng,
+        anchor,
+        bundle_type,
+        spends,
+        outputs,
+        |pre_actions, flags, value_balance, bundle_meta, mut rng| {
+            let result_value_balance: V = i64::try_from(value_balance)
+                .map_err(BuildError::ValueSum)
+                .and_then(|i| {
+                    V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError))
+                })?;
+
+            // Compute the transaction binding signing key.
+            let bsk = pre_actions
+                .iter()
+                .map(|a| &a.rcv)
+                .sum::<ValueCommitTrapdoor>()
+                .into_bsk();
+
+            // Create the actions.
+            let (actions, circuits): (Vec<_>, Vec<_>) =
+                pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
+
+            // Verify that bsk and bvk are consistent.
+            let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
+                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
+            .into_bvk();
+            assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+
+            Ok(NonEmpty::from_vec(actions).map(|actions| {
+                (
+                    Bundle::from_parts(
+                        actions,
+                        flags,
+                        result_value_balance,
+                        anchor,
+                        InProgress {
+                            proof: Unproven { circuits },
+                            sigs: Unauthorized { bsk },
+                        },
+                    ),
+                    bundle_meta,
+                )
+            }))
+        },
+    )
+}
+
+fn build_bundle<B, R: RngCore>(
+    mut rng: R,
+    anchor: Anchor,
+    bundle_type: BundleType,
+    spends: Vec<SpendInfo>,
+    outputs: Vec<OutputInfo>,
+    finisher: impl FnOnce(Vec<ActionInfo>, Flags, ValueSum, BundleMetadata, R) -> Result<B, BuildError>,
+) -> Result<B, BuildError> {
     let flags = bundle_type.flags();
 
     let num_requested_spends = spends.len();
@@ -640,42 +822,7 @@ pub fn bundle<V: TryFrom<i64>>(
         })
         .ok_or(OverflowError)?;
 
-    let result_value_balance: V = i64::try_from(value_balance)
-        .map_err(BuildError::ValueSum)
-        .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(value::OverflowError)))?;
-
-    // Compute the transaction binding signing key.
-    let bsk = pre_actions
-        .iter()
-        .map(|a| &a.rcv)
-        .sum::<ValueCommitTrapdoor>()
-        .into_bsk();
-
-    // Create the actions.
-    let (actions, circuits): (Vec<_>, Vec<_>) =
-        pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
-
-    // Verify that bsk and bvk are consistent.
-    let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-        - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
-    .into_bvk();
-    assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
-
-    Ok(NonEmpty::from_vec(actions).map(|actions| {
-        (
-            Bundle::from_parts(
-                actions,
-                flags,
-                result_value_balance,
-                anchor,
-                InProgress {
-                    proof: Unproven { circuits },
-                    sigs: Unauthorized { bsk },
-                },
-            ),
-            bundle_meta,
-        )
-    }))
+    finisher(pre_actions, flags, value_balance, bundle_meta, rng)
 }
 
 /// Marker trait representing bundle signatures in the process of being created.

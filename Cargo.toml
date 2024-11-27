@@ -47,6 +47,9 @@ zcash_spec = "0.1"
 zip32 = "0.1"
 visibility = "0.1.1"
 
+# Boilerplate
+getset = "0.1"
+
 # Logging
 tracing = "0.1"
 

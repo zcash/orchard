@@ -7,6 +7,18 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- Support for Partially-Created Zcash Transactions:
+  - `orchard::builder::Builder::build_for_pczt`
+  - `orchard::pczt` module.
+- `orchard::bundle::EffectsOnly`
+- `orchard::tree::MerklePath::{position, auth_path}`
+- `orchard::value`:
+  - `Sign`
+  - `ValueSum::magnitude_sign`
+  - `ValueCommitTrapdoor::to_bytes`
+- `impl Clone for orchard::tree::MerklePath`
+
 ## [0.10.0] - 2024-10-02
 
 ### Changed

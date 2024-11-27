@@ -409,6 +409,14 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     }
 }
 
+/// Marker type for a bundle that contains no authorizing data.
+#[derive(Clone, Debug)]
+pub struct EffectsOnly;
+
+impl Authorization for EffectsOnly {
+    type SpendAuth = ();
+}
+
 /// Authorizing data for a bundle of actions, ready to be committed to the ledger.
 #[derive(Debug, Clone)]
 pub struct Authorized {
@@ -519,17 +527,11 @@ pub mod testing {
         Anchor,
     };
 
-    use super::{Action, Authorization, Authorized, Bundle, Flags};
+    use super::{Action, Authorized, Bundle, Flags};
 
     pub use crate::action::testing::{arb_action, arb_unauthorized_action};
 
-    /// Marker for an unauthorized bundle with no proofs or signatures.
-    #[derive(Debug)]
-    pub struct Unauthorized;
-
-    impl Authorization for Unauthorized {
-        type SpendAuth = ();
-    }
+    type Unauthorized = super::EffectsOnly;
 
     /// Generate an unauthorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
     pub fn arb_unauthorized_action_n(
@@ -617,7 +619,7 @@ pub mod testing {
                 flags,
                 balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
                 anchor,
-                Unauthorized
+                super::EffectsOnly,
             )
         }
     }
