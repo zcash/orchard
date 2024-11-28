@@ -105,7 +105,7 @@ pub trait OrchardCircuit: Sized + Default {
 
     /// Wrapper for configure function of plonk::Circuit trait
     fn synthesize(
-        circuit: &Circuit<Self>,
+        circuit: &Witnesses,
         config: Self::Config,
         layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error>;
@@ -128,13 +128,20 @@ impl<C: OrchardCircuit> plonk::Circuit<pallas::Base> for Circuit<C> {
         config: Self::Config,
         layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
-        C::synthesize(self, config, layouter)
+        C::synthesize(&self.witnesses, config, layouter)
     }
 }
 
 /// The Orchard Action circuit.
 #[derive(Clone, Debug, Default)]
 pub struct Circuit<D> {
+    pub(crate) witnesses: Witnesses,
+    pub(crate) phantom: std::marker::PhantomData<D>,
+}
+
+/// The Orchard Action witnesses
+#[derive(Clone, Debug, Default)]
+pub struct Witnesses {
     pub(crate) path: Value<[MerkleHashOrchard; MERKLE_DEPTH_ORCHARD]>,
     pub(crate) pos: Value<u32>,
     pub(crate) g_d_old: Value<NonIdentityPallasPoint>,
@@ -157,10 +164,9 @@ pub struct Circuit<D> {
     pub(crate) rcv: Value<ValueCommitTrapdoor>,
     pub(crate) asset: Value<AssetBase>,
     pub(crate) split_flag: Value<bool>,
-    phantom: std::marker::PhantomData<D>,
 }
 
-impl<D> Circuit<D> {
+impl Witnesses {
     /// This constructor is public to enable creation of custom builders.
     /// If you are not creating a custom builder, use [`Builder`] to compose
     /// and authorize a transaction.
@@ -181,7 +187,7 @@ impl<D> Circuit<D> {
         output_note: Note,
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
-    ) -> Option<Circuit<D>> {
+    ) -> Option<Self> {
         (Rho::from_nf_old(spend.note.nullifier(&spend.fvk)) == output_note.rho())
             .then(|| Self::from_action_context_unchecked(spend, output_note, alpha, rcv))
     }
@@ -191,7 +197,7 @@ impl<D> Circuit<D> {
         output_note: Note,
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
-    ) -> Circuit<D> {
+    ) -> Self {
         let sender_address = spend.note.recipient();
         let rho_old = spend.note.rho();
         let psi_old = spend.note.rseed().psi(&rho_old);
@@ -204,7 +210,7 @@ impl<D> Circuit<D> {
         let psi_new = output_note.rseed().psi(&rho_new);
         let rcm_new = output_note.rseed().rcm(&rho_new);
 
-        Circuit {
+        Witnesses {
             path: Value::known(spend.merkle_path.auth_path()),
             pos: Value::known(spend.merkle_path.position()),
             g_d_old: Value::known(sender_address.g_d()),
@@ -227,7 +233,6 @@ impl<D> Circuit<D> {
             rcv: Value::known(rcv),
             asset: Value::known(spend.note.asset()),
             split_flag: Value::known(spend.split_flag),
-            phantom: std::marker::PhantomData,
         }
     }
 }

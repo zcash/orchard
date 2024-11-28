@@ -28,7 +28,7 @@ use crate::{
     circuit::derive_nullifier::gadgets::derive_nullifier,
     circuit::note_commit::gadgets::note_commit,
     circuit::value_commit_orchard::gadgets::value_commit_orchard,
-    circuit::Config,
+    circuit::{Config, Witnesses},
     constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
     orchard_flavor::OrchardVanilla,
 };
@@ -37,8 +37,8 @@ use super::{
     commit_ivk::CommitIvkChip,
     gadget::{add_chip::AddChip, assign_free_advice},
     note_commit::NoteCommitChip,
-    Circuit, OrchardCircuit, ANCHOR, CMX, CV_NET_X, CV_NET_Y, ENABLE_OUTPUT, ENABLE_SPEND, NF_OLD,
-    RK_X, RK_Y,
+    OrchardCircuit, ANCHOR, CMX, CV_NET_X, CV_NET_Y, ENABLE_OUTPUT, ENABLE_SPEND, NF_OLD, RK_X,
+    RK_Y,
 };
 
 impl OrchardCircuit for OrchardVanilla {
@@ -235,7 +235,7 @@ impl OrchardCircuit for OrchardVanilla {
 
     #[allow(non_snake_case)]
     fn synthesize(
-        circuit: &Circuit<Self>,
+        circuit: &Witnesses,
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
@@ -620,6 +620,7 @@ mod tests {
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
+    use crate::circuit::Witnesses;
     use crate::{
         bundle::Flags,
         circuit::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K},
@@ -658,29 +659,31 @@ mod tests {
 
         (
             OrchardCircuitVanilla {
-                path: Value::known(path.auth_path()),
-                pos: Value::known(path.position()),
-                g_d_old: Value::known(sender_address.g_d()),
-                pk_d_old: Value::known(*sender_address.pk_d()),
-                v_old: Value::known(spent_note.value()),
-                rho_old: Value::known(spent_note.rho()),
-                psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
-                rcm_old: Value::known(spent_note.rseed().rcm(&spent_note.rho())),
-                cm_old: Value::known(spent_note.commitment()),
-                // For non split note, psi_nf is equal to psi_old
-                psi_nf: Value::known(psi_old),
-                alpha: Value::known(alpha),
-                ak: Value::known(ak),
-                nk: Value::known(nk),
-                rivk: Value::known(rivk),
-                g_d_new: Value::known(output_note.recipient().g_d()),
-                pk_d_new: Value::known(*output_note.recipient().pk_d()),
-                v_new: Value::known(output_note.value()),
-                psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
-                rcm_new: Value::known(output_note.rseed().rcm(&output_note.rho())),
-                rcv: Value::known(rcv),
-                asset: Value::known(spent_note.asset()),
-                split_flag: Value::known(false),
+                witnesses: Witnesses {
+                    path: Value::known(path.auth_path()),
+                    pos: Value::known(path.position()),
+                    g_d_old: Value::known(sender_address.g_d()),
+                    pk_d_old: Value::known(*sender_address.pk_d()),
+                    v_old: Value::known(spent_note.value()),
+                    rho_old: Value::known(spent_note.rho()),
+                    psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
+                    rcm_old: Value::known(spent_note.rseed().rcm(&spent_note.rho())),
+                    cm_old: Value::known(spent_note.commitment()),
+                    // For non split note, psi_nf is equal to psi_old
+                    psi_nf: Value::known(psi_old),
+                    alpha: Value::known(alpha),
+                    ak: Value::known(ak),
+                    nk: Value::known(nk),
+                    rivk: Value::known(rivk),
+                    g_d_new: Value::known(output_note.recipient().g_d()),
+                    pk_d_new: Value::known(*output_note.recipient().pk_d()),
+                    v_new: Value::known(output_note.value()),
+                    psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
+                    rcm_new: Value::known(output_note.rseed().rcm(&output_note.rho())),
+                    rcv: Value::known(rcv),
+                    asset: Value::known(spent_note.asset()),
+                    split_flag: Value::known(false),
+                },
                 phantom: std::marker::PhantomData,
             },
             Instance {
@@ -858,28 +861,7 @@ mod tests {
             .unwrap();
 
         let circuit = OrchardCircuitVanilla {
-            path: Value::unknown(),
-            pos: Value::unknown(),
-            g_d_old: Value::unknown(),
-            pk_d_old: Value::unknown(),
-            v_old: Value::unknown(),
-            rho_old: Value::unknown(),
-            psi_old: Value::unknown(),
-            rcm_old: Value::unknown(),
-            cm_old: Value::unknown(),
-            psi_nf: Value::unknown(),
-            alpha: Value::unknown(),
-            ak: Value::unknown(),
-            nk: Value::unknown(),
-            rivk: Value::unknown(),
-            g_d_new: Value::unknown(),
-            pk_d_new: Value::unknown(),
-            v_new: Value::unknown(),
-            psi_new: Value::unknown(),
-            rcm_new: Value::unknown(),
-            rcv: Value::unknown(),
-            asset: Value::unknown(),
-            split_flag: Value::unknown(),
+            witnesses: Witnesses::default(),
             phantom: std::marker::PhantomData,
         };
         halo2_proofs::dev::CircuitLayout::default()
