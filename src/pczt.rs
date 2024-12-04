@@ -82,6 +82,9 @@ impl Bundle {
     /// Returns a mutable reference to the actions in this bundle.
     ///
     /// This is used by Signers to apply signatures with [`Action::sign`].
+    ///
+    /// Note: updating the `Action`s via the returned slice will not update other
+    /// fields of the bundle dependent on them, such as `value_sum` and `bsk`.
     pub fn actions_mut(&mut self) -> &mut [Action] {
         &mut self.actions
     }
@@ -117,7 +120,7 @@ pub struct Action {
     pub(crate) rcv: Option<ValueCommitTrapdoor>,
 }
 
-/// Information about an Orchars spend within a transaction.
+/// Information about an Orchard spend within a transaction.
 #[derive(Debug, Getters)]
 #[getset(get = "pub")]
 pub struct Spend {

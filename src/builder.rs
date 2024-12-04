@@ -265,7 +265,7 @@ impl SpendInfo {
 
     /// Builds the spend half of an action.
     ///
-    /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
+    /// The returned values are chosen as in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn build(
@@ -386,7 +386,8 @@ impl OutputInfo {
             recipient: Some(self.recipient),
             value: Some(self.value),
             rseed: Some(*note.rseed()),
-            // TODO: Save this?
+            // TODO: Extract ock from the encryptor and save it so
+            // Signers can check `out_ciphertext`.
             ock: None,
             zip32_derivation: None,
             proprietary: BTreeMap::new(),
