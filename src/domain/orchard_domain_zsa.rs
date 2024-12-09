@@ -1,18 +1,28 @@
-//! This module implements the note encryption logic specific for the `OrchardZSA` flavor.
+//! This module implements the note encryption and commitment logic specific for the `OrchardZSA`
+//! flavor.
 
+use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption_zsa::note_bytes::NoteBytesData;
 
 use crate::{
+    bundle::{
+        commitments::{
+            hasher, ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION,
+            ZCASH_ORCHARD_HASH_PERSONALIZATION, ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION,
+        },
+        Authorization,
+    },
     note::{AssetBase, Note},
     orchard_flavor::OrchardZSA,
+    Bundle,
 };
 
 use super::{
-    domain::{
+    orchard_domain::OrchardDomainCommon,
+    zcash_note_encryption_domain::{
         build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA, COMPACT_NOTE_SIZE_ZSA,
         NOTE_VERSION_BYTE_V3,
     },
-    orchard_domain::OrchardDomainCommon,
 };
 
 impl OrchardDomainCommon for OrchardZSA {
@@ -39,6 +49,35 @@ impl OrchardDomainCommon for OrchardZSA {
             .unwrap();
 
         AssetBase::from_bytes(bytes).into()
+    }
+
+    /// Evaluate `orchard_digest` for the bundle as defined in
+    /// [ZIP-226: Transfer and Burn of Zcash Shielded Assets][zip226]
+    ///
+    /// [zip226]: https://zips.z.cash/zip-0226
+    fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
+        bundle: &Bundle<A, V, OrchardZSA>,
+    ) -> Blake2bHash {
+        let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
+        let mut agh = hasher(ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION);
+
+        Self::update_hash_with_actions(&mut agh, bundle);
+
+        agh.update(&[bundle.flags().to_byte()]);
+        agh.update(&bundle.anchor().to_bytes());
+        agh.update(&bundle.expiry_height().to_le_bytes());
+
+        h.update(agh.finalize().as_bytes());
+
+        let mut burn_hasher = hasher(ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION);
+        for burn_item in bundle.burn() {
+            burn_hasher.update(&burn_item.0.to_bytes());
+            burn_hasher.update(&burn_item.1.to_bytes());
+        }
+        h.update(burn_hasher.finalize().as_bytes());
+
+        h.update(&(*bundle.value_balance()).into().to_le_bytes());
+        h.finalize()
     }
 }
 
@@ -71,8 +110,10 @@ mod tests {
 
     use super::super::{
         compact_action::CompactAction,
-        domain::{parse_note_plaintext_without_memo, parse_note_version, prf_ock_orchard},
         orchard_domain::OrchardDomain,
+        zcash_note_encryption_domain::{
+            parse_note_plaintext_without_memo, parse_note_version, prf_ock_orchard,
+        },
     };
 
     type OrchardDomainZSA = OrchardDomain<OrchardZSA>;

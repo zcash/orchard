@@ -120,9 +120,9 @@ pub mod testing {
 
     use crate::{
         address::Address,
+        domain::zcash_note_encryption_domain::MEMO_SIZE,
         keys::OutgoingViewingKey,
         note::{AssetBase, ExtractedNoteCommitment, Note, Nullifier, RandomSeed, Rho},
-        note_encryption::MEMO_SIZE,
         value::NoteValue,
     };
 

@@ -27,7 +27,7 @@ pub mod keys;
 pub mod note;
 pub mod supply_info;
 
-pub mod note_encryption;
+pub mod domain;
 
 pub mod orchard_flavor;
 

@@ -1,6 +1,6 @@
 //! Defines types and traits for the variations ("flavors") of the Orchard protocol (Vanilla and ZSA).
 
-use crate::{bundle::OrchardHash, circuit::OrchardCircuit, note_encryption::OrchardDomainCommon};
+use crate::{circuit::OrchardCircuit, domain::OrchardDomainCommon};
 
 /// Represents the "Vanilla" variation ("flavor") of the Orchard protocol.  
 #[derive(Debug, Clone, Default)]
@@ -22,7 +22,7 @@ pub enum Flavor {
 }
 
 /// A trait binding the common functionality between different Orchard protocol flavors.
-pub trait OrchardFlavor: OrchardDomainCommon + OrchardCircuit + OrchardHash {
+pub trait OrchardFlavor: OrchardDomainCommon + OrchardCircuit {
     /// Flavor of the Orchard protocol.
     const FLAVOR: Flavor;
 }

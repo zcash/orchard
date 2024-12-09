@@ -1,17 +1,24 @@
-//! This module implements the note encryption logic specific for the `OrchardVanilla` flavor.
+//! This module implements the note encryption and commitment logic specific for the
+//! `OrchardVanilla` flavor.
 
+use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption_zsa::note_bytes::NoteBytesData;
 
 use crate::{
+    bundle::{
+        commitments::{hasher, ZCASH_ORCHARD_HASH_PERSONALIZATION},
+        Authorization,
+    },
     note::{AssetBase, Note},
     orchard_flavor::OrchardVanilla,
+    Bundle,
 };
 
 use super::{
-    domain::{
+    orchard_domain::OrchardDomainCommon,
+    zcash_note_encryption_domain::{
         build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA, NOTE_VERSION_BYTE_V2,
     },
-    orchard_domain::OrchardDomainCommon,
 };
 
 impl OrchardDomainCommon for OrchardVanilla {
@@ -32,6 +39,23 @@ impl OrchardDomainCommon for OrchardVanilla {
 
     fn extract_asset(_plaintext: &Self::CompactNotePlaintextBytes) -> Option<AssetBase> {
         Some(AssetBase::native())
+    }
+
+    /// Evaluate `orchard_digest` for the bundle as defined in
+    /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
+    ///
+    /// [zip244]: https://zips.z.cash/zip-0244
+    fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
+        bundle: &Bundle<A, V, OrchardVanilla>,
+    ) -> Blake2bHash {
+        let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
+
+        Self::update_hash_with_actions(&mut h, bundle);
+
+        h.update(&[bundle.flags().to_byte()]);
+        h.update(&(*bundle.value_balance()).into().to_le_bytes());
+        h.update(&bundle.anchor().to_bytes());
+        h.finalize()
     }
 }
 
@@ -64,8 +88,10 @@ mod tests {
 
     use super::super::{
         compact_action::CompactAction,
-        domain::{parse_note_plaintext_without_memo, parse_note_version, prf_ock_orchard},
         orchard_domain::OrchardDomain,
+        zcash_note_encryption_domain::{
+            parse_note_plaintext_without_memo, parse_note_version, prf_ock_orchard,
+        },
     };
 
     type OrchardDomainVanilla = OrchardDomain<OrchardVanilla>;

@@ -19,12 +19,12 @@ use crate::{
     address::Address,
     bundle::{derive_bvk, Authorization, Authorized, Bundle, Flags},
     circuit::{Circuit, Instance, Proof, ProvingKey, Witnesses},
+    domain::{OrchardDomain, OrchardDomainCommon},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
     note::{AssetBase, Note, Rho, TransmittedNoteCiphertext},
-    note_encryption::{OrchardDomain, OrchardDomainCommon},
     orchard_flavor::{Flavor, OrchardFlavor},
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -542,7 +542,7 @@ impl Builder {
     /// Returns an error if the given Merkle path does not have the required anchor for
     /// the given note.
     ///
-    /// [`OrchardDomain`]: crate::note_encryption::OrchardDomain
+    /// [`OrchardDomain`]: crate::domain::OrchardDomain
     /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
     pub fn add_spend(
         &mut self,
@@ -1249,9 +1249,9 @@ pub mod testing {
         address::testing::arb_address,
         bundle::{Authorized, Bundle},
         circuit::ProvingKey,
+        domain::OrchardDomainCommon,
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
-        note_encryption::OrchardDomainCommon,
         orchard_flavor::OrchardFlavor,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},

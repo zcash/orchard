@@ -9,8 +9,8 @@ use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, CtOption};
 
 use crate::{
+    domain::OrchardDomainCommon,
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
-    note_encryption::OrchardDomainCommon,
     spec::{to_base, to_scalar, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
     Address,
@@ -37,7 +37,7 @@ impl Rho {
     /// value otherwise.
     ///
     /// [`Action::rho`]: crate::action::Action::rho
-    /// [`CompactAction::rho`]: crate::note_encryption::CompactAction::rho
+    /// [`CompactAction::rho`]: crate::domain::CompactAction::rho
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Base::from_repr(*bytes).map(Rho)
     }
