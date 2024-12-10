@@ -15,6 +15,13 @@ impl super::Bundle {
         pk: &ProvingKey,
         rng: R,
     ) -> Result<(), ProverError> {
+        // If we have no actions, we don't need a proof (and if we still have no actions
+        // by the time we come to transaction extraction, we will end up with a `None`
+        // bundle that doesn't even hold a proof field).
+        if self.actions.is_empty() {
+            return Ok(());
+        }
+
         let circuits = self
             .actions
             .iter()
