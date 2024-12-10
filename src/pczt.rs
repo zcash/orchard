@@ -328,17 +328,17 @@ mod tests {
 
         // Run the IO Finalizer role.
         let sighash = [0; 32];
-        pczt_bundle.finalize_io(sighash, &mut rng).unwrap();
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
 
         // Run the Prover role.
-        pczt_bundle.create_proof(&pk, &mut rng).unwrap();
+        pczt_bundle.create_proof(&pk, rng).unwrap();
 
         // Run the Transaction Extractor role.
         let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();
 
         assert_eq!(bundle.value_balance(), &(-5000));
         // We can successfully bind the bundle.
-        bundle.apply_binding_signature(sighash, &mut rng).unwrap();
+        bundle.apply_binding_signature(sighash, rng).unwrap();
     }
 
     #[test]
@@ -405,7 +405,7 @@ mod tests {
 
         // Run the IO Finalizer role.
         let sighash = [0; 32];
-        pczt_bundle.finalize_io(sighash, &mut rng).unwrap();
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
 
         // Run the Updater role.
         for action in pczt_bundle.actions_mut() {
@@ -418,7 +418,7 @@ mod tests {
         }
 
         // Run the Prover role.
-        pczt_bundle.create_proof(&pk, &mut rng).unwrap();
+        pczt_bundle.create_proof(&pk, rng).unwrap();
 
         // TODO: Verify that the PCZT contains sufficient information to decrypt and check
         // `enc_ciphertext`.
@@ -426,7 +426,7 @@ mod tests {
         // Run the Signer role.
         for action in pczt_bundle.actions_mut() {
             if action.spend.zip32_derivation.as_ref() == Some(&zip32_derivation) {
-                action.sign(sighash, &ask, &mut rng).unwrap();
+                action.sign(sighash, &ask, rng).unwrap();
             }
         }
 
@@ -435,6 +435,6 @@ mod tests {
 
         assert_eq!(bundle.value_balance(), &0);
         // We can successfully bind the bundle.
-        bundle.apply_binding_signature(sighash, &mut rng).unwrap();
+        bundle.apply_binding_signature(sighash, rng).unwrap();
     }
 }
