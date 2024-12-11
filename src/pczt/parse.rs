@@ -19,6 +19,7 @@ use crate::{
 
 impl Bundle {
     /// Parses a PCZT bundle from its component parts.
+    /// `value_sum` is represented as `(magnitude, is_negative)`.
     pub fn parse(
         actions: Vec<Action>,
         flags: u8,
