@@ -25,6 +25,7 @@ mod constants;
 pub mod keys;
 pub mod note;
 pub mod note_encryption;
+pub mod pczt;
 pub mod primitives;
 mod spec;
 pub mod tree;

@@ -138,8 +138,12 @@ impl Sub for NoteValue {
     }
 }
 
-pub(crate) enum Sign {
+/// The sign of a [`ValueSum`].
+#[derive(Debug)]
+pub enum Sign {
+    /// A non-negative [`ValueSum`].
     Positive,
+    /// A negative [`ValueSum`].
     Negative,
 }
 
@@ -163,8 +167,23 @@ impl ValueSum {
         ValueSum(value as i128)
     }
 
+    /// Constructs a value sum from its magnitude and sign.
+    pub(crate) fn from_magnitude_sign(magnitude: u64, sign: Sign) -> Self {
+        Self(match sign {
+            Sign::Positive => magnitude as i128,
+            Sign::Negative => -(magnitude as i128),
+        })
+    }
+
     /// Splits this value sum into its magnitude and sign.
-    pub(crate) fn magnitude_sign(&self) -> (u64, Sign) {
+    ///
+    /// This is a low-level API, requiring a detailed understanding of the
+    /// [use of value balancing][orchardbalance] in the Zcash protocol to use correctly
+    /// and securely. It is intended to be used in combination with the [`crate::pczt`]
+    /// module.
+    ///
+    /// [orchardbalance]: https://zips.z.cash/protocol/protocol.pdf#orchardbalance
+    pub fn magnitude_sign(&self) -> (u64, Sign) {
         let (magnitude, sign) = if self.0.is_negative() {
             (-self.0, Sign::Negative)
         } else {
@@ -231,6 +250,18 @@ impl ValueCommitTrapdoor {
     /// [orchardbalance]: https://zips.z.cash/protocol/protocol.pdf#orchardbalance
     pub fn from_bytes(bytes: [u8; 32]) -> CtOption<Self> {
         pallas::Scalar::from_repr(bytes).map(ValueCommitTrapdoor)
+    }
+
+    /// Returns the byte encoding of a `ValueCommitTrapdoor`.
+    ///
+    /// This is a low-level API, requiring a detailed understanding of the
+    /// [use of value commitment trapdoors][orchardbalance] in the Zcash protocol
+    /// to use correctly and securely. It is intended to be used in combination
+    /// with the [`crate::pczt`] module.
+    ///
+    /// [orchardbalance]: https://zips.z.cash/protocol/protocol.pdf#orchardbalance
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_repr()
     }
 }
 
