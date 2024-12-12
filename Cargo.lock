@@ -198,15 +198,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bridgetree"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cef977c7f8e75aa81fc589064c121ab8d32448b7939d34d58df479aa93e65ea5"
-dependencies = [
- "incrementalmerkletree",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1122,9 +1113,9 @@ dependencies = [
 
 [[package]]
 name = "incrementalmerkletree"
-version = "0.7.1"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "216c71634ac6f6ed13c2102d64354c0a04dcbdc30e31692c5972d3974d8b6d97"
+checksum = "53227276b450ef58e4899e656ab4e9b4188aab0efc465f761bdbe56403ede61a"
 dependencies = [
  "either",
  "proptest",
@@ -1451,7 +1442,6 @@ dependencies = [
  "aes",
  "bitvec",
  "blake2b_simd",
- "bridgetree",
  "core2",
  "criterion",
  "ff",
@@ -1475,6 +1465,7 @@ dependencies = [
  "rand",
  "reddsa",
  "serde",
+ "shardtree",
  "sinsemilla",
  "subtle",
  "tracing",
@@ -2038,6 +2029,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "shardtree"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3b5185835de4fb8cd2c6bcee1147a8d7eff15dd01810cda30cbd5cd0462fd6"
+dependencies = [
+ "bitflags 2.4.0",
+ "either",
+ "incrementalmerkletree",
+ "tracing",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2580,9 +2583,9 @@ dependencies = [
 
 [[package]]
 name = "zcash_spec"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7a3bf58b673cb3dacd8ae09ba345998923a197ab0da70d6239d8e8838949e9b"
+checksum = "9cede95491c2191d3e278cab76e097a44b17fde8d6ca0d4e3a22cf4807b2d857"
 dependencies = [
  "blake2b_simd",
 ]
@@ -2609,13 +2612,14 @@ dependencies = [
 
 [[package]]
 name = "zip32"
-version = "0.1.0"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d724a63be4dfb50b7f3617e542984e22e4b4a5b8ca5de91f55613152885e6b22"
+checksum = "2e9943793abf9060b68e1889012dafbd5523ab5b125c0fcc24802d69182f2ac9"
 dependencies = [
  "blake2b_simd",
  "memuse",
  "subtle",
+ "zcash_spec",
 ]
 
 [[package]]
