@@ -187,7 +187,7 @@ impl Flags {
 /// Defines the authorization type of an Orchard bundle.
 pub trait Authorization: fmt::Debug {
     /// The authorization type of an Orchard action.
-    type SpendAuth: fmt::Debug;
+    type SpendAuth: fmt::Debug + Clone;
 }
 
 /// A bundle of actions to be applied to the ledger.
