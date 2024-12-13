@@ -38,14 +38,11 @@ impl super::Spend {
         expected_fvk: Option<&'a FullViewingKey>,
     ) -> Result<&'a FullViewingKey, VerifyError> {
         match (expected_fvk, self.fvk.as_ref(), self.value.as_ref()) {
-            // Dummy notes use random FVKs, which must be provided.
-            (_, Some(fvk), Some(value)) if value.inner() == 0 => Ok(fvk),
-            (_, None, Some(value)) if value.inner() == 0 => Err(VerifyError::MissingFullViewingKey),
-            // If the FVK field has been pruned, assume the caller provided the correct FVK.
-            (Some(expected_fvk), None, _) => Ok(expected_fvk),
-            // This is not a dummy note; if the FVK field is present, it must match.
             (Some(expected_fvk), Some(fvk), _) if fvk == expected_fvk => Ok(fvk),
+            // `expected_fvk` is ignored if the spent note is a dummy note.
+            (Some(_), Some(fvk), Some(value)) if value.inner() == 0 => Ok(fvk),
             (Some(_), Some(_), _) => Err(VerifyError::MismatchedFullViewingKey),
+            (Some(expected_fvk), None, _) => Ok(expected_fvk),
             (None, Some(fvk), _) => Ok(fvk),
             (None, None, _) => Err(VerifyError::MissingFullViewingKey),
         }
