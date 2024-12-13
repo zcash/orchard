@@ -29,8 +29,6 @@ blake2b_simd = "1"
 ff = "0.13"
 fpe = "0.6"
 group = { version = "0.13", features = ["wnaf-memuse"] }
-halo2_gadgets = "0.3"
-halo2_proofs = { version = "0.3", default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 hex = "0.4"
 lazy_static = "1"
 memuse = { version = "0.2.1", features = ["nonempty"] }
@@ -39,13 +37,19 @@ proptest = { version = "1.0.0", optional = true }
 rand = "0.8"
 reddsa = "0.5"
 nonempty = "0.7"
+poseidon = { package = "halo2_poseidon", version = "0.1" }
 serde = { version = "1.0", features = ["derive"] }
+sinsemilla = "0.1"
 subtle = "2.3"
 zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.7"
 zcash_spec = "0.1"
 zip32 = "0.1"
 visibility = "0.1.1"
+
+# Circuit
+halo2_gadgets = { version = "0.3", optional = true }
+halo2_proofs = { version = "0.3", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 
 # Boilerplate
 getset = "0.1"
@@ -74,10 +78,11 @@ pprof = { version = "0.11", features = ["criterion", "flamegraph"] }
 bench = false
 
 [features]
-default = ["multicore"]
+default = ["circuit", "multicore"]
+circuit = ["dep:halo2_gadgets", "dep:halo2_proofs"]
 unstable-frost = []
-multicore = ["halo2_proofs/multicore"]
-dev-graph = ["halo2_proofs/dev-graph", "image", "plotters"]
+multicore = ["halo2_proofs?/multicore"]
+dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 test-dependencies = ["proptest"]
 
 [[bench]]

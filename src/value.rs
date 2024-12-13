@@ -44,6 +44,7 @@ use core::ops::{Add, RangeInclusive, Sub};
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
+#[cfg(feature = "circuit")]
 use halo2_proofs::plonk::Assigned;
 use pasta_curves::{
     arithmetic::{CurveAffine, CurveExt},
@@ -118,6 +119,7 @@ impl NoteValue {
     }
 }
 
+#[cfg(feature = "circuit")]
 impl From<&NoteValue> for Assigned<pallas::Base> {
     fn from(v: &NoteValue) -> Self {
         pallas::Base::from(v.inner()).into()

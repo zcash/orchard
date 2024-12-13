@@ -1,8 +1,10 @@
 //! Structs related to bundles of Orchard actions.
 
-mod batch;
 pub mod commitments;
 
+#[cfg(feature = "circuit")]
+mod batch;
+#[cfg(feature = "circuit")]
 pub use batch::BatchValidator;
 
 use core::fmt;
@@ -16,15 +18,19 @@ use crate::{
     action::Action,
     address::Address,
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
-    circuit::{Instance, Proof, VerifyingKey},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::Note,
     note_encryption::OrchardDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
     value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
+    Proof,
 };
 
+#[cfg(feature = "circuit")]
+use crate::circuit::{Instance, VerifyingKey};
+
+#[cfg(feature = "circuit")]
 impl<T> Action<T> {
     /// Prepares the public instance for this action, for creating and verifying the
     /// bundle proof.
@@ -288,6 +294,7 @@ impl<T: Authorization, V> Bundle<T, V> {
         })
     }
 
+    #[cfg(feature = "circuit")]
     pub(crate) fn to_instances(&self) -> Vec<Instance> {
         self.actions
             .iter()
@@ -457,6 +464,7 @@ impl<V> Bundle<Authorized, V> {
     }
 
     /// Verifies the proof for this bundle.
+    #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
         self.authorization()
             .proof()

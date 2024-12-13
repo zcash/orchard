@@ -10,9 +10,9 @@ use crate::{
     note::commitment::ExtractedNoteCommitment,
 };
 
-use halo2_gadgets::sinsemilla::primitives::HashDomain;
 use incrementalmerkletree::{Hashable, Level};
 use pasta_curves::pallas;
+use sinsemilla::HashDomain;
 
 use ff::{Field, PrimeField, PrimeFieldBits};
 use lazy_static::lazy_static;
