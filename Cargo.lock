@@ -198,15 +198,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bridgetree"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cef977c7f8e75aa81fc589064c121ab8d32448b7939d34d58df479aa93e65ea5"
-dependencies = [
- "incrementalmerkletree",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1099,9 +1090,8 @@ dependencies = [
 
 [[package]]
 name = "incrementalmerkletree"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d45063fbc4b0a37837f6bfe0445f269d13d730ad0aa3b5a7f74aa7bf27a0f4df"
+version = "0.8.0"
+source = "git+https://github.com/zcash/incrementalmerkletree.git?rev=353cf3e9ff9621f64e2b6fabb709f4afeca487c4#353cf3e9ff9621f64e2b6fabb709f4afeca487c4"
 dependencies = [
  "either",
  "proptest",
@@ -1431,7 +1421,6 @@ dependencies = [
  "aes",
  "bitvec",
  "blake2b_simd",
- "bridgetree",
  "criterion",
  "ff",
  "fpe",
@@ -1453,6 +1442,7 @@ dependencies = [
  "rand",
  "reddsa",
  "serde",
+ "shardtree",
  "subtle",
  "tracing",
  "visibility",
@@ -2012,6 +2002,17 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "shardtree"
+version = "0.5.0"
+source = "git+https://github.com/zcash/incrementalmerkletree.git?rev=353cf3e9ff9621f64e2b6fabb709f4afeca487c4#353cf3e9ff9621f64e2b6fabb709f4afeca487c4"
+dependencies = [
+ "bitflags 2.4.0",
+ "either",
+ "incrementalmerkletree",
+ "tracing",
 ]
 
 [[package]]

@@ -19,6 +19,9 @@ and this project adheres to Rust's notion of
   - `ValueCommitTrapdoor::to_bytes`
 - `impl Clone for orchard::tree::MerklePath`
 
+### Changed
+- Migrated to `incrementalmerkletree 0.8`.
+
 ## [0.10.0] - 2024-10-02
 
 ### Changed

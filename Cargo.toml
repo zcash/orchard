@@ -42,7 +42,7 @@ nonempty = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 subtle = "2.3"
 zcash_note_encryption = "0.4"
-incrementalmerkletree = "0.7"
+incrementalmerkletree = "0.8"
 zcash_spec = "0.1"
 zip32 = "0.1"
 visibility = "0.1.1"
@@ -58,13 +58,13 @@ image = { version = "0.24", optional = true }
 plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
-bridgetree = "0.6"
 criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
 halo2_gadgets = { version = "0.3", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1.0.0"
 zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
-incrementalmerkletree = { version = "0.7", features = ["test-dependencies"] }
+incrementalmerkletree = { version = "0.8", features = ["test-dependencies"] }
+shardtree = "0.5"
 
 [target.'cfg(unix)'.dev-dependencies]
 inferno = { version = "0.11", default-features = false, features = ["multithreaded", "nameattr"] }
@@ -97,3 +97,7 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "353cf3e9ff9621f64e2b6fabb709f4afeca487c4" }
+shardtree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "353cf3e9ff9621f64e2b6fabb709f4afeca487c4" }
