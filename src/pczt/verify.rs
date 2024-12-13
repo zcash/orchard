@@ -119,6 +119,8 @@ impl super::Output {
     /// - `recipient`
     /// - `value`
     /// - `rseed`
+    ///
+    /// `spend` must be the Spend from the same Orchard action.
     pub fn verify_note_commitment(&self, spend: &super::Spend) -> Result<(), VerifyError> {
         let note = Note::from_parts(
             self.recipient.ok_or(VerifyError::MissingRecipient)?,
