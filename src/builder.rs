@@ -390,6 +390,7 @@ impl OutputInfo {
             // Signers can check `out_ciphertext`.
             ock: None,
             zip32_derivation: None,
+            user_address: None,
             proprietary: BTreeMap::new(),
         }
     }
