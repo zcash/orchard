@@ -55,6 +55,11 @@ impl<'a> ActionUpdater<'a> {
         self.0.output.zip32_derivation = Some(derivation);
     }
 
+    /// Sets the user-facing address that the new note is being sent to.
+    pub fn set_output_user_address(&mut self, user_address: String) {
+        self.0.output.user_address = Some(user_address);
+    }
+
     /// Stores the given output-specific proprietary value at the given key.
     pub fn set_output_proprietary(&mut self, key: String, value: Vec<u8>) {
         self.0.output.proprietary.insert(key, value);

@@ -216,6 +216,7 @@ impl Output {
         rseed: Option<[u8; 32]>,
         ock: Option<[u8; 32]>,
         zip32_derivation: Option<Zip32Derivation>,
+        user_address: Option<String>,
         proprietary: BTreeMap<String, Vec<u8>>,
     ) -> Result<Self, ParseError> {
         let cmx = ExtractedNoteCommitment::from_bytes(&cmx)
@@ -264,6 +265,7 @@ impl Output {
             rseed,
             ock,
             zip32_derivation,
+            user_address,
             proprietary,
         })
     }
