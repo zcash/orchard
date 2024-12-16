@@ -335,7 +335,7 @@ mod tests {
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), None)
+            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);
@@ -404,14 +404,14 @@ mod tests {
         let mut builder = Builder::new(BundleType::DEFAULT, anchor);
         builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10_000), None)
+            .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
             .unwrap();
         builder
             .add_output(
                 Some(fvk.to_ovk(Scope::Internal)),
                 fvk.address_at(0u32, Scope::Internal),
                 NoteValue::from_raw(5_000),
-                None,
+                [0u8; 512],
             )
             .unwrap();
         let balance: i64 = builder.value_balance().unwrap();
