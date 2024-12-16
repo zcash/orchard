@@ -1,5 +1,7 @@
 //! Test vectors for Orchard key components.
 
+use alloc::vec::Vec;
+
 pub(crate) struct TestVector {
     pub(crate) incoming_viewing_key: [u8; 64],
     pub(crate) ovk: [u8; 32],

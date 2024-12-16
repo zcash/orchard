@@ -1,6 +1,7 @@
 //! Key structures for Orchard.
 
-use std::io::{self, Read, Write};
+use alloc::vec::Vec;
+use core2::io::{self, Read, Write};
 
 use ::zip32::{AccountId, ChildIndex};
 use aes::Aes256;
@@ -405,7 +406,7 @@ impl FullViewingKey {
         Self::from_bytes(&data).ok_or_else(|| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "Unable to deserialize a valid Orchard FullViewingKey from bytes".to_owned(),
+                "Unable to deserialize a valid Orchard FullViewingKey from bytes",
             )
         })
     }
@@ -681,6 +682,7 @@ impl IncomingViewingKey {
 #[derive(Clone, Debug)]
 pub struct PreparedIncomingViewingKey(PreparedNonZeroScalar);
 
+#[cfg(feature = "circuit")]
 impl memuse::DynamicUsage for PreparedIncomingViewingKey {
     fn dynamic_usage(&self) -> usize {
         self.0.dynamic_usage()

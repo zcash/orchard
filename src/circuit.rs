@@ -1,5 +1,7 @@
 //! The Orchard Action circuit implementation.
 
+use alloc::vec::Vec;
+
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
@@ -919,6 +921,7 @@ impl Proof {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
     use core::iter;
 
     use ff::Field;

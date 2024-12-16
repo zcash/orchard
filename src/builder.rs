@@ -1,9 +1,9 @@
 //! Logic for building Orchard components of transactions.
 
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 use core::fmt;
 use core::iter;
-use std::collections::BTreeMap;
-use std::fmt::Display;
 
 use ff::Field;
 use pasta_curves::pallas;
@@ -141,7 +141,7 @@ pub enum BuildError {
     BundleTypeNotSatisfiable,
 }
 
-impl Display for BuildError {
+impl fmt::Display for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use BuildError::*;
         match self {
@@ -189,7 +189,7 @@ pub enum SpendError {
     FvkMismatch,
 }
 
-impl Display for SpendError {
+impl fmt::Display for SpendError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use SpendError::*;
         f.write_str(match self {
@@ -206,7 +206,7 @@ impl std::error::Error for SpendError {}
 #[derive(Debug, PartialEq, Eq)]
 pub struct OutputError;
 
-impl Display for OutputError {
+impl fmt::Display for OutputError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Outputs are not enabled for this builder")
     }
@@ -1137,7 +1137,9 @@ impl OutputView for OutputInfo {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
+    use alloc::vec::Vec;
     use core::fmt::Debug;
+
     use incrementalmerkletree::{frontier::Frontier, Hashable};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 

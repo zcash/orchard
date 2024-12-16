@@ -1,5 +1,6 @@
 //! In-band secret distribution for Orchard bundles.
 
+use alloc::vec::Vec;
 use core::fmt;
 
 use blake2b_simd::{Hash, Params};

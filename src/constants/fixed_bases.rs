@@ -1,4 +1,8 @@
 //! Orchard fixed bases.
+
+#[cfg(feature = "circuit")]
+use alloc::vec::Vec;
+
 use super::{L_ORCHARD_SCALAR, L_VALUE};
 
 #[cfg(feature = "circuit")]

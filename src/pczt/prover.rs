@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use halo2_proofs::plonk;
 use rand::{CryptoRng, RngCore};
 

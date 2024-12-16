@@ -1,5 +1,6 @@
 //! Types related to Orchard note commitment trees and anchors.
 
+use alloc::vec::Vec;
 use core::iter;
 
 use crate::{
