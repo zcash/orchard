@@ -6,15 +6,12 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use ff::Field;
-use nonempty::NonEmpty;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
 use crate::{
-    action::Action,
     address::Address,
     bundle::{Authorization, Authorized, Bundle, Flags},
-    circuit::{Circuit, Instance, Proof, ProvingKey},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
@@ -24,6 +21,16 @@ use crate::{
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
+    Proof,
+};
+
+#[cfg(feature = "circuit")]
+use {
+    crate::{
+        action::Action,
+        circuit::{Circuit, Instance, ProvingKey},
+    },
+    nonempty::NonEmpty,
 };
 
 const MIN_ACTIONS: usize = 2;
@@ -120,6 +127,7 @@ pub enum BuildError {
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
     /// An error occurred in the process of producing a proof for a bundle.
+    #[cfg(feature = "circuit")]
     Proof(halo2_proofs::plonk::Error),
     /// An overflow error occurred while attempting to construct the value
     /// for a bundle.
@@ -138,6 +146,7 @@ impl Display for BuildError {
         use BuildError::*;
         match self {
             MissingSignatures => f.write_str("Required signatures were missing during build"),
+            #[cfg(feature = "circuit")]
             Proof(e) => f.write_str(&format!("Could not create proof: {}", e)),
             ValueSum(_) => f.write_str("Overflow occurred during value construction"),
             InvalidExternalSignature => f.write_str("External signature was invalid"),
@@ -156,6 +165,7 @@ impl Display for BuildError {
 
 impl std::error::Error for BuildError {}
 
+#[cfg(feature = "circuit")]
 impl From<halo2_proofs::plonk::Error> for BuildError {
     fn from(e: halo2_proofs::plonk::Error) -> Self {
         BuildError::Proof(e)
@@ -423,6 +433,7 @@ impl ActionInfo {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
+    #[cfg(feature = "circuit")]
     fn build(self, mut rng: impl RngCore) -> (Action<SigningMetadata>, Circuit) {
         let v_net = self.value_sum();
         let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
@@ -465,6 +476,7 @@ impl ActionInfo {
 /// Type alias for an in-progress bundle that has no proofs or signatures.
 ///
 /// This is returned by [`Builder::build`].
+#[cfg(feature = "circuit")]
 pub type UnauthorizedBundle<V> = Bundle<InProgress<Unproven, Unauthorized>, V>;
 
 /// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not
@@ -633,6 +645,7 @@ impl Builder {
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
+    #[cfg(feature = "circuit")]
     pub fn build<V: TryFrom<i64>>(
         self,
         rng: impl RngCore,
@@ -685,6 +698,7 @@ impl Builder {
 ///
 /// The returned bundle will have no proof or signatures; these can be applied with
 /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
+#[cfg(feature = "circuit")]
 pub fn bundle<V: TryFrom<i64>>(
     rng: impl RngCore,
     anchor: Anchor,
@@ -847,11 +861,13 @@ impl<P: fmt::Debug, S: InProgressSignatures> Authorization for InProgress<P, S> 
 /// Marker for a bundle without a proof.
 ///
 /// This struct contains the private data needed to create a [`Proof`] for a [`Bundle`].
+#[cfg(feature = "circuit")]
 #[derive(Clone, Debug)]
 pub struct Unproven {
     circuits: Vec<Circuit>,
 }
 
+#[cfg(feature = "circuit")]
 impl<S: InProgressSignatures> InProgress<Unproven, S> {
     /// Creates the proof for this bundle.
     pub fn create_proof(
@@ -864,6 +880,7 @@ impl<S: InProgressSignatures> InProgress<Unproven, S> {
     }
 }
 
+#[cfg(feature = "circuit")]
 impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
     /// Creates the proof for this bundle.
     pub fn create_proof(

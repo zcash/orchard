@@ -30,7 +30,9 @@ pub use io_finalizer::IoFinalizerError;
 mod updater;
 pub use updater::{ActionUpdater, Updater, UpdaterError};
 
+#[cfg(feature = "circuit")]
 mod prover;
+#[cfg(feature = "circuit")]
 pub use prover::ProverError;
 
 mod signer;

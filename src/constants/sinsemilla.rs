@@ -1,10 +1,13 @@
 //! Sinsemilla generators
-use super::{OrchardFixedBases, OrchardFixedBasesFull};
 use crate::spec::i2lebsp;
-use halo2_gadgets::sinsemilla::{CommitDomains, HashDomains};
 
-use group::ff::PrimeField;
-use pasta_curves::{arithmetic::CurveAffine, pallas};
+#[cfg(feature = "circuit")]
+use {
+    super::{OrchardFixedBases, OrchardFixedBasesFull},
+    group::ff::PrimeField,
+    halo2_gadgets::sinsemilla::{CommitDomains, HashDomains},
+    pasta_curves::{arithmetic::CurveAffine, pallas},
+};
 
 /// Number of bits of each message piece in $\mathsf{SinsemillaHashToPoint}$
 pub const K: usize = 10;
@@ -82,6 +85,7 @@ pub enum OrchardHashDomains {
     MerkleCrh,
 }
 
+#[cfg(feature = "circuit")]
 #[allow(non_snake_case)]
 impl HashDomains<pallas::Affine> for OrchardHashDomains {
     fn Q(&self) -> pallas::Affine {
@@ -111,6 +115,7 @@ pub enum OrchardCommitDomains {
     CommitIvk,
 }
 
+#[cfg(feature = "circuit")]
 impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for OrchardCommitDomains {
     fn r(&self) -> OrchardFixedBasesFull {
         match self {

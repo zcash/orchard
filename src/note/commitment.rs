@@ -2,7 +2,6 @@ use core::iter;
 
 use bitvec::{array::BitArray, order::Lsb0};
 use group::ff::{PrimeField, PrimeFieldBits};
-use halo2_gadgets::sinsemilla::primitives as sinsemilla;
 use pasta_curves::pallas;
 use subtle::{ConstantTimeEq, CtOption};
 

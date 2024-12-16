@@ -1,7 +1,5 @@
 //! The Orchard Action circuit implementation.
 
-use core::fmt;
-
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
@@ -12,7 +10,6 @@ use halo2_proofs::{
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
 };
-use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
 use rand::RngCore;
 
@@ -62,6 +59,8 @@ use halo2_gadgets::{
 mod commit_ivk;
 pub mod gadget;
 mod note_commit;
+
+pub use crate::Proof;
 
 /// Size of the Orchard circuit.
 const K: u32 = 11;
@@ -856,41 +855,6 @@ impl Instance {
     }
 }
 
-/// A proof of the validity of an Orchard [`Bundle`].
-///
-/// [`Bundle`]: crate::bundle::Bundle
-#[derive(Clone)]
-pub struct Proof(Vec<u8>);
-
-impl fmt::Debug for Proof {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if f.alternate() {
-            f.debug_tuple("Proof").field(&self.0).finish()
-        } else {
-            // By default, only show the proof length, not its contents.
-            f.debug_tuple("Proof")
-                .field(&format_args!("{} bytes", self.0.len()))
-                .finish()
-        }
-    }
-}
-
-impl AsRef<[u8]> for Proof {
-    fn as_ref(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-impl DynamicUsage for Proof {
-    fn dynamic_usage(&self) -> usize {
-        self.0.dynamic_usage()
-    }
-
-    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
-        self.0.dynamic_usage_bounds()
-    }
-}
-
 impl Proof {
     /// Creates a proof for the given circuits and instances.
     pub fn create(
@@ -950,11 +914,6 @@ impl Proof {
             .collect();
 
         batch.add_proof(instances, self.0.clone());
-    }
-
-    /// Constructs a new Proof value.
-    pub fn new(bytes: Vec<u8>) -> Self {
-        Proof(bytes)
     }
 }
 
