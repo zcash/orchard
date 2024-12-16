@@ -163,6 +163,7 @@ impl fmt::Display for BuildError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for BuildError {}
 
 #[cfg(feature = "circuit")]
@@ -200,6 +201,7 @@ impl fmt::Display for SpendError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for SpendError {}
 
 /// The only error that can occur here is if outputs are disabled for this builder.
@@ -212,6 +214,7 @@ impl fmt::Display for OutputError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for OutputError {}
 
 /// Information about a specific note to be spent in an [`Action`].

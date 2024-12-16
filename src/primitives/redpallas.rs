@@ -5,7 +5,7 @@ use core::cmp::{Ord, Ordering, PartialOrd};
 use pasta_curves::pallas;
 use rand::{CryptoRng, RngCore};
 
-#[cfg(feature = "circuit")]
+#[cfg(feature = "std")]
 pub use reddsa::batch;
 
 #[cfg(test)]
@@ -127,7 +127,7 @@ impl VerificationKey<SpendAuth> {
     }
 
     /// Creates a batch validation item from a `SpendAuth` signature.
-    #[cfg(feature = "circuit")]
+    #[cfg(feature = "std")]
     pub fn create_batch_item<M: AsRef<[u8]>>(
         &self,
         sig: Signature<SpendAuth>,
@@ -137,7 +137,7 @@ impl VerificationKey<SpendAuth> {
     }
 }
 
-#[cfg(feature = "circuit")]
+#[cfg(feature = "std")]
 impl VerificationKey<Binding> {
     /// Creates a batch validation item from a `Binding` signature.
     pub fn create_batch_item<M: AsRef<[u8]>>(
