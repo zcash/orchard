@@ -7,6 +7,7 @@
 //! implicitly mean it is an Orchard payment address (as opposed to e.g. a Sapling payment
 //! address, which is also shielded).
 
+#![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
@@ -15,6 +16,13 @@
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
+
+#[macro_use]
+extern crate alloc;
+
+extern crate std;
+
+use alloc::vec::Vec;
 
 mod action;
 mod address;

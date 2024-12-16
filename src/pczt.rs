@@ -1,7 +1,9 @@
 //! PCZT support for Orchard.
 
-use std::collections::BTreeMap;
-use std::fmt;
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::fmt;
 
 use getset::Getters;
 use pasta_curves::pallas;

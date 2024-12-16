@@ -1,5 +1,6 @@
 //! In-band secret distribution for Orchard bundles.
 
+use alloc::vec::Vec;
 use core::fmt;
 
 use blake2b_simd::{Hash, Params};
@@ -98,6 +99,13 @@ impl OrchardDomain {
     /// Constructs a domain that can be used to trial-decrypt this action's output note.
     pub fn for_action<T>(act: &Action<T>) -> Self {
         Self { rho: act.rho() }
+    }
+
+    /// Constructs a domain that can be used to trial-decrypt a PCZT action's output note.
+    pub fn for_pczt_action(act: &crate::pczt::Action) -> Self {
+        Self {
+            rho: Rho::from_nf_old(act.spend().nullifier),
+        }
     }
 
     /// Constructs a domain that can be used to trial-decrypt this action's output note.
@@ -263,6 +271,20 @@ impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
 
     fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
         &self.encrypted_note().enc_ciphertext
+    }
+}
+
+impl ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for crate::pczt::Action {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(self.output().encrypted_note().epk_bytes)
+    }
+
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        self.output().cmx().to_bytes()
+    }
+
+    fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
+        &self.output().encrypted_note().enc_ciphertext
     }
 }
 

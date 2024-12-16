@@ -1,5 +1,7 @@
 //! Structs related to bundles of Orchard actions.
 
+use alloc::vec::Vec;
+
 pub mod commitments;
 
 #[cfg(feature = "circuit")]
@@ -474,14 +476,14 @@ impl<V> Bundle<Authorized, V> {
 
 impl<V: DynamicUsage> DynamicUsage for Bundle<Authorized, V> {
     fn dynamic_usage(&self) -> usize {
-        self.actions.dynamic_usage()
+        self.actions.tail.dynamic_usage()
             + self.value_balance.dynamic_usage()
             + self.authorization.proof.dynamic_usage()
     }
 
     fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
         let bounds = (
-            self.actions.dynamic_usage_bounds(),
+            self.actions.tail.dynamic_usage_bounds(),
             self.value_balance.dynamic_usage_bounds(),
             self.authorization.proof.dynamic_usage_bounds(),
         );
@@ -519,6 +521,8 @@ pub struct BundleAuthorizingCommitment(pub Blake2bHash);
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
+    use alloc::vec::Vec;
+
     use group::ff::FromUniformBytes;
     use nonempty::NonEmpty;
     use pasta_curves::pallas;

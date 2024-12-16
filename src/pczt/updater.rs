@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use super::{Action, Bundle, Zip32Derivation};
 
 impl Bundle {
