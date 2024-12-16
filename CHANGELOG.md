@@ -10,6 +10,9 @@ and this project adheres to Rust's notion of
 ### Added
 - Support for Partially-Created Zcash Transactions:
   - `orchard::builder::Builder::build_for_pczt`
+  - `orchard::note_encryption`:
+    - `OrchardDomain::for_pczt_action`
+    - `impl ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for orchard::pczt::Action`
   - `orchard::pczt` module.
 - `orchard::bundle::EffectsOnly`
 - `orchard::tree::MerklePath::{position, auth_path}`
