@@ -7,6 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.10.1] - 2024-12-16
+
 ### Added
 - Support for Partially-Created Zcash Transactions:
   - `orchard::builder::Builder::build_for_pczt`

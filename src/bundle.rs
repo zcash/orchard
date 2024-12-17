@@ -543,7 +543,8 @@ pub mod testing {
 
     pub use crate::action::testing::{arb_action, arb_unauthorized_action};
 
-    type Unauthorized = super::EffectsOnly;
+    /// Marker type for a bundle that contains no authorizing data.
+    pub type Unauthorized = super::EffectsOnly;
 
     /// Generate an unauthorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
     pub fn arb_unauthorized_action_n(
