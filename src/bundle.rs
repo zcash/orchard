@@ -12,9 +12,11 @@ pub use batch::BatchValidator;
 use core::fmt;
 
 use blake2b_simd::Hash as Blake2bHash;
-use memuse::DynamicUsage;
 use nonempty::NonEmpty;
 use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
+
+#[cfg(feature = "std")]
+use memuse::DynamicUsage;
 
 use crate::{
     action::Action,
@@ -474,6 +476,7 @@ impl<V> Bundle<Authorized, V> {
     }
 }
 
+#[cfg(feature = "std")]
 impl<V: DynamicUsage> DynamicUsage for Bundle<Authorized, V> {
     fn dynamic_usage(&self) -> usize {
         self.actions.tail.dynamic_usage()

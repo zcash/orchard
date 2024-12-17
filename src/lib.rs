@@ -20,6 +20,7 @@
 #[macro_use]
 extern crate alloc;
 
+#[cfg(feature = "std")]
 extern crate std;
 
 use alloc::vec::Vec;

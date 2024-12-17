@@ -682,7 +682,7 @@ impl IncomingViewingKey {
 #[derive(Clone, Debug)]
 pub struct PreparedIncomingViewingKey(PreparedNonZeroScalar);
 
-#[cfg(feature = "circuit")]
+#[cfg(feature = "std")]
 impl memuse::DynamicUsage for PreparedIncomingViewingKey {
     fn dynamic_usage(&self) -> usize {
         self.0.dynamic_usage()

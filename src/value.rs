@@ -81,6 +81,7 @@ impl fmt::Display for OverflowError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for OverflowError {}
 
 /// The non-negative value of an individual Orchard note.

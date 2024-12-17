@@ -7,7 +7,7 @@ use ff::{Field, FromUniformBytes, PrimeField, PrimeFieldBits};
 use group::{Curve, Group, GroupEncoding, WnafBase, WnafScalar};
 #[cfg(feature = "circuit")]
 use halo2_gadgets::{poseidon::primitives as poseidon, sinsemilla::primitives as sinsemilla};
-#[cfg(feature = "circuit")]
+#[cfg(feature = "std")]
 use memuse::DynamicUsage;
 use pasta_curves::{
     arithmetic::{CurveAffine, CurveExt},
@@ -157,7 +157,7 @@ impl PreparedNonIdentityBase {
 #[derive(Clone, Debug)]
 pub(crate) struct PreparedNonZeroScalar(WnafScalar<pallas::Scalar, PREPARED_WINDOW_SIZE>);
 
-#[cfg(feature = "circuit")]
+#[cfg(feature = "std")]
 impl DynamicUsage for PreparedNonZeroScalar {
     fn dynamic_usage(&self) -> usize {
         self.0.dynamic_usage()
