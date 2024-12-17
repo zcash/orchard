@@ -36,7 +36,7 @@ pasta_curves = "0.5"
 proptest = { version = "1.0.0", optional = true }
 rand = { version = "0.8", default-features = false }
 reddsa = { version = "0.5", default-features = false }
-nonempty = { version = "0.10", default-features = false }
+nonempty = { version = "0.11", default-features = false }
 poseidon = { package = "halo2_poseidon", version = "0.1" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 sinsemilla = "0.1"
@@ -106,6 +106,3 @@ debug = true
 
 [profile.bench]
 debug = true
-
-[patch.crates-io]
-nonempty = { git = "https://github.com/nuttycom/nonempty.git", rev = "38d37189faecb2a0e3d6adc05aa24e1b93c2483b" }
