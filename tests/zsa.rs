@@ -136,7 +136,7 @@ pub fn build_merkle_path_with_two_leaves(
     (merkle_path1, merkle_path2, anchor)
 }
 
-fn issue_zsa_notes(asset_descr: &[u8], keys: &Keychain) -> (Note, Note) {
+fn issue_zsa_notes(asset_descr: &[u8], keys: &Keychain) -> (Note, Note, Note) {
     let mut rng = OsRng;
     // Create a issuance bundle
     let unauthorized_asset = IssueBundle::new(
@@ -146,6 +146,7 @@ fn issue_zsa_notes(asset_descr: &[u8], keys: &Keychain) -> (Note, Note) {
             recipient: keys.recipient,
             value: NoteValue::from_raw(40),
         }),
+        true,
         &mut rng,
     );
 
@@ -158,6 +159,7 @@ fn issue_zsa_notes(asset_descr: &[u8], keys: &Keychain) -> (Note, Note) {
             asset_descr,
             keys.recipient,
             NoteValue::from_raw(2),
+            false,
             &mut rng,
         )
         .is_ok());
@@ -166,8 +168,14 @@ fn issue_zsa_notes(asset_descr: &[u8], keys: &Keychain) -> (Note, Note) {
 
     // Take notes from first action
     let notes = issue_bundle.get_all_notes();
-    let note1 = notes[0];
-    let note2 = notes[1];
+    let reference_note = notes[0];
+    let note1 = notes[1];
+    let note2 = notes[2];
+
+    verify_reference_note(
+        reference_note,
+        AssetBase::derive(&keys.ik().clone(), asset_descr),
+    );
 
     assert!(verify_issue_bundle(
         &issue_bundle,
@@ -176,7 +184,7 @@ fn issue_zsa_notes(asset_descr: &[u8], keys: &Keychain) -> (Note, Note) {
     )
     .is_ok());
 
-    (*note1, *note2)
+    (*reference_note, *note1, *note2)
 }
 
 fn create_native_note(keys: &Keychain) -> Note {
@@ -284,6 +292,21 @@ fn verify_unique_spent_nullifiers(bundle: &Bundle<Authorized, i64, OrchardZSA>) 
     })
 }
 
+/// Validation for reference note
+///
+/// The following checks are performed:
+/// - the note value of the reference note is equal to 0
+/// - the asset of the reference note is equal to the provided asset
+/// - the recipient of the reference note is equal to the reference recipient
+fn verify_reference_note(note: &Note, asset: AssetBase) {
+    let reference_sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let reference_fvk = FullViewingKey::from(&reference_sk);
+    let reference_recipient = reference_fvk.address_at(0u32, Scope::External);
+    assert_eq!(note.value(), NoteValue::from_raw(0));
+    assert_eq!(note.asset(), asset);
+    assert_eq!(note.recipient(), reference_recipient);
+}
+
 /// Issue several ZSA and native notes and spend them in different combinations, e.g. split and join
 #[test]
 fn zsa_issue_and_transfer() {
@@ -293,7 +316,8 @@ fn zsa_issue_and_transfer() {
     let asset_descr = b"zsa_asset".to_vec();
 
     // Prepare ZSA
-    let (zsa_note_1, zsa_note_2) = issue_zsa_notes(&asset_descr, &keys);
+    let (reference_note, zsa_note_1, zsa_note_2) = issue_zsa_notes(&asset_descr, &keys);
+    verify_reference_note(&reference_note, zsa_note_1.asset());
 
     let (merkle_path1, merkle_path2, anchor) =
         build_merkle_path_with_two_leaves(&zsa_note_1, &zsa_note_2);
@@ -446,7 +470,8 @@ fn zsa_issue_and_transfer() {
     .unwrap();
 
     // 7. Spend ZSA notes of different asset types
-    let (zsa_note_t7, _) = issue_zsa_notes(b"zsa_asset2", &keys);
+    let (reference_note, zsa_note_t7, _) = issue_zsa_notes(b"zsa_asset2", &keys);
+    verify_reference_note(&reference_note, zsa_note_t7.asset());
     let (merkle_path_t7_1, merkle_path_t7_2, anchor_t7) =
         build_merkle_path_with_two_leaves(&zsa_note_t7, &zsa_note_2);
     let zsa_spend_t7_1: TestSpendInfo = TestSpendInfo {
