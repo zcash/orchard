@@ -56,8 +56,10 @@ impl super::Spend {
     /// - `rho`
     /// - `rseed`
     ///
+    /// In addition, at least one of the `fvk` field or `expected_fvk` must be provided.
+    ///
     /// The provided [`FullViewingKey`] is ignored if the spent note is a dummy note.
-    /// Otherwise, it will be checked against the `fvk` field (if set).
+    /// Otherwise, it will be checked against the `fvk` field (if both are set).
     pub fn verify_nullifier(
         &self,
         expected_fvk: Option<&FullViewingKey>,
