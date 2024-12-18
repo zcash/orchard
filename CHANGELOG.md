@@ -7,6 +7,9 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::pczt::Zip32Derivation::extract_account_index`
+
 ### Changed
 - Migrated to `nonempty 0.11`.
 
