@@ -11,6 +11,7 @@ and this project adheres to Rust's notion of
 - `orchard::pczt::Zip32Derivation::extract_account_index`
 
 ### Changed
+- MSRV is now 1.66
 - Migrated to `nonempty 0.11`.
 
 ## [0.10.1] - 2024-12-16

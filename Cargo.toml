@@ -9,7 +9,7 @@ authors = [
     "Kris Nuttycombe <kris@electriccoin.co>",
 ]
 edition = "2021"
-rust-version = "1.65"
+rust-version = "1.66"
 description = "The Orchard shielded transaction protocol"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/orchard"
