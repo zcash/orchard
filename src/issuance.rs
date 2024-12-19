@@ -18,7 +18,7 @@ use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use crate::note::asset_base::is_asset_desc_of_valid_size;
 use crate::note::{AssetBase, Nullifier, Rho};
 
-use crate::value::{NoteValue, ValueSum};
+use crate::value::NoteValue;
 use crate::{Address, Note};
 
 use crate::supply_info::{AssetSupply, SupplyInfo};
@@ -132,7 +132,7 @@ impl IssueAction {
         let value_sum = self
             .notes
             .iter()
-            .try_fold(ValueSum::zero(), |value_sum, &note| {
+            .try_fold(NoteValue::zero(), |value_sum, &note| {
                 //The asset base should not be the identity point of the Pallas curve.
                 if bool::from(note.asset().cv_base().is_identity()) {
                     return Err(AssetBaseCannotBeIdentityPoint);
@@ -696,7 +696,7 @@ mod tests {
         FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
     };
     use crate::note::{AssetBase, Nullifier, Rho};
-    use crate::value::{NoteValue, ValueSum};
+    use crate::value::NoteValue;
     use crate::{Address, Note};
     use group::{Group, GroupEncoding};
     use nonempty::NonEmpty;
@@ -829,7 +829,7 @@ mod tests {
         let (asset, supply) = result.unwrap();
 
         assert_eq!(asset, test_asset);
-        assert_eq!(supply.amount, ValueSum::from_raw(30));
+        assert_eq!(supply.amount, NoteValue::from_raw(30));
         assert!(!supply.is_finalized);
     }
 
@@ -854,7 +854,7 @@ mod tests {
         let (asset, supply) = result.unwrap();
 
         assert_eq!(asset, test_asset);
-        assert_eq!(supply.amount, ValueSum::from_raw(30));
+        assert_eq!(supply.amount, NoteValue::from_raw(30));
         assert!(supply.is_finalized);
     }
 
@@ -1229,15 +1229,15 @@ mod tests {
 
         assert_eq!(
             supply_info.assets.get(&asset1_base),
-            Some(&AssetSupply::new(ValueSum::from_raw(15), true))
+            Some(&AssetSupply::new(NoteValue::from_raw(15), true))
         );
         assert_eq!(
             supply_info.assets.get(&asset2_base),
-            Some(&AssetSupply::new(ValueSum::from_raw(10), true))
+            Some(&AssetSupply::new(NoteValue::from_raw(10), true))
         );
         assert_eq!(
             supply_info.assets.get(&asset3_base),
-            Some(&AssetSupply::new(ValueSum::from_raw(5), false))
+            Some(&AssetSupply::new(NoteValue::from_raw(5), false))
         );
     }
 
