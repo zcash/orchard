@@ -2,7 +2,7 @@
 
 use std::collections::{hash_map, HashMap, HashSet};
 
-use crate::{issuance::Error, note::AssetBase, value::NoteValue};
+use crate::{issuance::Error, note::AssetBase, value::NoteValue, Note};
 
 /// Represents the amount of an asset and its finalization status.
 #[derive(Debug, Clone, Copy)]
@@ -29,13 +29,16 @@ impl AssetSupply {
 pub struct SupplyInfo {
     /// A map of asset bases to their respective supply information.
     pub assets: HashMap<AssetBase, AssetSupply>,
+    /// A map of asset bases to their respective reference note.
+    pub reference_notes: HashMap<AssetBase, Note>,
 }
 
 impl SupplyInfo {
     /// Creates a new, empty `SupplyInfo` instance.
-    pub fn new() -> Self {
+    pub fn new(reference_notes: HashMap<AssetBase, Note>) -> Self {
         Self {
             assets: HashMap::new(),
+            reference_notes,
         }
     }
 
@@ -71,7 +74,7 @@ impl SupplyInfo {
 
 impl Default for SupplyInfo {
     fn default() -> Self {
-        Self::new()
+        Self::new(HashMap::new())
     }
 }
 
@@ -96,7 +99,7 @@ mod tests {
 
     #[test]
     fn test_add_supply_valid() {
-        let mut supply_info = SupplyInfo::new();
+        let mut supply_info = SupplyInfo::new(HashMap::new());
 
         let asset1 = create_test_asset(b"Asset 1");
         let asset2 = create_test_asset(b"Asset 2");
@@ -165,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_update_finalization_set() {
-        let mut supply_info = SupplyInfo::new();
+        let mut supply_info = SupplyInfo::new(HashMap::new());
 
         let asset1 = create_test_asset(b"Asset 1");
         let asset2 = create_test_asset(b"Asset 2");
