@@ -93,7 +93,7 @@ fn bundle_chain<FL: BundleOrchardFlavor>() {
             builder.add_output(None, recipient, note_value, AssetBase::native(), None),
             Ok(())
         );
-        let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
+        let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap();
 
         assert_eq!(
             unauthorized
@@ -163,7 +163,7 @@ fn bundle_chain<FL: BundleOrchardFlavor>() {
             ),
             Ok(())
         );
-        let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
+        let (unauthorized, _) = builder.build(&mut rng).unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven

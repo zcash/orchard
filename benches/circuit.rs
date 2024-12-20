@@ -46,7 +46,7 @@ fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
                 )
                 .unwrap();
         }
-        let bundle: Bundle<_, i64, FL> = builder.build(rng).unwrap().unwrap().0;
+        let bundle: Bundle<_, i64, FL> = builder.build(rng).unwrap().0;
 
         let instances: Vec<_> = bundle
             .actions()

@@ -166,7 +166,7 @@ mod tests {
             )
             .unwrap();
 
-        builder.build::<i64, FL>(rng).unwrap().unwrap().0
+        builder.build::<i64, FL>(rng).unwrap().0
     }
 
     /// Verify that the hash for an Orchard Vanilla bundle matches a fixed reference value

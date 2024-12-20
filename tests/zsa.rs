@@ -88,7 +88,7 @@ fn build_and_sign_bundle(
     pk: &ProvingKey,
     sk: &SpendingKey,
 ) -> Bundle<Authorized, i64, OrchardZSA> {
-    let unauthorized = builder.build(&mut rng).unwrap().unwrap().0;
+    let unauthorized = builder.build(&mut rng).unwrap().0;
     let sighash = unauthorized.commitment().into();
     let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
     proven
@@ -205,7 +205,7 @@ fn create_native_note(keys: &Keychain) -> Note {
             ),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap().unwrap().0;
+        let unauthorized = builder.build(&mut rng).unwrap().0;
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(keys.pk(), &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()

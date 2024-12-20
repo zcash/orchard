@@ -654,7 +654,7 @@ impl Builder {
     pub fn build<V: TryFrom<i64>, FL: OrchardFlavor>(
         self,
         rng: impl RngCore,
-    ) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
+    ) -> Result<UnauthorizedBundleWithMetadata<V, FL>, BuildError> {
         bundle(
             rng,
             self.anchor,
@@ -745,7 +745,7 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     burn: HashMap<AssetBase, NoteValue>,
-) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
+) -> Result<UnauthorizedBundleWithMetadata<V, FL>, BuildError> {
     let flags = bundle_type.flags();
 
     let num_requested_spends = spends.len();
@@ -884,25 +884,24 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
     let bvk = derive_bvk(&actions, native_value_balance, burn.iter().cloned());
     assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
-    Ok(NonEmpty::from_vec(actions).map(|actions| {
-        (
-            Bundle::from_parts(
-                actions,
-                flags,
-                result_value_balance,
-                burn,
-                anchor,
-                InProgress {
-                    proof: Unproven {
-                        witnesses,
-                        circuit_flavor: FL::FLAVOR,
-                    },
-                    sigs: Unauthorized { bsk },
+    Ok((
+        Bundle::from_parts(
+            // `actions` is never empty. It contains at least MIN_ACTIONS=2 actions.
+            NonEmpty::from_vec(actions).unwrap(),
+            flags,
+            result_value_balance,
+            burn,
+            anchor,
+            InProgress {
+                proof: Unproven {
+                    witnesses,
+                    circuit_flavor: FL::FLAVOR,
                 },
-            ),
-            bundle_meta,
-        )
-    }))
+                sigs: Unauthorized { bsk },
+            },
+        ),
+        bundle_meta,
+    ))
 }
 
 /// Marker trait representing bundle signatures in the process of being created.
@@ -1302,7 +1301,6 @@ pub mod testing {
             builder
                 .build(&mut self.rng)
                 .unwrap()
-                .unwrap()
                 .0
                 .create_proof(&pk, &mut self.rng)
                 .unwrap()
@@ -1433,7 +1431,6 @@ mod tests {
 
         let bundle: Bundle<Authorized, i64, FL> = builder
             .build(&mut rng)
-            .unwrap()
             .unwrap()
             .0
             .create_proof(&pk, &mut rng)
