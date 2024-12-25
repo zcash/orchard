@@ -457,7 +457,6 @@ pub(crate) fn derive_bvk<'a, A: 'a, V: Clone + Into<i64>, FL: 'a + OrchardFlavor
     value_balance: V,
     burn: impl Iterator<Item = (AssetBase, NoteValue)>,
 ) -> redpallas::VerificationKey<Binding> {
-    // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
     (actions
         .into_iter()
         .map(|a| a.cv_net())

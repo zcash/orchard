@@ -556,7 +556,7 @@ impl IssueBundle<Signed> {
 /// * For the `IssueBundle`:
 ///     * the Signature on top of the provided `sighash` verifies correctly.
 /// * For each `IssueAction`:
-///     * Asset description size is collect.
+///     * Asset description size is correct.
 ///     * `AssetBase` for the `IssueAction` has not been previously finalized.
 /// * For each `Note` inside an `IssueAction`:
 ///     * All notes have the same, correct `AssetBase`.

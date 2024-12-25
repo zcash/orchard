@@ -22,9 +22,9 @@ pub const ZSA_ASSET_DIGEST_PERSONALIZATION: &[u8; 16] = b"ZSA-Asset-Digest";
 
 ///    AssetDigest for the ZSA asset
 ///
-///    Defined in [Transfer and Burn of Zcash Shielded Assets][AssetDigest].
+///    Defined in [ZIP-226: Transfer and Burn of Zcash Shielded Assets][assetdigest].
 ///
-///    [assetdigest]: https://qed-it.github.io/zips/zip-0226.html#asset-identifiers
+///    [assetdigest]: https://zips.z.cash/zip-0226.html#asset-identifiers
 pub fn asset_digest(asset_id: Vec<u8>) -> Blake2bHash {
     Params::new()
         .hash_length(64)
@@ -47,9 +47,9 @@ impl AssetBase {
 
     /// Note type derivation$.
     ///
-    /// Defined in [Transfer and Burn of Zcash Shielded Assets][AssetBase].
+    /// Defined in [ZIP-226: Transfer and Burn of Zcash Shielded Assets][assetbase].
     ///
-    /// [notetypes]: https://qed-it.github.io/zips/zip-0226.html#asset-identifiers
+    /// [assetbase]: https://zips.z.cash/zip-0226.html#asset-identifiers
     ///
     /// # Panics
     ///

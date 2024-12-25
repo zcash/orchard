@@ -38,9 +38,9 @@ impl NoteCommitment {
 impl NoteCommitment {
     /// $NoteCommit^Orchard$.
     ///
-    /// Defined in [Zcash Protocol Spec § 5.4.8.4: Sinsemilla commitments][concretesinsemillacommit].
+    /// Defined in [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommit].
     ///
-    /// [concretesinsemillacommit]: https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit
+    /// [notecommit]: https://zips.z.cash/zip-0226#note-structure-commitment
     pub(crate) fn derive(
         g_d: [u8; 32],
         pk_d: [u8; 32],

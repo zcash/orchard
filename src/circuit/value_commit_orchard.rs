@@ -32,9 +32,9 @@ pub(in crate::circuit) mod gadgets {
         plonk,
     };
 
-    /// `ValueCommit^Orchard` from [Section 5.4.8.3 Homomorphic Pedersen commitments (Sapling and Orchard)].
+    /// `ValueCommit^Orchard` from [ZIP-226: Transfer and Burn of Zcash Shielded Assets][zip226].
     ///
-    /// [Section 5.4.8.3 Homomorphic Pedersen commitments (Sapling and Orchard)]: https://zips.z.cash/protocol/protocol.pdf#concretehomomorphiccommit
+    /// [zip226]: https://zips.z.cash/zip-0226#value-commitment-correctness
     pub(in crate::circuit) fn value_commit_orchard<Lookup: PallasLookupRangeCheck>(
         mut layouter: impl Layouter<pallas::Base>,
         ecc_chip: EccChip<OrchardFixedBases, Lookup>,

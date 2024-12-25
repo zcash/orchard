@@ -240,7 +240,7 @@ fn check_structural_validity(
 ///
 /// $\mathsf{isk}$ as defined in [ZIP 227][issuancekeycomponents].
 ///
-/// [issuancekeycomponents]: https://qed-it.github.io/zips/zip-0227#issuance-key-derivation
+/// [issuancekeycomponents]: https://zips.z.cash/zip-0227#issuance-key-derivation
 #[derive(Copy, Clone)]
 pub struct IssuanceAuthorizingKey(NonZeroScalar);
 
@@ -311,7 +311,7 @@ impl Debug for IssuanceAuthorizingKey {
 ///
 /// Defined in [ZIP 227: Issuance of Zcash Shielded Assets § Issuance Key Generation][IssuanceZSA].
 ///
-/// [IssuanceZSA]: https://qed-it.github.io/zips/zip-0227#issuance-key-derivation
+/// [IssuanceZSA]: https://zips.z.cash/zip-0227#issuance-key-derivation
 #[derive(Debug, Clone)]
 pub struct IssuanceValidatingKey(schnorr::VerifyingKey);
 

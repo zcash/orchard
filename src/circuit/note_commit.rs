@@ -718,8 +718,6 @@ impl<Lookup: PallasLookupRangeCheck> DecomposeHVanilla<Lookup> {
 /// --------------------------------------------
 /// |  h_zec  | h_0     | h_1 |       1        |
 /// |  h_zsa  | h_2_zsa |     |       0        |
-///
-/// <https://p.z.cash/orchard-0.1:note-commit-decomposition-h?partial>
 #[derive(Clone, Debug)]
 struct DecomposeHZsa<Lookup: PallasLookupRangeCheck> {
     q_notecommit_h: Selector,
@@ -879,8 +877,6 @@ impl<Lookup: PallasLookupRangeCheck> DecomposeHZsa<Lookup> {
 /// | A_6 | A_7 | A_8 | q_notecommit_j |
 /// ------------------------------------
 /// |  j  | j_0 | j_1 |       1        |
-///
-/// https://p.z.cash/orchard-0.1:note-commit-decomposition-j?partial
 #[derive(Clone, Debug)]
 struct DecomposeJ<Lookup: PallasLookupRangeCheck> {
     q_notecommit_j: Selector,
@@ -2099,8 +2095,8 @@ pub(in crate::circuit) mod gadgets {
                 // constraints allows ⊥ to occur, and then during synthesis it detects these edge
                 // cases and raises an error (aborting proof creation).
                 //
-                // https://p.z.cash/ZKS:action-cm-old-integrity?partial
-                // https://p.z.cash/ZKS:action-cmx-new-integrity?partial
+                // See [ZIP-226: Transfer and Burn of Zcash Shielded Assets][zip226] for more details.
+                // [zip226]: https://zips.z.cash/zip-0226#note-structure-commitment.
                 let message_common_prefix = Message::from_pieces(
                     chip.clone(),
                     vec![

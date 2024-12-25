@@ -66,16 +66,22 @@ impl OrchardCircuit for OrchardZSA {
             meta.advice_column(),
         ];
 
+        // The new or updated constraints for OrchardZSA are explained in
+        // [ZIP-226: Transfer and Burn of Zcash Shielded Assets][circuitstatement].
+        //
+        // All OrchardZSA constraints:
         // Constrain split_flag to be boolean
-        // Constrain v_old * (1 - split_flag) - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
-        // Constrain (v_old = 0 and is_native_asset = 1) or (calculated root = anchor) (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
-        // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
-        // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
+        // Constrain v_old * (1 - split_flag) - v_new = magnitude * sign
+        // Constrain (v_old = 0 and is_native_asset = 1) or (calculated root = anchor)
+        // Constrain v_old = 0 or enable_spends = 1
+        // Constrain v_new = 0 or enable_outputs = 1
         // Constrain is_native_asset to be boolean
         // Constraint if is_native_asset = 1 then asset = native_asset else asset != native_asset
         // Constraint if split_flag = 0 then psi_old = psi_nf
         // Constraint if split_flag = 1, then is_native_asset = 0
         // Constraint if enable_zsa = 0, then is_native_asset = 1
+        //
+        // [circuitstatement]: https://zips.z.cash/zip-0226#circuit-statement
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -426,7 +432,7 @@ impl OrchardCircuit for OrchardZSA {
             circuit.asset,
         )?;
 
-        // Merkle path validity check (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
+        // Merkle path validity check.
         let root = {
             let path = circuit
                 .path
@@ -441,7 +447,10 @@ impl OrchardCircuit for OrchardZSA {
             merkle_inputs.calculate_root(layouter.namespace(|| "Merkle path"), leaf)?
         };
 
-        // Value commitment integrity (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
+        // Value commitment integrity.
+        // See [ZIP-226: Transfer and Burn of Zcash Shielded Assets][valuecommitcorrectness] for more details.
+        //
+        // [valuecommitcorrectness]: https://zips.z.cash/zip-0226#value-commitment-correctness
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net_magnitude_sign = {
@@ -508,7 +517,10 @@ impl OrchardCircuit for OrchardZSA {
             v_net_magnitude_sign
         };
 
-        // Nullifier integrity (https://p.z.cash/ZKS:action-nullifier-integrity).
+        // Nullifier integrity.
+        // See [ZIP-226: Transfer and Burn of Zcash Shielded Assets][zip226] for more details.
+        //
+        // [zip226]: https://zips.z.cash/zip-0226
         let nf_old = {
             let nf_old = derive_nullifier(
                 &mut layouter.namespace(|| "nf_old = DeriveNullifier_nk(rho_old, psi_nf, cm_old)"),
@@ -531,7 +543,7 @@ impl OrchardCircuit for OrchardZSA {
             nf_old
         };
 
-        // Spend authority (https://p.z.cash/ZKS:action-spend-authority)
+        // Spend authority
         {
             let alpha = ScalarFixed::new(
                 ecc_chip.clone(),
@@ -554,7 +566,7 @@ impl OrchardCircuit for OrchardZSA {
             layouter.constrain_instance(rk.inner().y().cell(), config.primary, RK_Y)?;
         }
 
-        // Diversified address integrity (https://p.z.cash/ZKS:action-addr-integrity?partial).
+        // Diversified address integrity.
         let pk_d_old = {
             let ivk = {
                 let ak = ak_P.extract_p().inner().clone();
@@ -602,7 +614,10 @@ impl OrchardCircuit for OrchardZSA {
             pk_d_old
         };
 
-        // Old note commitment integrity (https://p.z.cash/ZKS:action-cm-old-integrity?partial).
+        // Old note commitment integrity.
+        // See [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommit] for more details.
+        //
+        // [notecommit]: https://zips.z.cash/zip-0226#note-structure-commitment.
         {
             let rcm_old = ScalarFixed::new(
                 ecc_chip.clone(),
@@ -635,7 +650,10 @@ impl OrchardCircuit for OrchardZSA {
             derived_cm_old.constrain_equal(layouter.namespace(|| "cm_old equality"), &cm_old)?;
         }
 
-        // New note commitment integrity (https://p.z.cash/ZKS:action-cmx-new-integrity?partial).
+        // New note commitment integrity.
+        // See [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommit] for more details.
+        //
+        // [notecommit]: https://zips.z.cash/zip-0226#note-structure-commitment.
         {
             // Witness g_d_new
             let g_d_new = {

@@ -290,7 +290,7 @@ impl SpendInfo {
     ///
     /// Defined in [Transfer and Burn of Zcash Shielded Assets ZIP-0226 § Split Notes (DRAFT PR)][TransferZSA].
     ///
-    /// [TransferZSA]: https://qed-it.github.io/zips/zip-0226.html#split-notes
+    /// [TransferZSA]: https://zips.z.cash/zip-0226#split-notes
     fn create_split_spend(&self, rng: &mut impl RngCore) -> Self {
         SpendInfo {
             dummy_sk: None,
