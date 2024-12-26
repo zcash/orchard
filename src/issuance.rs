@@ -12,7 +12,7 @@ use crate::constants::reference_keys::ReferenceKeys;
 use crate::issuance::Error::{
     AssetBaseCannotBeIdentityPoint, IssueActionNotFound, IssueActionPreviouslyFinalizedAssetBase,
     IssueActionWithoutNoteNotFinalized, IssueBundleIkMismatchAssetBase,
-    IssueBundleInvalidSignature, ValueSumOverflow, WrongAssetDescSize,
+    IssueBundleInvalidSignature, ValueOverflow, WrongAssetDescSize,
 };
 use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use crate::note::asset_base::is_asset_desc_of_valid_size;
@@ -114,7 +114,7 @@ impl IssueAction {
     ///
     /// This function may return an error in any of the following cases:
     ///
-    /// * `ValueSumOverflow`: If the total amount value of all notes in the `IssueAction` overflows.
+    /// * `ValueOverflow`: If the total amount value of all notes in the `IssueAction` overflows.
     ///
     /// * `IssueBundleIkMismatchAssetBase`: If the provided `ik` is not used to derive the
     ///   `AssetBase` for **all** internal notes.
@@ -145,7 +145,7 @@ impl IssueAction {
                     .ok_or(IssueBundleIkMismatchAssetBase)?;
 
                 // The total amount should not overflow
-                (value_sum + note.value()).ok_or(ValueSumOverflow)
+                (value_sum + note.value()).ok_or(ValueOverflow)
             })?;
 
         Ok((
@@ -576,7 +576,7 @@ impl IssueBundle<Signed> {
 ///    asset in the bundle is incorrect.
 /// * `IssueActionPreviouslyFinalizedAssetBase`:  This error occurs if the asset has already been
 ///    finalized (inserted into the `finalized` collection).
-/// * `ValueSumOverflow`: This error occurs if an overflow happens during the calculation of
+/// * `ValueOverflow`: This error occurs if an overflow happens during the calculation of
 ///     the value sum for the notes in the asset.
 /// * `IssueBundleIkMismatchAssetBase`: This error is raised if the `AssetBase` derived from
 ///    the `ik` (Issuance Validating Key) and the `asset_desc` (Asset Description) does not match
@@ -635,7 +635,7 @@ pub enum Error {
     IssueActionPreviouslyFinalizedAssetBase(AssetBase),
 
     /// Overflow error occurred while calculating the value of the asset
-    ValueSumOverflow,
+    ValueOverflow,
 }
 
 impl fmt::Display for Error {
@@ -671,7 +671,7 @@ impl fmt::Display for Error {
             IssueActionPreviouslyFinalizedAssetBase(_) => {
                 write!(f, "the provided `AssetBase` has been previously finalized")
             }
-            ValueSumOverflow => {
+            ValueOverflow => {
                 write!(
                     f,
                     "overflow error occurred while calculating the value of the asset"

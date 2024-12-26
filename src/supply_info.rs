@@ -49,8 +49,7 @@ impl SupplyInfo {
         match self.assets.entry(asset) {
             hash_map::Entry::Occupied(entry) => {
                 let supply = entry.into_mut();
-                supply.amount =
-                    (supply.amount + new_supply.amount).ok_or(Error::ValueSumOverflow)?;
+                supply.amount = (supply.amount + new_supply.amount).ok_or(Error::ValueOverflow)?;
                 supply.is_finalized |= new_supply.is_finalized;
             }
             hash_map::Entry::Vacant(entry) => {
