@@ -298,6 +298,21 @@ impl<T: IssueAuth> IssueBundle<T> {
             authorization: map_auth(authorization),
         }
     }
+
+    /// Returns the reference notes for the `IssueBundle`.
+    pub fn get_reference_notes(&self) -> HashMap<AssetBase, Note> {
+        let mut reference_notes = HashMap::new();
+        self.actions.iter().for_each(|action| {
+            action.notes.iter().for_each(|note| {
+                if (note.recipient() == ReferenceKeys::recipient())
+                    && (note.value() == NoteValue::zero())
+                {
+                    reference_notes.insert(note.asset(), *note);
+                }
+            })
+        });
+        reference_notes
+    }
 }
 
 impl IssueBundle<Unauthorized> {
@@ -465,23 +480,6 @@ impl IssueBundle<Unauthorized> {
             actions: self.actions,
             authorization: Prepared { sighash },
         }
-    }
-}
-
-impl<T: IssueAuth> IssueBundle<T> {
-    /// Returns the reference notes for the `IssueBundle`.
-    pub fn get_reference_notes(&self) -> HashMap<AssetBase, Note> {
-        let mut reference_notes = HashMap::new();
-        self.actions.iter().for_each(|action| {
-            action.notes.iter().for_each(|note| {
-                if (note.recipient() == ReferenceKeys::recipient())
-                    && (note.value() == NoteValue::zero())
-                {
-                    reference_notes.insert(note.asset(), *note);
-                }
-            })
-        });
-        reference_notes
     }
 }
 
