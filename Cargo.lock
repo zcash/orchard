@@ -1506,7 +1506,6 @@ dependencies = [
  "serde",
  "subtle",
  "tracing",
- "yeslogic-fontconfig-sys",
  "zcash_note_encryption",
  "zcash_spec",
  "zip32",

@@ -63,7 +63,6 @@ proptest = "1.0.0"
 zcash_note_encryption_zsa = { package = "zcash_note_encryption", version = "0.4", git = "https://github.com/QED-it/zcash_note_encryption", branch = "zsa1", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.5", features = ["test-dependencies"] }
 ahash = "=0.8.6" #Pinned: 0.8.7 depends on Rust 1.72
-yeslogic-fontconfig-sys = "=5.0.0" # Pinned as 6.0.0 requires fontconfig Ubuntu package to be installed 
 
 [target.'cfg(unix)'.dev-dependencies]
 inferno = { version = "0.11", default-features = false, features = ["multithreaded", "nameattr"] }
