@@ -2,9 +2,9 @@
 //!
 //! The module provides a function `validate_bundle_burn` that can be used to validate the burn values for the bundle.
 //!
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
-use crate::note::AssetBase;
+use crate::{note::AssetBase, value::NoteValue};
 
 /// Possible errors that can occur during bundle burn validation.
 #[derive(Debug)]
@@ -14,40 +14,41 @@ pub enum BurnError {
     DuplicateAsset,
     /// Cannot burn a native asset.
     NativeAsset,
-    /// Cannot burn an asset with a non-positive value.
-    NonPositiveAmount,
+    /// Cannot burn an asset with a zero value.
+    ZeroAmount,
 }
 
-/// Validates burn for a bundle by ensuring each asset is unique, non-native, and has a positive value.
+/// Validates burn for a bundle by ensuring each asset is unique, non-native, and has a non-zero value value.
 ///
-/// Each burn element is represented as a tuple of `AssetBase` and `i64` (value for the burn).
+/// Each burn element is represented as a tuple of `AssetBase` and `NoteValue` (value for the burn).
 ///
 /// # Arguments
 ///
-/// * `burn` - A vector of assets, where each asset is represented as a tuple of `AssetBase` and `i64` (value the burn).
+/// * `burns` - A vector of assets, where each asset is represented as a tuple of `AssetBase` and `NoteValue` (value the burn).
 ///
 /// # Errors
 ///
 /// Returns a `BurnError` if:
 /// * Any asset in the `burn` vector is not unique (`BurnError::DuplicateAsset`).
 /// * Any asset in the `burn` vector is native (`BurnError::NativeAsset`).
-/// * Any asset in the `burn` vector has a non-positive value (`BurnError::NonPositiveAmount`).
-pub fn validate_bundle_burn(bundle_burn: &Vec<(AssetBase, i64)>) -> Result<(), BurnError> {
-    let mut asset_set = std::collections::HashSet::<&AssetBase>::new();
+pub fn validate_bundle_burn<'a, I: IntoIterator<Item = &'a (AssetBase, NoteValue)>>(
+    burn: I,
+) -> Result<HashMap<AssetBase, NoteValue>, BurnError> {
+    let mut burn_set = HashMap::<AssetBase, NoteValue>::new();
 
-    for (asset, value) in bundle_burn {
-        if !asset_set.insert(asset) {
-            return Err(BurnError::DuplicateAsset);
-        }
+    for (asset, value) in burn.into_iter().cloned() {
         if asset.is_native().into() {
             return Err(BurnError::NativeAsset);
         }
-        if *value <= 0 {
-            return Err(BurnError::NonPositiveAmount);
+        if value.inner() == 0 {
+            return Err(BurnError::ZeroAmount);
+        }
+        if burn_set.insert(asset, value).is_some() {
+            return Err(BurnError::DuplicateAsset);
         }
     }
 
-    Ok(())
+    Ok(burn_set)
 }
 
 impl fmt::Display for BurnError {
@@ -55,8 +56,8 @@ impl fmt::Display for BurnError {
         match *self {
             BurnError::DuplicateAsset => write!(f, "Encountered a duplicate asset to burn."),
             BurnError::NativeAsset => write!(f, "Cannot burn a native asset."),
-            BurnError::NonPositiveAmount => {
-                write!(f, "Cannot burn an asset with a non-positive value.")
+            BurnError::ZeroAmount => {
+                write!(f, "Cannot burn an asset with a zero value.")
             }
         }
     }
@@ -64,6 +65,8 @@ impl fmt::Display for BurnError {
 
 #[cfg(test)]
 mod tests {
+    use crate::value::NoteValue;
+
     use super::*;
 
     /// Creates an item of bundle burn list for a given asset description and value.
@@ -80,14 +83,14 @@ mod tests {
     ///
     /// A tuple `(AssetBase, Amount)` representing the burn list item.
     ///
-    pub fn get_burn_tuple(asset_desc: &[u8], value: i64) -> (AssetBase, i64) {
+    pub fn get_burn_tuple(asset_desc: &[u8], value: u64) -> (AssetBase, NoteValue) {
         use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 
         let isk = IssuanceAuthorizingKey::from_bytes([1u8; 32]).unwrap();
 
         (
             AssetBase::derive(&IssuanceValidatingKey::from(&isk), asset_desc),
-            value,
+            NoteValue::from_raw(value),
         )
     }
 
@@ -121,7 +124,7 @@ mod tests {
     fn validate_bundle_burn_native_asset() {
         let bundle_burn = vec![
             get_burn_tuple(b"Asset 1", 10),
-            (AssetBase::native(), 20),
+            (AssetBase::native(), NoteValue::from_raw(20)),
             get_burn_tuple(b"Asset 3", 10),
         ];
 
@@ -140,6 +143,6 @@ mod tests {
 
         let result = validate_bundle_burn(&bundle_burn);
 
-        assert_eq!(result, Err(BurnError::NonPositiveAmount));
+        assert_eq!(result, Err(BurnError::ZeroAmount));
     }
 }
