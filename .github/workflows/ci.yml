@@ -24,6 +24,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
+      - name: Install dependencies (needed for yeslogic-fontconfig-sys crate)
+        if: runner.os == 'Linux'
+        run: sudo apt update && sudo apt install -y libfontconfig1-dev
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         id: toolchain
@@ -91,6 +94,9 @@ jobs:
     name: Intra-doc links
     runs-on: ubuntu-latest
     steps:
+      - name: Install dependencies (needed for yeslogic-fontconfig-sys crate)
+        if: runner.os == 'Linux'
+        run: sudo apt update && sudo apt install -y libfontconfig1-dev
       - uses: actions/checkout@v4
       - run: cargo fetch
       # Requires #![deny(rustdoc::broken_intra_doc_links)] in crates.
