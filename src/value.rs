@@ -153,6 +153,14 @@ impl Sub for NoteValue {
     }
 }
 
+impl Add for NoteValue {
+    type Output = Option<NoteValue>;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.0.checked_add(rhs.0).map(NoteValue)
+    }
+}
+
 pub(crate) enum Sign {
     Positive,
     Negative,

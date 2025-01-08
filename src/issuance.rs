@@ -4,7 +4,7 @@ use group::Group;
 use k256::schnorr;
 use nonempty::NonEmpty;
 use rand::RngCore;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt;
 
 use crate::bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data};
@@ -12,16 +12,25 @@ use crate::constants::reference_keys::ReferenceKeys;
 use crate::issuance::Error::{
     AssetBaseCannotBeIdentityPoint, IssueActionNotFound, IssueActionPreviouslyFinalizedAssetBase,
     IssueActionWithoutNoteNotFinalized, IssueBundleIkMismatchAssetBase,
-    IssueBundleInvalidSignature, ValueSumOverflow, WrongAssetDescSize,
+    IssueBundleInvalidSignature, ValueOverflow, WrongAssetDescSize,
 };
 use crate::keys::{IssuanceAuthorizingKey, IssuanceValidatingKey};
 use crate::note::asset_base::is_asset_desc_of_valid_size;
 use crate::note::{AssetBase, Nullifier, Rho};
 
-use crate::value::{NoteValue, ValueSum};
+use crate::value::NoteValue;
 use crate::{Address, Note};
 
 use crate::supply_info::{AssetSupply, SupplyInfo};
+
+/// Checks if a given note is a reference note.
+///
+/// A reference note satisfies the following conditions:
+/// - The note's value is zero.
+/// - The note's recipient matches the reference recipient.
+fn is_reference_note(note: &Note) -> bool {
+    note.value() == NoteValue::zero() && note.recipient() == ReferenceKeys::recipient()
+}
 
 /// A bundle of actions to be applied to the ledger.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,7 +123,7 @@ impl IssueAction {
     ///
     /// This function may return an error in any of the following cases:
     ///
-    /// * `ValueSumOverflow`: If the total amount value of all notes in the `IssueAction` overflows.
+    /// * `ValueOverflow`: If the total amount value of all notes in the `IssueAction` overflows.
     ///
     /// * `IssueBundleIkMismatchAssetBase`: If the provided `ik` is not used to derive the
     ///   `AssetBase` for **all** internal notes.
@@ -132,7 +141,7 @@ impl IssueAction {
         let value_sum = self
             .notes
             .iter()
-            .try_fold(ValueSum::zero(), |value_sum, &note| {
+            .try_fold(NoteValue::zero(), |value_sum, &note| {
                 //The asset base should not be the identity point of the Pallas curve.
                 if bool::from(note.asset().cv_base().is_identity()) {
                     return Err(AssetBaseCannotBeIdentityPoint);
@@ -145,12 +154,16 @@ impl IssueAction {
                     .ok_or(IssueBundleIkMismatchAssetBase)?;
 
                 // The total amount should not overflow
-                (value_sum + note.value()).ok_or(ValueSumOverflow)
+                (value_sum + note.value()).ok_or(ValueOverflow)
             })?;
 
         Ok((
             issue_asset,
-            AssetSupply::new(value_sum, self.is_finalized()),
+            AssetSupply::new(
+                value_sum,
+                self.is_finalized(),
+                self.get_reference_note().cloned(),
+            ),
         ))
     }
 
@@ -162,6 +175,15 @@ impl IssueAction {
         } else {
             0b0000_0000
         }
+    }
+
+    /// Returns the reference note if the first note matches the reference note criteria.
+    ///
+    /// A reference note must be the first note in the `notes` vector and satisfy the following:
+    /// - The note's value is zero.
+    /// - The note's recipient matches the reference recipient.
+    pub fn get_reference_note(&self) -> Option<&Note> {
+        self.notes.first().filter(|note| is_reference_note(note))
     }
 }
 
@@ -468,23 +490,6 @@ impl IssueBundle<Unauthorized> {
     }
 }
 
-impl<T: IssueAuth> IssueBundle<T> {
-    /// Returns the reference notes for the `IssueBundle`.
-    pub fn get_reference_notes(self) -> HashMap<AssetBase, Note> {
-        let mut reference_notes = HashMap::new();
-        self.actions.iter().for_each(|action| {
-            action.notes.iter().for_each(|note| {
-                if (note.recipient() == ReferenceKeys::recipient())
-                    && (note.value() == NoteValue::zero())
-                {
-                    reference_notes.insert(note.asset(), *note);
-                }
-            })
-        });
-        reference_notes
-    }
-}
-
 fn create_reference_note(asset: AssetBase, mut rng: impl RngCore) -> Note {
     Note::new(
         ReferenceKeys::recipient(),
@@ -561,12 +566,13 @@ impl IssueBundle<Signed> {
 /// * For each `Note` inside an `IssueAction`:
 ///     * All notes have the same, correct `AssetBase`.
 ///
-// # Returns
+/// # Returns
 ///
 /// A Result containing a SupplyInfo struct, which stores supply information in a HashMap.
-/// The HashMap uses AssetBase as the key, and an AssetSupply struct as the value. The
-/// AssetSupply contains a ValueSum (representing the total value of all notes for the asset)
-/// and a bool indicating whether the asset is finalized.
+/// The HashMap `assets` uses AssetBase as the key, and an AssetSupply struct as the
+/// value. The AssetSupply contains a NoteValue (representing the total value of all notes for
+/// the asset), a bool indicating whether the asset is finalized and a Note (the reference note
+/// for this asset).
 ///
 /// # Errors
 ///
@@ -576,7 +582,7 @@ impl IssueBundle<Signed> {
 ///    asset in the bundle is incorrect.
 /// * `IssueActionPreviouslyFinalizedAssetBase`:  This error occurs if the asset has already been
 ///    finalized (inserted into the `finalized` collection).
-/// * `ValueSumOverflow`: This error occurs if an overflow happens during the calculation of
+/// * `ValueOverflow`: This error occurs if an overflow happens during the calculation of
 ///     the value sum for the notes in the asset.
 /// * `IssueBundleIkMismatchAssetBase`: This error is raised if the `AssetBase` derived from
 ///    the `ik` (Issuance Validating Key) and the `asset_desc` (Asset Description) does not match
@@ -636,7 +642,7 @@ pub enum Error {
     IssueActionPreviouslyFinalizedAssetBase(AssetBase),
 
     /// Overflow error occurred while calculating the value of the asset
-    ValueSumOverflow,
+    ValueOverflow,
 }
 
 impl fmt::Display for Error {
@@ -672,7 +678,7 @@ impl fmt::Display for Error {
             IssueActionPreviouslyFinalizedAssetBase(_) => {
                 write!(f, "the provided `AssetBase` has been previously finalized")
             }
-            ValueSumOverflow => {
+            ValueOverflow => {
                 write!(
                     f,
                     "overflow error occurred while calculating the value of the asset"
@@ -685,18 +691,19 @@ impl fmt::Display for Error {
 #[cfg(test)]
 mod tests {
     use super::{AssetSupply, IssueBundle, IssueInfo};
-    use crate::constants::reference_keys::ReferenceKeys;
     use crate::issuance::Error::{
         AssetBaseCannotBeIdentityPoint, IssueActionNotFound,
         IssueActionPreviouslyFinalizedAssetBase, IssueBundleIkMismatchAssetBase,
         IssueBundleInvalidSignature, WrongAssetDescSize,
     };
-    use crate::issuance::{verify_issue_bundle, IssueAction, Signed, Unauthorized};
+    use crate::issuance::{
+        is_reference_note, verify_issue_bundle, IssueAction, Signed, Unauthorized,
+    };
     use crate::keys::{
         FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey,
     };
     use crate::note::{AssetBase, Nullifier, Rho};
-    use crate::value::{NoteValue, ValueSum};
+    use crate::value::NoteValue;
     use crate::{Address, Note};
     use group::{Group, GroupEncoding};
     use nonempty::NonEmpty;
@@ -709,12 +716,11 @@ mod tests {
     ///
     /// The following checks are performed:
     /// - the note value of the reference note is equal to 0
-    /// - the asset of the reference note is equal to the provided asset
     /// - the recipient of the reference note is equal to the reference recipient
+    /// - the asset of the reference note is equal to the provided asset
     fn verify_reference_note(note: &Note, asset: AssetBase) {
-        assert_eq!(note.value(), NoteValue::from_raw(0));
+        assert!(is_reference_note(note));
         assert_eq!(note.asset(), asset);
-        assert_eq!(note.recipient(), ReferenceKeys::recipient());
     }
 
     fn setup_params() -> (
@@ -829,7 +835,7 @@ mod tests {
         let (asset, supply) = result.unwrap();
 
         assert_eq!(asset, test_asset);
-        assert_eq!(supply.amount, ValueSum::from_raw(30));
+        assert_eq!(supply.amount, NoteValue::from_raw(30));
         assert!(!supply.is_finalized);
     }
 
@@ -854,7 +860,7 @@ mod tests {
         let (asset, supply) = result.unwrap();
 
         assert_eq!(asset, test_asset);
-        assert_eq!(supply.amount, ValueSum::from_raw(30));
+        assert_eq!(supply.amount, NoteValue::from_raw(30));
         assert!(supply.is_finalized);
     }
 
@@ -975,10 +981,8 @@ mod tests {
         assert_eq!(first_note.value().inner(), 15);
         assert_eq!(first_note.asset(), third_asset);
 
-        let reference_notes = bundle.get_reference_notes();
-        assert_eq!(reference_notes.len(), 2);
-        verify_reference_note(reference_notes.get(&asset).unwrap(), asset);
-        verify_reference_note(reference_notes.get(&third_asset).unwrap(), third_asset);
+        verify_reference_note(action.get_reference_note().unwrap(), asset);
+        verify_reference_note(action2.get_reference_note().unwrap(), third_asset);
     }
 
     #[test]
@@ -1227,17 +1231,33 @@ mod tests {
 
         assert_eq!(supply_info.assets.len(), 3);
 
+        let reference_note1 = signed.actions()[0].notes()[0];
+        let reference_note2 = signed.actions()[1].notes()[0];
+        let reference_note3 = signed.actions()[2].notes()[0];
+
         assert_eq!(
             supply_info.assets.get(&asset1_base),
-            Some(&AssetSupply::new(ValueSum::from_raw(15), true))
+            Some(&AssetSupply::new(
+                NoteValue::from_raw(15),
+                true,
+                Some(reference_note1)
+            ))
         );
         assert_eq!(
             supply_info.assets.get(&asset2_base),
-            Some(&AssetSupply::new(ValueSum::from_raw(10), true))
+            Some(&AssetSupply::new(
+                NoteValue::from_raw(10),
+                true,
+                Some(reference_note2)
+            ))
         );
         assert_eq!(
             supply_info.assets.get(&asset3_base),
-            Some(&AssetSupply::new(ValueSum::from_raw(5), false))
+            Some(&AssetSupply::new(
+                NoteValue::from_raw(5),
+                false,
+                Some(reference_note3)
+            ))
         );
     }
 
