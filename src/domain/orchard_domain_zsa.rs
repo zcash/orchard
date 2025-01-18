@@ -4,6 +4,10 @@
 use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption_zsa::note_bytes::NoteBytesData;
 
+use crate::bundle::commitments::{
+    ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION, ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION,
+};
+use crate::bundle::Authorized;
 use crate::{
     bundle::{
         commitments::{
@@ -77,6 +81,24 @@ impl OrchardDomainCommon for OrchardZSA {
         h.update(burn_hasher.finalize().as_bytes());
 
         h.update(&(*bundle.value_balance()).into().to_le_bytes());
+        h.finalize()
+    }
+
+    /// Evaluate `orchard_auth_digest` for the bundle as defined in
+    /// [ZIP-226: Transfer and Burn of Zcash Shielded Assets][zip226]
+    ///
+    /// [zip226]: https://zips.z.cash/zip-0226
+    fn hash_bundle_auth_data<V>(bundle: &Bundle<Authorized, V, OrchardZSA>) -> Blake2bHash {
+        let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
+        let mut agh = hasher(ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION);
+        agh.update(bundle.authorization().proof().as_ref());
+        for action in bundle.actions().iter() {
+            agh.update(&<[u8; 64]>::from(action.authorization()));
+        }
+        h.update(agh.finalize().as_bytes());
+        h.update(&<[u8; 64]>::from(
+            bundle.authorization().binding_signature(),
+        ));
         h.finalize()
     }
 }

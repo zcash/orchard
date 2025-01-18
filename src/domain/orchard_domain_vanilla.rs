@@ -6,8 +6,10 @@ use zcash_note_encryption_zsa::note_bytes::NoteBytesData;
 
 use crate::{
     bundle::{
-        commitments::{hasher, ZCASH_ORCHARD_HASH_PERSONALIZATION},
-        Authorization,
+        commitments::{
+            hasher, ZCASH_ORCHARD_HASH_PERSONALIZATION, ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION,
+        },
+        Authorization, Authorized,
     },
     note::{AssetBase, Note},
     orchard_flavor::OrchardVanilla,
@@ -55,6 +57,22 @@ impl OrchardDomainCommon for OrchardVanilla {
         h.update(&[bundle.flags().to_byte()]);
         h.update(&(*bundle.value_balance()).into().to_le_bytes());
         h.update(&bundle.anchor().to_bytes());
+        h.finalize()
+    }
+
+    /// Evaluate `orchard_auth_digest` for the bundle as defined in
+    /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
+    ///
+    /// [zip244]: https://zips.z.cash/zip-0244
+    fn hash_bundle_auth_data<V>(bundle: &Bundle<Authorized, V, OrchardVanilla>) -> Blake2bHash {
+        let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
+        h.update(bundle.authorization().proof().as_ref());
+        for action in bundle.actions().iter() {
+            h.update(&<[u8; 64]>::from(action.authorization()));
+        }
+        h.update(&<[u8; 64]>::from(
+            bundle.authorization().binding_signature(),
+        ));
         h.finalize()
     }
 }

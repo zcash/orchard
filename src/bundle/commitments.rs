@@ -16,7 +16,10 @@ pub(crate) const ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION: &[u8; 16] = b
 pub(crate) const ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] =
     b"ZTxIdOrcActNHash";
 pub(crate) const ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrcBurnHash";
-const ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthOrchaHash";
+pub(crate) const ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthOrchaHash";
+pub(crate) const ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION: &[u8; 16] =
+    b"ZTxAuthOrcAGHash";
+
 const ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION: &[u8; 16] = b"ZTxIdSAIssueHash";
 const ZCASH_ORCHARD_ZSA_ISSUE_ACTION_PERSONALIZATION: &[u8; 16] = b"ZTxIdIssuActHash";
 const ZCASH_ORCHARD_ZSA_ISSUE_NOTE_PERSONALIZATION: &[u8; 16] = b"ZTxIdIAcNoteHash";
@@ -60,15 +63,7 @@ pub fn hash_bundle_txid_empty() -> Blake2bHash {
 pub(crate) fn hash_bundle_auth_data<V, D: OrchardDomainCommon>(
     bundle: &Bundle<Authorized, V, D>,
 ) -> Blake2bHash {
-    let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
-    h.update(bundle.authorization().proof().as_ref());
-    for action in bundle.actions().iter() {
-        h.update(&<[u8; 64]>::from(action.authorization()));
-    }
-    h.update(&<[u8; 64]>::from(
-        bundle.authorization().binding_signature(),
-    ));
-    h.finalize()
+    D::hash_bundle_auth_data(bundle)
 }
 
 /// Construct the commitment for an absent bundle as defined in
@@ -130,7 +125,11 @@ pub(crate) fn hash_issue_bundle_auth_data(bundle: &IssueBundle<Signed>) -> Blake
 mod tests {
     use crate::{
         builder::{Builder, BundleType, UnauthorizedBundle},
-        bundle::commitments::hash_bundle_txid_data,
+        bundle::{
+            commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
+            Authorized, Bundle,
+        },
+        circuit::ProvingKey,
         keys::{FullViewingKey, Scope, SpendingKey},
         note::AssetBase,
         orchard_flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
@@ -192,6 +191,44 @@ mod tests {
         assert_eq!(
             sighash.to_hex().as_str(),
             "43cfaab1ffcd8d4752e5e7479fd619c769e3ab459b6f10bbba80533608f546b0"
+        );
+    }
+
+    fn generate_auth_bundle<FL: OrchardFlavor>(
+        bundle_type: BundleType,
+    ) -> Bundle<Authorized, i64, FL> {
+        let mut rng = StdRng::seed_from_u64(6);
+        let pk = ProvingKey::build::<FL>();
+        let bundle = generate_bundle(bundle_type)
+            .create_proof(&pk, &mut rng)
+            .unwrap();
+        let sighash = bundle.commitment().into();
+        bundle.prepare(rng, sighash).finalize().unwrap()
+    }
+
+    /// Verify that the authorizing data commitment for an Orchard Vanilla bundle matches a fixed
+    /// reference value to ensure consistency.
+    #[test]
+    fn test_hash_bundle_auth_data_for_orchard_vanilla() {
+        let bundle = generate_auth_bundle::<OrchardVanilla>(BundleType::DEFAULT_VANILLA);
+        let orchard_auth_digest = hash_bundle_auth_data(&bundle);
+        assert_eq!(
+            orchard_auth_digest.to_hex().as_str(),
+            // Bundle hash for Orchard (vanilla) generated using
+            // Zcash/Orchard commit: 23a167e3972632586dc628ddbdd69d156dfd607b
+            "2cd424654d8cb770c8dbdf253b6829e25fc70b40157048fd7c6c19f9a9c61f76"
+        );
+    }
+
+    /// Verify that the authorizing data commitment for an OrchardZSA bundle matches a fixed
+    /// reference value to ensure consistency.
+    #[test]
+    fn test_hash_bundle_auth_data_for_orchard_zsa() {
+        let bundle = generate_auth_bundle::<OrchardZSA>(BundleType::DEFAULT_ZSA);
+        let orchard_auth_digest = hash_bundle_auth_data(&bundle);
+        assert_eq!(
+            orchard_auth_digest.to_hex().as_str(),
+            "c765769582c598930b2825224d5d9246196954fe7cbd3a2be9afa3c542c06387"
         );
     }
 }
