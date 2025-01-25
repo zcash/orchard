@@ -536,10 +536,9 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::{
-        circuit::Proof,
         primitives::redpallas::{self, testing::arb_binding_signing_key},
         value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
-        Anchor,
+        Anchor, Proof,
     };
 
     use super::{Action, Authorized, Bundle, Flags};
