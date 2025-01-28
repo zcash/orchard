@@ -3,7 +3,9 @@ pub mod fixed_bases;
 pub mod sinsemilla;
 pub mod util;
 
+#[cfg(feature = "circuit")]
 pub use self::sinsemilla::{OrchardCommitDomains, OrchardHashDomains};
+#[cfg(feature = "circuit")]
 pub use fixed_bases::{NullifierK, OrchardFixedBases, OrchardFixedBasesFull, ValueCommitV};
 
 /// $\mathsf{MerkleDepth^{Orchard}}$
