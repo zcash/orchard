@@ -1,8 +1,9 @@
 //! Derive nullifier logic for the Orchard circuit.
 
+use crate::constants::nullifier_l::nullifier_l;
 use halo2_gadgets::utilities::cond_swap::CondSwapChip;
 use halo2_proofs::circuit::AssignedCell;
-use pasta_curves::{arithmetic::CurveExt, pallas};
+use pasta_curves::pallas;
 
 pub struct ZsaNullifierParams {
     pub cond_swap_chip: CondSwapChip<pallas::Base>,
@@ -11,8 +12,6 @@ pub struct ZsaNullifierParams {
 
 pub(in crate::circuit) mod gadgets {
     use super::*;
-
-    use group::Curve;
 
     use crate::{
         circuit::gadget::AddInstruction,
@@ -92,7 +91,7 @@ pub(in crate::circuit) mod gadgets {
                 let nullifier_l = Point::new_from_constant(
                     ecc_chip.clone(),
                     layouter.namespace(|| "witness NullifierL constant"),
-                    pallas::Point::hash_to_curve("z.cash:Orchard")(b"L").to_affine(),
+                    nullifier_l(),
                 )?;
                 let split_note_nf = nullifier_l.add(layouter.namespace(|| "split_note_nf"), &nf)?;
 

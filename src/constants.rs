@@ -1,5 +1,6 @@
 //! Constants used in the Orchard protocol.
 pub mod fixed_bases;
+pub mod nullifier_l;
 pub mod reference_keys;
 pub mod sinsemilla;
 pub mod util;
