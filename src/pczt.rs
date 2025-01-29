@@ -332,10 +332,11 @@ impl Zip32Derivation {
 
 #[cfg(test)]
 mod tests {
-    use bridgetree::BridgeTree;
     use ff::{Field, PrimeField};
+    use incrementalmerkletree::{Marking, Retention};
     use pasta_curves::pallas;
     use rand::rngs::OsRng;
+    use shardtree::{store::memory::MemoryShardStore, ShardTree};
 
     use crate::{
         builder::{Builder, BundleType},
@@ -344,7 +345,7 @@ mod tests {
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, RandomSeed, Rho},
         pczt::Zip32Derivation,
-        tree::{MerkleHashOrchard, MerklePath, EMPTY_ROOTS},
+        tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,
         Note,
     };
@@ -415,23 +416,31 @@ mod tests {
         let (anchor, merkle_path) = {
             let cmx: ExtractedNoteCommitment = note.commitment().into();
             let leaf = MerkleHashOrchard::from_cmx(&cmx);
-            let mut tree = BridgeTree::<MerkleHashOrchard, u32, 32>::new(100);
-            tree.append(leaf);
-            let position = tree.mark().unwrap();
-            let root = tree.root(0).unwrap();
-            let auth_path = tree.witness(position, 0).unwrap();
-            let merkle_path = MerklePath::from_parts(
-                u64::from(position).try_into().unwrap(),
-                auth_path[..].try_into().unwrap(),
-            );
-            let anchor = root.into();
-            assert_eq!(anchor, merkle_path.root(cmx));
-            (anchor, merkle_path)
+            let mut tree: ShardTree<MemoryShardStore<MerkleHashOrchard, u32>, 32, 16> =
+                ShardTree::new(MemoryShardStore::empty(), 100);
+            tree.append(
+                leaf,
+                Retention::Checkpoint {
+                    id: 0,
+                    marking: Marking::Marked,
+                },
+            )
+            .unwrap();
+            let root = tree.root_at_checkpoint_id(&0).unwrap().unwrap();
+            let position = tree.max_leaf_position(None).unwrap().unwrap();
+            let merkle_path = tree
+                .witness_at_checkpoint_id(position, &0)
+                .unwrap()
+                .unwrap();
+            assert_eq!(root, merkle_path.root(MerkleHashOrchard::from_cmx(&cmx)));
+            (root.into(), merkle_path)
         };
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(BundleType::DEFAULT, anchor);
-        builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+        builder
+            .add_spend(fvk.clone(), note, merkle_path.into())
+            .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(10_000), None)
             .unwrap();

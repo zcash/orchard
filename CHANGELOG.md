@@ -12,7 +12,7 @@ and this project adheres to Rust's notion of
 
 ### Changed
 - MSRV is now 1.70
-- Migrated to `nonempty 0.11`.
+- Migrated to `nonempty 0.11`, `incrementalmerkletree 0.8`, `shardtree 0.6`, `zip32 0.1.3`.
 
 ## [0.10.1] - 2024-12-16
 

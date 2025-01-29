@@ -290,10 +290,10 @@ pub mod testing {
 mod tests {
     use {
         crate::tree::{MerkleHashOrchard, EMPTY_ROOTS},
-        bridgetree::{BridgeTree, Frontier as BridgeFrontier},
         group::ff::PrimeField,
-        incrementalmerkletree::Level,
+        incrementalmerkletree::{frontier::Frontier, Level, Marking, MerklePath, Retention},
         pasta_curves::pallas,
+        shardtree::{store::memory::MemoryShardStore, ShardTree},
     };
 
     #[test]
@@ -304,31 +304,42 @@ mod tests {
             assert_eq!(tv_empty_roots[height], root.to_bytes());
         }
 
-        let mut tree = BridgeTree::<MerkleHashOrchard, u32, 4>::new(100);
+        let mut tree: ShardTree<MemoryShardStore<MerkleHashOrchard, u32>, 4, 3> =
+            ShardTree::new(MemoryShardStore::empty(), 100);
         for (i, tv) in crate::test_vectors::merkle_path::test_vectors()
             .into_iter()
             .enumerate()
         {
+            let checkpoint_id = u32::try_from(i).unwrap();
             let cmx = MerkleHashOrchard::from_bytes(&tv.leaves[i]).unwrap();
-            tree.append(cmx);
-            let position = tree.mark().expect("tree is not empty");
-            assert_eq!(position, (i as u64).into());
+            tree.append(
+                cmx,
+                Retention::Checkpoint {
+                    id: checkpoint_id,
+                    marking: Marking::Marked,
+                },
+            )
+            .unwrap();
 
-            let root = tree.root(0).unwrap();
+            let root = tree.root_at_checkpoint_id(&checkpoint_id).unwrap().unwrap();
             assert_eq!(root.0, pallas::Base::from_repr(tv.root).unwrap());
 
             // Check paths for all leaves up to this point. The test vectors include paths
             // for not-yet-appended leaves (using UNCOMMITTED_ORCHARD as the leaf value),
             // but BridgeTree doesn't encode these.
             for j in 0..=i {
+                let position = j.try_into().unwrap();
                 assert_eq!(
-                    tree.witness(j.try_into().unwrap(), 0).ok(),
-                    Some(
+                    tree.witness_at_checkpoint_id(position, &checkpoint_id)
+                        .unwrap(),
+                    MerklePath::from_parts(
                         tv.paths[j]
                             .iter()
                             .map(|v| MerkleHashOrchard::from_bytes(v).unwrap())
-                            .collect()
+                            .collect(),
+                        position
                     )
+                    .ok()
                 );
             }
         }
@@ -393,7 +404,7 @@ mod tests {
             0x9c, 0x52, 0x7f, 0x0e,
         ];
 
-        let mut frontier = BridgeFrontier::<MerkleHashOrchard, 32>::empty();
+        let mut frontier: Frontier<MerkleHashOrchard, 32> = Frontier::empty();
         for commitment in commitments.iter() {
             let cmx = MerkleHashOrchard(pallas::Base::from_repr(*commitment).unwrap());
             frontier.append(cmx);
