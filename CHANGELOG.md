@@ -31,8 +31,6 @@ and this project adheres to Rust's notion of
   - `ValueCommitTrapdoor::to_bytes`
 - `impl Clone for orchard::tree::MerklePath`
 
-### Changed
-
 ## [0.10.0] - 2024-10-02
 
 ### Changed
