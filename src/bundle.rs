@@ -178,7 +178,7 @@ impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         /// Helper struct for debug-printing actions without exposing `NonEmpty`.
         struct Actions<'a, T>(&'a NonEmpty<Action<T>>);
-        impl<'a, T: fmt::Debug> fmt::Debug for Actions<'a, T> {
+        impl<T: fmt::Debug> fmt::Debug for Actions<'_, T> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_list().entries(self.0.iter()).finish()
             }
@@ -536,10 +536,9 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::{
-        circuit::Proof,
         primitives::redpallas::{self, testing::arb_binding_signing_key},
         value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
-        Anchor,
+        Anchor, Proof,
     };
 
     use super::{Action, Authorized, Bundle, Flags};

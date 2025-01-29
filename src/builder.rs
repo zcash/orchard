@@ -639,7 +639,7 @@ impl Builder {
                     .iter()
                     .map(|output| NoteValue::zero() - output.value),
             )
-            .fold(Some(ValueSum::zero()), |acc, note_value| acc? + note_value)
+            .try_fold(ValueSum::zero(), |acc, note_value| acc + note_value)
             .ok_or(OverflowError)?;
         i64::try_from(value_balance).and_then(|i| V::try_from(i).map_err(|_| value::OverflowError))
     }
@@ -813,7 +813,7 @@ fn build_bundle<B, R: RngCore>(
         let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
         let pre_actions = indexed_spends
             .into_iter()
-            .zip(indexed_outputs.into_iter())
+            .zip(indexed_outputs)
             .enumerate()
             .map(|(action_idx, ((spend_idx, spend), (out_idx, output)))| {
                 // Record the post-randomization spend location
@@ -836,9 +836,7 @@ fn build_bundle<B, R: RngCore>(
     // Determine the value balance for this bundle, ensuring it is valid.
     let value_balance = pre_actions
         .iter()
-        .fold(Some(ValueSum::zero()), |acc, action| {
-            acc? + action.value_sum()
-        })
+        .try_fold(ValueSum::zero(), |acc, action| acc + action.value_sum())
         .ok_or(OverflowError)?;
 
     finisher(pre_actions, flags, value_balance, bundle_meta, rng)
@@ -1137,7 +1135,7 @@ impl OutputView for OutputInfo {
 }
 
 /// Generators for property testing.
-#[cfg(any(test, feature = "test-dependencies"))]
+#[cfg(all(feature = "circuit", any(test, feature = "test-dependencies")))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use alloc::vec::Vec;

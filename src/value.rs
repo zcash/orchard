@@ -213,14 +213,16 @@ impl Add for ValueSum {
 }
 
 impl<'a> Sum<&'a ValueSum> for Result<ValueSum, OverflowError> {
-    fn sum<I: Iterator<Item = &'a ValueSum>>(iter: I) -> Self {
-        iter.fold(Ok(ValueSum(0)), |acc, v| (acc? + *v).ok_or(OverflowError))
+    fn sum<I: Iterator<Item = &'a ValueSum>>(mut iter: I) -> Self {
+        iter.try_fold(ValueSum(0), |acc, v| acc + *v)
+            .ok_or(OverflowError)
     }
 }
 
 impl Sum<ValueSum> for Result<ValueSum, OverflowError> {
-    fn sum<I: Iterator<Item = ValueSum>>(iter: I) -> Self {
-        iter.fold(Ok(ValueSum(0)), |acc, v| (acc? + v).ok_or(OverflowError))
+    fn sum<I: Iterator<Item = ValueSum>>(mut iter: I) -> Self {
+        iter.try_fold(ValueSum(0), |acc, v| acc + v)
+            .ok_or(OverflowError)
     }
 }
 

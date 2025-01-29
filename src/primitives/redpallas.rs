@@ -102,7 +102,7 @@ impl<T: SigType> Eq for VerificationKey<T> {}
 
 impl<T: SigType> PartialOrd for VerificationKey<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        <[u8; 32]>::from(self).partial_cmp(&<[u8; 32]>::from(other))
+        Some(self.cmp(other))
     }
 }
 

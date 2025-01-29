@@ -27,7 +27,7 @@ pub const Z: [u64; super::NUM_WINDOWS] = [
 
 /// Full-width u-values for GENERATOR.
 /// These can be reproduced by [`halo2_gadgets::ecc::chip::constants::find_zs_and_us`].
-pub const U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
+pub static U: [[[u8; 32]; super::H]; super::NUM_WINDOWS] = [
     [
         [
             114, 245, 9, 0, 5, 43, 7, 118, 244, 43, 15, 200, 116, 210, 0, 24, 161, 28, 185, 152,
