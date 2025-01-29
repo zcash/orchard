@@ -14,14 +14,14 @@ fn hasher(personal: &[u8; 16]) -> State {
     Params::new().hash_length(32).personal(personal).to_state()
 }
 
-/// Write disjoint parts of each Orchard shielded action as 3 separate hashes:
+/// Write disjoint parts of each Orchard shielded action as 3 separate hashes
+/// as defined in [ZIP-244: Transaction Identifier Non-Malleability][zip244]:
 /// * \[(nullifier, cmx, ephemeral_key, enc_ciphertext\[..52\])*\] personalized
 ///   with ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION
 /// * \[enc_ciphertext\[52..564\]*\] (memo ciphertexts) personalized
 ///   with ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION
 /// * \[(cv, rk, enc_ciphertext\[564..\], out_ciphertext)*\] personalized
 ///   with ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION
-/// as defined in [ZIP-244: Transaction Identifier Non-Malleability][zip244]
 ///
 /// Then, hash these together along with (flags, value_balance_orchard, anchor_orchard),
 /// personalized with ZCASH_ORCHARD_ACTIONS_HASH_PERSONALIZATION

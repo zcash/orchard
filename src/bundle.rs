@@ -178,7 +178,7 @@ impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         /// Helper struct for debug-printing actions without exposing `NonEmpty`.
         struct Actions<'a, T>(&'a NonEmpty<Action<T>>);
-        impl<'a, T: fmt::Debug> fmt::Debug for Actions<'a, T> {
+        impl<T: fmt::Debug> fmt::Debug for Actions<'_, T> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.debug_list().entries(self.0.iter()).finish()
             }

@@ -17,7 +17,7 @@ impl Bundle {
 #[derive(Debug)]
 pub struct Updater<'a>(&'a mut Bundle);
 
-impl<'a> Updater<'a> {
+impl Updater<'_> {
     /// Provides read access to the bundle being updated.
     pub fn bundle(&self) -> &Bundle {
         self.0
@@ -42,7 +42,7 @@ impl<'a> Updater<'a> {
 #[derive(Debug)]
 pub struct ActionUpdater<'a>(&'a mut Action);
 
-impl<'a> ActionUpdater<'a> {
+impl ActionUpdater<'_> {
     /// Sets the ZIP 32 derivation path for the spent note's signing key.
     pub fn set_spend_zip32_derivation(&mut self, derivation: Zip32Derivation) {
         self.0.spend.zip32_derivation = Some(derivation);
