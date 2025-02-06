@@ -95,9 +95,9 @@ struct IssueTestNote {
 }
 
 impl IssueTestNote {
-    fn new(asset_desc: &Vec<u8>, amount: u64, is_finalized: bool, first_issuance: bool) -> Self {
+    fn new(asset_desc: &[u8], amount: u64, is_finalized: bool, first_issuance: bool) -> Self {
         Self {
-            asset_desc: asset_desc.clone(),
+            asset_desc: asset_desc.to_vec(),
             amount,
             is_finalized,
             first_issuance,
@@ -147,7 +147,7 @@ fn build_issue_bundle(params: &TestParams, data: &[IssueTestNote]) -> IssueBundl
         amount,
         is_finalized,
         first_issuance,
-    } in data.into_iter().skip(1).cloned()
+    } in data.iter().skip(1).cloned()
     {
         bundle
             .add_recipient(
@@ -165,9 +165,9 @@ fn build_issue_bundle(params: &TestParams, data: &[IssueTestNote]) -> IssueBundl
     }
 
     bundle
-        .update_rho(&first_nullifier)
+        .update_rho(first_nullifier)
         .prepare(sighash)
-        .sign(&isk)
+        .sign(isk)
         .unwrap()
 }
 
