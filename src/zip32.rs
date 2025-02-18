@@ -209,6 +209,8 @@ impl ExtendedSpendingKey {
             self.chain_code.as_bytes(),
             self.sk.to_bytes(),
             &index.index().to_le_bytes(),
+            &[0],
+            &[],
         );
 
         // I_L is used as the child spending key sk_i.
