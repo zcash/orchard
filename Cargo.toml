@@ -43,8 +43,8 @@ sinsemilla = "0.1"
 subtle = { version = "2.3", default-features = false }
 zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.8.1"
-zcash_spec = "0.1"
-zip32 = { version = "0.1.3", default-features = false }
+zcash_spec = "0.2.1"
+zip32 = { version = "0.2.0", default-features = false }
 visibility = "0.1.1"
 
 # Circuit
