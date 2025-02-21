@@ -226,6 +226,7 @@ impl SpendValidatingKey {
 /// [`Note`]: crate::note::Note
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
 pub(crate) struct NullifierDerivingKey(pallas::Base);
 
 impl NullifierDerivingKey {
@@ -246,10 +247,13 @@ impl NullifierDerivingKey {
     }
 
     /// Converts this nullifier deriving key to its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 
+    /// Converts this nullifier deriving key from its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let nk_bytes = <[u8; 32]>::try_from(bytes).ok()?;
         let nk = pallas::Base::from_repr(nk_bytes).map(NullifierDerivingKey);
@@ -267,6 +271,7 @@ impl NullifierDerivingKey {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
 pub(crate) struct CommitIvkRandomness(pallas::Scalar);
 
 impl From<&SpendingKey> for CommitIvkRandomness {
@@ -280,11 +285,14 @@ impl CommitIvkRandomness {
         self.0
     }
 
-    /// Converts this nullifier deriving key to its serialized form.
+    /// Converts this [`CommitIvkRandomness`] to its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn to_bytes(self) -> [u8; 32] {
         <[u8; 32]>::from(self.0)
     }
 
+    /// Converts this [`CommitIvkRandomness`] from its serialized form.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         let rivk_bytes = <[u8; 32]>::try_from(bytes).ok()?;
         let rivk = pallas::Scalar::from_repr(rivk_bytes).map(CommitIvkRandomness);
@@ -334,11 +342,47 @@ impl From<FullViewingKey> for SpendValidatingKey {
 }
 
 impl FullViewingKey {
+    /// Creates a `FullViewingKey` from a `SpendingKey` and `SpendValidatingKey`.
+    /// This is necessary for FROST key management.
+    #[cfg(feature = "unstable-frost")]
+    pub fn from_sk_and_ak(sk: &SpendingKey, ak: SpendValidatingKey) -> FullViewingKey {
+        FullViewingKey {
+            ak,
+            nk: NullifierDerivingKey::from(sk),
+            rivk: CommitIvkRandomness::from(sk),
+        }
+    }
+
+    /// Creates a `FullViewingKey` from its checked parts. This is necessary for FROST
+    /// key management in order to avoid centralizing spend authority in a backup scheme.
+    #[cfg(feature = "unstable-frost")]
+    pub fn from_checked_parts(
+        ak: SpendValidatingKey,
+        nk: NullifierDerivingKey,
+        rivk: CommitIvkRandomness,
+    ) -> FullViewingKey {
+        FullViewingKey { ak, nk, rivk }
+    }
+
+    /// Returns the `SpendValidatingKey` of this `FullViewingKey`
+    /// - Note: this is intended for the "unstable-frost" feature to
+    /// facilitate the DKG'd key backup scheme. 
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
+    pub fn ak(&self) -> &SpendValidatingKey {
+        &self.ak
+    }
+    /// Returns the `NullifierDerivingKey` of this `FullViewingKey`
+    /// - Note: this is `pub` for the "unstable-frost" feature to
+    /// facilitate the DKG'd key backup scheme.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
     }
 
     /// Returns either `rivk` or `rivk_internal` based on `scope`.
+    /// - Note: this is `pub` for the "unstable-frost" feature to
+    /// facilitate the DKG'd key backup scheme.
+    #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn rivk(&self, scope: Scope) -> CommitIvkRandomness {
         match scope {
             Scope::External => self.rivk,
