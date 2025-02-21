@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn test_vectors() {
-        let test_vectors = crate::test_vectors::zip32::test_vectors();
+        let test_vectors = crate::test_vectors::zip32::TEST_VECTORS;
 
         let seed = [
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
