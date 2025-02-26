@@ -238,7 +238,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                         v_old.clone() - v_new.clone() - magnitude * sign,
                     ),
                     (
-                        "Either v_old = 0, or root = anchor",
+                        "v_old = 0, or root = anchor",
                         v_old.clone() * (root - anchor),
                     ),
                     (
