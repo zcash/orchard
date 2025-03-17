@@ -3,11 +3,11 @@
 use crate::{circuit::OrchardCircuit, domain::OrchardDomainCommon};
 
 /// Represents the "Vanilla" variation ("flavor") of the Orchard protocol.  
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrchardVanilla;
 
 /// Represents the "ZSA" variation ("flavor") of the Orchard protocol.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrchardZSA;
 
 /// Represents the flavor of the Orchard protocol.
