@@ -43,7 +43,7 @@ jobs:
           echo "#![no_std]" > ./ci-build/src/lib.rs
       - name: Add dependencies of the synthetic crate (e.g. sapling-crypto)
         working-directory: ./ci-build
-        run: cargo add --no-default-features --path ../crate_root
+        run: cargo add --no-default-features --features "circuit" --path ../crate_root
       - name: Add lazy_static with the spin_no_std feature
         working-directory: ./ci-build
         run: cargo add lazy_static --no-default-features --features "spin_no_std"

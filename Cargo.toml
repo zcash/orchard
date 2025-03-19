@@ -83,7 +83,7 @@ bench = false
 [features]
 default = ["circuit", "multicore", "std"]
 std = ["core2/std", "group/wnaf-memuse", "reddsa/std"]
-circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
+circuit = ["dep:halo2_gadgets", "dep:halo2_proofs"]
 unstable-frost = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]

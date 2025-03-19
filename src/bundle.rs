@@ -4,9 +4,9 @@ use alloc::vec::Vec;
 
 pub mod commitments;
 
-#[cfg(feature = "circuit")]
+#[cfg(all(feature = "circuit", feature = "std"))]
 mod batch;
-#[cfg(feature = "circuit")]
+#[cfg(all(feature = "circuit", feature = "std"))]
 pub use batch::BatchValidator;
 
 use core::fmt;
