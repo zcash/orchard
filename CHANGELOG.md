@@ -6,6 +6,11 @@ and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- The "circuit" feature no longer implies the "std" feature. "circuit" can now
+  potentially be used in `no_std` environments.
+- `orchard::bundle::batch` is now only available when the "std" feature is enabled
+  together with the "circuit" feature.
 
 ## [0.11.0] - 2025-02-20
 

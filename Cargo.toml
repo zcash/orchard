@@ -83,7 +83,7 @@ bench = false
 [features]
 default = ["circuit", "multicore", "std"]
 std = ["core2/std", "group/wnaf-memuse", "reddsa/std"]
-circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
+circuit = ["dep:halo2_gadgets", "dep:halo2_proofs"]
 unstable-frost = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
@@ -106,3 +106,7 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "7e173f8e2e6e8717052e472384bdf28e58eaff19" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "7e173f8e2e6e8717052e472384bdf28e58eaff19" }
