@@ -106,3 +106,7 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "7e173f8e2e6e8717052e472384bdf28e58eaff19" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "7e173f8e2e6e8717052e472384bdf28e58eaff19" }

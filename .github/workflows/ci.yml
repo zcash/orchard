@@ -73,6 +73,12 @@ jobs:
       - name: Show Cargo.toml for the synthetic crate
         working-directory: ./ci-build
         run: cat Cargo.toml
+      - name: DEBUG cargo tree -i -p getrandom -e features
+        working-directory: ./ci-build
+        run: cargo tree -i -p getrandom -e features
+      - name: DEBUG cargo tree -i -p rand_core -e features
+        working-directory: ./ci-build
+        run: cargo tree -i -p rand_core -e features
       - name: Add target
         working-directory: ./ci-build
         run: rustup target add ${{ matrix.target }}
