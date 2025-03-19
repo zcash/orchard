@@ -181,10 +181,14 @@
 <li><a href="https://docs.rs/orchard">Crate documentation</a></li>
 </ul>
 <h2 id="no_std-compatibility"><a class="header" href="#no_std-compatibility"><code>no_std</code> compatibility</a></h2>
-<p>Downstream users of this crate must enable the <code>spin_no_std</code> feature of the
-<code>lazy_static</code> crate in order to take advantage of <code>no_std</code> builds; this is due
-to the fact that <code>--no-default-features</code> builds of <code>lazy_static</code> still rely on
-<code>std</code>.</p>
+<p>In order to take advantage of <code>no_std</code> builds, downstream users of this crate
+must enable:</p>
+<ul>
+<li>the <code>spin_no_std</code> feature of the <code>lazy_static</code> crate; and</li>
+<li>the <code>no_std</code> feature of the <code>typenum</code> crate.</li>
+</ul>
+<p>This is needed because the <code>--no-default-features</code> builds of these crates still
+rely on <code>std</code>.</p>
 <h2 id="license"><a class="header" href="#license">License</a></h2>
 <p>Copyright 2020-2023 The Electric Coin Company.</p>
 <p>All code in this workspace is licensed under either of</p>
