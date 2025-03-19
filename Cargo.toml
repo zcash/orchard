@@ -48,7 +48,7 @@ zip32 = { version = "0.2.0", default-features = false }
 visibility = "0.1.1"
 
 # Circuit
-halo2_gadgets = { version = "0.3", optional = true }
+halo2_gadgets = { version = "0.3", optional = true, default-features = false }
 halo2_proofs = { version = "0.3", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 
 # Boilerplate
@@ -87,7 +87,7 @@ circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
 unstable-frost = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
-test-dependencies = ["proptest"]
+test-dependencies = ["proptest", "rand/std"]
 
 [[bench]]
 name = "note_decryption"
