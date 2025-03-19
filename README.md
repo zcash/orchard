@@ -16,7 +16,7 @@ to the fact that `--no-default-features` builds of `lazy_static` still rely on
 
 ## License
 
-Copyright 2020-2023 The Electric Coin Company.
+Copyright 2020-2025 The Electric Coin Company.
 
 All code in this workspace is licensed under either of
 
