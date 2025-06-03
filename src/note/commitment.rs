@@ -78,17 +78,27 @@ impl ExtractedNoteCommitment {
     pub fn to_bytes(self) -> [u8; 32] {
         self.0.to_repr()
     }
+
+    /// Creates an [`ExtractedNoteCommitment`] from a pallas point.
+    // TODO: Make `NoteCommitment` API public and replace zebra-chain's note commitment type with that instead.
+    pub fn from_point(point: pallas::Point) -> Self {
+        ExtractedNoteCommitment(extract_p(&point))
+    }
+
+    /// Returns inner [`pallas::Base`] value.
+    pub fn inner(self) -> pallas::Base {
+        self.0
+    }
+
+    /// Creates a new [`ExtractedNoteCommitment`] from a [`pallas::Base`].
+    pub fn from_base(base: pallas::Base) -> Self {
+        Self(base)
+    }
 }
 
 impl From<NoteCommitment> for ExtractedNoteCommitment {
     fn from(cm: NoteCommitment) -> Self {
         ExtractedNoteCommitment(extract_p(&cm.0))
-    }
-}
-
-impl ExtractedNoteCommitment {
-    pub(crate) fn inner(&self) -> pallas::Base {
-        self.0
     }
 }
 
