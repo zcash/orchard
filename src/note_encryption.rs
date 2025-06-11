@@ -265,8 +265,8 @@ impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
         EphemeralKeyBytes(self.encrypted_note().epk_bytes)
     }
 
-    fn cmstar_bytes(&self) -> [u8; 32] {
-        self.cmx().to_bytes()
+    fn cmstar(&self) -> &<OrchardDomain as Domain>::ExtractedCommitment {
+        self.cmx()
     }
 
     fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
@@ -279,8 +279,8 @@ impl ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for crate::pczt::Action 
         EphemeralKeyBytes(self.output().encrypted_note().epk_bytes)
     }
 
-    fn cmstar_bytes(&self) -> [u8; 32] {
-        self.output().cmx().to_bytes()
+    fn cmstar(&self) -> &<OrchardDomain as Domain>::ExtractedCommitment {
+        self.output().cmx()
     }
 
     fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
@@ -321,8 +321,8 @@ impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
         EphemeralKeyBytes(self.ephemeral_key.0)
     }
 
-    fn cmstar_bytes(&self) -> [u8; 32] {
-        self.cmx.to_bytes()
+    fn cmstar(&self) -> &<OrchardDomain as Domain>::ExtractedCommitment {
+        &self.cmx
     }
 
     fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
