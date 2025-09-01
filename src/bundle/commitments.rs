@@ -112,7 +112,7 @@ pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>)
         ia.update(&[u8::from(action.is_finalized())]);
     }
     h.update(ia.finalize().as_bytes());
-    h.update(&bundle.ik().to_bytes());
+    h.update(&bundle.ik().encode());
     h.finalize()
 }
 
@@ -123,7 +123,7 @@ pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>)
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_issue_bundle_auth_data(bundle: &IssueBundle<Signed>) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
-    h.update(&<[u8; 64]>::from(bundle.authorization().signature()));
+    h.update(&bundle.authorization().signature().encode());
     h.finalize()
 }
 

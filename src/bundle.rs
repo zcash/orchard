@@ -631,10 +631,11 @@ pub mod testing {
     use super::{Action, Authorized, Bundle, Flags};
 
     pub use crate::action::testing::ActionArb;
-    use crate::note::asset_base::testing::arb_zsa_asset_base;
-    use crate::note::AssetBase;
-    use crate::primitives::OrchardPrimitives;
-    use crate::value::testing::arb_note_value;
+    use crate::{
+        note::{asset_base::testing::arb_zsa_asset_base, AssetBase},
+        primitives::OrchardPrimitives,
+        value::testing::arb_note_value,
+    };
 
     /// Marker type for a bundle that contains no authorizing data.
     pub type Unauthorized = super::EffectsOnly;

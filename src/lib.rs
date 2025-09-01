@@ -34,6 +34,7 @@ pub mod bundle;
 pub mod circuit;
 mod constants;
 pub mod issuance;
+pub mod issuance_auth;
 pub mod keys;
 pub mod note;
 pub mod orchard_flavor;

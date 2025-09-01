@@ -130,9 +130,11 @@ pub(in crate::circuit) mod gadgets {
 #[cfg(test)]
 mod tests {
     use crate::{
-        circuit::gadget::assign_free_advice,
-        circuit::value_commit_orchard::gadgets::value_commit_orchard,
-        circuit::K,
+        circuit::{
+            gadget::assign_free_advice,
+            value_commit_orchard::{gadgets::value_commit_orchard, ZsaValueCommitParams},
+            K,
+        },
         constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
         note::AssetBase,
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
@@ -156,7 +158,6 @@ mod tests {
     };
     use pasta_curves::pallas;
 
-    use crate::circuit::value_commit_orchard::ZsaValueCommitParams;
     use rand::{rngs::OsRng, RngCore};
 
     #[test]

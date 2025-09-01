@@ -8,8 +8,10 @@ use tracing::debug;
 use super::{Authorized, Bundle};
 use crate::{
     circuit::VerifyingKey,
-    primitives::redpallas::{self, Binding, SpendAuth},
-    primitives::OrchardPrimitives,
+    primitives::{
+        redpallas::{self, Binding, SpendAuth},
+        OrchardPrimitives,
+    },
 };
 
 /// A signature within an authorized Orchard bundle.

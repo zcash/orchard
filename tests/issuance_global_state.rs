@@ -14,7 +14,8 @@ use orchard::{
         },
         IssueBundle, IssueInfo, Signed,
     },
-    keys::{FullViewingKey, IssuanceAuthorizingKey, IssuanceValidatingKey, Scope, SpendingKey},
+    issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+    keys::{FullViewingKey, Scope, SpendingKey},
     note::{AssetBase, Nullifier},
     value::NoteValue,
     Address, Note,
@@ -29,8 +30,8 @@ fn random_bytes<const N: usize>(mut rng: OsRng) -> [u8; N] {
 #[derive(Clone)]
 struct TestParams {
     rng: OsRng,
-    isk: IssuanceAuthorizingKey,
-    ik: IssuanceValidatingKey,
+    isk: IssueAuthKey<ZSASchnorr>,
+    ik: IssueValidatingKey<ZSASchnorr>,
     recipient: Address,
     sighash: [u8; 32],
     first_nullifier: Nullifier,
@@ -41,10 +42,10 @@ fn setup_params() -> TestParams {
     use group::{ff::PrimeField, Curve, Group};
     use pasta_curves::{arithmetic::CurveAffine, pallas};
 
-    let rng = OsRng;
+    let mut rng = OsRng;
 
-    let isk = IssuanceAuthorizingKey::from_bytes(random_bytes(rng)).unwrap();
-    let ik: IssuanceValidatingKey = (&isk).into();
+    let isk = IssueAuthKey::<ZSASchnorr>::random(&mut rng);
+    let ik = IssueValidatingKey::from(&isk);
 
     let fvk = FullViewingKey::from(&SpendingKey::from_bytes(random_bytes(rng)).unwrap());
     let recipient = fvk.address_at(0u32, Scope::External);

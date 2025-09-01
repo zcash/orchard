@@ -40,8 +40,7 @@ use crate::{
         AdditionalZsaWitnesses, Config, OrchardCircuit, Witnesses, ANCHOR, CMX, CV_NET_X, CV_NET_Y,
         ENABLE_OUTPUT, ENABLE_SPEND, ENABLE_ZSA, NF_OLD, RK_X, RK_Y,
     },
-    constants::OrchardFixedBasesFull,
-    constants::{OrchardFixedBases, OrchardHashDomains},
+    constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
     note::AssetBase,
     orchard_flavor::OrchardZSA,
 };

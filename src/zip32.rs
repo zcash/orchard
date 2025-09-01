@@ -21,7 +21,7 @@ const ZIP32_ORCHARD_FVFP_PERSONALIZATION: &[u8; 16] = b"ZcashOrchardFVFP";
 /// Personalization for the master extended spending key
 pub const ZIP32_ORCHARD_PERSONALIZATION: &[u8; 16] = b"ZcashIP32Orchard";
 /// Personalization for the master extended issuance key
-pub const ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION: &[u8; 16] = b"ZIP32ZSAIssue_V1";
+pub const ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION: &[u8; 16] = b"ZcashSA_Issue_V1";
 
 /// Errors produced in derivation of extended spending keys
 #[derive(Debug, PartialEq, Eq)]
@@ -30,6 +30,8 @@ pub enum Error {
     InvalidSpendingKey,
     /// A child index in a derivation path exceeded 2^31
     InvalidChildIndex(u32),
+    /// A non zero account when deriving an Orchard-ZSA issuance key
+    NonZeroAccount,
 }
 
 impl fmt::Display for Error {
