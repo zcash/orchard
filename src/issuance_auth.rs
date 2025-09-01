@@ -55,19 +55,13 @@ pub trait IssueAuthSigScheme {
     /// The type of the issuance authorization signature.
     type IssueAuthSigType: Clone + PartialEq;
 
-    /// Signs a 32-byte message using the issuance authorizing key.
-    ///
-    /// Only supports signing of messages of length 32 bytes, since we will only be using it
-    /// to sign 32 byte SIGHASH values.
-    fn try_sign(isk: &Self::IskType, msg: &[u8; 32]) -> Result<Self::IssueAuthSigType, Error>;
+    /// Signs a sighash using the issuance authorizing key.
+    fn try_sign(isk: &Self::IskType, sighash: &[u8]) -> Result<Self::IssueAuthSigType, Error>;
 
-    /// Verifies a signature over a message using the issuance validating key.
-    ///
-    /// Only supports verifying of messages of length 32 bytes, since we will only be using it
-    /// to verify 32 byte SIGHASH values.
+    /// Verifies that the provided signature for a given sighash is authentic.
     fn verify(
         ik: &Self::IkType,
-        msg: &[u8; 32],
+        sighash: &[u8],
         signature: &Self::IssueAuthSigType,
     ) -> Result<(), Error>;
 }
@@ -81,12 +75,9 @@ pub trait IssueAuthSigScheme {
 pub struct IssueAuthKey<S: IssueAuthSigScheme>(S::IskType);
 
 impl<S: IssueAuthSigScheme> IssueAuthKey<S> {
-    /// Sign the provided message using the `IssueAuthKey`.
-    ///
-    /// Only supports signing of messages of length 32 bytes, since we will only be using it
-    /// to sign 32 byte SIGHASH values.
-    pub fn try_sign(&self, msg: &[u8; 32]) -> Result<IssueAuthSig<S>, Error> {
-        S::try_sign(&self.0, msg).map(IssueAuthSig)
+    /// Signs a sighash using the issuance authorizing key.
+    pub fn try_sign(&self, sighash: &[u8]) -> Result<IssueAuthSig<S>, Error> {
+        S::try_sign(&self.0, sighash).map(IssueAuthSig)
     }
 }
 
@@ -99,12 +90,9 @@ impl<S: IssueAuthSigScheme> IssueAuthKey<S> {
 pub struct IssueValidatingKey<S: IssueAuthSigScheme>(S::IkType);
 
 impl<S: IssueAuthSigScheme> IssueValidatingKey<S> {
-    /// Verifies a purported `signature` over `msg` made by this verification key.
-    ///
-    /// Only supports verifying of messages of length 32 bytes, since we will only be using it
-    /// to verify 32 byte SIGHASH values.
-    pub fn verify(&self, msg: &[u8; 32], sig: &IssueAuthSig<S>) -> Result<(), Error> {
-        S::verify(&self.0, msg, &sig.0)
+    /// Verifies that the provided signature for a given sighash is authentic.
+    pub fn verify(&self, sighash: &[u8], sig: &IssueAuthSig<S>) -> Result<(), Error> {
+        S::verify(&self.0, sighash, &sig.0)
     }
 }
 
@@ -127,17 +115,17 @@ impl IssueAuthSigScheme for ZSASchnorr {
     type IkType = VerifyingKey;
     type IssueAuthSigType = schnorr::Signature;
 
-    fn try_sign(isk: &Self::IskType, msg: &[u8; 32]) -> Result<Self::IssueAuthSigType, Error> {
-        schnorr::SigningKey::sign_raw(&schnorr::SigningKey::from(*isk), msg, &[0u8; 32])
+    fn try_sign(isk: &Self::IskType, sighash: &[u8]) -> Result<Self::IssueAuthSigType, Error> {
+        schnorr::SigningKey::sign_raw(&schnorr::SigningKey::from(*isk), sighash, &[0u8; 32])
             .map_err(|_| Error::InvalidIssueBundleSig)
     }
 
     fn verify(
         ik: &Self::IkType,
-        msg: &[u8; 32],
+        sighash: &[u8],
         sig: &Self::IssueAuthSigType,
     ) -> Result<(), Error> {
-        ik.verify_prehash(msg, sig)
+        ik.verify_prehash(sighash, sig)
             .map_err(|_| Error::InvalidIssueBundleSig)
     }
 }
@@ -346,11 +334,11 @@ mod tests {
     fn verify_fails_on_wrong_message() {
         let isk: IssueAuthKey<ZSASchnorr> = IssueAuthKey::random(&mut OsRng);
         let ik = IssueValidatingKey::from(&isk);
-        let msg = [1u8; 32];
-        let incorrect_msg = [2u8; 32];
-        let sig = isk.try_sign(&msg).unwrap();
+        let sighash = [1u8; 32];
+        let incorrect_sighash = [2u8; 32];
+        let sig = isk.try_sign(&sighash).unwrap();
         assert_eq!(
-            ik.verify(&incorrect_msg, &sig),
+            ik.verify(&incorrect_sighash, &sig),
             Err(Error::InvalidIssueBundleSig)
         );
     }
@@ -358,12 +346,12 @@ mod tests {
     #[test]
     fn verify_fails_on_wrong_key() {
         let isk: IssueAuthKey<ZSASchnorr> = IssueAuthKey::random(&mut OsRng);
-        let msg = [1u8; 32];
-        let sig = isk.try_sign(&msg).unwrap();
+        let sighash = [1u8; 32];
+        let sig = isk.try_sign(&sighash).unwrap();
         let incorrect_isk: IssueAuthKey<ZSASchnorr> = IssueAuthKey::random(&mut OsRng);
         let incorrect_ik = IssueValidatingKey::from(&incorrect_isk);
         assert_eq!(
-            incorrect_ik.verify(&msg, &sig),
+            incorrect_ik.verify(&sighash, &sig),
             Err(Error::InvalidIssueBundleSig)
         );
     }
@@ -376,13 +364,11 @@ mod tests {
             let ik = IssueValidatingKey::from(&isk);
             assert_eq!(ik.encode(), &tv.ik_encoding);
 
-            let message = tv.msg;
-
-            let sig = isk.try_sign(&message).unwrap();
+            let sig = isk.try_sign(&tv.msg).unwrap();
             let sig_bytes = sig.encode();
             assert_eq!(sig_bytes, &tv.issue_auth_sig);
 
-            assert!(ik.verify(&message, &sig).is_ok());
+            assert!(ik.verify(&tv.msg, &sig).is_ok());
         }
     }
 }
