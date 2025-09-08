@@ -50,8 +50,8 @@ zip32 = { version = "0.2.0", default-features = false }
 visibility = "0.1.1"
 
 # Circuit
-halo2_gadgets = { git = "https://github.com/QED-it/halo2", branch = "zsa1", optional = true, default-features = false }
-halo2_proofs = { git = "https://github.com/QED-it/halo2", branch = "zsa1", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
+halo2_gadgets = { version = "0.3", optional = true, default-features = false }
+halo2_proofs = { version = "0.3", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 
 # Boilerplate
 getset = "0.1"
@@ -68,7 +68,8 @@ plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
-halo2_gadgets = { git = "https://github.com/QED-it/halo2", branch = "zsa1", features = ["test-dependencies"] }
+halo2_gadgets = { version = "0.3", features = ["test-dependencies"] }
+hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
 zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "668ea44cf59a226715a5f3cb1bf88710a8c188a3", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
@@ -110,3 +111,5 @@ debug = true
 
 [patch.crates-io]
 zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "842d697048a8960348adcde704c24438fc5b4544" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
+halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
