@@ -10,6 +10,7 @@ use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
 use zcash_note_encryption::NoteEncryption;
+use zcash_spec::sighash_versioning::{VersionedSig, SIGHASH_V0};
 
 use crate::{
     address::Address,
@@ -1235,10 +1236,13 @@ pub struct SigningMetadata {
     parts: SigningParts,
 }
 
+/// A versioned binding signature.
+pub type VerBindingSig = VersionedSig<redpallas::Signature<Binding>>;
+
 /// Marker for a partially-authorized bundle, in the process of being signed.
 #[derive(Debug)]
 pub struct PartiallyAuthorized {
-    binding_signature: redpallas::Signature<Binding>,
+    binding_signature: VerBindingSig,
     sighash: [u8; 32],
 }
 
@@ -1246,19 +1250,22 @@ impl InProgressSignatures for PartiallyAuthorized {
     type SpendAuth = MaybeSigned;
 }
 
+/// A versioned SpendAuth signature.
+pub type VerSpendAuthSig = VersionedSig<redpallas::Signature<SpendAuth>>;
+
 /// A heisen[`Signature`] for a particular [`Action`].
 ///
-/// [`Signature`]: redpallas::Signature
+/// [`Signature`]: VerSpendAuthSig
 #[derive(Debug, Clone)]
 pub enum MaybeSigned {
     /// The information needed to sign this [`Action`].
     SigningMetadata(SigningParts),
-    /// The signature for this [`Action`].
-    Signature(redpallas::Signature<SpendAuth>),
+    /// The versioned signature for this [`Action`].
+    Signature(VerSpendAuthSig),
 }
 
 impl MaybeSigned {
-    fn finalize(self) -> Result<redpallas::Signature<SpendAuth>, BuildError> {
+    fn finalize(self) -> Result<VerSpendAuthSig, BuildError> {
         match self {
             Self::Signature(sig) => Ok(sig),
             _ => Err(BuildError::MissingSignatures),
@@ -1278,16 +1285,25 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauth
         self.map_authorization(
             &mut rng,
             |rng, _, SigningMetadata { dummy_ask, parts }| {
-                // We can create signatures for dummy spends immediately.
+                // We can create versioned signatures for dummy spends immediately.
                 dummy_ask
-                    .map(|ask| ask.randomize(&parts.alpha).sign(rng, &sighash))
+                    .map(|ask| {
+                        VerSpendAuthSig::new(
+                            SIGHASH_V0,
+                            ask.randomize(&parts.alpha).sign(rng, &sighash),
+                        )
+                    })
                     .map(MaybeSigned::Signature)
                     .unwrap_or(MaybeSigned::SigningMetadata(parts))
             },
             |rng, auth| InProgress {
                 proof: auth.proof,
                 sigs: PartiallyAuthorized {
-                    binding_signature: auth.sigs.bsk.sign(rng, &sighash),
+                    binding_signature: VerBindingSig::new(
+                        SIGHASH_V0,
+                        auth.sigs.bsk.sign(rng, &sighash),
+                    ),
+
                     sighash,
                 },
             },
@@ -1320,47 +1336,45 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives>
 {
     /// Signs this bundle with the given [`SpendAuthorizingKey`].
     ///
-    /// This will apply signatures for all notes controlled by this spending key.
+    /// This will apply versioned signatures for all notes controlled by this spending key.
     pub fn sign<R: RngCore + CryptoRng>(self, mut rng: R, ask: &SpendAuthorizingKey) -> Self {
         let expected_ak = ask.into();
         self.map_authorization(
             &mut rng,
             |rng, partial, maybe| match maybe {
                 MaybeSigned::SigningMetadata(parts) if parts.ak == expected_ak => {
-                    MaybeSigned::Signature(
+                    MaybeSigned::Signature(VerSpendAuthSig::new(
+                        SIGHASH_V0,
                         ask.randomize(&parts.alpha).sign(rng, &partial.sigs.sighash),
-                    )
+                    ))
                 }
                 s => s,
             },
             |_, partial| partial,
         )
     }
-    /// Appends externally computed [`Signature`]s.
+    /// Appends externally computed versioned signatures.
     ///
-    /// Each signature will be applied to the one input for which it is valid. An error
-    /// will be returned if the signature is not valid for any inputs, or if it is valid
+    /// Each versioned signature will be applied to the one input for which it is valid. An error
+    /// will be returned if the versioned signature is not valid for any inputs, or if it is valid
     /// for more than one input.
     ///
-    /// [`Signature`]: redpallas::Signature
-    pub fn append_signatures(
-        self,
-        signatures: &[redpallas::Signature<SpendAuth>],
-    ) -> Result<Self, BuildError> {
+    /// [`Signature`]: VerSpendAuthSig
+    pub fn append_signatures(self, signatures: &[VerSpendAuthSig]) -> Result<Self, BuildError> {
         signatures.iter().try_fold(self, Self::append_signature)
     }
 
-    fn append_signature(
-        self,
-        signature: &redpallas::Signature<SpendAuth>,
-    ) -> Result<Self, BuildError> {
+    fn append_signature(self, signature: &VerSpendAuthSig) -> Result<Self, BuildError> {
         let mut signature_valid_for = 0usize;
         let bundle = self.map_authorization(
             &mut signature_valid_for,
             |valid_for, partial, maybe| match maybe {
                 MaybeSigned::SigningMetadata(parts) => {
                     let rk = parts.ak.randomize(&parts.alpha);
-                    if rk.verify(&partial.sigs.sighash[..], signature).is_ok() {
+                    if rk
+                        .verify(&partial.sigs.sighash[..], signature.sig())
+                        .is_ok()
+                    {
                         *valid_for += 1;
                         MaybeSigned::Signature(signature.clone())
                     } else {

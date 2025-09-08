@@ -10,10 +10,11 @@ use zip32::ChildIndex;
 
 use super::{Action, Bundle, Output, PcztTransmittedNoteCiphertext, Spend, Zip32Derivation};
 use crate::{
+    builder::VerSpendAuthSig,
     bundle::Flags,
     keys::{FullViewingKey, SpendingKey},
     note::{AssetBase, ExtractedNoteCommitment, Nullifier, RandomSeed, Rho},
-    primitives::redpallas::{self, SpendAuth},
+    primitives::redpallas,
     tree::{MerkleHashOrchard, MerklePath},
     value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Address, Anchor, Proof, NOTE_COMMITMENT_TREE_DEPTH,
@@ -117,7 +118,7 @@ impl Spend {
     pub fn parse(
         nullifier: [u8; 32],
         rk: [u8; 32],
-        spend_auth_sig: Option<[u8; 64]>,
+        spend_auth_sig: Option<VerSpendAuthSig>,
         recipient: Option<[u8; 43]>,
         value: Option<u64>,
         asset: Option<[u8; 32]>,
@@ -138,8 +139,6 @@ impl Spend {
 
         let rk = redpallas::VerificationKey::try_from(rk)
             .map_err(|_| ParseError::InvalidRandomizedKey)?;
-
-        let spend_auth_sig = spend_auth_sig.map(redpallas::Signature::<SpendAuth>::from);
 
         let recipient = recipient
             .as_ref()
@@ -352,6 +351,8 @@ pub enum ParseError {
     InvalidRecipient,
     /// An invalid `rho` was provided.
     InvalidRho,
+    /// An invalid `SighashVersion` was provided.
+    InvalidSighashVersion,
     /// An invalid `alpha` was provided.
     InvalidSpendAuthRandomizer,
     /// An invalid `cv_net` was provided.

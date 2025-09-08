@@ -215,7 +215,7 @@ impl IssueAuthSig<ZSASchnorr> {
     /// defined in [ZIP 227][issueauthsig].
     ///
     /// [issueauthsig]: https://zips.z.cash/zip-0227#issuance-authorization-signing-and-validation
-    pub(crate) fn encode(&self) -> Vec<u8> {
+    pub fn encode(&self) -> Vec<u8> {
         let sig_bytes = self.0.to_bytes().to_vec();
         let mut encoded =
             Vec::with_capacity(size_of_val(&ZSASchnorr::ALGORITHM_BYTE) + sig_bytes.len());
@@ -228,7 +228,7 @@ impl IssueAuthSig<ZSASchnorr> {
     /// in [ZIP 227][issueauthsig].
     ///
     /// [issueauthsig]: https://zips.z.cash/zip-0227#issuance-authorization-signing-and-validation
-    pub(crate) fn decode(bytes: &[u8]) -> Result<Self, Error> {
+    pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
         if let Some((&algorithm_byte, key_bytes)) = bytes.split_first() {
             if algorithm_byte == ZSASchnorr::ALGORITHM_BYTE {
                 return schnorr::Signature::try_from(key_bytes)

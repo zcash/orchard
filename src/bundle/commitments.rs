@@ -1,6 +1,7 @@
 //! Utility functions for computing bundle commitments
 
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
+use zcash_spec::sighash_versioning::get_compact_size;
 
 use crate::{
     bundle::{Authorization, Authorized, Bundle},
@@ -123,7 +124,10 @@ pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>)
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_issue_bundle_auth_data(bundle: &IssueBundle<Signed>) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
-    h.update(&bundle.authorization().signature().encode());
+    let version_bytes = bundle.authorization().signature().version().to_bytes();
+    h.update(&get_compact_size(version_bytes.len()));
+    h.update(&version_bytes);
+    h.update(&bundle.authorization().signature().sig().encode());
     h.finalize()
 }
 
@@ -234,7 +238,7 @@ mod tests {
         let orchard_auth_digest = hash_bundle_auth_data(&bundle);
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
-            "6d17185768dc16d651ca51e3d22601e83ff82b8c6368fedc5913d77335be8dc3"
+            "82b770a7fe84acb3921b51a49b9d04e203132365a0a82d04e762be3585eb9d1a"
         );
     }
 }

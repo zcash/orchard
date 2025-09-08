@@ -107,3 +107,6 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "842d697048a8960348adcde704c24438fc5b4544" }

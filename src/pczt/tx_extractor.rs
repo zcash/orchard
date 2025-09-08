@@ -3,13 +3,15 @@ use rand::{CryptoRng, RngCore};
 
 use super::Action;
 use crate::{
+    builder::{VerBindingSig, VerSpendAuthSig},
     bundle::{Authorization, Authorized, EffectsOnly},
     primitives::{
-        redpallas::{self, Binding, SpendAuth},
+        redpallas::{self, Binding},
         OrchardPrimitives,
     },
     Proof,
 };
+use zcash_spec::sighash_versioning::SIGHASH_V0;
 
 impl super::Bundle {
     /// Extracts the effects of this PCZT bundle as a [regular `Bundle`].
@@ -127,7 +129,7 @@ pub struct Unbound {
 }
 
 impl Authorization for Unbound {
-    type SpendAuth = redpallas::Signature<SpendAuth>;
+    type SpendAuth = VerSpendAuthSig;
 }
 
 impl<P: OrchardPrimitives, V> crate::Bundle<Unbound, V, P> {
@@ -139,15 +141,21 @@ impl<P: OrchardPrimitives, V> crate::Bundle<Unbound, V, P> {
         sighash: [u8; 32],
         rng: R,
     ) -> Option<crate::Bundle<Authorized, V, P>> {
-        if self
-            .actions()
-            .iter()
-            .all(|action| action.rk().verify(&sighash, action.authorization()).is_ok())
-        {
+        if self.actions().iter().all(|action| {
+            action
+                .rk()
+                .verify(&sighash, action.authorization().sig())
+                .is_ok()
+        }) {
             Some(self.map_authorization(
                 &mut (),
                 |_, _, a| a,
-                |_, Unbound { proof, bsk }| Authorized::from_parts(proof, bsk.sign(rng, &sighash)),
+                |_, Unbound { proof, bsk }| {
+                    Authorized::from_parts(
+                        proof,
+                        VerBindingSig::new(SIGHASH_V0, bsk.sign(rng, &sighash)),
+                    )
+                },
             ))
         } else {
             None

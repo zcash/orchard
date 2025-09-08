@@ -49,14 +49,15 @@ impl BatchValidator {
             self.signatures.push(BundleSignature {
                 signature: action
                     .rk()
-                    .create_batch_item(action.authorization().clone(), &sighash),
+                    .create_batch_item(action.authorization().sig().clone(), &sighash),
             });
         }
 
         self.signatures.push(BundleSignature {
-            signature: bundle
-                .binding_validating_key()
-                .create_batch_item(bundle.authorization().binding_signature().clone(), &sighash),
+            signature: bundle.binding_validating_key().create_batch_item(
+                bundle.authorization().binding_signature().sig().clone(),
+                &sighash,
+            ),
         });
 
         bundle

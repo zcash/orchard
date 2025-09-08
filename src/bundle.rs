@@ -22,10 +22,11 @@ use memuse::DynamicUsage;
 use crate::{
     action::Action,
     address::Address,
+    builder::{VerBindingSig, VerSpendAuthSig},
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::{AssetBase, Note},
-    primitives::redpallas::{self, Binding, SpendAuth},
+    primitives::redpallas::{self, Binding},
     primitives::{OrchardDomain, OrchardPrimitives},
     tree::Anchor,
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -519,16 +520,16 @@ impl Authorization for EffectsOnly {
 #[derive(Debug, Clone)]
 pub struct Authorized {
     proof: Proof,
-    binding_signature: redpallas::Signature<Binding>,
+    binding_signature: VerBindingSig,
 }
 
 impl Authorization for Authorized {
-    type SpendAuth = redpallas::Signature<SpendAuth>;
+    type SpendAuth = VerSpendAuthSig;
 }
 
 impl Authorized {
     /// Constructs the authorizing data for a bundle of actions from its constituent parts.
-    pub fn from_parts(proof: Proof, binding_signature: redpallas::Signature<Binding>) -> Self {
+    pub fn from_parts(proof: Proof, binding_signature: VerBindingSig) -> Self {
         Authorized {
             proof,
             binding_signature,
@@ -540,8 +541,8 @@ impl Authorized {
         &self.proof
     }
 
-    /// Return the binding signature.
-    pub fn binding_signature(&self) -> &redpallas::Signature<Binding> {
+    /// Return the versioned binding signature.
+    pub fn binding_signature(&self) -> &VerBindingSig {
         &self.binding_signature
     }
 }
@@ -617,13 +618,14 @@ pub mod testing {
     use nonempty::NonEmpty;
     use pasta_curves::pallas;
     use rand::{rngs::StdRng, SeedableRng};
-    use reddsa::orchard::SpendAuth;
+    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     use proptest::collection::vec;
     use proptest::prelude::*;
 
     use crate::{
-        primitives::redpallas::{self, testing::arb_binding_signing_key},
+        builder::{VerBindingSig, VerSpendAuthSig},
+        primitives::redpallas::testing::arb_binding_signing_key,
         value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
         Anchor, Proof,
     };
@@ -677,7 +679,7 @@ pub mod testing {
         pub fn arb_action_n(
             n_actions: usize,
             flags: Flags,
-        ) -> impl Strategy<Value = (ValueSum, Action<redpallas::Signature<SpendAuth>, P>)> {
+        ) -> impl Strategy<Value = (ValueSum, Action<VerSpendAuthSig, P>)> {
             let spend_value_gen = if flags.spends_enabled {
                 Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
             } else {
@@ -781,7 +783,7 @@ pub mod testing {
                     anchor,
                     Authorized {
                         proof: Proof::new(fake_proof),
-                        binding_signature: sk.sign(rng, &fake_sighash),
+                        binding_signature: VerBindingSig::new(SIGHASH_V0, sk.sign(rng, &fake_sighash)),
                     },
                 )
             }

@@ -1,6 +1,7 @@
 use memuse::DynamicUsage;
 
 use crate::{
+    builder::VerSpendAuthSig,
     note::{ExtractedNoteCommitment, Nullifier, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, SpendAuth},
     primitives::OrchardPrimitives,
@@ -107,7 +108,7 @@ impl<A, P: OrchardPrimitives> Action<A, P> {
     }
 }
 
-impl<P: OrchardPrimitives> DynamicUsage for Action<redpallas::Signature<SpendAuth>, P> {
+impl<P: OrchardPrimitives> DynamicUsage for Action<VerSpendAuthSig, P> {
     #[inline(always)]
     fn dynamic_usage(&self) -> usize {
         0
@@ -125,13 +126,14 @@ impl<P: OrchardPrimitives> DynamicUsage for Action<redpallas::Signature<SpendAut
 pub(crate) mod testing {
     use alloc::vec::Vec;
     use rand::{rngs::StdRng, SeedableRng};
-    use reddsa::orchard::SpendAuth;
 
     use proptest::prelude::*;
 
     use zcash_note_encryption::NoteEncryption;
+    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     use crate::{
+        builder::VerSpendAuthSig,
         note::{
             asset_base::testing::arb_asset_base, commitment::ExtractedNoteCommitment,
             nullifier::testing::arb_nullifier, testing::arb_note, Note, TransmittedNoteCiphertext,
@@ -212,7 +214,7 @@ pub(crate) mod testing {
                 fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
                 asset in arb_asset_base(),
                 memo in prop::collection::vec(prop::num::u8::ANY, 512),
-            ) -> Action<redpallas::Signature<SpendAuth>, P> {
+            ) -> Action<VerSpendAuthSig, P> {
                 let cmx = ExtractedNoteCommitment::from(note.commitment());
                 let cv_net = ValueCommitment::derive(
                     spend_value - output_value,
@@ -230,7 +232,7 @@ pub(crate) mod testing {
                     cmx,
                     encrypted_note,
                     cv_net,
-                    authorization: sk.sign(rng, &fake_sighash),
+                    authorization: VerSpendAuthSig::new(SIGHASH_V0, sk.sign(rng, &fake_sighash)),
                 }
             }
         }

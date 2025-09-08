@@ -67,10 +67,10 @@ impl OrchardPrimitives for OrchardVanilla {
         let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
         h.update(bundle.authorization().proof().as_ref());
         for action in bundle.actions().iter() {
-            h.update(&<[u8; 64]>::from(action.authorization()));
+            h.update(&<[u8; 64]>::from(action.authorization().sig()));
         }
         h.update(&<[u8; 64]>::from(
-            bundle.authorization().binding_signature(),
+            bundle.authorization().binding_signature().sig(),
         ));
         h.finalize()
     }

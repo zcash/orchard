@@ -19,6 +19,7 @@ use core::fmt::Debug;
 use group::Group;
 use nonempty::NonEmpty;
 use rand::RngCore;
+use zcash_spec::sighash_versioning::{VersionedSig, SIGHASH_V0};
 
 use crate::{
     asset_record::AssetRecord,
@@ -33,9 +34,10 @@ use crate::{
 use crate::issuance_auth::ZSASchnorr;
 use Error::{
     AssetBaseCannotBeIdentityPoint, CannotBeFirstIssuance, IncorrectRhoDerivation,
-    InvalidIssueAuthKey, InvalidIssueBundleSig, InvalidIssueValidatingKey, IssueActionNotFound,
-    IssueActionPreviouslyFinalizedAssetBase, IssueActionWithoutNoteNotFinalized,
-    IssueBundleIkMismatchAssetBase, MissingReferenceNoteOnFirstIssuance, ValueOverflow,
+    InvalidIssueAuthKey, InvalidIssueBundleSig, InvalidIssueValidatingKey, InvalidSighashVersion,
+    IssueActionNotFound, IssueActionPreviouslyFinalizedAssetBase,
+    IssueActionWithoutNoteNotFinalized, IssueBundleIkMismatchAssetBase,
+    MissingReferenceNoteOnFirstIssuance, ValueOverflow,
 };
 
 /// Checks if a given note is a reference note.
@@ -238,23 +240,23 @@ pub struct Prepared {
     sighash: [u8; 32],
 }
 
+/// A versioned Issuance authorization signature based on BIP 340 Schnorr.
+pub type VerBIP340IssueAuthSig = VersionedSig<IssueAuthSig<ZSASchnorr>>;
+
 /// Marker for an authorized bundle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Signed {
-    signature: IssueAuthSig<ZSASchnorr>,
+    signature: VerBIP340IssueAuthSig,
 }
 
 impl Signed {
-    /// Returns the signature for this authorization.
-    pub fn signature(&self) -> &IssueAuthSig<ZSASchnorr> {
-        &self.signature
+    /// Constructs a new `Signed` authorization with the given signature.
+    pub fn new(signature: VerBIP340IssueAuthSig) -> Self {
+        Signed { signature }
     }
-
-    /// Constructs a `Signed` from a byte array containing an `IssueAuthSig` in raw bytes.
-    pub fn from_data(data: &[u8]) -> Self {
-        Signed {
-            signature: IssueAuthSig::decode(data).unwrap(),
-        }
+    /// Returns the versioned signature for this authorization.
+    pub fn signature(&self) -> &VerBIP340IssueAuthSig {
+        &self.signature
     }
 }
 
@@ -557,7 +559,9 @@ impl IssueBundle<Prepared> {
         Ok(IssueBundle {
             ik: self.ik,
             actions: self.actions,
-            authorization: Signed { signature },
+            authorization: Signed {
+                signature: VerBIP340IssueAuthSig::new(SIGHASH_V0, signature),
+            },
         })
     }
 }
@@ -593,6 +597,7 @@ impl IssueBundle<Signed> {
 /// Validates an [`IssueBundle`] by performing the following checks:
 ///
 /// - **IssueBundle Auth signature verification**:
+///   - Ensure that the `SighashVersion` in the versioned signature matches `SIGHASH_V0`.
 ///   - Ensures the signature on the provided `sighash` matches the bundle's authorization.
 /// - **Static IssueAction verification**:
 ///   - Runs checks using the `IssueAction::verify` method.
@@ -622,6 +627,7 @@ impl IssueBundle<Signed> {
 ///
 /// # Errors
 ///
+/// * `InvalidSighashVersion`: The `SighashVersion` in the signature does not match `SIGHASH_V0`.
 /// * `IssueBundleInvalidSignature`: Signature verification for the provided `sighash` fails.
 /// * `ValueOverflow`: adding the new amount to the existing total supply causes an overflow.
 /// * `IssueActionPreviouslyFinalizedAssetBase`: An action is attempted on an asset that has
@@ -638,9 +644,13 @@ pub fn verify_issue_bundle(
     get_global_records: impl Fn(&AssetBase) -> Option<AssetRecord>,
     first_nullifier: &Nullifier,
 ) -> Result<BTreeMap<AssetBase, AssetRecord>, Error> {
+    if bundle.authorization().signature().version() != &SIGHASH_V0 {
+        return Err(InvalidSighashVersion);
+    }
+
     bundle
         .ik()
-        .verify(&sighash, bundle.authorization().signature())
+        .verify(&sighash, bundle.authorization().signature().sig())
         .map_err(|_| InvalidIssueBundleSig)?;
 
     bundle.actions().iter().enumerate().try_fold(
@@ -712,6 +722,8 @@ pub enum Error {
     /// Verification errors:
     /// Invalid issuance validating key.
     InvalidIssueValidatingKey,
+    /// Invalid SighashVersion in the versioned signature.
+    InvalidSighashVersion,
     /// Invalid IssueBundle signature.
     InvalidIssueBundleSig,
     /// The provided `AssetBase` has been previously finalized.
@@ -762,6 +774,12 @@ impl fmt::Display for Error {
             InvalidIssueValidatingKey => {
                 write!(f, "invalid issuance validating key")
             }
+            InvalidSighashVersion => {
+                write!(
+                    f,
+                    "invalid SighashVersion in the versioned IssueBundle signature"
+                )
+            }
             InvalidIssueBundleSig => {
                 write!(f, "invalid IssueBundle signature")
             }
@@ -799,7 +817,7 @@ mod tests {
         },
         issuance::{
             compute_asset_desc_hash, is_reference_note, verify_issue_bundle, IssueAction,
-            IssueBundle, IssueInfo, Signed,
+            IssueBundle, IssueInfo, Signed, VerBIP340IssueAuthSig,
         },
         issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -820,6 +838,7 @@ mod tests {
     use rand::RngCore;
     use shardtree::store::memory::MemoryShardStore;
     use shardtree::ShardTree;
+    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     /// Validation for reference note
     ///
@@ -1151,7 +1170,7 @@ mod tests {
             .sign(&isk)
             .unwrap();
 
-        ik.verify(&sighash, &signed.authorization.signature)
+        ik.verify(&sighash, signed.authorization.signature.sig())
             .expect("signature should be valid");
     }
 
@@ -1570,7 +1589,10 @@ mod tests {
             .unwrap();
 
         signed.set_authorization(Signed {
-            signature: wrong_isk.try_sign(&sighash).unwrap(),
+            signature: VerBIP340IssueAuthSig::new(
+                SIGHASH_V0,
+                wrong_isk.try_sign(&sighash).unwrap(),
+            ),
         });
 
         assert_eq!(
@@ -1927,7 +1949,9 @@ mod tests {
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use crate::{
-        issuance::{AwaitingNullifier, IssueAction, IssueBundle, Prepared, Signed},
+        issuance::{
+            AwaitingNullifier, IssueAction, IssueBundle, Prepared, Signed, VerBIP340IssueAuthSig,
+        },
         issuance_auth::{
             testing::arb_issuance_validating_key, IssueAuthSig, IssueAuthSigScheme, ZSASchnorr,
         },
@@ -1938,15 +1962,17 @@ pub mod testing {
     use proptest::collection::vec;
     use proptest::prelude::*;
     use proptest::prop_compose;
+    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     prop_compose! {
         /// Generate a uniformly distributed ZSA Schnorr signature
         pub(crate) fn arb_signature()(
             sig_bytes in vec(prop::num::u8::ANY, 64)
-        ) -> IssueAuthSig<ZSASchnorr> {
+        ) -> VerBIP340IssueAuthSig {
             let mut encoded = vec![ZSASchnorr::ALGORITHM_BYTE];
             encoded.extend(sig_bytes);
-            IssueAuthSig::decode(&encoded).unwrap()
+            let sig = IssueAuthSig::decode(&encoded).unwrap();
+            VerBIP340IssueAuthSig::new(SIGHASH_V0, sig)
         }
     }
 
