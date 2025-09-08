@@ -5,9 +5,8 @@ use nonempty::NonEmpty;
 use rand::{rngs::OsRng, RngCore};
 
 use orchard::{
-    asset_record::AssetRecord,
     issuance::{
-        compute_asset_desc_hash, verify_issue_bundle,
+        compute_asset_desc_hash, verify_issue_bundle, AssetRecord,
         Error::{
             IssueActionPreviouslyFinalizedAssetBase, MissingReferenceNoteOnFirstIssuance,
             ValueOverflow,

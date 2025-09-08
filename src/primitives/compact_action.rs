@@ -1,5 +1,7 @@
 //! Defines actions for Orchard shielded outputs and compact action for light clients.
 
+// Review hint: this file is largely derived from src/note_encryption.rs
+
 use core::fmt;
 
 use zcash_note_encryption::{note_bytes::NoteBytes, EphemeralKeyBytes, ShieldedOutput};

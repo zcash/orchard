@@ -1,5 +1,7 @@
 //! Orchard-specific note encryption domain.
 
+// Review hint: this file is largely derived from src/note_encryption.rs
+
 use crate::{
     action::Action, note::Rho, primitives::compact_action::CompactAction,
     primitives::orchard_primitives::OrchardPrimitives,

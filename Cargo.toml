@@ -41,9 +41,9 @@ reddsa = { version = "0.5", default-features = false }
 nonempty = { version = "0.11", default-features = false }
 poseidon = { package = "halo2_poseidon", version = "0.1" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
+sinsemilla = "0.1"
 subtle = { version = "2.3", default-features = false }
-zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "668ea44cf59a226715a5f3cb1bf88710a8c188a3" }
+zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.8.1"
 zcash_spec = "0.2.1"
 zip32 = { version = "0.2.0", default-features = false }
@@ -71,7 +71,7 @@ criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
 halo2_gadgets = { version = "0.3", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
-zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "668ea44cf59a226715a5f3cb1bf88710a8c188a3", features = ["pre-zip-212"] }
+zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
 shardtree = "0.6"
 
@@ -110,6 +110,8 @@ debug = true
 debug = true
 
 [patch.crates-io]
+sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
+zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "668ea44cf59a226715a5f3cb1bf88710a8c188a3" }
 zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "842d697048a8960348adcde704c24438fc5b4544" }
 halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
 halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }

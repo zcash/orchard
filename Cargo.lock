@@ -1073,7 +1073,7 @@ dependencies = [
  "pasta_curves",
  "proptest",
  "rand",
- "sinsemilla 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sinsemilla",
  "subtle",
  "uint",
 ]
@@ -1576,7 +1576,7 @@ dependencies = [
  "reddsa",
  "serde",
  "shardtree",
- "sinsemilla 0.1.0 (git+https://github.com/zcash/sinsemilla?rev=aabb707e862bc3d7b803c77d14e5a771bcee3e8c)",
+ "sinsemilla",
  "subtle",
  "tracing",
  "visibility",
@@ -2189,17 +2189,6 @@ name = "simd-adler32"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
-
-[[package]]
-name = "sinsemilla"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d268ae0ea06faafe1662e9967cd4f9022014f5eeb798e0c302c876df8b7af9c"
-dependencies = [
- "group",
- "pasta_curves",
- "subtle",
-]
 
 [[package]]
 name = "sinsemilla"

@@ -44,10 +44,10 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>, P: Or
     P::hash_bundle_txid_data(bundle)
 }
 
-/// Construct the `orchard_digest` commitment for the absent bundle as defined in
-/// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
+/// Construct the commitment for the absent bundle as defined in
+/// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
 ///
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip244]: https://zips.z.cash/zip-0244
 pub fn hash_bundle_txid_empty() -> Blake2bHash {
     hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION).finalize()
 }

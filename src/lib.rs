@@ -27,7 +27,6 @@ use alloc::vec::Vec;
 
 mod action;
 mod address;
-pub mod asset_record;
 pub mod builder;
 pub mod bundle;
 #[cfg(feature = "circuit")]

@@ -2,6 +2,8 @@
 //!
 //! Includes the configuration, synthesis, and proof verification logic.
 
+// Review hint: this file is largely derived from src/circuit.rs
+
 use group::Curve;
 
 use pasta_curves::pallas;

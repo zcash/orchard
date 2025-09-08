@@ -560,7 +560,7 @@ impl ActionInfo {
 ///
 /// This is returned by [`Builder::build`].
 #[cfg(feature = "circuit")]
-pub type UnauthorizedBundle<V, D> = Bundle<InProgress<Unproven, Unauthorized>, V, D>;
+pub type UnauthorizedBundle<V, P> = Bundle<InProgress<Unproven, Unauthorized>, V, P>;
 
 /// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not
 /// necessarily recoverable from the bundle itself.
@@ -1124,19 +1124,6 @@ pub trait InProgressSignatures: fmt::Debug {
 pub struct InProgress<P, S: InProgressSignatures> {
     proof: P,
     sigs: S,
-}
-
-impl<P, S: InProgressSignatures> InProgress<P, S> {
-    /// Mutate the proof using the provided function.
-    pub fn map_proof<F, P2>(self, f: F) -> InProgress<P2, S>
-    where
-        F: FnOnce(P) -> P2,
-    {
-        InProgress {
-            proof: f(self.proof),
-            sigs: self.sigs,
-        }
-    }
 }
 
 impl<P: fmt::Debug, S: InProgressSignatures> Authorization for InProgress<P, S> {

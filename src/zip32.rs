@@ -17,11 +17,11 @@ use crate::{
 
 pub use zip32::ChildIndex;
 
-const ZIP32_ORCHARD_FVFP_PERSONALIZATION: &[u8; 16] = b"ZcashOrchardFVFP";
 /// Personalization for the master extended spending key
-pub const ZIP32_ORCHARD_PERSONALIZATION: &[u8; 16] = b"ZcashIP32Orchard";
+const ZIP32_ORCHARD_PERSONALIZATION: &[u8; 16] = b"ZcashIP32Orchard";
 /// Personalization for the master extended issuance key
-pub const ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION: &[u8; 16] = b"ZcashSA_Issue_V1";
+const ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION: &[u8; 16] = b"ZcashSA_Issue_V1";
+const ZIP32_ORCHARD_FVFP_PERSONALIZATION: &[u8; 16] = b"ZcashOrchardFVFP";
 
 /// Errors produced in derivation of extended spending keys
 #[derive(Debug, PartialEq, Eq)]

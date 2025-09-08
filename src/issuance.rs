@@ -22,16 +22,14 @@ use rand::RngCore;
 use zcash_spec::sighash_versioning::{VersionedSig, SIGHASH_V0};
 
 use crate::{
-    asset_record::AssetRecord,
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
     constants::reference_keys::ReferenceKeys,
-    issuance_auth::{IssueAuthKey, IssueAuthSig, IssueValidatingKey},
+    issuance_auth::{IssueAuthKey, IssueAuthSig, IssueValidatingKey, ZSASchnorr},
     note::{rho_for_issuance_note, AssetBase, Nullifier, Rho},
     value::NoteValue,
     Address, Note,
 };
 
-use crate::issuance_auth::ZSASchnorr;
 use Error::{
     AssetBaseCannotBeIdentityPoint, CannotBeFirstIssuance, IncorrectRhoDerivation,
     InvalidIssueAuthKey, InvalidIssueBundleSig, InvalidIssueValidatingKey, InvalidSighashVersion,
@@ -701,6 +699,31 @@ pub fn verify_issue_bundle(
     )
 }
 
+/// Represents aggregated information about an asset, including its supply, finalization status,
+/// and reference note.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AssetRecord {
+    /// The amount of the asset.
+    pub amount: NoteValue,
+
+    /// Whether or not the asset is finalized.
+    pub is_finalized: bool,
+
+    /// A reference note
+    pub reference_note: Note,
+}
+
+impl AssetRecord {
+    /// Creates a new [`AssetRecord`] instance.
+    pub fn new(amount: NoteValue, is_finalized: bool, reference_note: Note) -> Self {
+        Self {
+            amount,
+            is_finalized,
+            reference_note,
+        }
+    }
+}
+
 /// Errors produced during the issuance process
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -808,7 +831,6 @@ impl fmt::Display for Error {
 #[cfg(test)]
 mod tests {
     use crate::{
-        asset_record::AssetRecord,
         builder::{Builder, BundleType},
         circuit::ProvingKey,
         issuance::Error::{
@@ -816,8 +838,8 @@ mod tests {
             IssueActionPreviouslyFinalizedAssetBase, IssueBundleIkMismatchAssetBase,
         },
         issuance::{
-            compute_asset_desc_hash, is_reference_note, verify_issue_bundle, IssueAction,
-            IssueBundle, IssueInfo, Signed, VerBIP340IssueAuthSig,
+            compute_asset_desc_hash, is_reference_note, verify_issue_bundle, AssetRecord,
+            IssueAction, IssueBundle, IssueInfo, Signed, VerBIP340IssueAuthSig,
         },
         issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},

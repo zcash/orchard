@@ -9,13 +9,12 @@ use pasta_curves::{arithmetic::CurveExt, pallas};
 use rand_core::CryptoRngCore;
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
-use crate::issuance_auth::ZSASchnorr;
 use crate::{
     constants::fixed_bases::{
         NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_PERSONALIZATION, ZSA_ASSET_BASE_PERSONALIZATION,
     },
     issuance::compute_asset_desc_hash,
-    issuance_auth::{IssueAuthKey, IssueValidatingKey},
+    issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
 };
 
 /// Note type identifier.

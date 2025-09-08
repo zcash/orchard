@@ -12,14 +12,14 @@ use group::{
     prime::PrimeCurveAffine,
     Curve, GroupEncoding,
 };
-use pasta_curves::{pallas, pallas::Scalar};
+use pasta_curves::pallas;
 use rand::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
 
 use crate::{
     address::Address,
-    primitives::redpallas::{self, SpendAuth, VerificationKey},
+    primitives::redpallas::{self, SpendAuth},
     spec::{
         commit_ivk, diversify_hash, extract_p, ka_orchard, ka_orchard_prepared, prf_nf, to_base,
         to_scalar, NonIdentityPallasPoint, NonZeroPallasBase, NonZeroPallasScalar,
@@ -141,17 +141,13 @@ impl From<&SpendingKey> for SpendAuthorizingKey {
         // SpendingKey cannot be constructed such that this assertion would fail.
         assert!(!bool::from(ask.is_zero()));
         // TODO: Add TryFrom<S::Scalar> for SpendAuthorizingKey.
-        SpendAuthorizingKey(conditionally_negate(ask))
-    }
-}
-
-// If the last bit of repr_P(ak) is 1, negate ask.
-fn conditionally_negate<T: redpallas::SigType>(scalar: Scalar) -> redpallas::SigningKey<T> {
-    let ret = redpallas::SigningKey::<T>(scalar.to_repr().try_into().unwrap());
-    if (<[u8; 32]>::from(redpallas::VerificationKey::<T>::from(&ret).0)[31] >> 7) == 1 {
-        redpallas::SigningKey::<T>((-scalar).to_repr().try_into().unwrap())
-    } else {
-        ret
+        let ret = SpendAuthorizingKey(ask.to_repr().try_into().unwrap());
+        // If the last bit of repr_P(ak) is 1, negate ask.
+        if (<[u8; 32]>::from(SpendValidatingKey::from(&ret).0)[31] >> 7) == 1 {
+            SpendAuthorizingKey((-ask).to_repr().try_into().unwrap())
+        } else {
+            ret
+        }
     }
 }
 
@@ -209,23 +205,18 @@ impl SpendValidatingKey {
     pub(crate) fn from_bytes(bytes: &[u8]) -> Option<Self> {
         <[u8; 32]>::try_from(bytes)
             .ok()
-            .and_then(check_structural_validity)
+            .and_then(|b| {
+                // Structural validity checks for ak_P:
+                // - The point must not be the identity
+                //   (which for Pallas is canonically encoded as all-zeroes).
+                // - The sign of the y-coordinate must be positive.
+                if b != [0; 32] && b[31] & 0x80 == 0 {
+                    <redpallas::VerificationKey<SpendAuth>>::try_from(b).ok()
+                } else {
+                    None
+                }
+            })
             .map(SpendValidatingKey)
-    }
-}
-
-/// A function to check structural validity of the validating keys for authorizing transfers and
-/// issuing assets
-/// Structural validity checks for ak_P or ik_P:
-///  - The point must not be the identity (which for Pallas is canonically encoded as all-zeroes).
-///  - The compressed y-coordinate bit must be 0.
-fn check_structural_validity(
-    verification_key_bytes: [u8; 32],
-) -> Option<VerificationKey<SpendAuth>> {
-    if verification_key_bytes != [0; 32] && verification_key_bytes[31] & 0x80 == 0 {
-        <redpallas::VerificationKey<SpendAuth>>::try_from(verification_key_bytes).ok()
-    } else {
-        None
     }
 }
 
@@ -925,8 +916,9 @@ impl SharedSecret {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use super::{DiversifierIndex, DiversifierKey, EphemeralSecretKey, SpendingKey};
     use proptest::prelude::*;
+
+    use super::{DiversifierIndex, DiversifierKey, EphemeralSecretKey, SpendingKey};
 
     prop_compose! {
         /// Generate a uniformly distributed Orchard spending key.

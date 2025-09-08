@@ -1,6 +1,8 @@
 //! This module implements `Domain` and `BatchDomain` traits from the `zcash_note_encryption`
 //! crate and contains the common logic for `OrchardVanilla` and `OrchardZSA` flavors.
 
+// Review hint: this file is largely derived from src/note_encryption.rs
+
 use alloc::vec::Vec;
 use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
