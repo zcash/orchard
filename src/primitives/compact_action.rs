@@ -18,6 +18,10 @@ impl<A, P: OrchardPrimitives> ShieldedOutput<OrchardDomain<P>> for Action<A, P> 
         EphemeralKeyBytes(self.encrypted_note().epk_bytes)
     }
 
+    fn cmstar(&self) -> &ExtractedNoteCommitment {
+        self.cmx()
+    }
+
     fn cmstar_bytes(&self) -> [u8; 32] {
         self.cmx().to_bytes()
     }
@@ -66,6 +70,10 @@ where
 impl<P: OrchardPrimitives> ShieldedOutput<OrchardDomain<P>> for CompactAction<P> {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.ephemeral_key.0)
+    }
+
+    fn cmstar(&self) -> &ExtractedNoteCommitment {
+        &self.cmx
     }
 
     fn cmstar_bytes(&self) -> [u8; 32] {
