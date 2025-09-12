@@ -8,7 +8,10 @@ use zcash_spec::sighash_versioning::get_compact_size;
 use crate::{
     bundle::{
         commitments::{
-            hasher, ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION,
+            hasher, ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION_V6,
+            ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION,
+            ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION_V6,
+            ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION,
             ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION,
             ZCASH_ORCHARD_HASH_PERSONALIZATION, ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION,
             ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION,
@@ -21,7 +24,7 @@ use crate::{
         orchard_primitives::OrchardPrimitives,
         zcash_note_encryption_domain::{
             build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA,
-            COMPACT_NOTE_SIZE_ZSA, NOTE_VERSION_BYTE_V3,
+            COMPACT_NOTE_SIZE_ZSA, MEMO_SIZE, NOTE_VERSION_BYTE_V3,
         },
     },
     Bundle,
@@ -63,7 +66,40 @@ impl OrchardPrimitives for OrchardZSA {
         let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
         let mut agh = hasher(ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION);
 
-        Self::update_hash_with_actions(&mut agh, bundle);
+        let mut ch = hasher(ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION_V6);
+        // TODO Remove mh once new Memo Bundles are implemented (ZIP-231).
+        let mut mh = hasher(ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION);
+        let mut nh = hasher(ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION_V6);
+
+        for action in bundle.actions().iter() {
+            ch.update(&action.nullifier().to_bytes());
+            ch.update(&action.cmx().to_bytes());
+            ch.update(&action.encrypted_note().epk_bytes);
+            // TODO Remove once new Memo Bundles are implemented (ZIP-231).
+            ch.update(&action.encrypted_note().enc_ciphertext.as_ref()[..Self::COMPACT_NOTE_SIZE]);
+            // TODO Uncomment once new Memo Bundles are implemented (ZIP-231).
+            // ch.update(&action.encrypted_note().enc_ciphertext.as_ref());
+
+            // TODO Remove once new Memo Bundles are implemented (ZIP-231).
+            mh.update(
+                &action.encrypted_note().enc_ciphertext.as_ref()
+                    [Self::COMPACT_NOTE_SIZE..Self::COMPACT_NOTE_SIZE + MEMO_SIZE],
+            );
+
+            nh.update(&action.cv_net().to_bytes());
+            nh.update(&<[u8; 32]>::from(action.rk()));
+            // TODO Remove once new Memo Bundles are implemented (ZIP-231).
+            nh.update(
+                &action.encrypted_note().enc_ciphertext.as_ref()
+                    [Self::COMPACT_NOTE_SIZE + MEMO_SIZE..],
+            );
+            nh.update(&action.encrypted_note().out_ciphertext);
+        }
+
+        agh.update(ch.finalize().as_bytes());
+        // TODO Remove once new Memo Bundles are implemented (ZIP-231).
+        agh.update(mh.finalize().as_bytes());
+        agh.update(nh.finalize().as_bytes());
 
         agh.update(&[bundle.flags().to_byte()]);
         agh.update(&bundle.anchor().to_bytes());

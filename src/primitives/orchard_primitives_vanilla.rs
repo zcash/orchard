@@ -7,7 +7,10 @@ use zcash_note_encryption::note_bytes::NoteBytesData;
 use crate::{
     bundle::{
         commitments::{
-            hasher, ZCASH_ORCHARD_HASH_PERSONALIZATION, ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION,
+            hasher, ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION,
+            ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION,
+            ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION,
+            ZCASH_ORCHARD_HASH_PERSONALIZATION, ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION,
         },
         Authorization, Authorized,
     },
@@ -16,7 +19,8 @@ use crate::{
     primitives::{
         orchard_primitives::OrchardPrimitives,
         zcash_note_encryption_domain::{
-            build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA, NOTE_VERSION_BYTE_V2,
+            build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA, MEMO_SIZE,
+            NOTE_VERSION_BYTE_V2,
         },
     },
     Bundle,
@@ -51,7 +55,33 @@ impl OrchardPrimitives for OrchardVanilla {
     ) -> Blake2bHash {
         let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
 
-        Self::update_hash_with_actions(&mut h, bundle);
+        let mut ch = hasher(ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION);
+        let mut mh = hasher(ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION);
+        let mut nh = hasher(ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION);
+
+        for action in bundle.actions().iter() {
+            ch.update(&action.nullifier().to_bytes());
+            ch.update(&action.cmx().to_bytes());
+            ch.update(&action.encrypted_note().epk_bytes);
+            ch.update(&action.encrypted_note().enc_ciphertext.as_ref()[..Self::COMPACT_NOTE_SIZE]);
+
+            mh.update(
+                &action.encrypted_note().enc_ciphertext.as_ref()
+                    [Self::COMPACT_NOTE_SIZE..Self::COMPACT_NOTE_SIZE + MEMO_SIZE],
+            );
+
+            nh.update(&action.cv_net().to_bytes());
+            nh.update(&<[u8; 32]>::from(action.rk()));
+            nh.update(
+                &action.encrypted_note().enc_ciphertext.as_ref()
+                    [Self::COMPACT_NOTE_SIZE + MEMO_SIZE..],
+            );
+            nh.update(&action.encrypted_note().out_ciphertext);
+        }
+
+        h.update(ch.finalize().as_bytes());
+        h.update(mh.finalize().as_bytes());
+        h.update(nh.finalize().as_bytes());
 
         h.update(&[bundle.flags().to_byte()]);
         h.update(&(*bundle.value_balance()).into().to_le_bytes());

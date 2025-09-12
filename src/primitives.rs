@@ -4,6 +4,7 @@
 //! - the encryption and decryption of notes,
 //! - the commitments,
 //! - the redpallas signatures.
+//!
 //! It includes functionality for handling both the standard "Vanilla" variation and the ZSA
 //! variation, with different implementations for each. The different implementations are
 //! organized into separate submodules.
