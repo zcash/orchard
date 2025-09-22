@@ -425,6 +425,7 @@ pub mod testing {
 
     use crate::{
         address::testing::arb_address,
+        issuance_auth::{IssueValidatingKey, ZSASchnorr},
         note::{asset_base::testing::arb_asset_base, nullifier::testing::arb_nullifier, AssetBase},
         value::{testing::arb_note_value, NoteValue},
     };
@@ -480,7 +481,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an arbitrary zsa note
-        pub fn arb_zsa_note(asset: AssetBase)(
+        pub fn arb_zsa_note(ik: IssueValidatingKey<ZSASchnorr>, asset_desc_hash: [u8; 32])(
             recipient in arb_address(),
             value in arb_note_value(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
@@ -489,7 +490,7 @@ pub mod testing {
             Note {
                 recipient,
                 value,
-                asset,
+                asset: AssetBase::derive(&ik, &asset_desc_hash),
                 rho,
                 rseed,
                 rseed_split_note: CtOption::new(rseed, 0u8.into()),

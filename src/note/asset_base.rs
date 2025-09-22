@@ -164,7 +164,9 @@ pub mod testing {
 
     use proptest::prelude::*;
 
-    use crate::issuance_auth::{testing::arb_issuance_authorizing_key, IssueValidatingKey};
+    use crate::issuance_auth::{
+        testing::arb_issuance_authorizing_key, IssueValidatingKey, ZSASchnorr,
+    };
 
     prop_compose! {
         /// Generate a uniformly distributed note type
@@ -192,11 +194,11 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an asset ID using a specific description
-        pub fn zsa_asset_base(asset_desc_hash: [u8; 32])(
-            isk in arb_issuance_authorizing_key(),
+        /// Generate an asset base using a specific issuance validating key
+        pub fn zsa_asset_base(ik: IssueValidatingKey<ZSASchnorr>)(
+            asset_desc_hash in prop::array::uniform32(prop::num::u8::ANY),
         ) -> AssetBase {
-            AssetBase::derive(&IssueValidatingKey::from(&isk), &asset_desc_hash)
+            AssetBase::derive(&ik, &asset_desc_hash)
         }
     }
 }

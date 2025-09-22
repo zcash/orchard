@@ -1975,9 +1975,9 @@ pub mod testing {
             AwaitingNullifier, IssueAction, IssueBundle, Prepared, Signed, VerBIP340IssueAuthSig,
         },
         issuance_auth::{
-            testing::arb_issuance_validating_key, IssueAuthSig, IssueAuthSigScheme, ZSASchnorr,
+            testing::arb_issuance_validating_key, IssueAuthSig, IssueAuthSigScheme,
+            IssueValidatingKey, ZSASchnorr,
         },
-        note::asset_base::testing::zsa_asset_base,
         note::testing::arb_zsa_note,
     };
     use nonempty::NonEmpty;
@@ -2000,12 +2000,13 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an issue action
-        pub fn arb_issue_action(asset_desc_hash: [u8; 32])
+        pub fn arb_issue_action(ik: IssueValidatingKey<ZSASchnorr>)
         (
-            asset in zsa_asset_base(asset_desc_hash),
+            asset_desc_hash in prop::array::uniform32(prop::num::u8::ANY),
         )
         (
-            note in arb_zsa_note(asset),
+            note in arb_zsa_note(ik.clone(), asset_desc_hash),
+            asset_desc_hash in Just(asset_desc_hash),
         )-> IssueAction {
             IssueAction{
                 asset_desc_hash,
@@ -2019,8 +2020,11 @@ pub mod testing {
         /// Generate an arbitrary issue bundle with fake authorization data.
         pub fn arb_awaiting_nullifier_issue_bundle(n_actions: usize)
         (
-            actions in vec(arb_issue_action([1u8; 32]), n_actions),
             ik in arb_issuance_validating_key()
+        )
+        (
+            actions in vec(arb_issue_action(ik.clone()), n_actions),
+            ik in Just(ik),
         ) -> IssueBundle<AwaitingNullifier> {
             let actions = NonEmpty::from_vec(actions).unwrap();
             IssueBundle {
@@ -2036,8 +2040,11 @@ pub mod testing {
         /// necessarily respect consensus rules
         pub fn arb_prepared_issue_bundle(n_actions: usize)
         (
-            actions in vec(arb_issue_action([1u8; 32]), n_actions),
-            ik in arb_issuance_validating_key(),
+            ik in arb_issuance_validating_key()
+        )
+        (
+            actions in vec(arb_issue_action(ik.clone()), n_actions),
+            ik in Just(ik),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY)
         ) -> IssueBundle<Prepared> {
             let actions = NonEmpty::from_vec(actions).unwrap();
@@ -2054,8 +2061,11 @@ pub mod testing {
         /// necessarily respect consensus rules
         pub fn arb_signed_issue_bundle(n_actions: usize)
         (
-            actions in vec(arb_issue_action([1u8; 32]), n_actions),
-            ik in arb_issuance_validating_key(),
+            ik in arb_issuance_validating_key()
+        )
+        (
+            actions in vec(arb_issue_action(ik.clone()), n_actions),
+            ik in Just(ik),
             fake_sig in arb_signature(),
         ) -> IssueBundle<Signed> {
             let actions = NonEmpty::from_vec(actions).unwrap();
