@@ -12,6 +12,7 @@ pub use batch::BatchValidator;
 
 use core::fmt;
 
+use alloc::collections::BTreeMap;
 use blake2b_simd::Hash as Blake2bHash;
 use nonempty::NonEmpty;
 use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
@@ -22,10 +23,10 @@ use memuse::DynamicUsage;
 use crate::{
     action::Action,
     address::Address,
-    builder::{VerBindingSig, VerSpendAuthSig},
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::{AssetBase, Note},
+    orchard_sighash_versioning::{OrchardSighashVersion, VerBindingSig, VerSpendAuthSig},
     primitives::redpallas::{self, Binding},
     primitives::{OrchardDomain, OrchardPrimitives},
     tree::Anchor,
@@ -552,8 +553,14 @@ impl<V, P: OrchardPrimitives> Bundle<Authorized, V, P> {
     /// Computes a commitment to the authorizing data within for this bundle.
     ///
     /// This together with `Bundle::commitment` bind the entire bundle.
-    pub fn authorizing_commitment(&self) -> BundleAuthorizingCommitment {
-        BundleAuthorizingCommitment(hash_bundle_auth_data(self))
+    /// The `sighash_version_map` provides the mapping from each
+    /// `OrchardSighashVersion` to the corresponding `SighashInfo`
+    /// encoding.
+    pub fn authorizing_commitment(
+        &self,
+        sighash_version_map: &BTreeMap<OrchardSighashVersion, Vec<u8>>,
+    ) -> BundleAuthorizingCommitment {
+        BundleAuthorizingCommitment(hash_bundle_auth_data(self, sighash_version_map))
     }
 
     /// Verifies the proof for this bundle.
@@ -619,14 +626,13 @@ pub mod testing {
     use nonempty::NonEmpty;
     use pasta_curves::pallas;
     use rand::{rngs::StdRng, SeedableRng};
-    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     use proptest::collection::vec;
     use proptest::prelude::*;
 
     use crate::{
-        builder::{VerBindingSig, VerSpendAuthSig},
         note::{asset_base::testing::arb_zsa_asset_base, AssetBase},
+        orchard_sighash_versioning::{VerBindingSig, VerSpendAuthSig},
         primitives::{redpallas::testing::arb_binding_signing_key, OrchardPrimitives},
         value::{
             testing::{arb_note_value, arb_note_value_bounded},
@@ -783,7 +789,7 @@ pub mod testing {
                     anchor,
                     Authorized {
                         proof: Proof::new(fake_proof),
-                        binding_signature: VerBindingSig::new(SIGHASH_V0, sk.sign(rng, &fake_sighash)),
+                        binding_signature: VerBindingSig::new(P::default_sighash_version(), sk.sign(rng, &fake_sighash)),
                     },
                 )
             }

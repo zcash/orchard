@@ -10,7 +10,6 @@ use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
 
 use zcash_note_encryption::NoteEncryption;
-use zcash_spec::sighash_versioning::{VersionedSig, SIGHASH_V0};
 
 use crate::{
     address::Address,
@@ -21,6 +20,7 @@ use crate::{
         SpendingKey,
     },
     note::{AssetBase, ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
+    orchard_sighash_versioning::{VerBindingSig, VerSpendAuthSig},
     primitives::redpallas::{self, Binding, SpendAuth},
     primitives::{OrchardDomain, OrchardPrimitives},
     tree::{Anchor, MerklePath},
@@ -1223,9 +1223,6 @@ pub struct SigningMetadata {
     parts: SigningParts,
 }
 
-/// A versioned binding signature.
-pub type VerBindingSig = VersionedSig<redpallas::Signature<Binding>>;
-
 /// Marker for a partially-authorized bundle, in the process of being signed.
 #[derive(Debug)]
 pub struct PartiallyAuthorized {
@@ -1236,9 +1233,6 @@ pub struct PartiallyAuthorized {
 impl InProgressSignatures for PartiallyAuthorized {
     type SpendAuth = MaybeSigned;
 }
-
-/// A versioned SpendAuth signature.
-pub type VerSpendAuthSig = VersionedSig<redpallas::Signature<SpendAuth>>;
 
 /// A heisen[`Signature`] for a particular [`Action`].
 ///
@@ -1276,7 +1270,7 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauth
                 dummy_ask
                     .map(|ask| {
                         VerSpendAuthSig::new(
-                            SIGHASH_V0,
+                            P::default_sighash_version(),
                             ask.randomize(&parts.alpha).sign(rng, &sighash),
                         )
                     })
@@ -1287,7 +1281,7 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauth
                 proof: auth.proof,
                 sigs: PartiallyAuthorized {
                     binding_signature: VerBindingSig::new(
-                        SIGHASH_V0,
+                        P::default_sighash_version(),
                         auth.sigs.bsk.sign(rng, &sighash),
                     ),
 
@@ -1331,7 +1325,7 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives>
             |rng, partial, maybe| match maybe {
                 MaybeSigned::SigningMetadata(parts) if parts.ak == expected_ak => {
                     MaybeSigned::Signature(VerSpendAuthSig::new(
-                        SIGHASH_V0,
+                        P::default_sighash_version(),
                         ask.randomize(&parts.alpha).sign(rng, &partial.sigs.sighash),
                     ))
                 }

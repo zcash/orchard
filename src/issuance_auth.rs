@@ -53,7 +53,7 @@ pub trait IssueAuthSigScheme {
     /// The type of the issuance validating key.
     type IkType: Clone + PartialEq;
     /// The type of the issuance authorization signature.
-    type IssueAuthSigType: Clone + PartialEq;
+    type IssueAuthSigType: Clone + Eq + PartialEq + Debug;
 
     /// Signs a sighash using the issuance authorizing key.
     fn try_sign(isk: &Self::IskType, sighash: &[u8]) -> Result<Self::IssueAuthSigType, Error>;

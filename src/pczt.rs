@@ -8,16 +8,15 @@ use core::fmt;
 use getset::Getters;
 use pasta_curves::pallas;
 use zcash_note_encryption::{note_bytes::NoteBytes, OutgoingCipherKey};
-use zcash_spec::sighash_versioning::SighashVersion;
 use zip32::ChildIndex;
 
 use crate::{
-    builder::VerSpendAuthSig,
     bundle::Flags,
     keys::{FullViewingKey, SpendingKey},
     note::{
         AssetBase, ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
     },
+    orchard_sighash_versioning::VerSpendAuthSig,
     primitives::{
         redpallas::{self, Binding, SpendAuth},
         OrchardPrimitives,
@@ -368,31 +367,6 @@ impl Zip32Derivation {
     }
 }
 
-/// Parses a `VerSpendAuthSig` from its raw byte components.
-///
-/// # Arguments
-///
-/// * `version_bytes`: The raw bytes representing a `SighashVersion`.
-/// * `sig_bytes`: The raw bytes of a `repallas::Signature<SpendAuth>`.
-///
-/// # Returns
-///
-/// A `Result` containing a `VerSpendAuthSig` if successful.
-/// The `version` field is derived from `version_bytes`.
-/// The `signature` field is derived from `sig_bytes`.
-///
-/// # Errors
-///
-/// * `InvalidSighashVersion`: If `version_bytes` cannot be parsed into a valid `SighashVersion`.
-pub fn parse_ver_spend_auth_sig(
-    version_bytes: Vec<u8>,
-    sig_bytes: [u8; 64],
-) -> Result<VerSpendAuthSig, ParseError> {
-    let version =
-        SighashVersion::from_bytes(&version_bytes).ok_or(ParseError::InvalidSighashVersion)?;
-    Ok(VerSpendAuthSig::new(version, sig_bytes.into()))
-}
-
 /// An encrypted note.
 #[derive(Clone, Debug)]
 pub struct PcztTransmittedNoteCiphertext {
@@ -434,17 +408,16 @@ mod tests {
     use pasta_curves::pallas;
     use rand::{rngs::StdRng, SeedableRng};
     use shardtree::{store::memory::MemoryShardStore, ShardTree};
-    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     use crate::{
-        builder::{Builder, BundleType, VerSpendAuthSig},
+        builder::{Builder, BundleType},
         bundle::commitments::hash_bundle_txid_data,
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{AssetBase, ExtractedNoteCommitment, RandomSeed, Rho},
         orchard_flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
-        pczt::{parse_ver_spend_auth_sig, Zip32Derivation},
+        pczt::Zip32Derivation,
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,
         Note,
@@ -682,14 +655,5 @@ mod tests {
                 140, 230, 197, 66, 29, 83, 183, 241, 127, 14, 103, 105, 110,
             ],
         );
-    }
-
-    #[test]
-    fn test_parse_ver_spend_auth_sig() {
-        let sig_bytes = [1_u8; 64];
-        let versioned_sig = VerSpendAuthSig::new(SIGHASH_V0, sig_bytes.into());
-        let version_bytes = versioned_sig.version().to_bytes();
-        let versioned_sig_2 = parse_ver_spend_auth_sig(version_bytes, sig_bytes).unwrap();
-        assert_eq!(versioned_sig, versioned_sig_2);
     }
 }

@@ -19,12 +19,12 @@ use core::fmt::Debug;
 use group::Group;
 use nonempty::NonEmpty;
 use rand::RngCore;
-use zcash_spec::sighash_versioning::{VersionedSig, SIGHASH_V0};
 
 use crate::{
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
     constants::reference_keys::ReferenceKeys,
-    issuance_auth::{IssueAuthKey, IssueAuthSig, IssueValidatingKey, ZSASchnorr},
+    issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+    issuance_sighash_versioning::{IssueSighashVersion, VerBIP340IssueAuthSig},
     note::{rho_for_issuance_note, AssetBase, Nullifier, Rho},
     value::NoteValue,
     Address, Note,
@@ -237,9 +237,6 @@ pub struct AwaitingSighash;
 pub struct Prepared {
     sighash: [u8; 32],
 }
-
-/// A versioned Issuance authorization signature based on BIP 340 Schnorr.
-pub type VerBIP340IssueAuthSig = VersionedSig<IssueAuthSig<ZSASchnorr>>;
 
 /// Marker for an authorized bundle.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -558,7 +555,7 @@ impl IssueBundle<Prepared> {
             ik: self.ik,
             actions: self.actions,
             authorization: Signed {
-                signature: VerBIP340IssueAuthSig::new(SIGHASH_V0, signature),
+                signature: VerBIP340IssueAuthSig::new(IssueSighashVersion::V0, signature),
             },
         })
     }
@@ -587,8 +584,14 @@ impl IssueBundle<Signed> {
     /// Computes a commitment to the authorizing data contained in this bundle.
     ///
     /// This together with `IssueBundle::commitment` bind the entire bundle.
-    pub fn authorizing_commitment(&self) -> IssueBundleAuthorizingCommitment {
-        IssueBundleAuthorizingCommitment(hash_issue_bundle_auth_data(self))
+    /// The `sighash_version_map` provides the mapping from each
+    /// `IssueSighashVersion` to the corresponding `SighashInfo`
+    /// encoding.
+    pub fn authorizing_commitment(
+        &self,
+        sighash_version_map: &BTreeMap<IssueSighashVersion, Vec<u8>>,
+    ) -> IssueBundleAuthorizingCommitment {
+        IssueBundleAuthorizingCommitment(hash_issue_bundle_auth_data(self, sighash_version_map))
     }
 }
 
@@ -625,7 +628,8 @@ impl IssueBundle<Signed> {
 ///
 /// # Errors
 ///
-/// * `InvalidSighashVersion`: The `SighashVersion` in the signature does not match `SIGHASH_V0`.
+/// * `InvalidSighashVersion`: The `SighashVersion` in the signature does not match
+///   `IssueSighashVersion::V0`.
 /// * `IssueBundleInvalidSignature`: Signature verification for the provided `sighash` fails.
 /// * `ValueOverflow`: adding the new amount to the existing total supply causes an overflow.
 /// * `IssueActionPreviouslyFinalizedAssetBase`: An action is attempted on an asset that has
@@ -642,7 +646,7 @@ pub fn verify_issue_bundle(
     get_global_records: impl Fn(&AssetBase) -> Option<AssetRecord>,
     first_nullifier: &Nullifier,
 ) -> Result<BTreeMap<AssetBase, AssetRecord>, Error> {
-    if bundle.authorization().signature().version() != &SIGHASH_V0 {
+    if bundle.authorization().signature().version() != &IssueSighashVersion::V0 {
         return Err(InvalidSighashVersion);
     }
 
@@ -839,9 +843,10 @@ mod tests {
         },
         issuance::{
             compute_asset_desc_hash, is_reference_note, verify_issue_bundle, AssetRecord,
-            IssueAction, IssueBundle, IssueInfo, Signed, VerBIP340IssueAuthSig,
+            IssueAction, IssueBundle, IssueInfo, Signed,
         },
         issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+        issuance_sighash_versioning::{IssueSighashVersion, VerBIP340IssueAuthSig},
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{rho_for_issuance_note, AssetBase, ExtractedNoteCommitment, Nullifier, Rho},
         orchard_flavor::OrchardZSA,
@@ -860,7 +865,6 @@ mod tests {
     use rand::RngCore;
     use shardtree::store::memory::MemoryShardStore;
     use shardtree::ShardTree;
-    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     /// Validation for reference note
     ///
@@ -1612,7 +1616,7 @@ mod tests {
 
         signed.set_authorization(Signed {
             signature: VerBIP340IssueAuthSig::new(
-                SIGHASH_V0,
+                IssueSighashVersion::V0,
                 wrong_isk.try_sign(&sighash).unwrap(),
             ),
         });
@@ -1978,13 +1982,13 @@ pub mod testing {
             testing::arb_issuance_validating_key, IssueAuthSig, IssueAuthSigScheme,
             IssueValidatingKey, ZSASchnorr,
         },
+        issuance_sighash_versioning::IssueSighashVersion,
         note::testing::arb_zsa_note,
     };
     use nonempty::NonEmpty;
     use proptest::collection::vec;
     use proptest::prelude::*;
     use proptest::prop_compose;
-    use zcash_spec::sighash_versioning::SIGHASH_V0;
 
     prop_compose! {
         /// Generate a uniformly distributed ZSA Schnorr signature
@@ -1994,7 +1998,7 @@ pub mod testing {
             let mut encoded = vec![ZSASchnorr::ALGORITHM_BYTE];
             encoded.extend(sig_bytes);
             let sig = IssueAuthSig::decode(&encoded).unwrap();
-            VerBIP340IssueAuthSig::new(SIGHASH_V0, sig)
+            VerBIP340IssueAuthSig::new(IssueSighashVersion::V0, sig)
         }
     }
 

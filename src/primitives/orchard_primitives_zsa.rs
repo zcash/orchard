@@ -1,14 +1,14 @@
 //! This module implements the note encryption and commitment logic specific for the `OrchardZSA`
 //! flavor.
 
+use alloc::{collections::BTreeMap, vec::Vec};
 use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption::note_bytes::NoteBytesData;
-use zcash_spec::sighash_versioning::get_compact_size;
 
 use crate::{
     bundle::{
         commitments::{
-            hasher, ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION_V6,
+            get_compact_size, hasher, ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION_V6,
             ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION,
             ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION_V6,
             ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION,
@@ -20,6 +20,7 @@ use crate::{
     },
     note::{AssetBase, Note},
     orchard_flavor::OrchardZSA,
+    orchard_sighash_versioning::OrchardSighashVersion,
     primitives::{
         orchard_primitives::OrchardPrimitives,
         zcash_note_encryption_domain::{
@@ -120,29 +121,41 @@ impl OrchardPrimitives for OrchardZSA {
     /// Evaluate `orchard_auth_digest` for the bundle as defined in
     /// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
     ///
+    /// The `sighash_version_map` provides the mapping from each
+    /// `OrchardSighashVersion` to the corresponding `SighashInfo`
+    /// encoding.
+    ///
     /// [zip246]: https://zips.z.cash/zip-0246
-    fn hash_bundle_auth_data<V>(bundle: &Bundle<Authorized, V, OrchardZSA>) -> Blake2bHash {
+    fn hash_bundle_auth_data<V>(
+        bundle: &Bundle<Authorized, V, OrchardZSA>,
+        sighash_version_map: &BTreeMap<OrchardSighashVersion, Vec<u8>>,
+    ) -> Blake2bHash {
         let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
         let mut agh = hasher(ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION);
         agh.update(bundle.authorization().proof().as_ref());
         for action in bundle.actions().iter() {
-            let version_bytes = action.authorization().version().to_bytes();
+            let version_bytes = sighash_version_map
+                .get(action.authorization().version())
+                .expect("Unknown Orchard sighash version.");
             agh.update(&get_compact_size(version_bytes.len()));
-            agh.update(&version_bytes);
+            agh.update(version_bytes);
             agh.update(&<[u8; 64]>::from(action.authorization().sig()));
         }
         h.update(agh.finalize().as_bytes());
-        let version_bytes = bundle
-            .authorization()
-            .binding_signature()
-            .version()
-            .to_bytes();
+
+        let version_bytes = sighash_version_map
+            .get(bundle.authorization().binding_signature().version())
+            .unwrap();
         h.update(&get_compact_size(version_bytes.len()));
-        h.update(&version_bytes);
+        h.update(version_bytes);
         h.update(&<[u8; 64]>::from(
             bundle.authorization().binding_signature().sig(),
         ));
         h.finalize()
+    }
+
+    fn default_sighash_version() -> OrchardSighashVersion {
+        OrchardSighashVersion::V0
     }
 }
 

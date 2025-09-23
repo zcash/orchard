@@ -3,15 +3,14 @@ use rand::{CryptoRng, RngCore};
 
 use super::Action;
 use crate::{
-    builder::{VerBindingSig, VerSpendAuthSig},
     bundle::{Authorization, Authorized, EffectsOnly},
+    orchard_sighash_versioning::{OrchardSighashVersion, VerBindingSig, VerSpendAuthSig},
     primitives::{
         redpallas::{self, Binding},
         OrchardPrimitives,
     },
     Proof,
 };
-use zcash_spec::sighash_versioning::SIGHASH_V0;
 
 impl super::Bundle {
     /// Extracts the effects of this PCZT bundle as a [regular `Bundle`].
@@ -153,7 +152,7 @@ impl<P: OrchardPrimitives, V> crate::Bundle<Unbound, V, P> {
                 |_, Unbound { proof, bsk }| {
                     Authorized::from_parts(
                         proof,
-                        VerBindingSig::new(SIGHASH_V0, bsk.sign(rng, &sighash)),
+                        VerBindingSig::new(OrchardSighashVersion::V0, bsk.sign(rng, &sighash)),
                     )
                 },
             ))

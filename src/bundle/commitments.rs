@@ -1,11 +1,13 @@
 //! Utility functions for computing bundle commitments
 
+use alloc::{collections::BTreeMap, vec::Vec};
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
-use zcash_spec::sighash_versioning::get_compact_size;
 
 use crate::{
     bundle::{Authorization, Authorized, Bundle},
     issuance::{IssueAuth, IssueBundle, Signed},
+    issuance_sighash_versioning::IssueSighashVersion,
+    orchard_sighash_versioning::OrchardSighashVersion,
     primitives::OrchardPrimitives,
 };
 
@@ -63,12 +65,17 @@ pub fn hash_bundle_txid_empty() -> Blake2bHash {
 /// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
 /// for OrchardZSA
 ///
+/// The `sighash_version_map` provides the mapping from each
+/// `OrchardSighashVersion` to the corresponding `SighashInfo`
+/// encoding.
+///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_bundle_auth_data<V, P: OrchardPrimitives>(
     bundle: &Bundle<Authorized, V, P>,
+    sighash_version_map: &BTreeMap<OrchardSighashVersion, Vec<u8>>,
 ) -> Blake2bHash {
-    P::hash_bundle_auth_data(bundle)
+    P::hash_bundle_auth_data(bundle, sighash_version_map)
 }
 
 /// Construct the `orchard_auth_digest` commitment for an absent bundle as defined in
@@ -128,12 +135,21 @@ pub fn hash_issue_bundle_auth_empty() -> Blake2bHash {
 /// authorized issue bundle as defined in
 /// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
 ///
+/// The `sighash_version_map` provides the mapping from each
+/// `IssueSighashVersion` to the corresponding `SighashInfo`
+/// encoding.
+///
 /// [zip246]: https://zips.z.cash/zip-0246
-pub(crate) fn hash_issue_bundle_auth_data(bundle: &IssueBundle<Signed>) -> Blake2bHash {
+pub(crate) fn hash_issue_bundle_auth_data(
+    bundle: &IssueBundle<Signed>,
+    sighash_version_map: &BTreeMap<IssueSighashVersion, Vec<u8>>,
+) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
-    let version_bytes = bundle.authorization().signature().version().to_bytes();
+    let version_bytes = sighash_version_map
+        .get(bundle.authorization().signature().version())
+        .expect("Unknown issue sighash version.");
     h.update(&get_compact_size(version_bytes.len()));
-    h.update(&version_bytes);
+    h.update(version_bytes);
 
     let sig_enc = bundle.authorization().signature().sig().encode();
     assert_eq!(sig_enc.len(), 65);
@@ -143,21 +159,45 @@ pub(crate) fn hash_issue_bundle_auth_data(bundle: &IssueBundle<Signed>) -> Blake
     h.finalize()
 }
 
+/// Encodes a size in the CompactSize format.
+///
+/// This implementation is inspired from `zcash_encoding::CompactSize::write` [code]
+/// We cannot use zcash_encoding crate to avoid circular dependency.
+///
+/// [code]: https://github.com/zcash/librustzcash/blob/8be259c579762f1b0f569453a20c0d0dbeae6c07/components/zcash_encoding/src/lib.rs#L93
+pub fn get_compact_size(size: usize) -> Vec<u8> {
+    match size {
+        s if s < 253 => vec![s as u8],
+        s if s <= 0xFFFF => [&[253_u8], &(s as u16).to_le_bytes()[..]].concat(),
+        s if s <= 0xFFFFFFFF => [&[254_u8], &(s as u32).to_le_bytes()[..]].concat(),
+        s => [&[255_u8], &(s as u64).to_le_bytes()[..]].concat(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
         builder::{Builder, BundleType, UnauthorizedBundle},
         bundle::{
-            commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
+            commitments::{
+                get_compact_size, hash_bundle_auth_data, hash_bundle_txid_data,
+                hash_issue_bundle_auth_data, hash_issue_bundle_txid_data,
+            },
             Authorized, Bundle,
         },
         circuit::ProvingKey,
+        issuance::{compute_asset_desc_hash, AwaitingSighash, IssueBundle, IssueInfo},
+        issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+        issuance_sighash_versioning::IssueSighashVersion,
         keys::{FullViewingKey, Scope, SpendingKey},
-        note::AssetBase,
+        note::{AssetBase, Nullifier},
         orchard_flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
+        orchard_sighash_versioning::OrchardSighashVersion,
         value::NoteValue,
         Anchor,
     };
+    use alloc::collections::BTreeMap;
+    use nonempty::NonEmpty;
     use rand::{rngs::StdRng, SeedableRng};
 
     fn generate_bundle<FL: OrchardFlavor>(bundle_type: BundleType) -> UnauthorizedBundle<i64, FL> {
@@ -233,7 +273,7 @@ mod tests {
     #[test]
     fn test_hash_bundle_auth_data_for_orchard_vanilla() {
         let bundle = generate_auth_bundle::<OrchardVanilla>(BundleType::DEFAULT_VANILLA);
-        let orchard_auth_digest = hash_bundle_auth_data(&bundle);
+        let orchard_auth_digest = hash_bundle_auth_data(&bundle, &BTreeMap::new());
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
             // Bundle hash for Orchard (vanilla) generated using
@@ -246,11 +286,109 @@ mod tests {
     /// reference value to ensure consistency.
     #[test]
     fn test_hash_bundle_auth_data_for_orchard_zsa() {
+        let mut sighash_version_map = BTreeMap::new();
+        sighash_version_map.insert(OrchardSighashVersion::V0, vec![0]);
+
         let bundle = generate_auth_bundle::<OrchardZSA>(BundleType::DEFAULT_ZSA);
-        let orchard_auth_digest = hash_bundle_auth_data(&bundle);
+        let orchard_auth_digest = hash_bundle_auth_data(&bundle, &sighash_version_map);
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
             "48b277d8019c194da3882454ab6e0a2c8eb08cfb062e2285fe5bde1eb27ae98d"
+        );
+    }
+
+    #[test]
+    fn test_compact_size() {
+        assert_eq!(get_compact_size(0), vec![0]);
+        assert_eq!(get_compact_size(1), vec![1]);
+        assert_eq!(get_compact_size(252), vec![252]);
+        assert_eq!(get_compact_size(253), vec![253, 253, 0]);
+        assert_eq!(get_compact_size(254), vec![253, 254, 0]);
+        assert_eq!(get_compact_size(255), vec![253, 255, 0]);
+        assert_eq!(get_compact_size(65535), vec![253, 255, 255]);
+        assert_eq!(get_compact_size(65536), vec![254, 0, 0, 1, 0]);
+        assert_eq!(get_compact_size(65537), vec![254, 1, 0, 1, 0]);
+        assert_eq!(get_compact_size(33554432), vec![254, 0, 0, 0, 2]);
+    }
+
+    fn generate_issue_bundle() -> (IssueBundle<AwaitingSighash>, IssueAuthKey<ZSASchnorr>) {
+        let mut rng = StdRng::seed_from_u64(5);
+
+        let isk = IssueAuthKey::random(&mut rng);
+        let ik = IssueValidatingKey::from(&isk);
+        let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let first_nullifier = Nullifier::dummy(&mut rng);
+
+        let asset_desc_hash_1 =
+            compute_asset_desc_hash(&NonEmpty::from_slice(b"first asset").unwrap());
+        let asset_desc_hash_2 =
+            compute_asset_desc_hash(&NonEmpty::from_slice(b"second asset").unwrap());
+
+        let (mut bundle, asset) = IssueBundle::new(
+            ik.clone(),
+            asset_desc_hash_1,
+            Some(IssueInfo {
+                recipient,
+                value: NoteValue::from_raw(5),
+            }),
+            true,
+            &mut rng,
+        );
+
+        let another_asset = bundle
+            .add_recipient(
+                asset_desc_hash_1,
+                recipient,
+                NoteValue::from_raw(10),
+                false,
+                &mut rng,
+            )
+            .unwrap();
+        assert_eq!(asset, another_asset);
+
+        let third_asset = bundle
+            .add_recipient(
+                asset_desc_hash_2,
+                recipient,
+                NoteValue::from_raw(15),
+                true,
+                &mut rng,
+            )
+            .unwrap();
+        assert_ne!(asset, third_asset);
+
+        (bundle.update_rho(&first_nullifier), isk)
+    }
+
+    /// Verify that the `issuance_digest` of an IssueBundle matches a fixed reference value
+    /// to ensure consistency.
+    #[test]
+    fn test_hash_issue_bundle_txid_data() {
+        let (bundle, _) = generate_issue_bundle();
+        let issuance_digest = hash_issue_bundle_txid_data(&bundle);
+        assert_eq!(
+            issuance_digest.to_hex().as_str(),
+            "7d7e9b66cee8896453aa7dffdbe885b880b700a49cfff947ab1503a2407b5e1b"
+        );
+    }
+
+    /// Verify that the `issuance_auth_digest` of an IssueBundle matches a fixed reference value
+    /// to ensure consistency.
+    #[test]
+    fn test_hash_issue_bundle_auth_data() {
+        let (bundle, isk) = generate_issue_bundle();
+        let issuance_digest = bundle.commitment().into();
+        let signed_bundle = bundle.prepare(issuance_digest).sign(&isk).unwrap();
+
+        let mut sighash_version_map = BTreeMap::new();
+        sighash_version_map.insert(IssueSighashVersion::V0, vec![0]);
+
+        let issuance_auth_digest =
+            hash_issue_bundle_auth_data(&signed_bundle, &sighash_version_map);
+        assert_eq!(
+            issuance_auth_digest.to_hex().as_str(),
+            "b0e465381e86b4462403723283e75b5b1928110cf2a45a0602d5a5037f07c9ad"
         );
     }
 }

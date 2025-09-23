@@ -1,6 +1,7 @@
 //! This module implements the note encryption and commitment logic specific for the
 //! `OrchardVanilla` flavor.
 
+use alloc::{collections::BTreeMap, vec::Vec};
 use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption::note_bytes::NoteBytesData;
 
@@ -16,6 +17,7 @@ use crate::{
     },
     note::{AssetBase, Note},
     orchard_flavor::OrchardVanilla,
+    orchard_sighash_versioning::OrchardSighashVersion,
     primitives::{
         orchard_primitives::OrchardPrimitives,
         zcash_note_encryption_domain::{
@@ -93,7 +95,10 @@ impl OrchardPrimitives for OrchardVanilla {
     /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
     ///
     /// [zip244]: https://zips.z.cash/zip-0244
-    fn hash_bundle_auth_data<V>(bundle: &Bundle<Authorized, V, OrchardVanilla>) -> Blake2bHash {
+    fn hash_bundle_auth_data<V>(
+        bundle: &Bundle<Authorized, V, OrchardVanilla>,
+        _: &BTreeMap<OrchardSighashVersion, Vec<u8>>,
+    ) -> Blake2bHash {
         let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
         h.update(bundle.authorization().proof().as_ref());
         for action in bundle.actions().iter() {
@@ -103,6 +108,10 @@ impl OrchardPrimitives for OrchardVanilla {
             bundle.authorization().binding_signature().sig(),
         ));
         h.finalize()
+    }
+
+    fn default_sighash_version() -> OrchardSighashVersion {
+        OrchardSighashVersion::NoVersion
     }
 }
 
