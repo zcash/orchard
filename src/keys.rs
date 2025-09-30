@@ -366,7 +366,7 @@ impl FullViewingKey {
 
     /// Returns the `SpendValidatingKey` of this `FullViewingKey`
     /// - Note: this is intended for the "unstable-frost" feature to
-    /// facilitate the DKG'd key backup scheme. 
+    /// facilitate the DKG'd key backup scheme.
     #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub fn ak(&self) -> &SpendValidatingKey {
         &self.ak
