@@ -26,6 +26,8 @@ pub(crate) const ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxI
 pub(crate) const ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthOrchaHash";
 pub(crate) const ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION: &[u8; 16] =
     b"ZTxAuthOrcAGHash";
+pub(crate) const ZCASH_ORCHARD_SPEND_AUTH_SIGS_HASH_PERSONALIZATION: &[u8; 16] =
+    b"ZTxAuthOrSASHash";
 
 const ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION: &[u8; 16] = b"ZTxIdSAIssueHash";
 const ZCASH_ORCHARD_ZSA_ISSUE_ACTION_PERSONALIZATION: &[u8; 16] = b"ZTxIdIssuActHash";
@@ -293,7 +295,7 @@ mod tests {
         let orchard_auth_digest = hash_bundle_auth_data(&bundle, &sighash_version_map);
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
-            "48b277d8019c194da3882454ab6e0a2c8eb08cfb062e2285fe5bde1eb27ae98d"
+            "0c29408a07863016f5b4c5c0ccc5b944f24c686d06035945c5514f8b8c195a99"
         );
     }
 
