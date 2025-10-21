@@ -202,20 +202,18 @@ fn bundle_chain_vanilla() {
     let (orchard_digest_1, orchard_digest_2) = bundle_chain::<OrchardVanilla>();
     assert_eq!(
         orchard_digest_1,
-        // orchard_digest` taken from the `zcash/orchard` repository at commit `4ac248d0` (v0.11.0)
-        // This ensures backward compatibility.
+        // Locks the `orchard_digest` for OrchardVanilla
         [
-            165, 242, 106, 135, 168, 224, 110, 252, 175, 110, 63, 29, 78, 243, 33, 14, 152, 202,
-            209, 47, 68, 32, 138, 96, 79, 213, 218, 93, 45, 87, 221, 174,
+            25, 143, 25, 148, 146, 133, 196, 243, 163, 122, 136, 217, 179, 122, 70, 233, 4, 4, 26,
+            170, 152, 243, 177, 199, 226, 241, 63, 143, 104, 77, 149, 254
         ]
     );
     assert_eq!(
         orchard_digest_2,
-        // orchard_digest` taken from the `zcash/orchard` repository at commit `4ac248d0` (v0.11.0)
-        // This ensures backward compatibility.
+        // Locks the `orchard_digest` for OrchardVanilla
         [
-            74, 174, 42, 41, 68, 92, 171, 110, 10, 148, 217, 61, 68, 50, 49, 1, 1, 180, 221, 210,
-            97, 237, 25, 198, 195, 77, 19, 160, 186, 172, 8, 26,
+            164, 197, 26, 212, 108, 232, 219, 47, 64, 35, 3, 171, 77, 191, 253, 173, 173, 0, 148,
+            119, 98, 210, 134, 196, 201, 205, 117, 10, 37, 72, 234, 3
         ]
     );
 }
@@ -227,16 +225,16 @@ fn bundle_chain_zsa() {
         orchard_digest_1,
         // Locks the `orchard_digest` for OrchardZSA
         [
-            176, 24, 152, 89, 60, 222, 215, 240, 176, 197, 147, 81, 4, 84, 61, 189, 163, 117, 43,
-            201, 63, 140, 116, 211, 133, 186, 54, 58, 171, 124, 192, 215
+            47, 247, 30, 9, 58, 47, 181, 208, 48, 162, 133, 51, 186, 54, 13, 82, 207, 227, 33, 48,
+            223, 31, 90, 129, 96, 166, 247, 156, 122, 125, 100, 190
         ]
     );
     assert_eq!(
         orchard_digest_2,
         // Locks the `orchard_digest` for OrchardZSA
         [
-            161, 158, 107, 122, 89, 77, 236, 178, 130, 85, 148, 101, 237, 1, 67, 119, 76, 126, 233,
-            123, 94, 240, 183, 227, 9, 245, 74, 51, 16, 12, 157, 60
+            40, 249, 161, 168, 11, 100, 205, 146, 11, 203, 210, 239, 51, 73, 208, 236, 47, 110, 49,
+            18, 132, 199, 179, 63, 140, 28, 106, 34, 155, 93, 111, 254
         ]
     );
 }

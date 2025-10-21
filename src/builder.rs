@@ -817,18 +817,18 @@ impl Builder {
 /// The index is used to track the position of the note in the bundle.
 type MetadataIdx = Option<usize>;
 
-/// Partition a list of spends and outputs by note types.
+/// Partitions the provided spends and outputs by asset.
 ///
-/// Normally, spends and outputs are used as provided. However, in the special cases where:
-/// - both spends and outputs are empty, or
-/// - only native assets are present and there are not enough spends or outputs,
-/// this method adds dummy spends and outputs until the minimum number of actions is reached.
-/// Dummy spends and outputs are added before shuffling to ensure backward compatibility.
+/// Groups the input `spends` and `outputs` by their `AssetBase` and returns a
+/// `BTreeMap` from asset to the corresponding vectors of items, each tagged with
+/// its original index within the input slices.
+///
+/// - Key: `AssetBase` for the note.
+/// - Value: a pair of vectors `(Vec<(SpendInfo, MetadataIdx)>, Vec<(OutputInfo, MetadataIdx)>)`.
 #[allow(clippy::type_complexity)]
 fn partition_by_asset(
     spends: &[SpendInfo],
     outputs: &[OutputInfo],
-    rng: &mut impl RngCore,
 ) -> BTreeMap<
     AssetBase,
     (
@@ -850,40 +850,6 @@ fn partition_by_asset(
             .or_insert((vec![], vec![]))
             .1
             .push((o.clone(), Some(i)));
-    }
-
-    // To ensure backward compatibility, if
-    // - both spends and outputs are empty, or
-    // - only native assets are present and there are not enough spends or outputs,
-    // this method adds dummy spends and outputs until the minimum number of actions is reached.
-    // Dummy spends and outputs are added before shuffling.
-    if hm.is_empty() {
-        // dummy_spend should not be included in the indexing and marked as None.
-        hm.insert(
-            AssetBase::native(),
-            (
-                vec![(SpendInfo::dummy(AssetBase::native(), rng), None)],
-                vec![],
-            ),
-        );
-    }
-    if hm.len() == 1 {
-        // All spends and outputs have the same asset.
-        if let Some((spends, outputs)) = hm.get_mut(&AssetBase::native()) {
-            // This asset is the native asset.
-            // So, we have to add dummy spends and outputs until the minimum number of actions is reached.
-            let pad_spends = MIN_ACTIONS.saturating_sub(spends.len());
-            let pad_outputs = MIN_ACTIONS.saturating_sub(outputs.len());
-
-            spends.extend(
-                iter::repeat_with(|| (SpendInfo::dummy(AssetBase::native(), rng), None))
-                    .take(pad_spends),
-            );
-            outputs.extend(
-                iter::repeat_with(|| (OutputInfo::dummy(rng, AssetBase::native()), None))
-                    .take(pad_outputs),
-            );
-        }
     }
 
     hm
@@ -1011,7 +977,7 @@ fn build_bundle<B, R: RngCore>(
         let mut indexed_spends_outputs =
             Vec::with_capacity(spends.len().max(outputs.len()).max(MIN_ACTIONS));
 
-        let spends_outputs_by_asset = partition_by_asset(&spends, &outputs, &mut rng);
+        let spends_outputs_by_asset = partition_by_asset(&spends, &outputs);
 
         indexed_spends_outputs.extend(spends_outputs_by_asset.into_iter().flat_map(
             |(asset, (spends, outputs))| {
@@ -1039,9 +1005,8 @@ fn build_bundle<B, R: RngCore>(
                     .take(num_asset_pre_actions)
                     .collect::<Vec<_>>();
 
-                // Shuffle the spends and outputs, so that learning the position of a
-                // specific spent note or output note doesn't reveal anything on its own about
-                // the meaning of that note in the transaction context.
+                // Shuffle the spends and outputs, so that the position does not reveal any
+                // information about the content.
                 indexed_spends.shuffle(&mut rng);
                 indexed_outputs.shuffle(&mut rng);
 
@@ -1060,6 +1025,10 @@ fn build_bundle<B, R: RngCore>(
             })
             .take(MIN_ACTIONS.saturating_sub(indexed_spends_outputs.len())),
         );
+
+        // Shuffle the spends and outputs, so that the position does not reveal any information
+        // about the content.
+        indexed_spends_outputs.shuffle(&mut rng);
 
         let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
         let pre_actions = indexed_spends_outputs
