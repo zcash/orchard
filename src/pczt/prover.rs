@@ -36,7 +36,7 @@ impl super::Bundle {
 
                 let asset = action.spend.asset.ok_or(ProverError::MissingAsset)?;
 
-                let note = Note::from_parts(
+                let mut note = Note::from_parts(
                     action
                         .spend
                         .recipient
@@ -48,6 +48,10 @@ impl super::Bundle {
                 )
                 .into_option()
                 .ok_or(ProverError::InvalidSpendNote)?;
+
+                if let Some(rseed) = action.spend.rseed_split_note {
+                    note.set_rseed_split_note(rseed);
+                }
 
                 let merkle_path = action
                     .spend

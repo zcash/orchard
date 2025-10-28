@@ -291,6 +291,10 @@ impl Note {
         self.rseed_split_note
     }
 
+    pub(crate) fn set_rseed_split_note(&mut self, rseed_split_note: RandomSeed) {
+        self.rseed_split_note = CtOption::new(rseed_split_note, 1u8.into());
+    }
+
     /// Derives the ephemeral secret key for this note.
     pub(crate) fn esk(&self) -> EphemeralSecretKey {
         EphemeralSecretKey(self.rseed.esk(&self.rho))
