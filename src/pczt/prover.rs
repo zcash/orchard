@@ -6,8 +6,8 @@ use rand::{CryptoRng, RngCore};
 use crate::{
     builder::SpendInfo,
     circuit::{Circuit, Instance, ProvingKey, Witnesses},
+    flavor::OrchardVanilla,
     note::{AssetBase, Rho},
-    orchard_flavor::OrchardVanilla,
     Note, Proof,
 };
 
@@ -74,7 +74,10 @@ impl super::Bundle {
                     .spend
                     .alpha
                     .ok_or(ProverError::MissingSpendAuthRandomizer)?;
-                let rcv = action.rcv.ok_or(ProverError::MissingValueCommitTrapdoor)?;
+                let rcv = action
+                    .rcv
+                    .clone()
+                    .ok_or(ProverError::MissingValueCommitTrapdoor)?;
 
                 Witnesses::from_action_context::<OrchardVanilla>(spend, output_note, alpha, rcv)
                     .ok_or(ProverError::RhoMismatch)

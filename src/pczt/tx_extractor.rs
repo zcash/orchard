@@ -4,9 +4,9 @@ use rand::{CryptoRng, RngCore};
 use super::Action;
 use crate::{
     bundle::{Authorization, Authorized, EffectsOnly},
-    orchard_flavor::OrchardVanilla,
-    orchard_sighash_versioning::{OrchardSighashVersion, VerBindingSig, VerSpendAuthSig},
+    flavor::OrchardVanilla,
     primitives::redpallas::{self, Binding, SpendAuth},
+    sighash_versioning::{OrchardSighashVersion, VerBindingSig, VerSpendAuthSig},
     Proof,
 };
 
@@ -46,6 +46,7 @@ impl super::Bundle {
                         .ok_or(TxExtractorError::MissingProof)?,
                     bsk: bundle
                         .bsk
+                        .clone()
                         .ok_or(TxExtractorError::MissingBindingSignatureSigningKey)?,
                 })
             },

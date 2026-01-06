@@ -2,9 +2,8 @@ use alloc::vec::Vec;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use core::cmp::Ordering;
 use core::hash::{Hash, Hasher};
-use group::{Curve, Group, GroupEncoding};
+use group::{Group, GroupEncoding};
 use nonempty::NonEmpty;
-use pasta_curves::arithmetic::CurveAffine;
 use pasta_curves::{arithmetic::CurveExt, pallas};
 use rand_core::CryptoRngCore;
 use subtle::{Choice, ConstantTimeEq, CtOption};
@@ -13,8 +12,10 @@ use crate::{
     constants::fixed_bases::{
         NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_PERSONALIZATION, ZSA_ASSET_BASE_PERSONALIZATION,
     },
-    issuance::compute_asset_desc_hash,
-    issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+    issuance::{
+        auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+        compute_asset_desc_hash,
+    },
 };
 
 /// Note type identifier.
@@ -30,23 +31,18 @@ impl PartialOrd for AssetBase {
 
 impl Ord for AssetBase {
     fn cmp(&self, other: &Self) -> Ordering {
-        let self_coord = self.0.to_affine().coordinates().unwrap();
-        let other_coord = other.0.to_affine().coordinates().unwrap();
-        self_coord
-            .x()
-            .cmp(other_coord.x())
-            .then_with(|| self_coord.y().cmp(other_coord.y()))
+        self.0.to_bytes().cmp(&other.0.to_bytes())
     }
 }
 
 /// Personalization for the ZSA asset digest generator
 pub const ZSA_ASSET_DIGEST_PERSONALIZATION: &[u8; 16] = b"ZSA-Asset-Digest";
 
-///    AssetDigest for the ZSA asset
+/// Derives the Asset Digest for the given ZSA asset.
 ///
-///    Defined in [ZIP-227: Issuance of Zcash Shielded Assets][assetdigest].
+/// Defined in [ZIP-227: Issuance of Zcash Shielded Assets][assetdigest].
 ///
-///    [assetdigest]: https://zips.z.cash/zip-0227.html#specification-asset-identifier-asset-digest-and-asset-base
+/// [assetdigest]: https://zips.z.cash/zip-0227#asset-digests
 pub fn asset_digest(encode_asset_id: &[u8]) -> Blake2bHash {
     Params::new()
         .hash_length(64)
@@ -64,10 +60,10 @@ pub fn encode_asset_id(
     ik: &IssueValidatingKey<ZSASchnorr>,
     asset_desc_hash: &[u8; 32],
 ) -> Vec<u8> {
-    let ik_encoding = ik.encode();
-    let mut asset_id = Vec::with_capacity(1 + ik_encoding.len() + asset_desc_hash.len());
+    let issuer = ik.encode();
+    let mut asset_id = Vec::with_capacity(1 + issuer.len() + asset_desc_hash.len());
     asset_id.push(version);
-    asset_id.extend(ik_encoding);
+    asset_id.extend(issuer);
     asset_id.extend_from_slice(&asset_desc_hash[..]);
     asset_id
 }
@@ -85,9 +81,9 @@ impl AssetBase {
 
     /// Note type derivation.
     ///
-    /// Defined in [ZIP-226: Transfer and Burn of Zcash Shielded Assets][assetbase].
+    /// Defined in [ZIP 227: Issuance of Zcash Shielded Assets][assetbase].
     ///
-    /// [assetbase]: https://zips.z.cash/zip-0226.html#asset-identifiers
+    /// [assetbase]: https://zips.z.cash/zip-0227#asset-bases
     ///
     /// # Panics
     ///
@@ -117,7 +113,7 @@ impl AssetBase {
     pub fn native() -> Self {
         AssetBase(pallas::Point::hash_to_curve(
             VALUE_COMMITMENT_PERSONALIZATION,
-        )(&NATIVE_ASSET_BASE_V_BYTES[..]))
+        )(&NATIVE_ASSET_BASE_V_BYTES))
     }
 
     /// The base point used in value commitments.
@@ -164,7 +160,7 @@ pub mod testing {
 
     use proptest::prelude::*;
 
-    use crate::issuance_auth::{
+    use crate::issuance::auth::{
         testing::arb_issuance_authorizing_key, IssueValidatingKey, ZSASchnorr,
     };
 
@@ -204,7 +200,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use crate::{
-        issuance_auth::{IssueValidatingKey, ZSASchnorr},
+        issuance::auth::{IssueValidatingKey, ZSASchnorr},
         note::AssetBase,
     };
 

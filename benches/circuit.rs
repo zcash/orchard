@@ -7,11 +7,11 @@ use criterion::{BenchmarkId, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
 use orchard::{
-    builder::{Builder, BundleType},
+    builder::Builder,
     circuit::{ProvingKey, VerifyingKey},
+    flavor::{OrchardVanilla, OrchardZSA},
     keys::{FullViewingKey, Scope, SpendingKey},
     note::AssetBase,
-    orchard_flavor::{OrchardVanilla, OrchardZSA},
     value::NoteValue,
     Anchor, Bundle,
 };
@@ -31,7 +31,10 @@ fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
     let pk = ProvingKey::build::<FL>();
 
     let create_bundle = |num_recipients| {
-        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
+        let mut builder = Builder::new(
+            FL::DEFAULT_BUNDLE_TYPE,
+            Anchor::from_bytes([0; 32]).unwrap(),
+        );
         for _ in 0..num_recipients {
             builder
                 .add_output(

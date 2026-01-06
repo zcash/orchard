@@ -12,9 +12,9 @@ use zip32::ChildIndex;
 
 use crate::{
     bundle::Flags,
+    flavor::OrchardVanilla,
     keys::{FullViewingKey, SpendingKey},
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
-    orchard_flavor::OrchardVanilla,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::MerklePath,
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -343,9 +343,9 @@ mod tests {
         builder::{Builder, BundleType},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
+        flavor::OrchardVanilla,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{AssetBase, ExtractedNoteCommitment, RandomSeed, Rho},
-        orchard_flavor::OrchardVanilla,
         pczt::Zip32Derivation,
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,

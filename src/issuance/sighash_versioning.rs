@@ -1,6 +1,6 @@
 //! This module defines the versioning for issuance authorization signatures.
 
-use crate::issuance_auth::{IssueAuthSig, IssueAuthSigScheme, ZSASchnorr};
+use crate::issuance::auth::{IssueAuthSig, IssueAuthSigScheme, ZSASchnorr};
 
 /// The Issuance Sighash version.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

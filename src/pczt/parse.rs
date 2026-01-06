@@ -11,9 +11,9 @@ use zip32::ChildIndex;
 use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
     bundle::Flags,
+    flavor::OrchardVanilla,
     keys::{FullViewingKey, SpendingKey},
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
-    orchard_flavor::OrchardVanilla,
     primitives::{
         redpallas::{self, SpendAuth},
         OrchardPrimitives,

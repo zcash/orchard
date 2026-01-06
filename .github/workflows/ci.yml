@@ -1,10 +1,6 @@
 name: CI checks
 
-#on: [push, pull_request]
-on:
-  push:
-    branches: [ main ]  # Only runs on push to main
-  pull_request:       # Runs on any PR to any branch
+on: [push, pull_request]
 
 jobs:
   test:
@@ -12,16 +8,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
-    #        os: [ubuntu-latest, windows-latest, macOS-latest]
-
+        os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Run tests
-        env:
-          # Disable LTO in CI to avoid very slow/hanging release test builds on macOS (rustc/LLVM).
-          CARGO_PROFILE_RELEASE_LTO: "off"
-        run: cargo test --verbose --release
+        run: cargo test --verbose
       - name: Verify working directory is clean
         run: git diff --exit-code
 
@@ -120,7 +111,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Generate coverage report
-        run: timeout --preserve-status 300s cargo tarpaulin --engine llvm --timeout 600 --out xml --skip-clean || true
+        run: cargo tarpaulin --engine llvm --all-features --release --timeout 600 --out xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3.1.4
 

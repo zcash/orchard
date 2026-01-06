@@ -21,7 +21,6 @@ balance the transaction without doubling its size.
 ## Dummy notes for Orchard
 
 For Orchard, a transaction is a bundle of actions. Each action is composed of one spend and one output.
-This means we have the same amount of "spends" and "outputs" in one transaction.
 If we would like to create a transaction with a different number of spends and outputs,
 we need to add "dummy" spends or outputs to balance their count.
 A dummy spend or output is a note with a value of zero and a random recipient address.
@@ -53,4 +52,3 @@ Each Orchard action has a memo field for its corresponding output, as with Sprou
 Sapling. We did at one point consider having a single Orchard memo field per transaction,
 and/or having a mechanism for enabling multiple recipients to decrypt the same memo, but
 these were decided against in order to keep the overall design simpler.
-

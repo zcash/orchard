@@ -6,6 +6,7 @@ use rand::{rngs::OsRng, RngCore};
 
 use orchard::{
     issuance::{
+        auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
         compute_asset_desc_hash, verify_issue_bundle, AssetRecord,
         Error::{
             IssueActionPreviouslyFinalizedAssetBase, MissingReferenceNoteOnFirstIssuance,
@@ -13,7 +14,6 @@ use orchard::{
         },
         IssueBundle, IssueInfo, Signed,
     },
-    issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
     keys::{FullViewingKey, Scope, SpendingKey},
     note::{AssetBase, Nullifier},
     value::NoteValue,

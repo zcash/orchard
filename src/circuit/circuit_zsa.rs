@@ -41,8 +41,8 @@ use crate::{
         ENABLE_OUTPUT, ENABLE_SPEND, ENABLE_ZSA, NF_OLD, RK_X, RK_Y,
     },
     constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
+    flavor::OrchardZSA,
     note::AssetBase,
-    orchard_flavor::OrchardZSA,
 };
 
 impl OrchardCircuit for OrchardZSA {
@@ -883,9 +883,9 @@ mod tests {
             AdditionalZsaWitnesses, Circuit, Instance, Proof, ProvingKey, VerifyingKey, Witnesses,
             K,
         },
+        flavor::OrchardZSA,
         keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
         note::{commitment::NoteCommitTrapdoor, AssetBase, Note, NoteCommitment, Nullifier, Rho},
-        orchard_flavor::OrchardZSA,
         primitives::redpallas::VerificationKey,
         tree::MerklePath,
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
@@ -908,7 +908,7 @@ mod tests {
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv, AssetBase::native());
+        let cv_net = ValueCommitment::derive(value, rcv.clone(), AssetBase::native());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());
@@ -1224,7 +1224,7 @@ mod tests {
         let cmx = output_note.commitment().into();
 
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(v_net, rcv, asset_base);
+        let cv_net = ValueCommitment::derive(v_net, rcv.clone(), asset_base);
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());
@@ -1337,7 +1337,7 @@ mod tests {
                         v_new: circuit.witnesses.v_new,
                         psi_new: circuit.witnesses.psi_new,
                         rcm_new: circuit.witnesses.rcm_new.clone(),
-                        rcv: circuit.witnesses.rcv,
+                        rcv: circuit.witnesses.rcv.clone(),
 
                         additional_zsa_witnesses: circuit
                             .witnesses
@@ -1399,7 +1399,7 @@ mod tests {
                             v_new: circuit.witnesses.v_new,
                             psi_new: circuit.witnesses.psi_new,
                             rcm_new: circuit.witnesses.rcm_new.clone(),
-                            rcv: circuit.witnesses.rcv,
+                            rcv: circuit.witnesses.rcv.clone(),
 
                             additional_zsa_witnesses: circuit
                                 .witnesses

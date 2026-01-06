@@ -224,7 +224,10 @@ mod tests {
 
     #[test]
     fn q_note_zsa_commitment_m() {
-        let domain = CommitDomain::new(NOTE_ZSA_COMMITMENT_PERSONALIZATION);
+        let domain = CommitDomain::new_with_separate_domains(
+            NOTE_ZSA_COMMITMENT_PERSONALIZATION,
+            NOTE_COMMITMENT_PERSONALIZATION,
+        );
         let point = domain.Q();
         let coords = point.to_affine().coordinates().unwrap();
 

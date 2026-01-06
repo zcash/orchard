@@ -6,7 +6,7 @@
 //! # Example
 //! ```
 //! use rand::rngs::OsRng;
-//! use orchard::issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr};
+//! use orchard::issuance::auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr};
 //!
 //! let mut rng = OsRng;
 //! let isk = IssueAuthKey::<ZSASchnorr>::random(&mut rng);

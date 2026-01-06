@@ -23,8 +23,6 @@ use rand::RngCore;
 use crate::{
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
     constants::reference_keys::ReferenceKeys,
-    issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
-    issuance_sighash_versioning::{IssueSighashVersion, VerBIP340IssueAuthSig},
     note::{rho_for_issuance_note, AssetBase, Nullifier, Rho},
     value::NoteValue,
     Address, Note,
@@ -37,6 +35,12 @@ use Error::{
     IssueActionWithoutNoteNotFinalized, IssueBundleIkMismatchAssetBase,
     MissingReferenceNoteOnFirstIssuance, ValueOverflow,
 };
+
+pub mod auth;
+pub mod sighash_versioning;
+
+use auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr};
+use sighash_versioning::{IssueSighashVersion, VerBIP340IssueAuthSig};
 
 /// Checks if a given note is a reference note.
 ///
@@ -884,19 +888,20 @@ mod tests {
     use crate::{
         builder::{Builder, BundleType},
         circuit::ProvingKey,
+        flavor::OrchardZSA,
         issuance::Error::{
             IncorrectRhoDerivation, InvalidIssueBundleSig, IssueActionNotFound,
             IssueActionPreviouslyFinalizedAssetBase, IssueBundleIkMismatchAssetBase,
         },
         issuance::{
-            compute_asset_desc_hash, is_reference_note, verify_issue_bundle, AssetRecord,
-            IssuanceFlags, IssueAction, IssueBundle, IssueInfo, Signed,
+            auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+            compute_asset_desc_hash, is_reference_note,
+            sighash_versioning::{IssueSighashVersion, VerBIP340IssueAuthSig},
+            verify_issue_bundle, AssetRecord, IssuanceFlags, IssueAction, IssueBundle, IssueInfo,
+            Signed,
         },
-        issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
-        issuance_sighash_versioning::{IssueSighashVersion, VerBIP340IssueAuthSig},
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{rho_for_issuance_note, AssetBase, ExtractedNoteCommitment, Nullifier, Rho},
-        orchard_flavor::OrchardZSA,
         tree::{MerkleHashOrchard, MerklePath},
         value::NoteValue,
         Address, Anchor, Bundle, Note,
@@ -1554,7 +1559,7 @@ mod tests {
             compute_asset_desc_hash(&NonEmpty::from_slice(b"asset desc").unwrap());
 
         let (bundle, _) = IssueBundle::new(
-            ik.clone(),
+            ik,
             asset_desc_hash,
             Some(IssueInfo {
                 recipient,
@@ -2038,14 +2043,14 @@ mod tests {
 pub mod testing {
     use crate::{
         issuance::{
+            auth::{
+                testing::arb_issuance_validating_key, IssueAuthSig, IssueAuthSigScheme,
+                IssueValidatingKey, ZSASchnorr,
+            },
+            sighash_versioning::IssueSighashVersion,
             AwaitingNullifier, IssuanceFlags, IssueAction, IssueBundle, Prepared, Signed,
             VerBIP340IssueAuthSig,
         },
-        issuance_auth::{
-            testing::arb_issuance_validating_key, IssueAuthSig, IssueAuthSigScheme,
-            IssueValidatingKey, ZSASchnorr,
-        },
-        issuance_sighash_versioning::IssueSighashVersion,
         note::testing::arb_zsa_note,
     };
     use nonempty::NonEmpty;

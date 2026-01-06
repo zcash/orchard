@@ -4,6 +4,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use core2::io::{self, Read, Write};
 
+use ::zip32::{hardened_only, ChildIndex};
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
@@ -28,9 +29,7 @@ use crate::{
     zip32::{self, ExtendedSpendingKey},
 };
 
-// Preserve '::' which specifies the EXTERNAL 'zip32' crate
-#[rustfmt::skip]
-pub use ::zip32::{AccountId, ChildIndex, DiversifierIndex, Scope, hardened_only};
+pub use ::zip32::{AccountId, DiversifierIndex, Scope};
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
@@ -187,7 +186,7 @@ impl SpendValidatingKey {
         self.0.randomize(randomizer)
     }
 
-    /// Converts this spend key to its serialized form,
+    /// Converts this spend validating key to its serialized form,
     /// I2LEOSP_256(ak).
     #[cfg_attr(feature = "unstable-frost", visibility::make(pub))]
     pub(crate) fn to_bytes(&self) -> [u8; 32] {
@@ -977,7 +976,7 @@ mod tests {
         *,
     };
     use crate::{
-        issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+        issuance::auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
         note::{AssetBase, ExtractedNoteCommitment, RandomSeed, Rho},
         value::NoteValue,
         Note,

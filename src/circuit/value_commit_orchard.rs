@@ -369,7 +369,7 @@ mod tests {
                 circuits.push(MyCircuit {
                     v_old: Value::known(v_old),
                     v_new: Value::known(v_new),
-                    rcv: Value::known(rcv),
+                    rcv: Value::known(rcv.clone()),
                     asset: Value::known(asset),
                     split_flag: Value::known(split_flag),
                 });

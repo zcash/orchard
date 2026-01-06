@@ -6,8 +6,8 @@ use zcash_note_encryption::{note_bytes::NoteBytes, EphemeralKeyBytes, ShieldedOu
 
 use crate::{
     action::Action,
+    flavor::OrchardVanilla,
     note::{ExtractedNoteCommitment, Nullifier, Rho},
-    orchard_flavor::OrchardVanilla,
 };
 
 use super::{orchard_domain::OrchardDomain, orchard_primitives::OrchardPrimitives};

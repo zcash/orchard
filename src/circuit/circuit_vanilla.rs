@@ -36,8 +36,8 @@ use crate::{
         ENABLE_OUTPUT, ENABLE_SPEND, NF_OLD, RK_X, RK_Y,
     },
     constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
+    flavor::OrchardVanilla,
     note::AssetBase,
-    orchard_flavor::OrchardVanilla,
 };
 
 impl OrchardCircuit for OrchardVanilla {
@@ -641,9 +641,9 @@ mod tests {
     use crate::{
         bundle::Flags,
         circuit::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, Witnesses, K},
+        flavor::OrchardVanilla,
         keys::SpendValidatingKey,
         note::{AssetBase, Note, Rho},
-        orchard_flavor::OrchardVanilla,
         tree::MerklePath,
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
@@ -665,7 +665,7 @@ mod tests {
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv, AssetBase::native());
+        let cv_net = ValueCommitment::derive(value, rcv.clone(), AssetBase::native());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());

@@ -41,12 +41,11 @@ impl ReferenceKeys {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::{FullViewingKey, Scope};
+    use crate::keys::Scope;
 
     #[test]
     fn recipient() {
-        let sk = SpendingKey::from_bytes([0; 32]).unwrap();
-        let fvk = FullViewingKey::from(&sk);
+        let fvk = ReferenceKeys::fvk();
         let recipient = fvk.address_at(0u32, Scope::External);
 
         assert_eq!(recipient, ReferenceKeys::recipient());

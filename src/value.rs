@@ -218,7 +218,7 @@ impl ValueSum {
         )
     }
 
-    pub(crate) fn into<V: TryFrom<i64>>(self) -> Result<V, BuildError> {
+    pub(crate) fn into_value_balance<V: TryFrom<i64>>(self) -> Result<V, BuildError> {
         i64::try_from(self)
             .map_err(BuildError::ValueSum)
             .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(OverflowError)))
@@ -285,7 +285,7 @@ impl From<NoteValue> for ValueSum {
 }
 
 /// The blinding factor for a [`ValueCommitment`].
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ValueCommitTrapdoor(pallas::Scalar);
 
 impl ValueCommitTrapdoor {
@@ -396,6 +396,7 @@ impl ValueCommitment {
     #[allow(non_snake_case)]
     pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor, asset: AssetBase) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
+        let V = asset.cv_base();
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
 
@@ -405,9 +406,7 @@ impl ValueCommitment {
             pallas::Scalar::from(abs_value)
         };
 
-        let V_zsa = asset.cv_base();
-
-        ValueCommitment(V_zsa * value + R * rcv.0)
+        ValueCommitment(V * value + R * rcv.0)
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {

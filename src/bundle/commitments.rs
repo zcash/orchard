@@ -5,10 +5,12 @@ use blake2b_simd::{Hash as Blake2bHash, Params, State};
 
 use crate::{
     bundle::{Authorization, Authorized, Bundle},
-    issuance::{IssueAuth, IssueBundle, Signed},
-    issuance_sighash_versioning::IssueSighashVersion,
-    orchard_sighash_versioning::OrchardSighashVersion,
+    issuance::{
+        sighash_versioning::IssueSighashVersion,
+        {IssueAuth, IssueBundle, Signed},
+    },
     primitives::OrchardPrimitives,
+    sighash_versioning::OrchardSighashVersion,
 };
 
 pub(crate) const ZCASH_ORCHARD_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrchardHash";
@@ -192,13 +194,15 @@ mod tests {
             Authorized, Bundle,
         },
         circuit::ProvingKey,
-        issuance::{compute_asset_desc_hash, AwaitingSighash, IssueBundle, IssueInfo},
-        issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
-        issuance_sighash_versioning::IssueSighashVersion,
+        flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
+        issuance::{
+            auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+            sighash_versioning::IssueSighashVersion,
+            {compute_asset_desc_hash, AwaitingSighash, IssueBundle, IssueInfo},
+        },
         keys::{FullViewingKey, Scope, SpendingKey},
         note::{AssetBase, Nullifier},
-        orchard_flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
-        orchard_sighash_versioning::OrchardSighashVersion,
+        sighash_versioning::OrchardSighashVersion,
         value::NoteValue,
         Anchor,
     };
@@ -328,7 +332,7 @@ mod tests {
             compute_asset_desc_hash(&NonEmpty::from_slice(b"second asset").unwrap());
 
         let (mut bundle, asset) = IssueBundle::new(
-            ik.clone(),
+            ik,
             asset_desc_hash_1,
             Some(IssueInfo {
                 recipient,

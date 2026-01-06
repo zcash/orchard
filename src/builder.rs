@@ -15,15 +15,15 @@ use crate::{
     address::Address,
     builder::BuildError::{BurnNative, BurnZero},
     bundle::{Authorization, Authorized, Bundle, Flags},
+    flavor::OrchardVanilla,
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
     note::{AssetBase, ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
-    orchard_flavor::OrchardVanilla,
-    orchard_sighash_versioning::{VerBindingSig, VerSpendAuthSig},
     primitives::redpallas::{self, Binding, SpendAuth},
     primitives::{OrchardDomain, OrchardPrimitives},
+    sighash_versioning::{VerBindingSig, VerSpendAuthSig},
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Proof,
@@ -35,7 +35,7 @@ use {
         action::Action,
         bundle::derive_bvk,
         circuit::{Circuit, Instance, OrchardCircuit, ProvingKey, Witnesses},
-        orchard_flavor::OrchardFlavor,
+        flavor::OrchardFlavor,
     },
     nonempty::NonEmpty,
 };
@@ -517,7 +517,7 @@ impl ActionInfo {
         mut rng: impl RngCore,
     ) -> (Action<SigningMetadata, FL>, Witnesses) {
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv, self.output.asset);
+        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone(), self.output.asset);
 
         let (nf_old, ak, alpha, rk) = self.spend.build(&mut rng);
         let (note, cmx, encrypted_note) = self.output.build(&cv_net, nf_old, &mut rng);
@@ -540,7 +540,7 @@ impl ActionInfo {
 
     fn build_for_pczt(self, mut rng: impl RngCore) -> crate::pczt::Action {
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv, self.spend.note.asset());
+        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone(), self.spend.note.asset());
 
         let spend = self.spend.into_pczt(&mut rng);
         let output = self.output.into_pczt(&cv_net, spend.nullifier, &mut rng);
@@ -1398,9 +1398,9 @@ pub mod testing {
         address::testing::arb_address,
         bundle::{Authorized, Bundle},
         circuit::ProvingKey,
+        flavor::OrchardFlavor,
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::{testing::arb_note, AssetBase},
-        orchard_flavor::OrchardFlavor,
         primitives::OrchardPrimitives,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
@@ -1546,9 +1546,9 @@ mod tests {
         bundle::{Authorized, Bundle},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
+        flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
         keys::{FullViewingKey, Scope, SpendingKey},
         note::AssetBase,
-        orchard_flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
         tree::EMPTY_ROOTS,
         value::NoteValue,
     };

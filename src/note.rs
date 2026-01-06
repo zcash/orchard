@@ -18,6 +18,9 @@ use crate::{
     Address,
 };
 
+pub(crate) mod asset_base;
+pub use self::asset_base::AssetBase;
+
 pub(crate) mod commitment;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 
@@ -69,9 +72,6 @@ impl Rho {
         Rho(pallas::Base::zero())
     }
 }
-
-pub(crate) mod asset_base;
-pub use self::asset_base::AssetBase;
 
 /// The ZIP 212 seed randomness for a note.
 #[derive(Copy, Clone, Debug)]
@@ -204,13 +204,44 @@ impl Note {
         rho: Rho,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
+        Self::from_parts_internal(
+            recipient,
+            value,
+            asset,
+            rho,
+            rseed,
+            CtOption::new(rseed, 0u8.into()),
+        )
+    }
+
+    /// Creates a `Note` from its component parts.
+    ///
+    /// This additionally permits constructing a [Split Input note], which is necessary
+    /// for constructing certain patterns of bundles containing ZSA outputs. It is used by
+    /// the PCZT code, which is the only place where these notes are serialized.
+    ///
+    /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
+    ///
+    /// # Caveats
+    ///
+    /// See [`Self::from_parts`].
+    ///
+    /// [Split Input note]: https://zips.z.cash/zip-0226#split-notes
+    pub(crate) fn from_parts_internal(
+        recipient: Address,
+        value: NoteValue,
+        asset: AssetBase,
+        rho: Rho,
+        rseed: RandomSeed,
+        rseed_split_note: CtOption<RandomSeed>,
+    ) -> CtOption<Self> {
         let note = Note {
             recipient,
             value,
             asset,
             rho,
             rseed,
-            rseed_split_note: CtOption::new(rseed, 0u8.into()),
+            rseed_split_note,
         };
         CtOption::new(note, note.commitment_inner().is_some())
     }
@@ -287,12 +318,8 @@ impl Note {
     }
 
     /// Returns the rseed_split_note value of this note.
-    pub fn rseed_split_note(&self) -> CtOption<RandomSeed> {
+    pub(crate) fn rseed_split_note(&self) -> CtOption<RandomSeed> {
         self.rseed_split_note
-    }
-
-    pub(crate) fn set_rseed_split_note(&mut self, rseed_split_note: RandomSeed) {
-        self.rseed_split_note = CtOption::new(rseed_split_note, 1u8.into());
     }
 
     /// Derives the ephemeral secret key for this note.
@@ -351,8 +378,14 @@ impl Note {
         )
     }
 
-    /// Create a split note which has the same values than the input note except for
-    /// `rseed_split_note` which is equal to a random seed.
+    /// Creates a [Split Input note] from a Custom Asset note, for use on the Spend side
+    /// of an Output-only Action.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.asset().is_native()`.
+    ///
+    /// [Split Input note]: https://zips.z.cash/zip-0226#split-notes
     pub fn create_split_note(self, rng: &mut impl RngCore) -> Self {
         Note {
             rseed_split_note: CtOption::new(RandomSeed::random(rng, &self.rho), 1u8.into()),
@@ -429,7 +462,7 @@ pub mod testing {
 
     use crate::{
         address::testing::arb_address,
-        issuance_auth::{IssueValidatingKey, ZSASchnorr},
+        issuance::auth::{IssueValidatingKey, ZSASchnorr},
         note::{asset_base::testing::arb_asset_base, nullifier::testing::arb_nullifier, AssetBase},
         value::{testing::arb_note_value, NoteValue},
     };
