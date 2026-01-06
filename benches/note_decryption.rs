@@ -50,10 +50,7 @@ fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
         .collect();
 
     let bundle = {
-        let mut builder = Builder::new(
-            BundleType::DEFAULT_VANILLA,
-            Anchor::from_bytes([0; 32]).unwrap(),
-        );
+        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
         // The builder pads to two actions, and shuffles their order. Add two recipients
         // so the first action is always decryptable.
         builder

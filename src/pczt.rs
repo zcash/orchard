@@ -363,7 +363,7 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
-            BundleType::DEFAULT_VANILLA,
+            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
@@ -450,7 +450,7 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let mut builder = Builder::new(BundleType::DEFAULT_VANILLA, anchor);
+        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();

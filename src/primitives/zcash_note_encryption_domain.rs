@@ -36,8 +36,7 @@ const NOTE_VALUE_OFFSET: usize = NOTE_DIVERSIFIER_OFFSET + NOTE_DIVERSIFIER_SIZE
 const NOTE_RSEED_OFFSET: usize = NOTE_VALUE_OFFSET + NOTE_VALUE_SIZE;
 
 /// The size of a Vanilla compact note.
-pub(super) const COMPACT_NOTE_SIZE_VANILLA: usize =
-    NOTE_VERSION_SIZE + NOTE_DIVERSIFIER_SIZE + NOTE_VALUE_SIZE + NOTE_RSEED_SIZE;
+pub(super) const COMPACT_NOTE_SIZE_VANILLA: usize = NOTE_RSEED_OFFSET + NOTE_RSEED_SIZE;
 
 /// The size of the encoding of a ZSA asset.
 const ZSA_ASSET_SIZE: usize = 32;
@@ -93,9 +92,9 @@ pub(super) fn parse_note_version(plaintext: &[u8]) -> Option<u8> {
 /// Parses the note plaintext (excluding the memo) and extracts the note and address if valid.
 /// Domain-specific requirements:
 /// - If the note version is 3, the `plaintext` must contain a valid encoding of a ZSA asset type.
-pub(super) fn parse_note_plaintext_without_memo<P: OrchardPrimitives, F>(
+pub(super) fn parse_note_plaintext_without_memo<Pr: OrchardPrimitives, F>(
     rho: Rho,
-    plaintext: &P::CompactNotePlaintextBytes,
+    plaintext: &Pr::CompactNotePlaintextBytes,
     get_validated_pk_d: F,
 ) -> Option<(Note, Address)>
 where
@@ -125,7 +124,7 @@ where
 
     let pk_d = get_validated_pk_d(&diversifier)?;
     let recipient = Address::from_parts(diversifier, pk_d);
-    let asset = P::extract_asset(plaintext)?;
+    let asset = Pr::extract_asset(plaintext)?;
     let note = Option::from(Note::from_parts(recipient, value, asset, rho, rseed))?;
 
     Some((note, recipient))
@@ -147,7 +146,7 @@ pub(super) fn build_base_note_plaintext_bytes<const NOTE_PLAINTEXT_SIZE: usize>(
     np
 }
 
-impl<P: OrchardPrimitives> Domain for OrchardDomain<P> {
+impl<Pr: OrchardPrimitives> Domain for OrchardDomain<Pr> {
     type EphemeralSecretKey = EphemeralSecretKey;
     type EphemeralPublicKey = EphemeralPublicKey;
     type PreparedEphemeralPublicKey = PreparedEphemeralPublicKey;
@@ -163,10 +162,10 @@ impl<P: OrchardPrimitives> Domain for OrchardDomain<P> {
     type ExtractedCommitmentBytes = [u8; 32];
     type Memo = Memo;
 
-    type NotePlaintextBytes = P::NotePlaintextBytes;
-    type NoteCiphertextBytes = P::NoteCiphertextBytes;
-    type CompactNotePlaintextBytes = P::CompactNotePlaintextBytes;
-    type CompactNoteCiphertextBytes = P::CompactNoteCiphertextBytes;
+    type NotePlaintextBytes = Pr::NotePlaintextBytes;
+    type NoteCiphertextBytes = Pr::NoteCiphertextBytes;
+    type CompactNotePlaintextBytes = Pr::CompactNotePlaintextBytes;
+    type CompactNoteCiphertextBytes = Pr::CompactNoteCiphertextBytes;
 
     fn derive_esk(note: &Self::Note) -> Option<Self::EphemeralSecretKey> {
         Some(note.esk())
@@ -205,8 +204,8 @@ impl<P: OrchardPrimitives> Domain for OrchardDomain<P> {
         secret.kdf_orchard(ephemeral_key)
     }
 
-    fn note_plaintext_bytes(note: &Self::Note, memo: &Self::Memo) -> P::NotePlaintextBytes {
-        P::build_note_plaintext_bytes(note, memo)
+    fn note_plaintext_bytes(note: &Self::Note, memo: &Self::Memo) -> Pr::NotePlaintextBytes {
+        Pr::build_note_plaintext_bytes(note, memo)
     }
 
     fn derive_ock(
@@ -243,9 +242,9 @@ impl<P: OrchardPrimitives> Domain for OrchardDomain<P> {
     fn parse_note_plaintext_without_memo_ivk(
         &self,
         ivk: &Self::IncomingViewingKey,
-        plaintext: &P::CompactNotePlaintextBytes,
+        plaintext: &Pr::CompactNotePlaintextBytes,
     ) -> Option<(Self::Note, Self::Recipient)> {
-        parse_note_plaintext_without_memo::<P, _>(self.rho, plaintext, |diversifier| {
+        parse_note_plaintext_without_memo::<Pr, _>(self.rho, plaintext, |diversifier| {
             Some(DiversifiedTransmissionKey::derive(ivk, diversifier))
         })
     }
@@ -253,16 +252,16 @@ impl<P: OrchardPrimitives> Domain for OrchardDomain<P> {
     fn parse_note_plaintext_without_memo_ovk(
         &self,
         pk_d: &Self::DiversifiedTransmissionKey,
-        plaintext: &P::CompactNotePlaintextBytes,
+        plaintext: &Pr::CompactNotePlaintextBytes,
     ) -> Option<(Self::Note, Self::Recipient)> {
-        parse_note_plaintext_without_memo::<P, _>(self.rho, plaintext, |_| Some(*pk_d))
+        parse_note_plaintext_without_memo::<Pr, _>(self.rho, plaintext, |_| Some(*pk_d))
     }
 
     fn split_plaintext_at_memo(
         &self,
-        plaintext: &P::NotePlaintextBytes,
+        plaintext: &Pr::NotePlaintextBytes,
     ) -> Option<(Self::CompactNotePlaintextBytes, Self::Memo)> {
-        let (compact, memo) = plaintext.as_ref().split_at(P::COMPACT_NOTE_SIZE);
+        let (compact, memo) = plaintext.as_ref().split_at(Pr::COMPACT_NOTE_SIZE);
         Some((
             Self::CompactNotePlaintextBytes::from_slice(compact)?,
             memo.try_into().ok()?,
@@ -279,7 +278,7 @@ impl<P: OrchardPrimitives> Domain for OrchardDomain<P> {
     }
 }
 
-impl<P: OrchardPrimitives> BatchDomain for OrchardDomain<P> {
+impl<Pr: OrchardPrimitives> BatchDomain for OrchardDomain<Pr> {
     fn batch_kdf<'a>(
         items: impl Iterator<Item = (Option<Self::SharedSecret>, &'a EphemeralKeyBytes)>,
     ) -> Vec<Option<Self::SymmetricKey>> {

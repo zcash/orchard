@@ -1,7 +1,5 @@
 //! Defines actions for Orchard shielded outputs and compact action for light clients.
 
-// Review hint: this file is largely derived from src/note_encryption.rs
-
 use core::fmt;
 
 use zcash_note_encryption::{note_bytes::NoteBytes, EphemeralKeyBytes, ShieldedOutput};
@@ -13,7 +11,7 @@ use crate::{
 
 use super::{orchard_domain::OrchardDomain, orchard_primitives::OrchardPrimitives};
 
-impl<A, P: OrchardPrimitives> ShieldedOutput<OrchardDomain<P>> for Action<A, P> {
+impl<A, Pr: OrchardPrimitives> ShieldedOutput<OrchardDomain<Pr>> for Action<A, Pr> {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.encrypted_note().epk_bytes)
     }
@@ -26,38 +24,38 @@ impl<A, P: OrchardPrimitives> ShieldedOutput<OrchardDomain<P>> for Action<A, P> 
         self.cmx().to_bytes()
     }
 
-    fn enc_ciphertext(&self) -> Option<&P::NoteCiphertextBytes> {
+    fn enc_ciphertext(&self) -> Option<&Pr::NoteCiphertextBytes> {
         Some(&self.encrypted_note().enc_ciphertext)
     }
 
-    fn enc_ciphertext_compact(&self) -> P::CompactNoteCiphertextBytes {
-        P::CompactNoteCiphertextBytes::from_slice(
-            &self.encrypted_note().enc_ciphertext.as_ref()[..P::COMPACT_NOTE_SIZE],
+    fn enc_ciphertext_compact(&self) -> Pr::CompactNoteCiphertextBytes {
+        Pr::CompactNoteCiphertextBytes::from_slice(
+            &self.encrypted_note().enc_ciphertext.as_ref()[..Pr::COMPACT_NOTE_SIZE],
         )
-        .unwrap()
+        .expect("Pr::CompactNoteCiphertextBytes should have size Pr::COMPACT_NOTE_SIZE")
     }
 }
 
 /// A compact Action for light clients.
 #[derive(Clone)]
-pub struct CompactAction<P: OrchardPrimitives> {
+pub struct CompactAction<Pr: OrchardPrimitives> {
     nullifier: Nullifier,
     cmx: ExtractedNoteCommitment,
     ephemeral_key: EphemeralKeyBytes,
-    enc_ciphertext: P::CompactNoteCiphertextBytes,
+    enc_ciphertext: Pr::CompactNoteCiphertextBytes,
 }
 
-impl<P: OrchardPrimitives> fmt::Debug for CompactAction<P> {
+impl<Pr: OrchardPrimitives> fmt::Debug for CompactAction<Pr> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "CompactAction")
     }
 }
 
-impl<A, P: OrchardPrimitives> From<&Action<A, P>> for CompactAction<P>
+impl<A, Pr: OrchardPrimitives> From<&Action<A, Pr>> for CompactAction<Pr>
 where
-    Action<A, P>: ShieldedOutput<OrchardDomain<P>>,
+    Action<A, Pr>: ShieldedOutput<OrchardDomain<Pr>>,
 {
-    fn from(action: &Action<A, P>) -> Self {
+    fn from(action: &Action<A, Pr>) -> Self {
         CompactAction {
             nullifier: *action.nullifier(),
             cmx: *action.cmx(),
@@ -67,7 +65,7 @@ where
     }
 }
 
-impl<P: OrchardPrimitives> ShieldedOutput<OrchardDomain<P>> for CompactAction<P> {
+impl<Pr: OrchardPrimitives> ShieldedOutput<OrchardDomain<Pr>> for CompactAction<Pr> {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.ephemeral_key.0)
     }
@@ -80,22 +78,22 @@ impl<P: OrchardPrimitives> ShieldedOutput<OrchardDomain<P>> for CompactAction<P>
         self.cmx.to_bytes()
     }
 
-    fn enc_ciphertext(&self) -> Option<&P::NoteCiphertextBytes> {
+    fn enc_ciphertext(&self) -> Option<&Pr::NoteCiphertextBytes> {
         None
     }
 
-    fn enc_ciphertext_compact(&self) -> P::CompactNoteCiphertextBytes {
-        P::CompactNoteCiphertextBytes::from_slice(self.enc_ciphertext.as_ref()).unwrap()
+    fn enc_ciphertext_compact(&self) -> Pr::CompactNoteCiphertextBytes {
+        self.enc_ciphertext
     }
 }
 
-impl<P: OrchardPrimitives> CompactAction<P> {
+impl<Pr: OrchardPrimitives> CompactAction<Pr> {
     /// Create a CompactAction from its constituent parts
     pub fn from_parts(
         nullifier: Nullifier,
         cmx: ExtractedNoteCommitment,
         ephemeral_key: EphemeralKeyBytes,
-        enc_ciphertext: P::CompactNoteCiphertextBytes,
+        enc_ciphertext: Pr::CompactNoteCiphertextBytes,
     ) -> Self {
         Self {
             nullifier,
@@ -141,13 +139,13 @@ pub mod testing {
     /// Creates a fake `CompactAction` paying the given recipient the specified value.
     ///
     /// Returns the `CompactAction` and the new note.
-    pub fn fake_compact_action<R: RngCore, P: OrchardPrimitives>(
+    pub fn fake_compact_action<R: RngCore, Pr: OrchardPrimitives>(
         rng: &mut R,
         nf_old: Nullifier,
         recipient: Address,
         value: NoteValue,
         ovk: Option<OutgoingViewingKey>,
-    ) -> (CompactAction<P>, Note) {
+    ) -> (CompactAction<Pr>, Note) {
         let rho = Rho::from_nf_old(nf_old);
         let rseed = {
             loop {
@@ -160,9 +158,9 @@ pub mod testing {
             }
         };
         let note = Note::from_parts(recipient, value, AssetBase::native(), rho, rseed).unwrap();
-        let encryptor = NoteEncryption::<OrchardDomain<P>>::new(ovk, note, [0u8; MEMO_SIZE]);
+        let encryptor = NoteEncryption::<OrchardDomain<Pr>>::new(ovk, note, [0u8; MEMO_SIZE]);
         let cmx = ExtractedNoteCommitment::from(note.commitment());
-        let ephemeral_key = OrchardDomain::<P>::epk_bytes(encryptor.epk());
+        let ephemeral_key = OrchardDomain::<Pr>::epk_bytes(encryptor.epk());
         let enc_ciphertext = encryptor.encrypt_note_plaintext();
 
         (
@@ -170,8 +168,8 @@ pub mod testing {
                 nullifier: nf_old,
                 cmx,
                 ephemeral_key,
-                enc_ciphertext: P::CompactNoteCiphertextBytes::from_slice(
-                    &enc_ciphertext.as_ref()[..P::COMPACT_NOTE_SIZE],
+                enc_ciphertext: Pr::CompactNoteCiphertextBytes::from_slice(
+                    &enc_ciphertext.as_ref()[..Pr::COMPACT_NOTE_SIZE],
                 )
                 .unwrap(),
             },

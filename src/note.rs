@@ -401,17 +401,17 @@ pub(crate) fn rho_for_issuance_note(
 
 /// An encrypted note.
 #[derive(Clone)]
-pub struct TransmittedNoteCiphertext<P: OrchardPrimitives> {
+pub struct TransmittedNoteCiphertext<Pr: OrchardPrimitives> {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
     /// The encrypted note ciphertext
-    pub enc_ciphertext: P::NoteCiphertextBytes,
+    pub enc_ciphertext: Pr::NoteCiphertextBytes,
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
 }
 
-impl<P: OrchardPrimitives> fmt::Debug for TransmittedNoteCiphertext<P> {
+impl<Pr: OrchardPrimitives> fmt::Debug for TransmittedNoteCiphertext<Pr> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransmittedNoteCiphertext")
             .field("epk_bytes", &self.epk_bytes)

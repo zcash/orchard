@@ -13,7 +13,7 @@ use crate::{
 /// This both creates a note (adding a commitment to the global ledger), and consumes
 /// some note created prior to this action (adding a nullifier to the global ledger).
 #[derive(Debug, Clone)]
-pub struct Action<A, P: OrchardPrimitives> {
+pub struct Action<A, Pr: OrchardPrimitives> {
     /// The nullifier of the note being spent.
     nf: Nullifier,
     /// The randomized verification key for the note being spent.
@@ -21,20 +21,20 @@ pub struct Action<A, P: OrchardPrimitives> {
     /// A commitment to the new note being created.
     cmx: ExtractedNoteCommitment,
     /// The transmitted note ciphertext.
-    encrypted_note: TransmittedNoteCiphertext<P>,
+    encrypted_note: TransmittedNoteCiphertext<Pr>,
     /// A commitment to the net value created or consumed by this action.
     cv_net: ValueCommitment,
     /// The authorization for this action.
     authorization: A,
 }
 
-impl<A, P: OrchardPrimitives> Action<A, P> {
+impl<A, Pr: OrchardPrimitives> Action<A, Pr> {
     /// Constructs an `Action` from its constituent parts.
     pub fn from_parts(
         nf: Nullifier,
         rk: redpallas::VerificationKey<SpendAuth>,
         cmx: ExtractedNoteCommitment,
-        encrypted_note: TransmittedNoteCiphertext<P>,
+        encrypted_note: TransmittedNoteCiphertext<Pr>,
         cv_net: ValueCommitment,
         authorization: A,
     ) -> Self {
@@ -64,7 +64,7 @@ impl<A, P: OrchardPrimitives> Action<A, P> {
     }
 
     /// Returns the encrypted note ciphertext.
-    pub fn encrypted_note(&self) -> &TransmittedNoteCiphertext<P> {
+    pub fn encrypted_note(&self) -> &TransmittedNoteCiphertext<Pr> {
         &self.encrypted_note
     }
 
@@ -84,7 +84,7 @@ impl<A, P: OrchardPrimitives> Action<A, P> {
     }
 
     /// Transitions this action from one authorization state to another.
-    pub fn map<U>(self, step: impl FnOnce(A) -> U) -> Action<U, P> {
+    pub fn map<U>(self, step: impl FnOnce(A) -> U) -> Action<U, Pr> {
         Action {
             nf: self.nf,
             rk: self.rk,
@@ -96,7 +96,7 @@ impl<A, P: OrchardPrimitives> Action<A, P> {
     }
 
     /// Transitions this action from one authorization state to another.
-    pub fn try_map<U, E>(self, step: impl FnOnce(A) -> Result<U, E>) -> Result<Action<U, P>, E> {
+    pub fn try_map<U, E>(self, step: impl FnOnce(A) -> Result<U, E>) -> Result<Action<U, Pr>, E> {
         Ok(Action {
             nf: self.nf,
             rk: self.rk,
@@ -108,7 +108,7 @@ impl<A, P: OrchardPrimitives> Action<A, P> {
     }
 }
 
-impl<P: OrchardPrimitives> DynamicUsage for Action<VerSpendAuthSig, P> {
+impl<Pr: OrchardPrimitives> DynamicUsage for Action<VerSpendAuthSig, Pr> {
     #[inline(always)]
     fn dynamic_usage(&self) -> usize {
         0
@@ -150,20 +150,20 @@ pub(crate) mod testing {
     /// `ActionArb` adapts `arb_...` functions for both Vanilla and ZSA Orchard protocol flavors
     /// in property-based testing, addressing proptest crate limitations.
     #[derive(Debug)]
-    pub struct ActionArb<P: OrchardPrimitives> {
-        phantom: core::marker::PhantomData<P>,
+    pub struct ActionArb<Pr: OrchardPrimitives> {
+        phantom: core::marker::PhantomData<Pr>,
     }
 
-    impl<P: OrchardPrimitives> ActionArb<P> {
+    impl<Pr: OrchardPrimitives> ActionArb<Pr> {
         fn encrypt_note<R: RngCore>(
             note: Note,
             memo: Vec<u8>,
             cmx: &ExtractedNoteCommitment,
             cv_net: &ValueCommitment,
             rng: &mut R,
-        ) -> TransmittedNoteCiphertext<P> {
+        ) -> TransmittedNoteCiphertext<Pr> {
             let encryptor =
-                NoteEncryption::<OrchardDomain<P>>::new(None, note, memo.try_into().unwrap());
+                NoteEncryption::<OrchardDomain<Pr>>::new(None, note, memo.try_into().unwrap());
 
             TransmittedNoteCiphertext {
                 epk_bytes: encryptor.epk().to_bytes().0,
@@ -181,7 +181,7 @@ pub(crate) mod testing {
                 asset in arb_asset_base(),
                 rng_seed in prop::array::uniform32(prop::num::u8::ANY),
                 memo in prop::collection::vec(prop::num::u8::ANY, 512),
-            ) -> Action<(), P> {
+            ) -> Action<(), Pr> {
                 let cmx = ExtractedNoteCommitment::from(note.commitment());
                 let cv_net = ValueCommitment::derive(
                     spend_value - output_value,
@@ -213,7 +213,7 @@ pub(crate) mod testing {
                 fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
                 asset in arb_asset_base(),
                 memo in prop::collection::vec(prop::num::u8::ANY, 512),
-            ) -> Action<VerSpendAuthSig, P> {
+            ) -> Action<VerSpendAuthSig, Pr> {
                 let cmx = ExtractedNoteCommitment::from(note.commitment());
                 let cv_net = ValueCommitment::derive(
                     spend_value - output_value,
@@ -231,7 +231,7 @@ pub(crate) mod testing {
                     cmx,
                     encrypted_note,
                     cv_net,
-                    authorization: VerSpendAuthSig::new(P::default_sighash_version(), sk.sign(rng, &fake_sighash)),
+                    authorization: VerSpendAuthSig::new(Pr::default_sighash_version(), sk.sign(rng, &fake_sighash)),
                 }
             }
         }

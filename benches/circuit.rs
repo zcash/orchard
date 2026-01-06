@@ -31,10 +31,7 @@ fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
     let pk = ProvingKey::build::<FL>();
 
     let create_bundle = |num_recipients| {
-        let mut builder = Builder::new(
-            BundleType::DEFAULT_VANILLA,
-            Anchor::from_bytes([0; 32]).unwrap(),
-        );
+        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
         for _ in 0..num_recipients {
             builder
                 .add_output(
