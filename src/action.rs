@@ -133,8 +133,8 @@ pub(crate) mod testing {
 
     use crate::{
         note::{
-            asset_base::testing::arb_asset_base, commitment::ExtractedNoteCommitment,
-            nullifier::testing::arb_nullifier, testing::arb_note, Note, TransmittedNoteCiphertext,
+            commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
+            testing::arb_note, AssetBase, Note, TransmittedNoteCiphertext,
         },
         orchard_sighash_versioning::VerSpendAuthSig,
         primitives::redpallas::{
@@ -174,11 +174,14 @@ pub(crate) mod testing {
 
         prop_compose! {
             /// Generate an action without authorization data.
-            pub fn arb_unauthorized_action(spend_value: NoteValue, output_value: NoteValue)(
+            pub fn arb_unauthorized_action(
+                spend_value: NoteValue,
+                output_value: NoteValue,
+                asset: AssetBase)
+            (
                 nf in arb_nullifier(),
                 rk in arb_spendauth_verification_key(),
                 note in arb_note(output_value),
-                asset in arb_asset_base(),
                 rng_seed in prop::array::uniform32(prop::num::u8::ANY),
                 memo in prop::collection::vec(prop::num::u8::ANY, 512),
             ) -> Action<(), Pr> {
@@ -205,13 +208,16 @@ pub(crate) mod testing {
 
         prop_compose! {
             /// Generate an action with invalid (random) authorization data.
-            pub fn arb_action(spend_value: NoteValue, output_value: NoteValue)(
+            pub fn arb_action(
+                spend_value: NoteValue,
+                output_value: NoteValue,
+                asset: AssetBase,
+            )(
                 nf in arb_nullifier(),
                 sk in arb_spendauth_signing_key(),
                 note in arb_note(output_value),
                 rng_seed in prop::array::uniform32(prop::num::u8::ANY),
                 fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
-                asset in arb_asset_base(),
                 memo in prop::collection::vec(prop::num::u8::ANY, 512),
             ) -> Action<VerSpendAuthSig, Pr> {
                 let cmx = ExtractedNoteCommitment::from(note.commitment());

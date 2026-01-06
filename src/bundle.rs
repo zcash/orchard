@@ -635,7 +635,10 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::{
-        note::{asset_base::testing::arb_zsa_asset_base, AssetBase},
+        note::{
+            asset_base::testing::{arb_asset_base, arb_zsa_asset_base},
+            AssetBase,
+        },
         orchard_sighash_versioning::{VerBindingSig, VerSpendAuthSig},
         primitives::{redpallas::testing::arb_binding_signing_key, OrchardPrimitives},
         value::{
@@ -679,8 +682,11 @@ pub mod testing {
                 };
 
                 output_value_gen.prop_flat_map(move |output_value| {
-                    ActionArb::arb_unauthorized_action(spend_value, output_value)
-                        .prop_map(move |a| (spend_value - output_value, a))
+                    arb_asset_base().prop_flat_map(move |asset| {
+                        let value_sum = spend_value - output_value;
+                        ActionArb::arb_unauthorized_action(spend_value, output_value, asset)
+                            .prop_map(move |a| (value_sum, a))
+                    })
                 })
             })
         }
@@ -704,8 +710,11 @@ pub mod testing {
                 };
 
                 output_value_gen.prop_flat_map(move |output_value| {
-                    ActionArb::arb_action(spend_value, output_value)
-                        .prop_map(move |a| (spend_value - output_value, a))
+                    arb_asset_base().prop_flat_map(move |asset| {
+                        let value_sum = spend_value - output_value;
+                        ActionArb::arb_action(spend_value, output_value, asset)
+                            .prop_map(move |a| (value_sum, a))
+                    })
                 })
             })
         }
