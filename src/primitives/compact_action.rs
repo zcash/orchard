@@ -7,6 +7,7 @@ use zcash_note_encryption::{note_bytes::NoteBytes, EphemeralKeyBytes, ShieldedOu
 use crate::{
     action::Action,
     note::{ExtractedNoteCommitment, Nullifier, Rho},
+    orchard_flavor::OrchardVanilla,
 };
 
 use super::{orchard_domain::OrchardDomain, orchard_primitives::OrchardPrimitives};
@@ -33,6 +34,36 @@ impl<A, Pr: OrchardPrimitives> ShieldedOutput<OrchardDomain<Pr>> for Action<A, P
             &self.encrypted_note().enc_ciphertext.as_ref()[..Pr::COMPACT_NOTE_SIZE],
         )
         .expect("Pr::CompactNoteCiphertextBytes should have size Pr::COMPACT_NOTE_SIZE")
+    }
+}
+
+impl ShieldedOutput<OrchardDomain<OrchardVanilla>> for crate::pczt::Action {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(self.output().encrypted_note().epk_bytes)
+    }
+
+    fn cmstar(&self) -> &ExtractedNoteCommitment {
+        self.output().cmx()
+    }
+
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        self.output().cmx().to_bytes()
+    }
+
+    fn enc_ciphertext(
+        &self,
+    ) -> Option<&<OrchardVanilla as OrchardPrimitives>::NoteCiphertextBytes> {
+        Some(&self.output().encrypted_note().enc_ciphertext)
+    }
+
+    fn enc_ciphertext_compact(
+        &self,
+    ) -> <OrchardVanilla as OrchardPrimitives>::CompactNoteCiphertextBytes {
+        <OrchardVanilla as OrchardPrimitives>::CompactNoteCiphertextBytes::from_slice(
+            &self.output().encrypted_note().enc_ciphertext.as_ref()
+                [..OrchardVanilla::COMPACT_NOTE_SIZE],
+        )
+        .expect("ciphertext must be at least COMPACT_NOTE_SIZE bytes")
     }
 }
 
