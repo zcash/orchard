@@ -1,5 +1,6 @@
-//! Defines the `OrchardSinsemillaChip` trait to abstract over `SinsemillaChip` and `SinsemillaChip` types.
-//! Used to generalize the `commit_ivk` function.
+//! Defines the `OrchardSinsemillaChip` trait to abstract over the `SinsemillaChip`, fixing all
+//! associated types to Orchard domains and enabling interchangeable Pallas range-check
+//! implementations via the `Lookup` parameter.
 
 use pasta_curves::pallas;
 

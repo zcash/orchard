@@ -269,7 +269,7 @@ impl Witnesses {
 /// The verifying key for the Orchard Action circuit.
 ///
 /// In practice, this is constructed for either `OrchardVanilla` or `OrchardZSA`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct VerifyingKey {
     pub(crate) params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     pub(crate) vk: plonk::VerifyingKey<vesta::Affine>,
@@ -290,7 +290,7 @@ impl VerifyingKey {
 /// The proving key for the Orchard Action circuit.
 ///
 /// In practice, this is constructed for either `OrchardVanilla` or `OrchardZSA`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProvingKey {
     params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     pk: plonk::ProvingKey<vesta::Affine>,
@@ -310,6 +310,11 @@ impl ProvingKey {
 }
 
 /// Public inputs to the Orchard Action circuit.
+///
+/// The `enable_zsa` field was introduced with the ZSA feature; it did not exist before.
+/// In vanilla Orchard, `enable_zsa` is always false, so this method always appends a zero to the
+/// instance vector. Since halo2_proofs pads instance values with zero, old proofs (without this
+/// extra entry) and new proofs behave identically.
 #[derive(Clone, Debug)]
 pub struct Instance {
     pub(crate) anchor: Anchor,
@@ -350,6 +355,11 @@ impl Instance {
         }
     }
 
+    /// Note: Before the ZSA feature was introduced, this method returned a 9-element instance slice.
+    /// With ZSA, it now returns 10 elements, the last one corresponding to `enable_zsa`.
+    /// In vanilla Orchard, `enable_zsa` is always false, so this extra element is always zero.
+    /// Since halo2_proofs pads instance values with zero, old proofs (without this element)
+    /// and new proofs behave identically.
     fn to_halo2_instance(&self) -> [[vesta::Scalar; 10]; 1] {
         let mut instance = [vesta::Scalar::zero(); 10];
 

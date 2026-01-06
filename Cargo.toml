@@ -50,7 +50,7 @@ zip32 = { version = "0.2.0", default-features = false }
 visibility = "0.1.1"
 
 # Circuit
-halo2_gadgets = { version = "0.3", optional = true, default-features = false }
+halo2_gadgets = { version = "0.4", optional = true, default-features = false }
 halo2_proofs = { version = "0.3", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 
 # Boilerplate
@@ -68,7 +68,7 @@ plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
-halo2_gadgets = { version = "0.3", features = ["test-dependencies"] }
+halo2_gadgets = { version = "0.4", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
 zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
@@ -112,5 +112,4 @@ debug = true
 [patch.crates-io]
 sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
 zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "9f7e93d42cef839d02b9d75918117941d453f8cb" }
-halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
 halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }

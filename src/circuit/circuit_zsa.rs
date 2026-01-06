@@ -506,7 +506,7 @@ impl OrchardCircuit for OrchardZSA {
                 rcv,
                 Some(ZsaValueCommitParams {
                     sinsemilla_chip: config.sinsemilla_chip_1(),
-                    asset: asset.clone(),
+                    asset_base: asset.clone(),
                 }),
             )?;
 

@@ -5,9 +5,9 @@ use halo2_gadgets::utilities::cond_swap::CondSwapChip;
 use halo2_proofs::circuit::AssignedCell;
 use pasta_curves::pallas;
 
-pub struct ZsaNullifierParams {
-    pub cond_swap_chip: CondSwapChip<pallas::Base>,
-    pub split_flag: AssignedCell<pallas::Base, pallas::Base>,
+pub(super) struct ZsaNullifierParams {
+    pub(super) cond_swap_chip: CondSwapChip<pallas::Base>,
+    pub(super) split_flag: AssignedCell<pallas::Base, pallas::Base>,
 }
 
 pub(in crate::circuit) mod gadgets {

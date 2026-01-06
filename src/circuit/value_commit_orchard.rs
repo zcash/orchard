@@ -13,7 +13,7 @@ use halo2_gadgets::{
 pub struct ZsaValueCommitParams<Lookup: PallasLookupRangeCheck> {
     pub sinsemilla_chip:
         SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
-    pub asset: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases, Lookup>>,
+    pub asset_base: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases, Lookup>>,
 }
 
 pub(in crate::circuit) mod gadgets {
@@ -99,15 +99,16 @@ pub(in crate::circuit) mod gadgets {
                         layouter.namespace(|| "magnitude"),
                         &v_net_magnitude_sign.0,
                     )?;
-                    let (magnitude_asset, _) = params
-                        .asset
-                        .mul(layouter.namespace(|| "[magnitude] asset"), magnitude_scalar)?;
+                    let (magnitude_asset, _) = params.asset_base.mul(
+                        layouter.namespace(|| "[magnitude] asset_base"),
+                        magnitude_scalar,
+                    )?;
                     magnitude_asset
                 };
 
                 // commitment = [sign] magnitude_asset = [v_net_magnitude_sign] asset
                 magnitude_asset.mul_sign(
-                    layouter.namespace(|| "[sign] commitment"),
+                    layouter.namespace(|| "[sign] magnitude_asset"),
                     &v_net_magnitude_sign.1,
                 )?
             }
@@ -122,7 +123,7 @@ pub(in crate::circuit) mod gadgets {
             value_commit_r.mul(layouter.namespace(|| "[rcv] ValueCommitR"), rcv)?
         };
 
-        // [v] ValueCommitV + [rcv] ValueCommitR
+        // [v_net_magnitude_sign] asset_base + [rcv] ValueCommitR
         commitment.add(layouter.namespace(|| "cv"), &blind)
     }
 }
@@ -161,7 +162,7 @@ mod tests {
     use rand::{rngs::OsRng, RngCore};
 
     #[test]
-    fn test_value_commit_orchard() {
+    fn test_value_commit_orchard_zsa() {
         #[derive(Clone, Debug)]
         pub struct MyConfig {
             primary: Column<Instance>,
@@ -326,7 +327,7 @@ mod tests {
                 )?;
 
                 // Witness asset
-                let asset = NonIdentityPoint::new(
+                let asset_base = NonIdentityPoint::new(
                     ecc_chip.clone(),
                     layouter.namespace(|| "witness asset"),
                     self.asset.map(|asset| asset.cv_base().to_affine()),
@@ -340,7 +341,7 @@ mod tests {
                     rcv,
                     Some(ZsaValueCommitParams {
                         sinsemilla_chip,
-                        asset,
+                        asset_base,
                     }),
                 )?;
 

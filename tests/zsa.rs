@@ -26,9 +26,9 @@ use std::collections::HashSet;
 use zcash_note_encryption::try_note_decryption;
 
 #[derive(Debug)]
-struct Keychain {
-    pk: ProvingKey,
-    vk: VerifyingKey,
+struct Keychain<'a> {
+    pk: &'a ProvingKey,
+    vk: &'a VerifyingKey,
     sk: SpendingKey,
     fvk: FullViewingKey,
     isk: IssueAuthKey<ZSASchnorr>,
@@ -36,9 +36,9 @@ struct Keychain {
     recipient: Address,
 }
 
-impl Keychain {
+impl Keychain<'_> {
     fn pk(&self) -> &ProvingKey {
-        &self.pk
+        self.pk
     }
     fn sk(&self) -> &SpendingKey {
         &self.sk
@@ -54,7 +54,7 @@ impl Keychain {
     }
 }
 
-fn prepare_keys(pk: ProvingKey, vk: VerifyingKey, seed: u8) -> Keychain {
+fn prepare_keys<'a>(pk: &'a ProvingKey, vk: &'a VerifyingKey, seed: u8) -> Keychain<'a> {
     let sk = SpendingKey::from_bytes([seed; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
@@ -287,7 +287,7 @@ fn build_and_verify_bundle(
     };
 
     // Verify the shielded bundle, currently without the proof.
-    verify_bundle(&shielded_bundle, &keys.vk, true);
+    verify_bundle(&shielded_bundle, keys.vk, true);
     assert_eq!(shielded_bundle.actions().len(), expected_num_actions);
     assert!(verify_unique_spent_nullifiers(&shielded_bundle));
     Ok(())
@@ -324,9 +324,9 @@ fn zsa_issue_and_transfer() {
     let pk = ProvingKey::build::<OrchardZSA>();
     let vk = VerifyingKey::build::<OrchardZSA>();
 
-    let keys = prepare_keys(pk.clone(), vk.clone(), 5);
-    let keys2 = prepare_keys(pk.clone(), vk.clone(), 10);
-    let keys3 = prepare_keys(pk, vk, 15);
+    let keys = prepare_keys(&pk, &vk, 5);
+    let keys2 = prepare_keys(&pk, &vk, 10);
+    let keys3 = prepare_keys(&pk, &vk, 15);
 
     let native_note = create_native_note(&keys);
 
