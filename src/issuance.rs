@@ -1950,7 +1950,7 @@ mod tests {
         builder
             .add_output(None, recipient, NoteValue::from_raw(5), asset1, [0u8; 512])
             .unwrap();
-        let unauthorized = builder.build(&mut rng).unwrap().0;
+        let unauthorized = builder.build(&mut rng).unwrap().unwrap().0;
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         let authorized: Bundle<_, i64, OrchardZSA> = proven

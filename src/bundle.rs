@@ -454,8 +454,8 @@ impl<A: Authorization, V, Pr: OrchardPrimitives> Bundle<A, V, Pr> {
     }
 }
 
-pub(crate) fn derive_bvk<A, V: Clone + Into<i64>, Pr: OrchardPrimitives>(
-    actions: &NonEmpty<Action<A, Pr>>,
+pub(crate) fn derive_bvk<'a, A: 'a, V: Clone + Into<i64>, Pr: 'a + OrchardPrimitives>(
+    actions: impl IntoIterator<Item = &'a Action<A, Pr>>,
     value_balance: V,
     burn: &[(AssetBase, NoteValue)],
 ) -> redpallas::VerificationKey<Binding> {

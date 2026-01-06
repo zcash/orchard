@@ -762,7 +762,7 @@ impl Builder {
     pub fn build<V: TryFrom<i64>, FL: OrchardFlavor>(
         self,
         rng: impl RngCore,
-    ) -> Result<UnauthorizedBundleWithMetadata<V, FL>, BuildError> {
+    ) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
         bundle(
             rng,
             self.anchor,
@@ -882,7 +882,7 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     burn: BTreeMap<AssetBase, NoteValue>,
-) -> Result<UnauthorizedBundleWithMetadata<V, FL>, BuildError> {
+) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
     build_bundle(
         rng,
         anchor,
@@ -908,27 +908,26 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
             let (actions, witnesses): (Vec<_>, Vec<_>) =
                 pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
 
-            // `actions` is never empty. It contains at least MIN_ACTIONS=2 actions.
-            let actions = NonEmpty::from_vec(actions).unwrap();
-
             // Verify that bsk and bvk are consistent.
             let bvk = derive_bvk(&actions, native_value_balance, &burn_vec);
             assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
-            Ok((
-                Bundle::from_parts(
-                    actions,
-                    flags,
-                    result_value_balance,
-                    burn_vec,
-                    anchor,
-                    InProgress {
-                        proof: Unproven { witnesses },
-                        sigs: Unauthorized { bsk },
-                    },
-                ),
-                bundle_meta,
-            ))
+            Ok(NonEmpty::from_vec(actions).map(|actions| {
+                (
+                    Bundle::from_parts(
+                        actions,
+                        flags,
+                        result_value_balance,
+                        burn_vec,
+                        anchor,
+                        InProgress {
+                            proof: Unproven { witnesses },
+                            sigs: Unauthorized { bsk },
+                        },
+                    ),
+                    bundle_meta,
+                )
+            }))
         },
     )
 }
@@ -967,12 +966,15 @@ fn build_bundle<B, R: RngCore>(
         return Err(BuildError::OutputsDisabled);
     }
 
+    let num_actions = bundle_type
+        .num_actions(num_requested_spends, num_requested_outputs)
+        .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
+
     // Pair up the spends and outputs, extending with dummy values as necessary.
     let (pre_actions, bundle_meta) = {
         // Use Vec::with_capacity().extend(...) instead of .collect() to avoid reallocations,
         // as we can estimate the vector size beforehand.
-        let mut indexed_spends_outputs =
-            Vec::with_capacity(spends.len().max(outputs.len()).max(MIN_ACTIONS));
+        let mut indexed_spends_outputs = Vec::with_capacity(num_actions);
 
         let spends_outputs_by_asset = partition_by_asset(&spends, &outputs);
 
@@ -1021,7 +1023,7 @@ fn build_bundle<B, R: RngCore>(
                     (OutputInfo::dummy(&mut rng, AssetBase::native()), None),
                 )
             })
-            .take(MIN_ACTIONS.saturating_sub(indexed_spends_outputs.len())),
+            .take(num_actions.saturating_sub(indexed_spends_outputs.len())),
         );
 
         // We shuffled the spends and outputs within each `AssetBase` above; now we
@@ -1451,6 +1453,7 @@ pub mod testing {
             builder
                 .build(&mut self.rng)
                 .unwrap()
+                .unwrap()
                 .0
                 .create_proof(&pk, &mut self.rng)
                 .unwrap()
@@ -1580,6 +1583,7 @@ mod tests {
 
         let bundle: Bundle<Authorized, i64, FL> = builder
             .build(&mut rng)
+            .unwrap()
             .unwrap()
             .0
             .create_proof(&pk, &mut rng)
