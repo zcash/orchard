@@ -105,7 +105,8 @@ impl OrchardPrimitives for OrchardZSA {
 
         agh.update(&[bundle.flags().to_byte()]);
         agh.update(&bundle.anchor().to_bytes());
-        agh.update(&bundle.expiry_height().to_le_bytes());
+        // For the OrchardZSA protocol, `expiry_height` is set to 0, indicating no expiry.
+        agh.update(&0u32.to_le_bytes());
 
         let mut burn_hasher = hasher(ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION);
         for burn_item in bundle.burn() {

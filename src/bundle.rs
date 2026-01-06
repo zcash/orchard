@@ -216,11 +216,6 @@ pub struct Bundle<A: Authorization, V, Pr: OrchardPrimitives> {
     burn: Vec<(AssetBase, NoteValue)>,
     /// The root of the Orchard commitment tree that this bundle commits to.
     anchor: Anchor,
-    /// Block height after which this Bundle's Actions are invalid by consensus.
-    ///
-    /// For the OrchardZSA protocol, `expiry_height` is set to 0, indicating no expiry.
-    /// This field is reserved for future use.
-    expiry_height: u32,
     /// The authorization for this bundle.
     authorization: A,
 }
@@ -261,8 +256,6 @@ impl<A: Authorization, V, Pr: OrchardPrimitives> Bundle<A, V, Pr> {
             value_balance,
             burn,
             anchor,
-            // For the OrchardZSA protocol, `expiry_height` is set to 0, indicating no expiry.
-            expiry_height: 0,
             authorization,
         }
     }
@@ -294,11 +287,6 @@ impl<A: Authorization, V, Pr: OrchardPrimitives> Bundle<A, V, Pr> {
         &self.anchor
     }
 
-    /// Returns the expiry height for this bundle.
-    pub fn expiry_height(&self) -> u32 {
-        self.expiry_height
-    }
-
     /// Returns the authorization for this bundle.
     ///
     /// In the case of a `Bundle<Authorized>`, this is the proof and binding signature.
@@ -318,7 +306,6 @@ impl<A: Authorization, V, Pr: OrchardPrimitives> Bundle<A, V, Pr> {
             value_balance: f(self.value_balance)?,
             burn: self.burn,
             anchor: self.anchor,
-            expiry_height: self.expiry_height,
             authorization: self.authorization,
         })
     }
@@ -339,7 +326,6 @@ impl<A: Authorization, V, Pr: OrchardPrimitives> Bundle<A, V, Pr> {
             value_balance: self.value_balance,
             burn: self.burn,
             anchor: self.anchor,
-            expiry_height: self.expiry_height,
             authorization: step(context, authorization),
         }
     }
@@ -364,7 +350,6 @@ impl<A: Authorization, V, Pr: OrchardPrimitives> Bundle<A, V, Pr> {
             value_balance: self.value_balance,
             burn: self.burn,
             anchor: self.anchor,
-            expiry_height: self.expiry_height,
             authorization: step(context, authorization)?,
         })
     }
