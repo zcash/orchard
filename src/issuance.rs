@@ -886,9 +886,6 @@ impl fmt::Display for Error {
 #[cfg(test)]
 mod tests {
     use crate::{
-        builder::{Builder, BundleType},
-        circuit::ProvingKey,
-        flavor::OrchardZSA,
         issuance::Error::{
             IncorrectRhoDerivation, InvalidIssueBundleSig, IssueActionNotFound,
             IssueActionPreviouslyFinalizedAssetBase, IssueBundleIkMismatchAssetBase,
@@ -900,23 +897,19 @@ mod tests {
             verify_issue_bundle, AssetRecord, IssuanceFlags, IssueAction, IssueBundle, IssueInfo,
             Signed,
         },
-        keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{rho_for_issuance_note, AssetBase, ExtractedNoteCommitment, Nullifier, Rho},
-        tree::{MerkleHashOrchard, MerklePath},
+        keys::{FullViewingKey, Scope, SpendingKey},
+        note::{rho_for_issuance_note, AssetBase, Nullifier, Rho},
         value::NoteValue,
-        Address, Anchor, Bundle, Note,
+        Address, Note,
     };
     use alloc::collections::BTreeMap;
     use alloc::string::{String, ToString};
     use alloc::vec::Vec;
     use group::{Group, GroupEncoding};
-    use incrementalmerkletree::{Marking, Retention};
     use nonempty::NonEmpty;
     use pasta_curves::pallas::{Point, Scalar};
     use rand::rngs::OsRng;
     use rand::RngCore;
-    use shardtree::store::memory::MemoryShardStore;
-    use shardtree::ShardTree;
 
     #[test]
     fn issuance_flags_roundtrip() {
@@ -1894,7 +1887,22 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "circuit")]
     fn verify_rho_computation_for_issuance_notes() {
+        use crate::{
+            builder::{Builder, BundleType},
+            circuit::ProvingKey,
+            flavor::OrchardZSA,
+            keys::SpendAuthorizingKey,
+            note::ExtractedNoteCommitment,
+            tree::{MerkleHashOrchard, MerklePath},
+            Anchor, Bundle,
+        };
+
+        use incrementalmerkletree::{Marking, Retention};
+        use shardtree::store::memory::MemoryShardStore;
+        use shardtree::ShardTree;
+
         // Setup keys
         let pk = ProvingKey::build::<OrchardZSA>();
         let sk = SpendingKey::from_bytes([1; 32]).unwrap();

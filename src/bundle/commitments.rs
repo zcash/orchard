@@ -182,7 +182,7 @@ pub fn get_compact_size(size: usize) -> Vec<u8> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "circuit"))]
 mod tests {
     use crate::{
         builder::{Builder, BundleType, UnauthorizedBundle},

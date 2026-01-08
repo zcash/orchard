@@ -1,3 +1,5 @@
+#![cfg(feature = "circuit")]
+
 mod builder;
 
 use crate::builder::verify_bundle;

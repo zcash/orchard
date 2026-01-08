@@ -331,7 +331,7 @@ impl Zip32Derivation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "circuit"))]
 mod tests {
     use ff::{Field, PrimeField};
     use incrementalmerkletree::{Marking, Retention};
