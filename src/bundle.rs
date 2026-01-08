@@ -30,7 +30,7 @@ use crate::{
     primitives::{OrchardDomain, OrchardPrimitives},
     sighash_versioning::{OrchardSighashVersion, VerBindingSig, VerSpendAuthSig},
     tree::Anchor,
-    value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
+    value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Proof,
 };
 
@@ -481,7 +481,11 @@ pub(crate) fn derive_bvk_raw<'a>(
         - burn
             .iter()
             .map(|(asset, value)| {
-                ValueCommitment::derive(ValueSum::from(*value), ValueCommitTrapdoor::zero(), *asset)
+                ValueCommitment::derive(
+                    ValueSum::from_magnitude_sign(value.inner(), Sign::Positive),
+                    ValueCommitTrapdoor::zero(),
+                    *asset,
+                )
             })
             .sum::<ValueCommitment>())
     .into_bvk()
