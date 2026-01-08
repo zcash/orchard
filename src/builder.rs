@@ -13,8 +13,7 @@ use zcash_note_encryption::NoteEncryption;
 
 use crate::{
     address::Address,
-    builder::BuildError::{BurnNative, BurnZero},
-    bundle::{Authorization, Authorized, Bundle, Flags},
+    bundle::{burn_validation::BurnError, Authorization, Authorized, Bundle, Flags},
     flavor::OrchardVanilla,
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
@@ -152,12 +151,8 @@ pub enum BuildError {
     DuplicateSignature,
     /// The bundle being constructed violated the construction rules for the requested bundle type.
     BundleTypeNotSatisfiable,
-    /// Native asset cannot be burned
-    BurnNative,
-    /// The value to be burned cannot be zero
-    BurnZero,
-    /// The asset to be burned is duplicated.
-    BurnDuplicateAsset,
+    /// Burn-specific error.
+    Burn(BurnError),
     /// There is no available split note for this asset.
     NoSplitNoteAvailable,
 }
@@ -180,9 +175,7 @@ impl fmt::Display for BuildError {
             AnchorMismatch => {
                 f.write_str("All spends must share the anchor requested for the transaction.")
             }
-            BurnNative => f.write_str("Burning is only possible for non-native assets"),
-            BurnZero => f.write_str("Burning is not possible for zero values"),
-            BurnDuplicateAsset => f.write_str("Duplicate assets are not allowed when burning"),
+            Burn(e) => write!(f, "Burn error: {}", e),
             NoSplitNoteAvailable => f.write_str("No split note has been provided for this asset"),
         }
     }
@@ -699,15 +692,15 @@ impl Builder {
         use alloc::collections::btree_map::Entry;
 
         if asset.is_native().into() {
-            return Err(BurnNative);
+            return Err(BuildError::Burn(BurnError::NativeAsset));
         }
 
         if value.inner() == 0 {
-            return Err(BurnZero);
+            return Err(BuildError::Burn(BurnError::ZeroAmount));
         }
 
         match self.burn.entry(asset) {
-            Entry::Occupied(_) => Err(BuildError::BurnDuplicateAsset),
+            Entry::Occupied(_) => Err(BuildError::Burn(BurnError::DuplicateAsset)),
             Entry::Vacant(entry) => {
                 entry.insert(value);
                 Ok(())
@@ -1556,7 +1549,7 @@ mod tests {
         value::NoteValue,
     };
 
-    fn shielding_bundle<FL: OrchardFlavor>() {
+    fn shielding_bundle<FL: OrchardFlavor>(bundle_type: BundleType) {
         let pk = ProvingKey::build::<FL>();
         let mut rng = OsRng;
 
@@ -1564,10 +1557,7 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let mut builder = Builder::new(
-            BundleType::DEFAULT,
-            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        let mut builder = Builder::new(bundle_type, EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into());
 
         builder
             .add_output(
@@ -1596,11 +1586,11 @@ mod tests {
 
     #[test]
     fn shielding_bundle_vanilla() {
-        shielding_bundle::<OrchardVanilla>()
+        shielding_bundle::<OrchardVanilla>(BundleType::DEFAULT)
     }
 
     #[test]
     fn shielding_bundle_zsa() {
-        shielding_bundle::<OrchardZSA>()
+        shielding_bundle::<OrchardZSA>(BundleType::DEFAULT_ZSA)
     }
 }

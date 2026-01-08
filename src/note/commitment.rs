@@ -36,11 +36,16 @@ impl NoteCommitment {
 }
 
 impl NoteCommitment {
-    /// $NoteCommit^Orchard$.
+    /// $NoteCommit^{Orchard}$ when the asset is native,
+    /// and $NoteCommit^{OrchardZSA}$ otherwise.
     ///
-    /// Defined in [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommit].
+    /// $NoteCommit^{Orchard}$ is defined in
+    /// [Zcash Protocol Spec § 5.4.8.4: Sinsemilla commitments][concretesinsemillacommit].
+    /// $NoteCommit^{OrchardZSA}$ is defined in
+    /// [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommitzsa].
     ///
-    /// [notecommit]: https://zips.z.cash/zip-0226#note-structure-and-commitment
+    /// [concretesinsemillacommit]: https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit
+    /// [notecommitzsa]: https://zips.z.cash/zip-0226#note-structure-commitment
     pub(crate) fn derive(
         g_d: [u8; 32],
         pk_d: [u8; 32],

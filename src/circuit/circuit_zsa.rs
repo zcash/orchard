@@ -1160,6 +1160,9 @@ mod tests {
         split_flag: bool,
         mut rng: R,
     ) -> (Circuit<OrchardZSA>, Instance) {
+        // We cannot create a split note with a native asset.
+        assert!(!(is_native_asset && split_flag));
+
         // Create asset
         let asset_base = if is_native_asset {
             AssetBase::native()
@@ -1278,46 +1281,104 @@ mod tests {
     fn orchard_circuit_negative_test() {
         let mut rng = OsRng;
 
-        for is_native_asset in [true, false] {
-            for split_flag in [true, false] {
-                let (circuit, instance) =
-                    generate_circuit_instance(is_native_asset, split_flag, &mut rng);
+        for (is_native_asset, split_flag) in [(true, false), (false, true), (false, false)] {
+            let (circuit, instance) =
+                generate_circuit_instance(is_native_asset, split_flag, &mut rng);
 
-                let should_pass = !(matches!((is_native_asset, split_flag), (true, true)));
+            let should_pass = !(matches!((is_native_asset, split_flag), (true, true)));
 
-                check_proof_of_orchard_circuit(&circuit, &instance, should_pass);
+            check_proof_of_orchard_circuit(&circuit, &instance, should_pass);
 
-                // Set cv_net to be zero
-                // The proof should fail
-                let instance_wrong_cv_net = Instance {
-                    anchor: instance.anchor,
-                    cv_net: ValueCommitment::from_bytes(&[0u8; 32]).unwrap(),
-                    nf_old: instance.nf_old,
-                    rk: instance.rk.clone(),
-                    cmx: instance.cmx,
-                    enable_spend: instance.enable_spend,
-                    enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
-                };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_cv_net, false);
+            // Set cv_net to be zero
+            // The proof should fail
+            let instance_wrong_cv_net = Instance {
+                anchor: instance.anchor,
+                cv_net: ValueCommitment::from_bytes(&[0u8; 32]).unwrap(),
+                nf_old: instance.nf_old,
+                rk: instance.rk.clone(),
+                cmx: instance.cmx,
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_cv_net, false);
 
-                // Set rk_pub to be a dummy VerificationKey
-                // The proof should fail
-                let instance_wrong_rk = Instance {
-                    anchor: instance.anchor,
-                    cv_net: instance.cv_net.clone(),
-                    nf_old: instance.nf_old,
-                    rk: VerificationKey::dummy(),
-                    cmx: instance.cmx,
-                    enable_spend: instance.enable_spend,
-                    enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
-                };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_rk, false);
+            // Set rk_pub to be a dummy VerificationKey
+            // The proof should fail
+            let instance_wrong_rk = Instance {
+                anchor: instance.anchor,
+                cv_net: instance.cv_net.clone(),
+                nf_old: instance.nf_old,
+                rk: VerificationKey::dummy(),
+                cmx: instance.cmx,
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_rk, false);
 
-                // Set cm_old to be a random NoteCommitment
-                // The proof should fail
-                let circuit_wrong_cm_old = Circuit {
+            // Set cm_old to be a random NoteCommitment
+            // The proof should fail
+            let circuit_wrong_cm_old = Circuit {
+                witnesses: Witnesses {
+                    path: circuit.witnesses.path,
+                    pos: circuit.witnesses.pos,
+                    g_d_old: circuit.witnesses.g_d_old,
+                    pk_d_old: circuit.witnesses.pk_d_old,
+                    v_old: circuit.witnesses.v_old,
+                    rho_old: circuit.witnesses.rho_old,
+                    psi_old: circuit.witnesses.psi_old,
+                    rcm_old: circuit.witnesses.rcm_old.clone(),
+                    cm_old: Value::known(random_note_commitment(&mut rng)),
+                    alpha: circuit.witnesses.alpha,
+                    ak: circuit.witnesses.ak.clone(),
+                    nk: circuit.witnesses.nk,
+                    rivk: circuit.witnesses.rivk,
+                    g_d_new: circuit.witnesses.g_d_new,
+                    pk_d_new: circuit.witnesses.pk_d_new,
+                    v_new: circuit.witnesses.v_new,
+                    psi_new: circuit.witnesses.psi_new,
+                    rcm_new: circuit.witnesses.rcm_new.clone(),
+                    rcv: circuit.witnesses.rcv.clone(),
+
+                    additional_zsa_witnesses: circuit.witnesses.additional_zsa_witnesses.clone(),
+                },
+                phantom: core::marker::PhantomData,
+            };
+            check_proof_of_orchard_circuit(&circuit_wrong_cm_old, &instance, false);
+
+            // Set cmx_pub to be a random NoteCommitment
+            // The proof should fail
+            let instance_wrong_cmx_pub = Instance {
+                anchor: instance.anchor,
+                cv_net: instance.cv_net.clone(),
+                nf_old: instance.nf_old,
+                rk: instance.rk.clone(),
+                cmx: random_note_commitment(&mut rng).into(),
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_cmx_pub, false);
+
+            // Set nf_old_pub to be a random Nullifier
+            // The proof should fail
+            let instance_wrong_nf_old_pub = Instance {
+                anchor: instance.anchor,
+                cv_net: instance.cv_net.clone(),
+                nf_old: Nullifier::dummy(&mut rng),
+                rk: instance.rk.clone(),
+                cmx: instance.cmx,
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
+
+            // If split_flag = 0 , set psi_nf to be a random Pallas base element
+            // The proof should fail
+            if !split_flag {
+                let circuit_wrong_psi_nf = Circuit {
                     witnesses: Witnesses {
                         path: circuit.witnesses.path,
                         pos: circuit.witnesses.pos,
@@ -1327,7 +1388,7 @@ mod tests {
                         rho_old: circuit.witnesses.rho_old,
                         psi_old: circuit.witnesses.psi_old,
                         rcm_old: circuit.witnesses.rcm_old.clone(),
-                        cm_old: Value::known(random_note_commitment(&mut rng)),
+                        cm_old: circuit.witnesses.cm_old.clone(),
                         alpha: circuit.witnesses.alpha,
                         ak: circuit.witnesses.ak.clone(),
                         nk: circuit.witnesses.nk,
@@ -1342,94 +1403,31 @@ mod tests {
                         additional_zsa_witnesses: circuit
                             .witnesses
                             .additional_zsa_witnesses
-                            .clone(),
+                            .clone()
+                            .map(|zsa_values| AdditionalZsaWitnesses {
+                                psi_nf: pallas::Base::random(&mut rng),
+                                ..zsa_values
+                            }),
                     },
                     phantom: core::marker::PhantomData,
                 };
-                check_proof_of_orchard_circuit(&circuit_wrong_cm_old, &instance, false);
+                check_proof_of_orchard_circuit(&circuit_wrong_psi_nf, &instance, false);
+            }
 
-                // Set cmx_pub to be a random NoteCommitment
-                // The proof should fail
-                let instance_wrong_cmx_pub = Instance {
+            // If asset is not equal to the native asset, set enable_zsa = 0
+            // The proof should fail
+            if !is_native_asset {
+                let instance_wrong_enable_zsa = Instance {
                     anchor: instance.anchor,
                     cv_net: instance.cv_net.clone(),
                     nf_old: instance.nf_old,
                     rk: instance.rk.clone(),
-                    cmx: random_note_commitment(&mut rng).into(),
-                    enable_spend: instance.enable_spend,
-                    enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
-                };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_cmx_pub, false);
-
-                // Set nf_old_pub to be a random Nullifier
-                // The proof should fail
-                let instance_wrong_nf_old_pub = Instance {
-                    anchor: instance.anchor,
-                    cv_net: instance.cv_net.clone(),
-                    nf_old: Nullifier::dummy(&mut rng),
-                    rk: instance.rk.clone(),
                     cmx: instance.cmx,
                     enable_spend: instance.enable_spend,
                     enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
+                    enable_zsa: false,
                 };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
-
-                // If split_flag = 0 , set psi_nf to be a random Pallas base element
-                // The proof should fail
-                if !split_flag {
-                    let circuit_wrong_psi_nf = Circuit {
-                        witnesses: Witnesses {
-                            path: circuit.witnesses.path,
-                            pos: circuit.witnesses.pos,
-                            g_d_old: circuit.witnesses.g_d_old,
-                            pk_d_old: circuit.witnesses.pk_d_old,
-                            v_old: circuit.witnesses.v_old,
-                            rho_old: circuit.witnesses.rho_old,
-                            psi_old: circuit.witnesses.psi_old,
-                            rcm_old: circuit.witnesses.rcm_old.clone(),
-                            cm_old: circuit.witnesses.cm_old.clone(),
-                            alpha: circuit.witnesses.alpha,
-                            ak: circuit.witnesses.ak.clone(),
-                            nk: circuit.witnesses.nk,
-                            rivk: circuit.witnesses.rivk,
-                            g_d_new: circuit.witnesses.g_d_new,
-                            pk_d_new: circuit.witnesses.pk_d_new,
-                            v_new: circuit.witnesses.v_new,
-                            psi_new: circuit.witnesses.psi_new,
-                            rcm_new: circuit.witnesses.rcm_new.clone(),
-                            rcv: circuit.witnesses.rcv.clone(),
-
-                            additional_zsa_witnesses: circuit
-                                .witnesses
-                                .additional_zsa_witnesses
-                                .clone()
-                                .map(|zsa_values| AdditionalZsaWitnesses {
-                                    psi_nf: pallas::Base::random(&mut rng),
-                                    ..zsa_values
-                                }),
-                        },
-                        phantom: core::marker::PhantomData,
-                    };
-                    check_proof_of_orchard_circuit(&circuit_wrong_psi_nf, &instance, false);
-                }
-
-                // If asset is not equal to the native asset, set enable_zsa = 0
-                // The proof should fail
-                if !is_native_asset {
-                    let instance_wrong_enable_zsa = Instance {
-                        anchor: instance.anchor,
-                        cv_net: instance.cv_net.clone(),
-                        nf_old: instance.nf_old,
-                        rk: instance.rk.clone(),
-                        cmx: instance.cmx,
-                        enable_spend: instance.enable_spend,
-                        enable_output: instance.enable_output,
-                        enable_zsa: false,
-                    };
-                    check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
-                }
+                check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
             }
         }
     }
