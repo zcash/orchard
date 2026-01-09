@@ -1,4 +1,4 @@
-#![cfg(feature = "circuit")]
+#![cfg(all(feature = "zsa-issuance", feature = "circuit"))]
 
 mod builder;
 

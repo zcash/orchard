@@ -30,7 +30,7 @@ ff = { version = "0.13", default-features = false }
 fpe = { version = "0.6", default-features = false, features = ["alloc"] }
 group = "0.13"
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
-k256 = { version = "0.13.0", default-features = false, features = ["arithmetic", "schnorr"] }
+k256 = { version = "0.13.0", default-features = false, features = ["arithmetic", "schnorr"], optional = true }
 lazy_static = "1"
 memuse = { version = "0.2.2", default-features = false }
 pasta_curves = "0.5"
@@ -83,13 +83,14 @@ pprof = { version = "0.11", features = ["criterion", "flamegraph"] }
 bench = false
 
 [features]
-default = ["circuit", "multicore", "std"]
+default = ["circuit", "multicore", "std", "zsa-issuance"]
 std = ["core2/std", "group/wnaf-memuse", "reddsa/std"]
 circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
 unstable-frost = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 test-dependencies = ["proptest", "rand/std"]
+zsa-issuance = ["dep:k256"]
 
 [[bench]]
 name = "note_decryption"

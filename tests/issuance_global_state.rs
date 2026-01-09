@@ -1,3 +1,5 @@
+#![cfg(feature = "zsa-issuance")]
+
 extern crate alloc;
 
 use alloc::collections::BTreeMap;

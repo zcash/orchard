@@ -463,10 +463,12 @@ pub mod testing {
 
     use crate::{
         address::testing::arb_address,
-        issuance::auth::{IssueValidatingKey, ZSASchnorr},
         note::{asset_base::testing::arb_asset_base, nullifier::testing::arb_nullifier, AssetBase},
         value::{testing::arb_note_value, NoteValue},
     };
+
+    #[cfg(feature = "zsa-issuance")]
+    use crate::issuance::auth::{IssueValidatingKey, ZSASchnorr};
 
     use subtle::CtOption;
 
@@ -517,6 +519,7 @@ pub mod testing {
         }
     }
 
+    #[cfg(feature = "zsa-issuance")]
     prop_compose! {
         /// Generate an arbitrary zsa note
         pub fn arb_zsa_note(ik: IssueValidatingKey<ZSASchnorr>, asset_desc_hash: [u8; 32])(

@@ -33,6 +33,7 @@ pub mod bundle;
 pub mod circuit;
 mod constants;
 pub mod flavor;
+#[cfg(feature = "zsa-issuance")]
 pub mod issuance;
 pub mod keys;
 pub mod note;

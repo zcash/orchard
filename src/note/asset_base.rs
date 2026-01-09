@@ -1,21 +1,21 @@
-use alloc::vec::Vec;
-use blake2b_simd::{Hash as Blake2bHash, Params};
 use core::cmp::Ordering;
 use core::hash::{Hash, Hasher};
-use group::{Group, GroupEncoding};
-use nonempty::NonEmpty;
+use group::GroupEncoding;
 use pasta_curves::{arithmetic::CurveExt, pallas};
-use rand_core::CryptoRngCore;
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
-use crate::{
-    constants::fixed_bases::{
-        NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_PERSONALIZATION, ZSA_ASSET_BASE_PERSONALIZATION,
-    },
-    issuance::{
-        auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
-        compute_asset_desc_hash,
-    },
+use crate::constants::fixed_bases::{NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_PERSONALIZATION};
+
+#[cfg(test)]
+use rand_core::CryptoRngCore;
+
+#[cfg(feature = "zsa-issuance")]
+use {
+    crate::constants::fixed_bases::ZSA_ASSET_BASE_PERSONALIZATION,
+    crate::issuance::auth::{IssueValidatingKey, ZSASchnorr},
+    alloc::vec::Vec,
+    blake2b_simd::{Hash as Blake2bHash, Params},
+    group::Group,
 };
 
 /// Note type identifier.
@@ -36,6 +36,7 @@ impl Ord for AssetBase {
 }
 
 /// Personalization for the ZSA asset digest generator
+#[cfg(feature = "zsa-issuance")]
 pub const ZSA_ASSET_DIGEST_PERSONALIZATION: &[u8; 16] = b"ZSA-Asset-Digest";
 
 /// Derives the Asset Digest for the given ZSA asset.
@@ -43,6 +44,7 @@ pub const ZSA_ASSET_DIGEST_PERSONALIZATION: &[u8; 16] = b"ZSA-Asset-Digest";
 /// Defined in [ZIP-227: Issuance of Zcash Shielded Assets][assetdigest].
 ///
 /// [assetdigest]: https://zips.z.cash/zip-0227#asset-digests
+#[cfg(feature = "zsa-issuance")]
 pub fn asset_digest(encode_asset_id: &[u8]) -> Blake2bHash {
     Params::new()
         .hash_length(64)
@@ -55,6 +57,7 @@ pub fn asset_digest(encode_asset_id: &[u8]) -> Blake2bHash {
 /// Encoding the Asset Identifier, as defined in [ZIP 227][assetidentifier].
 ///
 /// [assetidentifier]: https://zips.z.cash/zip-0227.html#specification-asset-identifier-asset-digest-and-asset-base
+#[cfg(feature = "zsa-issuance")]
 pub fn encode_asset_id(
     version: u8,
     ik: &IssueValidatingKey<ZSASchnorr>,
@@ -88,6 +91,7 @@ impl AssetBase {
     /// # Panics
     ///
     /// Panics if the derived AssetBase is the identity point.
+    #[cfg(feature = "zsa-issuance")]
     #[allow(non_snake_case)]
     pub fn derive(ik: &IssueValidatingKey<ZSASchnorr>, asset_desc_hash: &[u8; 32]) -> Self {
         let version_byte: u8 = 0x00;
@@ -126,16 +130,28 @@ impl AssetBase {
         self.0.ct_eq(&Self::native().0)
     }
 
-    /// Generates a ZSA random asset.
+    /// Generates a ZSA random asset from a random issuance validating key.
     ///
     /// This is only used in tests.
+    #[cfg(all(test, feature = "zsa-issuance"))]
     pub(crate) fn random(rng: &mut impl CryptoRngCore) -> Self {
+        use crate::issuance::{auth::IssueAuthKey, compute_asset_desc_hash};
+        use nonempty::NonEmpty;
         let isk = IssueAuthKey::<ZSASchnorr>::random(rng);
         let ik = IssueValidatingKey::from(&isk);
         AssetBase::derive(
             &ik,
             &compute_asset_desc_hash(&NonEmpty::from_slice(b"zsa_asset").unwrap()),
         )
+    }
+
+    /// Generates a ZSA random asset from a random Pallas point.
+    ///
+    /// This is only used in tests.
+    #[cfg(all(test, not(feature = "zsa-issuance")))]
+    pub(crate) fn random(rng: &mut impl CryptoRngCore) -> Self {
+        use group::Group;
+        Self(pallas::Point::random(rng))
     }
 }
 
@@ -160,12 +176,13 @@ pub mod testing {
 
     use proptest::prelude::*;
 
+    #[cfg(feature = "zsa-issuance")]
     use crate::issuance::auth::{
         testing::arb_issuance_authorizing_key, IssueValidatingKey, ZSASchnorr,
     };
 
     prop_compose! {
-        /// Generate a uniformly distributed asset base
+        /// Generate a uniformly distributed asset base.
         pub fn arb_asset_base()
             (asset in prop_oneof![
                 Just(AssetBase::native()),
@@ -177,8 +194,9 @@ pub mod testing {
         }
     }
 
+    #[cfg(feature = "zsa-issuance")]
     prop_compose! {
-        /// Generate an asset ID
+        /// Generate a ZSA asset base.
         pub fn arb_zsa_asset_base()(
             isk in arb_issuance_authorizing_key(),
             asset_desc_hash in any::<[u8; 32]>(),
@@ -187,8 +205,32 @@ pub mod testing {
         }
     }
 
+    #[cfg(not(feature = "zsa-issuance"))]
     prop_compose! {
-        /// Generate an asset base using a specific issuance validating key
+        /// Generates a ZSA asset base from a description hash for testing when zsa-issuance is disabled.
+        pub fn arb_zsa_asset_base()(
+            asset_desc_hash in any::<[u8; 32]>(),
+        ) -> AssetBase {
+            use crate::constants::fixed_bases::ZSA_ASSET_BASE_PERSONALIZATION;
+            use group::Group;
+            use pasta_curves::{arithmetic::CurveExt, pallas};
+
+            let asset_base =
+            pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(&asset_desc_hash);
+
+            // This will happen with negligible probability.
+            assert!(
+                bool::from(!asset_base.is_identity()),
+                "The Asset Base is the identity point, which is invalid."
+            );
+
+            AssetBase(asset_base)
+        }
+    }
+
+    #[cfg(feature = "zsa-issuance")]
+    prop_compose! {
+        /// Generate a ZSA asset base using a specific issuance validating key.
         pub fn zsa_asset_base(ik: IssueValidatingKey<ZSASchnorr>)(
             asset_desc_hash in prop::array::uniform32(prop::num::u8::ANY),
         ) -> AssetBase {
@@ -198,6 +240,7 @@ pub mod testing {
 }
 
 #[cfg(test)]
+#[cfg(feature = "zsa-issuance")]
 mod tests {
     use crate::{
         issuance::auth::{IssueValidatingKey, ZSASchnorr},

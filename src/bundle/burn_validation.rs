@@ -63,7 +63,7 @@ impl fmt::Display for BurnError {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "zsa-issuance"))]
 mod tests {
     use super::*;
     use crate::{
