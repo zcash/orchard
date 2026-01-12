@@ -30,7 +30,7 @@ ff = { version = "0.13", default-features = false }
 fpe = { version = "0.6", default-features = false, features = ["alloc"] }
 group = "0.13"
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
-k256 = { version = "0.13.0", default-features = false, features = ["arithmetic", "schnorr"], optional = true }
+secp256k1 = { version = "0.29", default-features = false, features = ["alloc", "rand"], optional = true }
 lazy_static = "1"
 memuse = { version = "0.2.2", default-features = false }
 pasta_curves = "0.5"
@@ -90,7 +90,7 @@ unstable-frost = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 test-dependencies = ["proptest", "rand/std"]
-zsa-issuance = ["dep:k256"]
+zsa-issuance = ["dep:secp256k1"]
 
 [[bench]]
 name = "note_decryption"
