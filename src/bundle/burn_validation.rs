@@ -63,55 +63,36 @@ impl fmt::Display for BurnError {
     }
 }
 
-#[cfg(all(test, feature = "zsa-issuance"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        issuance::{auth::ZSASchnorr, compute_asset_desc_hash},
-        value::NoteValue,
-    };
-    use nonempty::NonEmpty;
+    use crate::value::NoteValue;
 
-    /// Creates an item of bundle burn list for a given asset description hash and value.
-    ///
-    /// This function is deterministic and guarantees that each call with the same parameters
-    /// will return the same result. It achieves determinism by using a static `IssueAuthKey`.
-    ///
-    /// # Arguments
-    ///
-    /// * `asset_desc_hash` - The asset description hash.
-    /// * `value` - The value for the burn.
-    ///
-    /// # Returns
-    ///
-    /// A tuple `(AssetBase, Amount)` representing the burn list item.
-    ///
-    fn get_burn_tuple(asset_desc_hash: &[u8; 32], value: u64) -> (AssetBase, NoteValue) {
-        use crate::issuance::auth::{IssueAuthKey, IssueValidatingKey};
+    use alloc::collections::BTreeSet;
+    use rand_core::{CryptoRngCore, OsRng};
 
-        let isk = IssueAuthKey::<ZSASchnorr>::from_bytes(&[1u8; 32]).unwrap();
-
-        (
-            AssetBase::derive(&IssueValidatingKey::from(&isk), asset_desc_hash),
-            NoteValue::from_raw(value),
-        )
+    fn burn_tuple_unique(
+        rng: &mut impl CryptoRngCore,
+        used: &mut BTreeSet<AssetBase>,
+        value: u64,
+    ) -> (AssetBase, NoteValue) {
+        loop {
+            let asset = AssetBase::random(rng);
+            if used.insert(asset) {
+                return (asset, NoteValue::from_raw(value));
+            }
+        }
     }
 
     #[test]
     fn validate_bundle_burn_success() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 2").unwrap()),
-                20,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            burn_tuple_unique(&mut rng, &mut used, 10),
+            burn_tuple_unique(&mut rng, &mut used, 20),
+            burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -121,19 +102,14 @@ mod tests {
 
     #[test]
     fn validate_bundle_burn_duplicate_asset() {
+        let mut rng = OsRng;
+
+        let asset = AssetBase::random(&mut rng);
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                20,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            (asset, NoteValue::from_raw(10)),
+            (asset, NoteValue::from_raw(20)),
+            (AssetBase::random(&mut rng), NoteValue::from_raw(10)),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -143,16 +119,13 @@ mod tests {
 
     #[test]
     fn validate_bundle_burn_native_asset() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
+            burn_tuple_unique(&mut rng, &mut used, 10),
             (AssetBase::native(), NoteValue::from_raw(20)),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -162,19 +135,13 @@ mod tests {
 
     #[test]
     fn validate_bundle_burn_zero_value() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 2").unwrap()),
-                0,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            burn_tuple_unique(&mut rng, &mut used, 10),
+            burn_tuple_unique(&mut rng, &mut used, 0),
+            burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);

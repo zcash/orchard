@@ -9,13 +9,15 @@ use crate::constants::fixed_bases::{NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_
 #[cfg(test)]
 use rand_core::CryptoRngCore;
 
+#[cfg(any(test, feature = "zsa-issuance"))]
+use group::Group;
+
 #[cfg(feature = "zsa-issuance")]
 use {
     crate::constants::fixed_bases::ZSA_ASSET_BASE_PERSONALIZATION,
     crate::issuance::auth::{IssueValidatingKey, ZSASchnorr},
     alloc::vec::Vec,
     blake2b_simd::{Hash as Blake2bHash, Params},
-    group::Group,
 };
 
 /// Note type identifier.
@@ -130,28 +132,23 @@ impl AssetBase {
         self.0.ct_eq(&Self::native().0)
     }
 
-    /// Generates a ZSA random asset from a random issuance validating key.
+    /// Generates a ZSA random asset from a random non-identity Pallas point.
+    ///
+    /// Normally, an `AssetBase` is derived from an issuance validating key. For testing purposes,
+    /// it is sufficient to use a random non-identity Pallas point. This allows generating a random
+    /// `AssetBase` even when `zsa-issuance` feature is disabled.
     ///
     /// This is only used in tests.
-    #[cfg(all(test, feature = "zsa-issuance"))]
+    #[cfg(test)]
     pub(crate) fn random(rng: &mut impl CryptoRngCore) -> Self {
-        use crate::issuance::{auth::IssueAuthKey, compute_asset_desc_hash};
-        use nonempty::NonEmpty;
-        let isk = IssueAuthKey::<ZSASchnorr>::random(rng);
-        let ik = IssueValidatingKey::from(&isk);
-        AssetBase::derive(
-            &ik,
-            &compute_asset_desc_hash(&NonEmpty::from_slice(b"zsa_asset").unwrap()),
-        )
-    }
-
-    /// Generates a ZSA random asset from a random Pallas point.
-    ///
-    /// This is only used in tests.
-    #[cfg(all(test, not(feature = "zsa-issuance")))]
-    pub(crate) fn random(rng: &mut impl CryptoRngCore) -> Self {
-        use group::Group;
-        Self(pallas::Point::random(rng))
+        loop {
+            let random_point = pallas::Point::random(&mut *rng);
+            // Extremely unlikely, but we explicitly reject the identity point.
+            if bool::from(random_point.is_identity()) {
+                continue;
+            }
+            return Self(random_point);
+        }
     }
 }
 
@@ -176,11 +173,6 @@ pub mod testing {
 
     use proptest::prelude::*;
 
-    #[cfg(feature = "zsa-issuance")]
-    use crate::issuance::auth::{
-        testing::arb_issuance_authorizing_key, IssueValidatingKey, ZSASchnorr,
-    };
-
     prop_compose! {
         /// Generate a uniformly distributed asset base.
         pub fn arb_asset_base()
@@ -194,47 +186,30 @@ pub mod testing {
         }
     }
 
-    #[cfg(feature = "zsa-issuance")]
     prop_compose! {
-        /// Generate a ZSA asset base.
+        /// Generates a ZSA asset base from a random asset digest.
+        ///
+        /// Normally, an `AssetBase` is derived from an issuance validating key. For testing purposes,
+        /// it is sufficient to use a random asset digest. This allows generating a random
+        /// `AssetBase` even when `zsa-issuance` feature is disabled.
         pub fn arb_zsa_asset_base()(
-            isk in arb_issuance_authorizing_key(),
-            asset_desc_hash in any::<[u8; 32]>(),
-        ) -> AssetBase {
-            AssetBase::derive(&IssueValidatingKey::from(&isk), &asset_desc_hash)
-        }
-    }
-
-    #[cfg(not(feature = "zsa-issuance"))]
-    prop_compose! {
-        /// Generates a ZSA asset base from a description hash for testing when zsa-issuance is disabled.
-        pub fn arb_zsa_asset_base()(
-            asset_desc_hash in any::<[u8; 32]>(),
+            asset_digest in any::<[u8; 64]>(),
         ) -> AssetBase {
             use crate::constants::fixed_bases::ZSA_ASSET_BASE_PERSONALIZATION;
             use group::Group;
             use pasta_curves::{arithmetic::CurveExt, pallas};
 
-            let asset_base =
-            pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(&asset_desc_hash);
+            let asset_base = loop {
+                let asset_base =
+                pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(&asset_digest);
 
-            // This will happen with negligible probability.
-            assert!(
-                bool::from(!asset_base.is_identity()),
-                "The Asset Base is the identity point, which is invalid."
-            );
+                // Extremely unlikely, but explicitly reject the identity point.
+                if bool::from(!asset_base.is_identity()) {
+                    break asset_base;
+                }
+            };
 
             AssetBase(asset_base)
-        }
-    }
-
-    #[cfg(feature = "zsa-issuance")]
-    prop_compose! {
-        /// Generate a ZSA asset base using a specific issuance validating key.
-        pub fn zsa_asset_base(ik: IssueValidatingKey<ZSASchnorr>)(
-            asset_desc_hash in prop::array::uniform32(prop::num::u8::ANY),
-        ) -> AssetBase {
-            AssetBase::derive(&ik, &asset_desc_hash)
         }
     }
 }
