@@ -176,7 +176,12 @@ impl ValueSum {
     /// in `Bundle::binding_validating_key`, where we are converting from the user-defined
     /// `valueBalance` type that enforces any additional constraints on the value's valid
     /// range.
-    pub(crate) fn from_raw(value: i64) -> Self {
+    ///
+    /// This function needs to be public because Zebra constructs `ValueCommitment`s using
+    /// `ValueCommitment::derive`, which takes a `ValueSum` as input. In order to avoid duplicating
+    /// the `ValueSum` construction logic between Zebra and Orchard, Zebra must be able to create a
+    /// `ValueSum` directly.
+    pub fn from_raw(value: i64) -> Self {
         ValueSum(value as i128)
     }
 
