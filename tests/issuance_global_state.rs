@@ -17,7 +17,7 @@ use orchard::{
         IssueBundle, IssueInfo, Signed,
     },
     keys::{FullViewingKey, Scope, SpendingKey},
-    note::{AssetBase, Nullifier},
+    note::{AssetBase, AssetId, Nullifier},
     value::NoteValue,
     Address, Note,
 };
@@ -190,22 +190,22 @@ fn issue_bundle_verify_with_global_state() {
     let asset3_desc = b"Verify with issued assets 3".to_vec();
     let asset4_desc = b"Verify with issued assets 4".to_vec();
 
-    let asset1_base = AssetBase::derive(
+    let asset1_base = AssetBase::custom(&AssetId::new_v0(
         &ik,
         &compute_asset_desc_hash(&NonEmpty::from_slice(&asset1_desc).unwrap()),
-    );
-    let asset2_base = AssetBase::derive(
+    ));
+    let asset2_base = AssetBase::custom(&AssetId::new_v0(
         &ik,
         &compute_asset_desc_hash(&NonEmpty::from_slice(&asset2_desc).unwrap()),
-    );
-    let asset3_base = AssetBase::derive(
+    ));
+    let asset3_base = AssetBase::custom(&AssetId::new_v0(
         &ik,
         &compute_asset_desc_hash(&NonEmpty::from_slice(&asset3_desc).unwrap()),
-    );
-    let asset4_base = AssetBase::derive(
+    ));
+    let asset4_base = AssetBase::custom(&AssetId::new_v0(
         &ik,
         &compute_asset_desc_hash(&NonEmpty::from_slice(&asset4_desc).unwrap()),
-    );
+    ));
 
     let mut global_state = BTreeMap::new();
 

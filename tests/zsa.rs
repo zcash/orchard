@@ -16,7 +16,7 @@ use orchard::{
         Signed,
     },
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-    note::{AssetBase, ExtractedNoteCommitment, Nullifier},
+    note::{AssetBase, AssetId, ExtractedNoteCommitment, Nullifier},
     primitives::OrchardDomain,
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
@@ -184,7 +184,7 @@ fn issue_zsa_notes(
 
     verify_reference_note(
         reference_note,
-        AssetBase::derive(&keys.ik().clone(), &asset_desc_hash),
+        AssetBase::custom(&AssetId::new_v0(keys.ik(), &asset_desc_hash)),
     );
 
     assert!(verify_issue_bundle(
