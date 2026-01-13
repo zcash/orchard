@@ -15,6 +15,9 @@ mod issuance;
 #[cfg(feature = "zsa-issuance")]
 pub(crate) use issuance::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data};
 
+#[cfg(feature = "zsa-issuance")]
+pub use issuance::{hash_issue_bundle_auth_empty, hash_issue_bundle_txid_empty};
+
 pub(crate) const ZCASH_ORCHARD_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrchardHash";
 pub(crate) const ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrcActGHash";
 pub(crate) const ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION: &[u8; 16] =
