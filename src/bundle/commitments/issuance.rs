@@ -159,7 +159,7 @@ mod tests {
         let issuance_digest = hash_issue_bundle_txid_data(&bundle);
         assert_eq!(
             issuance_digest.to_hex().as_str(),
-            "7d7e9b66cee8896453aa7dffdbe885b880b700a49cfff947ab1503a2407b5e1b"
+            "d99afbab7c0e8bd5d250e2df7d6df39d06891b264fff34090b55c5fac2d65ce5"
         );
     }
 
@@ -178,7 +178,7 @@ mod tests {
             hash_issue_bundle_auth_data(&signed_bundle, &sighash_version_map);
         assert_eq!(
             issuance_auth_digest.to_hex().as_str(),
-            "b0e465381e86b4462403723283e75b5b1928110cf2a45a0602d5a5037f07c9ad"
+            "1e737ae27e378d3cd90c93efb7a5f8ef5a7b4db7aa9848ed7b57a7795253af86"
         );
     }
 }
