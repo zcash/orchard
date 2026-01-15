@@ -148,7 +148,7 @@ mod tests {
             .unwrap();
         assert_ne!(asset, third_asset);
 
-        (bundle.update_rho(&first_nullifier), isk)
+        (bundle.update_rho(&first_nullifier, rng), isk)
     }
 
     /// Verify that the `issuance_digest` of an IssueBundle matches a fixed reference value
@@ -159,7 +159,7 @@ mod tests {
         let issuance_digest = hash_issue_bundle_txid_data(&bundle);
         assert_eq!(
             issuance_digest.to_hex().as_str(),
-            "d99afbab7c0e8bd5d250e2df7d6df39d06891b264fff34090b55c5fac2d65ce5"
+            "ee70e3b61674fd0428ac0020cc4fc5819386e39c4eb3c63357c84c998195bcdb"
         );
     }
 
@@ -178,7 +178,7 @@ mod tests {
             hash_issue_bundle_auth_data(&signed_bundle, &sighash_version_map);
         assert_eq!(
             issuance_auth_digest.to_hex().as_str(),
-            "1e737ae27e378d3cd90c93efb7a5f8ef5a7b4db7aa9848ed7b57a7795253af86"
+            "6df77af7b5323d99376336b770e4c5b06ffc195de81ac7692d1b08b6eb19534d"
         );
     }
 }

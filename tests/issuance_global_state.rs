@@ -171,7 +171,7 @@ fn build_issue_bundle(params: &TestParams, data: &[IssueTestNote]) -> IssueBundl
     }
 
     bundle
-        .update_rho(first_nullifier)
+        .update_rho(first_nullifier, rng)
         .prepare(sighash)
         .sign(isk)
         .unwrap()

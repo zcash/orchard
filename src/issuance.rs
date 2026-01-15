@@ -23,7 +23,7 @@ use rand::RngCore;
 use crate::{
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
     constants::reference_keys::ReferenceKeys,
-    note::{rho_for_issuance_note, AssetBase, AssetId, Nullifier, Rho},
+    note::{rho_for_issuance_note, AssetBase, AssetId, Nullifier},
     value::NoteValue,
     Address, Note,
 };
@@ -441,13 +441,8 @@ impl IssueBundle<AwaitingNullifier> {
                 flags: IssuanceFlags::from_parts(true),
             },
             Some(issue_info) => {
-                let note = Note::new(
-                    issue_info.recipient,
-                    issue_info.value,
-                    asset,
-                    Rho::zero(),
-                    &mut rng,
-                );
+                let note =
+                    Note::new_issue_note(issue_info.recipient, issue_info.value, asset, &mut rng);
 
                 notes.push(note);
 
@@ -484,7 +479,7 @@ impl IssueBundle<AwaitingNullifier> {
     ) -> Result<AssetBase, Error> {
         let asset = AssetBase::custom(&AssetId::new_v0(&self.ik, &asset_desc_hash));
 
-        let note = Note::new(recipient, value, asset, Rho::zero(), &mut rng);
+        let note = Note::new_issue_note(recipient, value, asset, &mut rng);
 
         let notes = if first_issuance {
             vec![create_reference_note(asset, &mut rng), note]
@@ -541,7 +536,11 @@ impl IssueBundle<AwaitingNullifier> {
     /// [ZIP-227: Issuance of Zcash Shielded Assets][zip227].
     ///
     /// [zip227]: https://zips.z.cash/zip-0227
-    pub fn update_rho(self, first_nullifier: &Nullifier) -> IssueBundle<AwaitingSighash> {
+    pub fn update_rho(
+        self,
+        first_nullifier: &Nullifier,
+        mut rng: impl RngCore,
+    ) -> IssueBundle<AwaitingSighash> {
         let mut bundle = self;
         bundle
             .actions
@@ -557,6 +556,7 @@ impl IssueBundle<AwaitingNullifier> {
                             first_nullifier,
                             index_action.try_into().unwrap(),
                             index_note.try_into().unwrap(),
+                            &mut rng,
                         );
                     });
             });
@@ -576,11 +576,10 @@ impl IssueBundle<AwaitingSighash> {
 }
 
 fn create_reference_note(asset: AssetBase, mut rng: impl RngCore) -> Note {
-    Note::new(
+    Note::new_issue_note(
         ReferenceKeys::recipient(),
         NoteValue::zero(),
         asset,
-        Rho::zero(),
         &mut rng,
     )
 }
@@ -999,19 +998,13 @@ mod tests {
             ))
         });
 
-        let note1 = Note::new(
-            recipient,
-            NoteValue::from_raw(note1_value),
-            asset,
-            Rho::zero(),
-            &mut rng,
-        );
+        let note1 =
+            Note::new_issue_note(recipient, NoteValue::from_raw(note1_value), asset, &mut rng);
 
-        let note2 = Note::new(
+        let note2 = Note::new_issue_note(
             recipient,
             NoteValue::from_raw(note2_value),
             note2_asset,
-            Rho::zero(),
             &mut rng,
         );
 
@@ -1124,14 +1117,14 @@ mod tests {
             action
                 .notes()
                 .iter()
-                .for_each(|note| assert_eq!(note.rho(), Rho::zero()))
+                .for_each(|note| assert!(!note.has_rho()))
         });
-        let awaiting_sighash_bundle = bundle.update_rho(&first_nullifier);
+        let awaiting_sighash_bundle = bundle.update_rho(&first_nullifier, rng);
         awaiting_sighash_bundle.actions().iter().for_each(|action| {
             action
                 .notes()
                 .iter()
-                .for_each(|note| assert_ne!(note.rho(), Rho::zero()))
+                .for_each(|note| assert!(note.has_rho()))
         });
 
         let actions = awaiting_sighash_bundle.actions();
@@ -1225,7 +1218,7 @@ mod tests {
             rng,
         );
 
-        let prepared = bundle.update_rho(&first_nullifier).prepare(sighash);
+        let prepared = bundle.update_rho(&first_nullifier, rng).prepare(sighash);
         assert_eq!(prepared.authorization().sighash, sighash);
     }
 
@@ -1254,7 +1247,7 @@ mod tests {
         );
 
         let signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1290,7 +1283,7 @@ mod tests {
         let wrong_isk = IssueAuthKey::<ZSASchnorr>::random(&mut rng);
 
         let err = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare([0; 32])
             .sign(&wrong_isk)
             .expect_err("should not be able to sign");
@@ -1322,20 +1315,19 @@ mod tests {
         );
 
         // Add "bad" note
-        let note = Note::new(
+        let note = Note::new_issue_note(
             recipient,
             NoteValue::from_raw(5),
             AssetBase::custom(&AssetId::new_v0(
                 bundle.ik(),
                 &compute_asset_desc_hash(&NonEmpty::from_slice(b"zsa_asset").unwrap()),
             )),
-            Rho::zero(),
             &mut rng,
         );
         bundle.actions.first_mut().notes.push(note);
 
         let err = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare([0; 32])
             .sign(&isk)
             .expect_err("should not be able to sign");
@@ -1368,7 +1360,7 @@ mod tests {
         );
 
         let signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1414,7 +1406,7 @@ mod tests {
         bundle.finalize_action(&asset_desc_hash).unwrap();
 
         let signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1500,7 +1492,7 @@ mod tests {
             .unwrap();
 
         let signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1566,7 +1558,7 @@ mod tests {
         );
 
         let signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1604,7 +1596,7 @@ mod tests {
         );
 
         let signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1616,13 +1608,7 @@ mod tests {
             AssetRecord::new(
                 NoteValue::from_raw(20),
                 true,
-                Note::new(
-                    recipient,
-                    NoteValue::from_raw(10),
-                    final_type,
-                    Rho::zero(),
-                    &mut rng,
-                ),
+                Note::new_issue_note(recipient, NoteValue::from_raw(10), final_type, &mut rng),
             ),
         )]
         .into_iter()
@@ -1672,7 +1658,7 @@ mod tests {
         let wrong_isk = IssueAuthKey::<ZSASchnorr>::random(&mut rng);
 
         let mut signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1712,10 +1698,9 @@ mod tests {
             rng,
         );
 
-        let sighash: [u8; 32] = bundle.commitment().into();
         let signed = bundle
-            .update_rho(&first_nullifier)
-            .prepare(sighash)
+            .update_rho(&first_nullifier, rng)
+            .prepare([0_u8; 32])
             .sign(&isk)
             .unwrap();
 
@@ -1748,7 +1733,7 @@ mod tests {
         );
 
         let mut signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1798,7 +1783,7 @@ mod tests {
         );
 
         let mut signed = bundle
-            .update_rho(&first_nullifier)
+            .update_rho(&first_nullifier, rng)
             .prepare(sighash)
             .sign(&isk)
             .unwrap();
@@ -1844,7 +1829,11 @@ mod tests {
     #[test]
     fn test_get_action_by_desc_hash() {
         let TestParams {
-            rng, ik, recipient, ..
+            rng,
+            ik,
+            recipient,
+            first_nullifier,
+            ..
         } = setup_params();
 
         // UTF heavy test string
@@ -1864,14 +1853,20 @@ mod tests {
             rng,
         );
 
+        // NOTE: Equality between two IssueActions can only be tested once `rho` is initialized.
+        // This call is required for the final `assert_eq!`.
+        let bundle_with_rho = bundle.update_rho(&first_nullifier, rng);
+
         // Checks for the case of UTF-8 encoded asset description.
-        let action = bundle.get_action_by_asset(&asset_base_1).unwrap();
+        let action = bundle_with_rho.get_action_by_asset(&asset_base_1).unwrap();
         assert_eq!(action.asset_desc_hash(), &asset_desc_hash_1);
         let reference_note = action.notes.first().unwrap();
         verify_reference_note(reference_note, asset_base_1);
         assert_eq!(action.notes.get(1).unwrap().value().inner(), 5);
         assert_eq!(
-            bundle.get_action_by_desc_hash(&asset_desc_hash_1).unwrap(),
+            bundle_with_rho
+                .get_action_by_desc_hash(&asset_desc_hash_1)
+                .unwrap(),
             action
         );
     }
@@ -2009,10 +2004,11 @@ mod tests {
             action
                 .notes()
                 .iter()
-                .for_each(|note| assert_eq!(note.rho(), Rho::zero()))
+                .for_each(|note| assert!(!note.has_rho()))
         });
 
-        let awaiting_sighash_bundle = bundle.update_rho(authorized.actions().first().nullifier());
+        let awaiting_sighash_bundle =
+            bundle.update_rho(authorized.actions().first().nullifier(), rng);
 
         assert_eq!(awaiting_sighash_bundle.actions().len(), 2);
         assert_eq!(
