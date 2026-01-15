@@ -151,8 +151,12 @@ mod tests {
         (bundle.update_rho(&first_nullifier, rng), isk)
     }
 
-    /// Verify that the `issuance_digest` of an IssueBundle matches a fixed reference value
-    /// to ensure consistency.
+    /// Verifies that the `issuance_digest` of an IssueBundle matches a fixed reference value.
+    ///
+    /// This is a regression test: inputs are fully deterministic (seeded RNG and fixed
+    /// bundle contents), so the resulting digest must remain stable. The reference value
+    /// was (re)generated after intentional changes that affect the digest, and
+    /// is now treated as the expected output for this implementation.
     #[test]
     fn test_hash_issue_bundle_txid_data() {
         let (bundle, _) = generate_issue_bundle();
@@ -163,8 +167,12 @@ mod tests {
         );
     }
 
-    /// Verify that the `issuance_auth_digest` of an IssueBundle matches a fixed reference value
-    /// to ensure consistency.
+    /// Verifies that the `issuance_auth_digest` of an IssueBundle matches a fixed reference value.
+    ///
+    /// This is a regression test: inputs are fully deterministic (seeded RNG and fixed
+    /// bundle contents), so the resulting digest must remain stable. The reference value
+    /// was (re)generated after intentional changes that affect the digest, and
+    /// is now treated as the expected output for this implementation.
     #[test]
     fn test_hash_issue_bundle_auth_data() {
         let (bundle, isk) = generate_issue_bundle();

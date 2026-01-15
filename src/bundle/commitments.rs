@@ -158,8 +158,12 @@ mod tests {
         builder.build::<i64, FL>(rng).unwrap().unwrap().0
     }
 
-    /// Verify that the hash for an Orchard Vanilla bundle matches a fixed reference value
-    /// to ensure consistency.
+    /// Verifies that the hash for an Orchard Vanilla bundle matches a fixed reference value.
+    ///
+    /// This is a regression test: inputs are fully deterministic (seeded RNG and fixed
+    /// bundle contents), so the resulting digest must remain stable. The reference value
+    /// was (re)generated after intentional changes that affect the digest, and
+    /// is now treated as the expected output for this implementation.
     #[test]
     fn test_hash_bundle_txid_data_for_orchard_vanilla() {
         let bundle = generate_bundle::<OrchardVanilla>(BundleType::DEFAULT);
@@ -170,8 +174,12 @@ mod tests {
         );
     }
 
-    /// Verify that the hash for an OrchardZSA bundle matches a fixed reference value
-    /// to ensure consistency.
+    /// Verifies that the hash for an OrchardZSA bundle matches a fixed reference value.
+    ///
+    /// This is a regression test: inputs are fully deterministic (seeded RNG and fixed
+    /// bundle contents), so the resulting digest must remain stable. The reference value
+    /// was (re)generated after intentional changes that affect the digest, and
+    /// is now treated as the expected output for this implementation.
     #[test]
     fn test_hash_bundle_txid_data_for_orchard_zsa() {
         let bundle = generate_bundle::<OrchardZSA>(BundleType::DEFAULT_ZSA);
@@ -194,8 +202,13 @@ mod tests {
         bundle.prepare(rng, sighash).finalize().unwrap()
     }
 
-    /// Verify that the authorizing data commitment for an Orchard Vanilla bundle matches a fixed
-    /// reference value to ensure consistency.
+    /// Verifies that the authorizing data commitment for an Orchard Vanilla bundle matches a fixed
+    /// reference value.
+    ///
+    /// This is a regression test: inputs are fully deterministic (seeded RNG and fixed
+    /// bundle contents), so the resulting digest must remain stable. The reference value
+    /// was (re)generated after intentional changes that affect the digest, and
+    /// is now treated as the expected output for this implementation.
     #[test]
     fn test_hash_bundle_auth_data_for_orchard_vanilla() {
         let bundle = generate_auth_bundle::<OrchardVanilla>(BundleType::DEFAULT);
@@ -206,8 +219,13 @@ mod tests {
         );
     }
 
-    /// Verify that the authorizing data commitment for an OrchardZSA bundle matches a fixed
-    /// reference value to ensure consistency.
+    /// Verifies that the authorizing data commitment for an OrchardZSA bundle matches a fixed
+    /// reference value.
+    ///
+    /// This is a regression test: inputs are fully deterministic (seeded RNG and fixed
+    /// bundle contents), so the resulting digest must remain stable. The reference value
+    /// was (re)generated after intentional changes that affect the digest, and
+    /// is now treated as the expected output for this implementation.
     #[test]
     fn test_hash_bundle_auth_data_for_orchard_zsa() {
         let mut sighash_version_map = BTreeMap::new();
