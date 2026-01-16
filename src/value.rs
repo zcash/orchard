@@ -490,6 +490,7 @@ mod tests {
     };
     use crate::{
         note::asset_base::testing::arb_asset_base, note::AssetBase, primitives::redpallas,
+        value::NoteValue,
     };
 
     fn negate_value_sum(value: ValueSum) -> ValueSum {
@@ -503,20 +504,46 @@ mod tests {
         ValueSum::from_magnitude_sign(magnitude, neg_sign)
     }
 
+    fn arb_asset_values_balanced_per_asset(
+        bound: NoteValue,
+        n_assets: usize,
+    ) -> impl Strategy<Value = Vec<(ValueSum, ValueCommitTrapdoor, AssetBase)>> {
+        (
+            prop::collection::vec(arb_asset_base(), n_assets),
+            prop::collection::vec(arb_value_sum_bounded(bound), n_assets * 4),
+            prop::collection::vec(arb_trapdoor(), n_assets * 5),
+        )
+            .prop_map(move |(assets, vals, traps)| {
+                let mut traps = traps.into_iter();
+                let mut out = Vec::with_capacity(n_assets * 5);
+
+                for (asset, four_values) in assets.into_iter().zip(vals.chunks_exact(4)) {
+                    let sum = four_values
+                        .iter()
+                        .cloned()
+                        .sum::<Result<ValueSum, OverflowError>>()
+                        .expect("we generate values that won't overflow");
+
+                    let fifth = negate_value_sum(sum);
+
+                    // Four random entries
+                    for value in four_values.iter().cloned() {
+                        out.push((value, traps.next().expect("enough trapdoors"), asset));
+                    }
+
+                    // One balancing entry so that the per-asset balance is zero
+                    out.push((fifth, traps.next().expect("enough trapdoors"), asset));
+                }
+
+                out
+            })
+    }
+
     fn check_binding_signature(
         native_values: &[(ValueSum, ValueCommitTrapdoor)],
         arb_values: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
-        neg_trapdoors: &[ValueCommitTrapdoor],
         arb_values_to_burn: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
     ) {
-        // for each arb value, create a negative value with a different trapdoor
-        let neg_arb_values: Vec<_> = arb_values
-            .iter()
-            .cloned()
-            .zip(neg_trapdoors.iter().cloned())
-            .map(|((value, _, asset), rcv)| (negate_value_sum(value), rcv, asset))
-            .collect();
-
         let native_value_balance = native_values
             .iter()
             .map(|(value, _)| value)
@@ -529,13 +556,7 @@ mod tests {
                 .map(|(value_sum, trapdoor)| (*value_sum, trapdoor.clone(), AssetBase::native()))
                 .collect();
 
-        let values = [
-            &native_values_with_asset,
-            arb_values,
-            &neg_arb_values,
-            arb_values_to_burn,
-        ]
-        .concat();
+        let values = [&native_values_with_asset, arb_values, arb_values_to_burn].concat();
 
         let bsk = values
             .iter()
@@ -571,20 +592,23 @@ mod tests {
                     prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor()), n_values)
                 )
             ),
-            (asset_values, neg_trapdoors) in (1usize..10).prop_flat_map(|n_values|
-                (arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
-                    prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_base()), n_values)
-                ), prop::collection::vec(arb_trapdoor(), n_values))
+            // An Orchard ZSA transaction is valid only if the balance of each custom asset is zero.
+            // Accordingly, for each custom asset we generate 5 random ValueSum values (possibly negative)
+            // that sum to zero.
+            asset_values in (1usize..10).prop_flat_map(|n_assets|
+                arb_note_value_bounded(MAX_NOTE_VALUE / (n_assets as u64 * 5)).prop_flat_map(move |bound|
+                    arb_asset_values_balanced_per_asset(bound, n_assets)
+                )
             ),
             burn_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64)
                 .prop_flat_map(move |bound| prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_base()), n_values))
             )
         ) {
-            check_binding_signature(&native_values, &[], &[], &[]);
-            check_binding_signature(&native_values, &[], &[], &burn_values);
-            check_binding_signature(&native_values, &asset_values, &neg_trapdoors, &[]);
-            check_binding_signature(&native_values, &asset_values, &neg_trapdoors, &burn_values);
+            check_binding_signature(&native_values, &[], &[]);
+            check_binding_signature(&native_values, &[], &burn_values);
+            check_binding_signature(&native_values, &asset_values, &[]);
+            check_binding_signature(&native_values, &asset_values, &burn_values);
         }
     }
 }

@@ -17,9 +17,12 @@ pub enum BurnError {
     NativeAsset,
     /// Cannot burn an asset with a zero value.
     ZeroAmount,
+    /// Burn amount does not fit in u63.
+    InvalidAmount,
 }
 
-/// Validates burn for a bundle by ensuring each asset is unique, non-native, and has a non-zero value.
+/// Validates burn for a bundle by ensuring each asset is unique, non-native, fit in u63 and has a
+/// non-zero value.
 ///
 /// Each burn element is represented as a tuple of `AssetBase` and `NoteValue` (value for the burn).
 ///
@@ -32,6 +35,7 @@ pub enum BurnError {
 /// Returns a `BurnError` if:
 /// * Any asset in the `burn` vector is native (`BurnError::NativeAsset`).
 /// * Any asset in the `burn` vector has a zero value (`BurnError::ZeroAmount`).
+/// * Any burn amount in the `burn` vector is out of the u63 range (`BurnError::InvalidAmount`).
 /// * Any asset in the `burn` vector is not unique (`BurnError::DuplicateAsset`).
 pub fn validate_bundle_burn(burn: &[(AssetBase, NoteValue)]) -> Result<(), BurnError> {
     let mut burn_set = BTreeSet::new();
@@ -42,6 +46,9 @@ pub fn validate_bundle_burn(burn: &[(AssetBase, NoteValue)]) -> Result<(), BurnE
         }
         if value.inner() == 0 {
             return Err(BurnError::ZeroAmount);
+        }
+        if value.inner() >= (1u64 << 63) {
+            return Err(BurnError::InvalidAmount);
         }
         if !burn_set.insert(*asset) {
             return Err(BurnError::DuplicateAsset);
@@ -58,6 +65,9 @@ impl fmt::Display for BurnError {
             BurnError::NativeAsset => write!(f, "Cannot burn a native asset."),
             BurnError::ZeroAmount => {
                 write!(f, "Cannot burn an asset with a zero value.")
+            }
+            BurnError::InvalidAmount => {
+                write!(f, "Burn amount must fit in u63.")
             }
         }
     }
@@ -147,5 +157,21 @@ mod tests {
         let result = validate_bundle_burn(&bundle_burn);
 
         assert_eq!(result, Err(BurnError::ZeroAmount));
+    }
+
+    #[test]
+    fn validate_bundle_burn_invalid_amount() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
+        let bundle_burn = vec![
+            burn_tuple_unique(&mut rng, &mut used, 10),
+            burn_tuple_unique(&mut rng, &mut used, 1u64 << 63),
+            burn_tuple_unique(&mut rng, &mut used, 10),
+        ];
+
+        let result = validate_bundle_burn(&bundle_burn);
+
+        assert_eq!(result, Err(BurnError::InvalidAmount));
     }
 }

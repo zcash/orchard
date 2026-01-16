@@ -22,7 +22,7 @@ use crate::{
     note::{AssetBase, ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, Binding, SpendAuth},
     primitives::{OrchardDomain, OrchardPrimitives},
-    sighash_versioning::{VerBindingSig, VerSpendAuthSig},
+    sighash_versioning::{OrchardSighashVersion, VerBindingSig, VerSpendAuthSig},
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Proof,
@@ -699,6 +699,11 @@ impl Builder {
             return Err(BuildError::Burn(BurnError::ZeroAmount));
         }
 
+        // Check that the burn amount fits in u63
+        if value.inner() >= (1u64 << 63) {
+            return Err(BuildError::Burn(BurnError::InvalidAmount));
+        }
+
         match self.burn.entry(asset) {
             Entry::Occupied(_) => Err(BuildError::Burn(BurnError::DuplicateAsset)),
             Entry::Vacant(entry) => {
@@ -1067,7 +1072,7 @@ fn build_bundle<B, R: RngCore>(
 /// Marker trait representing bundle signatures in the process of being created.
 pub trait InProgressSignatures: fmt::Debug {
     /// The authorization type of an Orchard action in the process of being authorized.
-    type SpendAuth: fmt::Debug + Clone;
+    type SpendAuth: fmt::Debug;
 }
 
 /// Marker for a bundle in the process of being built.
@@ -1296,6 +1301,9 @@ impl<P: fmt::Debug, V, Pr: OrchardPrimitives> Bundle<InProgress<P, PartiallyAuth
     }
 
     fn append_signature(self, signature: &VerSpendAuthSig) -> Result<Self, BuildError> {
+        if signature.version() != &OrchardSighashVersion::V0 {
+            return Err(BuildError::InvalidExternalSignature);
+        }
         let mut signature_valid_for = 0usize;
         let bundle = self.map_authorization(
             &mut signature_valid_for,
