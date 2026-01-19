@@ -1193,7 +1193,7 @@ impl InProgressSignatures for PartiallyAuthorized {
 /// A heisen[`Signature`] for a particular [`Action`].
 ///
 /// [`Signature`]: VerSpendAuthSig
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum MaybeSigned {
     /// The information needed to sign this [`Action`].
     SigningMetadata(SigningParts),
