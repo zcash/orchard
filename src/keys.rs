@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use core2::io::{self, Read, Write};
 
-use ::zip32::{hardened_only, ChildIndex};
+use ::zip32::ChildIndex;
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
@@ -107,7 +107,7 @@ impl SpendingKey {
             ChildIndex::hardened(coin_type),
             ChildIndex::hardened(account.into()),
         ];
-        ExtendedSpendingKey::<zip32::Orchard>::from_path(seed, path).map(|esk| esk.sk())
+        ExtendedSpendingKey::from_path(seed, path).map(|esk| esk.sk())
     }
 }
 
@@ -322,8 +322,8 @@ impl From<&SpendingKey> for FullViewingKey {
     }
 }
 
-impl<C: hardened_only::Context> From<&ExtendedSpendingKey<C>> for FullViewingKey {
-    fn from(extsk: &ExtendedSpendingKey<C>) -> Self {
+impl From<&ExtendedSpendingKey> for FullViewingKey {
+    fn from(extsk: &ExtendedSpendingKey) -> Self {
         (&extsk.sk()).into()
     }
 }

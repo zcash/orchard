@@ -20,6 +20,7 @@
 
 use alloc::vec::Vec;
 use core::{
+    fmt,
     fmt::{Debug, Formatter},
     mem::size_of_val,
 };
@@ -27,16 +28,75 @@ use core::{
 use rand_core::CryptoRngCore;
 use secp256k1::{schnorr, Keypair, Message, Secp256k1, SecretKey, XOnlyPublicKey};
 
-use crate::{
-    issuance::Error,
-    zip32::{self, ExtendedSpendingKey},
-};
+use crate::issuance::Error;
 
-// Preserve '::' which specifies the EXTERNAL 'zip32' crate
-#[rustfmt::skip]
-pub use ::zip32::{AccountId, ChildIndex, DiversifierIndex, Scope, hardened_only};
+pub use ::zip32::{
+    hardened_only, hardened_only::HardenedOnlyKey, AccountId, ChildIndex, DiversifierIndex, Scope,
+};
+use zcash_spec::{PrfExpand, VariableLengthSlice};
 
 const ZIP32_PURPOSE_FOR_ISSUANCE: u32 = 227;
+const ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION: &[u8; 16] = b"ZcashSA_Issue_V1";
+
+/// Errors produced in derivation of extended issuance keys
+#[derive(Debug, PartialEq, Eq)]
+pub enum Zip32Error {
+    /// A seed resulted in an invalid issuance key
+    InvalidIssuanceKey,
+    /// A non zero account when deriving an Orchard-ZSA issuance key
+    NonZeroAccount,
+}
+
+impl fmt::Display for Zip32Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Zip32Error::InvalidIssuanceKey => {
+                write!(f, "Seed produced an invalid issuance authorizing key.")
+            }
+            Zip32Error::NonZeroAccount => {
+                write!(
+                    f,
+                    "A non zero account when deriving an Orchard-ZSA issuance key"
+                )
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Issuance;
+
+impl hardened_only::Context for Issuance {
+    const MKG_DOMAIN: [u8; 16] = *ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION;
+    const CKD_DOMAIN: PrfExpand<([u8; 32], [u8; 4], [u8; 1], VariableLengthSlice)> =
+        PrfExpand::ORCHARD_ZIP32_CHILD;
+}
+
+/// An extended issuance key.
+///
+/// Defined in [ZIP227: Issuance of Zcash Shielded Assets][issuancekeyderivation].
+///
+/// [issuancekeyderivation]: https://zips.z.cash/zip-0227#issuance-key-derivation
+#[derive(Debug, Clone)]
+pub(crate) struct ExtendedIssuanceKey {
+    inner: HardenedOnlyKey<Issuance>,
+}
+
+impl ExtendedIssuanceKey {
+    /// Derives an issuance extended key from a ZIP-32 seed and a hardened derivation path.
+    pub fn from_path(seed: &[u8], path: &[ChildIndex]) -> Self {
+        let mut key = HardenedOnlyKey::<Issuance>::master(&[seed]);
+        for index in path {
+            key = key.derive_child(*index);
+        }
+        Self { inner: key }
+    }
+
+    /// Returns the raw 32-byte sk.
+    pub fn sk_bytes(&self) -> [u8; 32] {
+        *self.inner.parts().0
+    }
+}
 
 /// Trait that defines the common interface for issuance authorization signature schemes.
 pub trait IssueAuthSigScheme {
@@ -157,13 +217,9 @@ impl IssueAuthKey<ZSASchnorr> {
     }
 
     /// Derives the Orchard-ZSA issuance key for the given seed, coin type, and account.
-    pub fn from_zip32_seed(
-        seed: &[u8],
-        coin_type: u32,
-        account: u32,
-    ) -> Result<Self, zip32::Error> {
+    pub fn from_zip32_seed(seed: &[u8], coin_type: u32, account: u32) -> Result<Self, Zip32Error> {
         if account != 0 {
-            return Err(zip32::Error::NonZeroAccount);
+            return Err(Zip32Error::NonZeroAccount);
         }
 
         // Call zip32 logic
@@ -173,12 +229,9 @@ impl IssueAuthKey<ZSASchnorr> {
             ChildIndex::hardened(account),
         ];
 
-        // we are reusing zip32 logic for deriving the key, zip32 should be updated as discussed
-        let &isk_bytes = ExtendedSpendingKey::<zip32::Issuance>::from_path(seed, path)?
-            .sk()
-            .to_bytes();
+        let isk_bytes = ExtendedIssuanceKey::from_path(seed, path).sk_bytes();
 
-        Self::from_bytes(&isk_bytes).ok_or(zip32::Error::InvalidSpendingKey)
+        Self::from_bytes(&isk_bytes).ok_or(Zip32Error::InvalidIssuanceKey)
     }
 }
 

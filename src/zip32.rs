@@ -17,10 +17,7 @@ use crate::{
 
 pub use zip32::ChildIndex;
 
-/// Personalization for the master extended spending key
 const ZIP32_ORCHARD_PERSONALIZATION: &[u8; 16] = b"ZcashIP32Orchard";
-/// Personalization for the master extended issuance key
-const ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION: &[u8; 16] = b"ZcashSA_Issue_V1";
 const ZIP32_ORCHARD_FVFP_PERSONALIZATION: &[u8; 16] = b"ZcashOrchardFVFP";
 
 /// Errors produced in derivation of extended spending keys
@@ -30,8 +27,6 @@ pub enum Error {
     InvalidSpendingKey,
     /// A child index in a derivation path exceeded 2^31
     InvalidChildIndex(u32),
-    /// A non zero account when deriving an Orchard-ZSA issuance key
-    NonZeroAccount,
 }
 
 impl fmt::Display for Error {
@@ -126,19 +121,10 @@ impl KeyIndex {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Orchard;
+struct Orchard;
 
 impl hardened_only::Context for Orchard {
     const MKG_DOMAIN: [u8; 16] = *ZIP32_ORCHARD_PERSONALIZATION;
-    const CKD_DOMAIN: PrfExpand<([u8; 32], [u8; 4], [u8; 1], VariableLengthSlice)> =
-        PrfExpand::ORCHARD_ZIP32_CHILD;
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Issuance;
-
-impl hardened_only::Context for Issuance {
-    const MKG_DOMAIN: [u8; 16] = *ZIP32_ORCHARD_ISSUANCE_PERSONALIZATION;
     const CKD_DOMAIN: PrfExpand<([u8; 32], [u8; 4], [u8; 1], VariableLengthSlice)> =
         PrfExpand::ORCHARD_ZIP32_CHILD;
 }
@@ -149,14 +135,14 @@ impl hardened_only::Context for Issuance {
 ///
 /// [orchardextendedkeys]: https://zips.z.cash/zip-0032#orchard-extended-keys
 #[derive(Debug, Clone)]
-pub(crate) struct ExtendedSpendingKey<C: hardened_only::Context> {
+pub(crate) struct ExtendedSpendingKey {
     depth: u8,
     parent_fvk_tag: FvkTag,
     child_index: KeyIndex,
-    inner: HardenedOnlyKey<C>,
+    inner: HardenedOnlyKey<Orchard>,
 }
 
-impl<C: hardened_only::Context> ConstantTimeEq for ExtendedSpendingKey<C> {
+impl ConstantTimeEq for ExtendedSpendingKey {
     fn ct_eq(&self, rhs: &Self) -> Choice {
         self.depth.ct_eq(&rhs.depth)
             & self.parent_fvk_tag.0.ct_eq(&rhs.parent_fvk_tag.0)
@@ -166,7 +152,7 @@ impl<C: hardened_only::Context> ConstantTimeEq for ExtendedSpendingKey<C> {
 }
 
 #[allow(non_snake_case)]
-impl<C: hardened_only::Context> ExtendedSpendingKey<C> {
+impl ExtendedSpendingKey {
     /// Returns the spending key of the child key corresponding to
     /// the path derived from the master key
     ///
@@ -250,7 +236,7 @@ mod tests {
     #[test]
     fn derive_child() {
         let seed = [0; 32];
-        let xsk_m = ExtendedSpendingKey::<Orchard>::master(&seed).unwrap();
+        let xsk_m = ExtendedSpendingKey::master(&seed).unwrap();
 
         let i_5 = ChildIndex::hardened(5);
         let xsk_5 = xsk_m.derive_child(i_5);
@@ -261,18 +247,18 @@ mod tests {
     #[test]
     fn path() {
         let seed = [0; 32];
-        let xsk_m = ExtendedSpendingKey::<Orchard>::master(&seed).unwrap();
+        let xsk_m = ExtendedSpendingKey::master(&seed).unwrap();
 
         let xsk_5h = xsk_m.derive_child(ChildIndex::hardened(5)).unwrap();
         assert!(bool::from(
-            ExtendedSpendingKey::<Orchard>::from_path(&seed, &[ChildIndex::hardened(5)],)
+            ExtendedSpendingKey::from_path(&seed, &[ChildIndex::hardened(5)],)
                 .unwrap()
                 .ct_eq(&xsk_5h)
         ));
 
         let xsk_5h_7 = xsk_5h.derive_child(ChildIndex::hardened(7)).unwrap();
         assert!(bool::from(
-            ExtendedSpendingKey::<Orchard>::from_path(
+            ExtendedSpendingKey::from_path(
                 &seed,
                 &[ChildIndex::hardened(5), ChildIndex::hardened(7)],
             )
@@ -294,9 +280,9 @@ mod tests {
         let i2h = ChildIndex::hardened(2);
         let i3h = ChildIndex::hardened(3);
 
-        let m = ExtendedSpendingKey::<Orchard>::master(&seed).unwrap();
+        let m = ExtendedSpendingKey::master(&seed).unwrap();
         let m_1h = m.derive_child(i1h).unwrap();
-        let m_1h_2h = ExtendedSpendingKey::<Orchard>::from_path(&seed, &[i1h, i2h]).unwrap();
+        let m_1h_2h = ExtendedSpendingKey::from_path(&seed, &[i1h, i2h]).unwrap();
         let m_1h_2h_3h = m_1h_2h.derive_child(i3h).unwrap();
 
         let xsks = [m, m_1h, m_1h_2h, m_1h_2h_3h];
