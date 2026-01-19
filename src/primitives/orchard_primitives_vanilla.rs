@@ -1,7 +1,6 @@
 //! This module implements the note encryption and commitment logic specific for the
 //! `OrchardVanilla` flavor.
 
-use alloc::{collections::BTreeMap, vec::Vec};
 use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption::note_bytes::NoteBytesData;
 
@@ -24,7 +23,7 @@ use crate::{
             NOTE_VERSION_BYTE_V2,
         },
     },
-    sighash_versioning::OrchardSighashVersion,
+    sighash_kind::OrchardSighashKind,
     Bundle,
 };
 
@@ -97,7 +96,7 @@ impl OrchardPrimitives for OrchardVanilla {
     /// [zip244]: https://zips.z.cash/zip-0244
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, OrchardVanilla>,
-        _: &BTreeMap<OrchardSighashVersion, Vec<u8>>,
+        _sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> &'static [u8],
     ) -> Blake2bHash {
         let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
         h.update(bundle.authorization().proof().as_ref());
@@ -108,10 +107,6 @@ impl OrchardPrimitives for OrchardVanilla {
             bundle.authorization().binding_signature().sig(),
         ));
         h.finalize()
-    }
-
-    fn default_sighash_version() -> OrchardSighashVersion {
-        OrchardSighashVersion::NoVersion
     }
 }
 

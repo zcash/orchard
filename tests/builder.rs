@@ -9,6 +9,7 @@ use orchard::{
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::{AssetBase, ExtractedNoteCommitment},
     primitives::{OrchardDomain, OrchardPrimitives},
+    sighash_kind::OrchardSighashKind,
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
     Anchor, Bundle, Note,
@@ -30,8 +31,8 @@ pub fn verify_bundle<Pr: OrchardPrimitives>(
     let bvk = bundle.binding_validating_key();
     for action in bundle.actions() {
         assert_eq!(
-            action.authorization().version(),
-            &Pr::default_sighash_version()
+            action.authorization().sighash_kind(),
+            &OrchardSighashKind::AllEffecting,
         );
         assert_eq!(
             action.rk().verify(&sighash, action.authorization().sig()),

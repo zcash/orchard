@@ -1,12 +1,12 @@
 //! Utility functions for computing bundle commitments
 
-use alloc::{collections::BTreeMap, vec::Vec};
+use alloc::vec::Vec;
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
 
 use crate::{
     bundle::{Authorization, Authorized, Bundle},
     primitives::OrchardPrimitives,
-    sighash_versioning::OrchardSighashVersion,
+    sighash_kind::OrchardSighashKind,
 };
 
 #[cfg(feature = "zsa-issuance")]
@@ -73,17 +73,16 @@ pub fn hash_bundle_txid_empty() -> Blake2bHash {
 /// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
 /// for OrchardZSA
 ///
-/// The `sighash_version_map` provides the mapping from each
-/// `OrchardSighashVersion` to the corresponding `SighashInfo`
-/// encoding.
+/// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
+/// for a given [`OrchardSighashKind`].
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_bundle_auth_data<V, Pr: OrchardPrimitives>(
     bundle: &Bundle<Authorized, V, Pr>,
-    sighash_version_map: &BTreeMap<OrchardSighashVersion, Vec<u8>>,
+    sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> &'static [u8],
 ) -> Blake2bHash {
-    Pr::hash_bundle_auth_data(bundle, sighash_version_map)
+    Pr::hash_bundle_auth_data(bundle, sighash_info_for_kind)
 }
 
 /// Construct the `orchard_auth_digest` commitment for an absent bundle as defined in
@@ -121,11 +120,10 @@ mod tests {
         flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
         keys::{FullViewingKey, Scope, SpendingKey},
         note::AssetBase,
-        sighash_versioning::OrchardSighashVersion,
+        sighash_kind::test_sighash_info_for_kind,
         value::NoteValue,
         Anchor,
     };
-    use alloc::collections::BTreeMap;
     use rand::{rngs::StdRng, SeedableRng};
 
     fn generate_bundle<FL: OrchardFlavor>(bundle_type: BundleType) -> UnauthorizedBundle<i64, FL> {
@@ -212,7 +210,7 @@ mod tests {
     #[test]
     fn test_hash_bundle_auth_data_for_orchard_vanilla() {
         let bundle = generate_auth_bundle::<OrchardVanilla>(BundleType::DEFAULT);
-        let orchard_auth_digest = hash_bundle_auth_data(&bundle, &BTreeMap::new());
+        let orchard_auth_digest = hash_bundle_auth_data(&bundle, test_sighash_info_for_kind);
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
             "c99aa5a33fd4e7b78de0ee846397e2eb0da3a5d176e6df57d0401c49f51d7295"
@@ -228,11 +226,8 @@ mod tests {
     /// is now treated as the expected output for this implementation.
     #[test]
     fn test_hash_bundle_auth_data_for_orchard_zsa() {
-        let mut sighash_version_map = BTreeMap::new();
-        sighash_version_map.insert(OrchardSighashVersion::V0, vec![0]);
-
         let bundle = generate_auth_bundle::<OrchardZSA>(BundleType::DEFAULT_ZSA);
-        let orchard_auth_digest = hash_bundle_auth_data(&bundle, &sighash_version_map);
+        let orchard_auth_digest = hash_bundle_auth_data(&bundle, test_sighash_info_for_kind);
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
             "9d47819082f2323b30ceabe0fea993b39541cc0e62a8be6e1bc2a19840b0d9ab"

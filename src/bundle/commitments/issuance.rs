@@ -1,11 +1,10 @@
 //! Issuance-related commitment functions (ZSA feature)
 
-use alloc::{collections::BTreeMap, vec::Vec};
 use blake2b_simd::Hash as Blake2bHash;
 
 use crate::{
     bundle::commitments::{get_compact_size, hasher},
-    issuance::{sighash_versioning::IssueSighashVersion, IssueAuth, IssueBundle, Signed},
+    issuance::{sighash_kind::IssueSighashKind, IssueAuth, IssueBundle, Signed},
 };
 
 const ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION: &[u8; 16] = b"ZTxIdSAIssueHash";
@@ -62,21 +61,18 @@ pub fn hash_issue_bundle_auth_empty() -> Blake2bHash {
 /// authorized issue bundle as defined in
 /// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
 ///
-/// The `sighash_version_map` provides the mapping from each
-/// `IssueSighashVersion` to the corresponding `SighashInfo`
-/// encoding.
+/// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
+/// for a given [`IssueSighashKind`].
 ///
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_issue_bundle_auth_data(
     bundle: &IssueBundle<Signed>,
-    sighash_version_map: &BTreeMap<IssueSighashVersion, Vec<u8>>,
+    sighash_info_for_kind: impl Fn(&IssueSighashKind) -> &'static [u8],
 ) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
-    let version_bytes = sighash_version_map
-        .get(bundle.authorization().signature().version())
-        .expect("Unknown issue sighash version.");
-    h.update(&get_compact_size(version_bytes.len()));
-    h.update(version_bytes);
+    let sighash_info = sighash_info_for_kind(bundle.authorization().signature().sighash_kind());
+    h.update(&get_compact_size(sighash_info.len()));
+    h.update(sighash_info);
 
     let sig_enc = bundle.authorization().signature().sig().encode();
     assert_eq!(sig_enc.len(), 65);
@@ -92,7 +88,9 @@ mod tests {
     use crate::{
         issuance::{
             auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
-            compute_asset_desc_hash, AwaitingSighash, IssueInfo,
+            compute_asset_desc_hash,
+            sighash_kind::test_sighash_info_for_kind,
+            AwaitingSighash, IssueInfo,
         },
         keys::{FullViewingKey, Scope, SpendingKey},
         note::Nullifier,
@@ -179,11 +177,8 @@ mod tests {
         let issuance_digest = bundle.commitment().into();
         let signed_bundle = bundle.prepare(issuance_digest).sign(&isk).unwrap();
 
-        let mut sighash_version_map = BTreeMap::new();
-        sighash_version_map.insert(IssueSighashVersion::V0, vec![0]);
-
         let issuance_auth_digest =
-            hash_issue_bundle_auth_data(&signed_bundle, &sighash_version_map);
+            hash_issue_bundle_auth_data(&signed_bundle, test_sighash_info_for_kind);
         assert_eq!(
             issuance_auth_digest.to_hex().as_str(),
             "6df77af7b5323d99376336b770e4c5b06ffc195de81ac7692d1b08b6eb19534d"

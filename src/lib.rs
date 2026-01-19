@@ -39,7 +39,7 @@ pub mod keys;
 pub mod note;
 pub mod pczt;
 pub mod primitives;
-pub mod sighash_versioning;
+pub mod sighash_kind;
 mod spec;
 pub mod tree;
 pub mod value;

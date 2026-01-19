@@ -6,7 +6,7 @@ use crate::{
     bundle::{Authorization, Authorized, EffectsOnly},
     flavor::OrchardVanilla,
     primitives::redpallas::{self, Binding, SpendAuth},
-    sighash_versioning::{OrchardSighashVersion, VerBindingSig, VerSpendAuthSig},
+    sighash_kind::{OrchardBindingSig, OrchardSighashKind, OrchardSpendAuthSig},
     Proof,
 };
 
@@ -145,11 +145,14 @@ impl<V> crate::Bundle<Unbound, V, OrchardVanilla> {
         {
             Some(self.map_authorization(
                 &mut (),
-                |_, _, a| VerSpendAuthSig::new(OrchardSighashVersion::V0, a),
+                |_, _, a| OrchardSpendAuthSig::new(OrchardSighashKind::AllEffecting, a),
                 |_, Unbound { proof, bsk }| {
                     Authorized::from_parts(
                         proof,
-                        VerBindingSig::new(OrchardSighashVersion::V0, bsk.sign(rng, &sighash)),
+                        OrchardBindingSig::new(
+                            OrchardSighashKind::AllEffecting,
+                            bsk.sign(rng, &sighash),
+                        ),
                     )
                 },
             ))
