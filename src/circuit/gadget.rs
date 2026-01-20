@@ -105,8 +105,8 @@ where
     )
 }
 
-/// Witnesses is_native_asset.
-pub(in crate::circuit) fn assign_is_native_asset<F: Field>(
+/// Witnesses is_zatoshi_asset.
+pub(in crate::circuit) fn assign_is_zatoshi_asset<F: Field>(
     layouter: impl Layouter<F>,
     column: Column<Advice>,
     asset: Value<AssetBase>,
@@ -118,7 +118,7 @@ where
         layouter,
         column,
         asset.map(|asset| {
-            if bool::from(asset.is_native()) {
+            if bool::from(asset.is_zatoshi()) {
                 pallas::Base::one()
             } else {
                 pallas::Base::zero()

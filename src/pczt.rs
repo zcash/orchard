@@ -371,7 +371,7 @@ mod tests {
                 None,
                 recipient,
                 NoteValue::from_raw(5000),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
@@ -414,7 +414,7 @@ mod tests {
                 if let Some(note) = Note::from_parts(
                     recipient,
                     value,
-                    AssetBase::native(),
+                    AssetBase::zatoshi(),
                     rho,
                     RandomSeed::random(&mut rng, &rho),
                 )
@@ -459,7 +459,7 @@ mod tests {
                 None,
                 recipient,
                 NoteValue::from_raw(10_000),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
@@ -468,7 +468,7 @@ mod tests {
                 Some(fvk.to_ovk(Scope::Internal)),
                 fvk.address_at(0u32, Scope::Internal),
                 NoteValue::from_raw(5_000),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();

@@ -416,11 +416,11 @@ impl Note {
     ///
     /// # Panics
     ///
-    /// Panics if `self.asset().is_native()`.
+    /// Panics if `self.asset().is_zatoshi()`.
     ///
     /// [Split Input note]: https://zips.z.cash/zip-0226#split-notes
     pub fn create_split_note(self, rng: &mut impl RngCore) -> Self {
-        assert!(bool::from(!self.asset().is_native()));
+        assert!(bool::from(!self.asset().is_zatoshi()));
         Note {
             rseed_split_note: CtOption::new(RandomSeed::random(rng, &self.rho()), 1u8.into()),
             ..self
@@ -542,8 +542,8 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an arbitrary native note
-        pub fn arb_native_note()(
+        /// Generate an arbitrary zatoshi note
+        pub fn arb_zatoshi_note()(
             recipient in arb_address(),
             value in arb_note_value(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
@@ -552,7 +552,7 @@ pub mod testing {
             Note {
                 recipient,
                 value,
-                asset: AssetBase::native(),
+                asset: AssetBase::zatoshi(),
                 rho: Some(rho),
                 rseed,
                 rseed_split_note: CtOption::new(rseed, 0u8.into())

@@ -612,14 +612,14 @@ impl OrchardCircuit for OrchardVanilla {
     /// For OrchardVanilla circuits, `build_additional_zsa_witnesses` returns `Value::unknown()`.
     ///
     /// # Panics
-    /// Panics if the asset is not a native asset or if `split_flag` is true.
+    /// Panics if the asset is not zatoshi or if `split_flag` is true.
     fn build_additional_zsa_witnesses(
         _: pallas::Base,
         asset: AssetBase,
         split_flag: bool,
     ) -> Value<AdditionalZsaWitnesses> {
-        if !(bool::from(asset.is_native())) {
-            panic!("asset must be native asset in OrchardVanilla circuit");
+        if !(bool::from(asset.is_zatoshi())) {
+            panic!("asset must be zatoshi in OrchardVanilla circuit");
         }
         if split_flag {
             panic!("split_flag must be false in OrchardVanilla circuit");
@@ -649,7 +649,7 @@ mod tests {
     };
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit<OrchardVanilla>, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetBase::native());
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetBase::zatoshi());
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -660,12 +660,12 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), AssetBase::native());
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), AssetBase::zatoshi());
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv.clone(), AssetBase::native());
+        let cv_net = ValueCommitment::derive(value, rcv.clone(), AssetBase::zatoshi());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());

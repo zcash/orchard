@@ -355,10 +355,10 @@ mod tests {
         let mut rng = OsRng;
         let mut circuits = vec![];
         let mut instances = vec![];
-        let native_asset = AssetBase::native();
+        let zatoshi_asset = AssetBase::zatoshi();
         let random_asset = AssetBase::random(&mut rng);
         for split_flag in [false, true] {
-            for asset in [native_asset, random_asset] {
+            for asset in [zatoshi_asset, random_asset] {
                 let v_old = NoteValue::from_raw(rng.next_u64());
                 let v_new = NoteValue::from_raw(rng.next_u64());
                 let rcv = ValueCommitTrapdoor::random(&mut rng);

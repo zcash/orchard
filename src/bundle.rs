@@ -72,7 +72,7 @@ pub struct Flags {
     /// Flag denoting whether ZSA functionality is enabled in the transaction.
     ///
     /// If `false`,  all notes within [`Action`]s in the transaction's [`Bundle`] are
-    /// guaranteed to be notes with native asset. If `true`, `Action`s may use any asset.
+    /// guaranteed to be notes with zatoshi asset. If `true`, `Action`s may use any asset.
     ///
     /// This field was introduced with the ZSA feature; older Orchard versions did not
     /// include it. Because halo2_proofs zero-extends instance values, old proofs are interpreted
@@ -155,7 +155,7 @@ impl Flags {
     /// Flag denoting whether ZSA functionality is enabled in the transaction.
     ///
     /// If `false`, all notes within [`Action`]s in the transaction's [`Bundle`] are
-    /// guaranteed to be notes with native asset. If `true`, `Action`s may use any asset.
+    /// guaranteed to be notes with zatoshi asset. If `true`, `Action`s may use any asset.
     pub fn zsa_enabled(&self) -> bool {
         self.zsa_enabled
     }
@@ -475,7 +475,7 @@ pub(crate) fn derive_bvk_raw<'a>(
         - ValueCommitment::derive(
             value_balance,
             ValueCommitTrapdoor::zero(),
-            AssetBase::native(),
+            AssetBase::zatoshi(),
         )
         - burn
             .iter()

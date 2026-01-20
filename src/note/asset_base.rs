@@ -4,7 +4,7 @@ use group::{Group, GroupEncoding};
 use pasta_curves::{arithmetic::CurveExt, pallas};
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
-use crate::constants::fixed_bases::{NATIVE_ASSET_BASE_V_BYTES, VALUE_COMMITMENT_PERSONALIZATION};
+use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, ZATOSHI_ASSET_BASE_V_BYTES};
 
 #[cfg(test)]
 use rand_core::CryptoRngCore;
@@ -137,11 +137,11 @@ impl AssetBase {
         AssetBase(asset_base)
     }
 
-    /// Note type for the "native" currency (zec), maintains backward compatibility with Orchard untyped notes.
-    pub fn native() -> Self {
+    /// Note type for zatoshi, maintains backward compatibility with Orchard untyped notes.
+    pub fn zatoshi() -> Self {
         AssetBase(pallas::Point::hash_to_curve(
             VALUE_COMMITMENT_PERSONALIZATION,
-        )(&NATIVE_ASSET_BASE_V_BYTES))
+        )(&ZATOSHI_ASSET_BASE_V_BYTES))
     }
 
     /// The base point used in value commitments.
@@ -149,9 +149,9 @@ impl AssetBase {
         self.0
     }
 
-    /// Whether this note represents a native or ZSA asset.
-    pub fn is_native(&self) -> Choice {
-        self.0.ct_eq(&Self::native().0)
+    /// Whether this note represents zatoshi or ZSA asset.
+    pub fn is_zatoshi(&self) -> Choice {
+        self.0.ct_eq(&Self::zatoshi().0)
     }
 
     /// Generates a ZSA random asset from a random non-identity Pallas point.
@@ -199,7 +199,7 @@ pub mod testing {
         /// Generate a uniformly distributed asset base.
         pub fn arb_asset_base()
             (asset in prop_oneof![
-                Just(AssetBase::native()),
+                Just(AssetBase::zatoshi()),
                 arb_zsa_asset_base(),
             ])
             -> AssetBase

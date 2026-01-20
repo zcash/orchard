@@ -61,7 +61,7 @@ fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
                 None,
                 recipient,
                 NoteValue::from_raw(10),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0; 512],
             )
             .unwrap();
@@ -70,7 +70,7 @@ fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
                 None,
                 recipient,
                 NoteValue::from_raw(10),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0; 512],
             )
             .unwrap();

@@ -540,23 +540,23 @@ mod tests {
     }
 
     fn check_binding_signature(
-        native_values: &[(ValueSum, ValueCommitTrapdoor)],
+        zatoshi_values: &[(ValueSum, ValueCommitTrapdoor)],
         arb_values: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
         arb_values_to_burn: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
     ) {
-        let native_value_balance = native_values
+        let zatoshi_value_balance = zatoshi_values
             .iter()
             .map(|(value, _)| value)
             .sum::<Result<ValueSum, OverflowError>>()
             .expect("we generate values that won't overflow");
 
-        let native_values_with_asset: Vec<(ValueSum, ValueCommitTrapdoor, AssetBase)> =
-            native_values
+        let zatoshi_values_with_asset: Vec<(ValueSum, ValueCommitTrapdoor, AssetBase)> =
+            zatoshi_values
                 .iter()
-                .map(|(value_sum, trapdoor)| (*value_sum, trapdoor.clone(), AssetBase::native()))
+                .map(|(value_sum, trapdoor)| (*value_sum, trapdoor.clone(), AssetBase::zatoshi()))
                 .collect();
 
-        let values = [&native_values_with_asset, arb_values, arb_values_to_burn].concat();
+        let values = [&zatoshi_values_with_asset, arb_values, arb_values_to_burn].concat();
 
         let bsk = values
             .iter()
@@ -569,9 +569,9 @@ mod tests {
             .map(|(value, rcv, asset)| ValueCommitment::derive(value, rcv, asset))
             .sum::<ValueCommitment>()
             - ValueCommitment::derive(
-                native_value_balance,
+                zatoshi_value_balance,
                 ValueCommitTrapdoor::zero(),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
             )
             - arb_values_to_burn
                 .iter()
@@ -586,8 +586,8 @@ mod tests {
 
     proptest! {
         #[test]
-        fn bsk_consistent_with_bvk_native_with_zsa_transfer_and_burning(
-            native_values in (1usize..10).prop_flat_map(|n_values|
+        fn bsk_consistent_with_bvk_with_zsa_transfer_and_burning(
+            zatoshi_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
                     prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor()), n_values)
                 )
@@ -605,10 +605,10 @@ mod tests {
                 .prop_flat_map(move |bound| prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_base()), n_values))
             )
         ) {
-            check_binding_signature(&native_values, &[], &[]);
-            check_binding_signature(&native_values, &[], &burn_values);
-            check_binding_signature(&native_values, &asset_values, &[]);
-            check_binding_signature(&native_values, &asset_values, &burn_values);
+            check_binding_signature(&zatoshi_values, &[], &[]);
+            check_binding_signature(&zatoshi_values, &[], &burn_values);
+            check_binding_signature(&zatoshi_values, &asset_values, &[]);
+            check_binding_signature(&zatoshi_values, &asset_values, &burn_values);
         }
     }
 }

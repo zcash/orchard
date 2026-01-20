@@ -188,7 +188,7 @@ pub mod testing {
                 }
             }
         };
-        let note = Note::from_parts(recipient, value, AssetBase::native(), rho, rseed).unwrap();
+        let note = Note::from_parts(recipient, value, AssetBase::zatoshi(), rho, rseed).unwrap();
         let encryptor = NoteEncryption::<OrchardDomain<Pr>>::new(ovk, note, [0u8; MEMO_SIZE]);
         let cmx = ExtractedNoteCommitment::from(note.commitment());
         let ephemeral_key = OrchardDomain::<Pr>::epk_bytes(encryptor.epk());

@@ -13,15 +13,15 @@ use crate::{note::AssetBase, value::NoteValue};
 pub enum BurnError {
     /// Encountered a duplicate asset to burn.
     DuplicateAsset,
-    /// Cannot burn a native asset.
-    NativeAsset,
+    /// Cannot burn a zatoshi asset.
+    ZatoshiAsset,
     /// Cannot burn an asset with a zero value.
     ZeroAmount,
     /// Burn amount does not fit in u63.
     InvalidAmount,
 }
 
-/// Validates burn for a bundle by ensuring each asset is unique, non-native, fit in u63 and has a
+/// Validates burn for a bundle by ensuring each asset is unique, non-zatoshi, fit in u63 and has a
 /// non-zero value.
 ///
 /// Each burn element is represented as a tuple of `AssetBase` and `NoteValue` (value for the burn).
@@ -33,7 +33,7 @@ pub enum BurnError {
 /// # Errors
 ///
 /// Returns a `BurnError` if:
-/// * Any asset in the `burn` vector is native (`BurnError::NativeAsset`).
+/// * Any asset in the `burn` vector is zatoshi (`BurnError::ZatoshiAsset`).
 /// * Any asset in the `burn` vector has a zero value (`BurnError::ZeroAmount`).
 /// * Any burn amount in the `burn` vector is out of the u63 range (`BurnError::InvalidAmount`).
 /// * Any asset in the `burn` vector is not unique (`BurnError::DuplicateAsset`).
@@ -41,8 +41,8 @@ pub fn validate_bundle_burn(burn: &[(AssetBase, NoteValue)]) -> Result<(), BurnE
     let mut burn_set = BTreeSet::new();
 
     for (asset, value) in burn {
-        if asset.is_native().into() {
-            return Err(BurnError::NativeAsset);
+        if asset.is_zatoshi().into() {
+            return Err(BurnError::ZatoshiAsset);
         }
         if value.inner() == 0 {
             return Err(BurnError::ZeroAmount);
@@ -62,7 +62,7 @@ impl fmt::Display for BurnError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             BurnError::DuplicateAsset => write!(f, "Encountered a duplicate asset to burn."),
-            BurnError::NativeAsset => write!(f, "Cannot burn a native asset."),
+            BurnError::ZatoshiAsset => write!(f, "Cannot burn a zatoshi asset."),
             BurnError::ZeroAmount => {
                 write!(f, "Cannot burn an asset with a zero value.")
             }
@@ -128,19 +128,19 @@ mod tests {
     }
 
     #[test]
-    fn validate_bundle_burn_native_asset() {
+    fn validate_bundle_burn_zatoshi_asset() {
         let mut rng = OsRng;
         let mut used = BTreeSet::new();
 
         let bundle_burn = vec![
             burn_tuple_unique(&mut rng, &mut used, 10),
-            (AssetBase::native(), NoteValue::from_raw(20)),
+            (AssetBase::zatoshi(), NoteValue::from_raw(20)),
             burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
 
-        assert_eq!(result, Err(BurnError::NativeAsset));
+        assert_eq!(result, Err(BurnError::ZatoshiAsset));
     }
 
     #[test]

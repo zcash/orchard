@@ -1807,7 +1807,7 @@ mod tests {
     #[test]
     fn finalize_flag_serialization() {
         let mut rng = OsRng;
-        let (_, _, note) = Note::dummy(&mut rng, None, AssetBase::native());
+        let (_, _, note) = Note::dummy(&mut rng, None, AssetBase::zatoshi());
 
         let asset_desc_hash =
             compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset description").unwrap());

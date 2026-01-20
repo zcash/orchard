@@ -138,7 +138,7 @@ mod tests {
                 None,
                 recipient,
                 NoteValue::from_raw(10),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
@@ -148,7 +148,7 @@ mod tests {
                 None,
                 recipient,
                 NoteValue::from_raw(20),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
