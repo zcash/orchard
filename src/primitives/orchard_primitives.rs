@@ -68,4 +68,9 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
         bundle: &Bundle<Authorized, V, Self>,
         sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> &'static [u8],
     ) -> Blake2bHash;
+
+    /// Returns true if the note plaintext leadByte is equal to
+    /// - 0x02 for V5 transactions (OrchardVanilla), or
+    /// - 0x03 for V6 transactions (OrchardZSA).
+    fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool;
 }

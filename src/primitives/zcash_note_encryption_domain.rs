@@ -80,15 +80,6 @@ pub(super) fn prf_ock_orchard(
     )
 }
 
-/// Retrieves the version of the note plaintext.
-/// Returns `Some(u8)` if the version is recognized, otherwise `None`.
-pub(super) fn parse_note_version(plaintext: &[u8]) -> Option<u8> {
-    plaintext.first().and_then(|version| match *version {
-        NOTE_VERSION_BYTE_V2 | NOTE_VERSION_BYTE_V3 => Some(*version),
-        _ => None,
-    })
-}
-
 /// Parses the note plaintext (excluding the memo) and extracts the note and address if valid.
 /// Domain-specific requirements:
 /// - If the note version is 3, the `plaintext` must contain a valid encoding of a ZSA asset type.
@@ -100,7 +91,9 @@ pub(super) fn parse_note_plaintext_without_memo<Pr: OrchardPrimitives, F>(
 where
     F: FnOnce(&Diversifier) -> Option<DiversifiedTransmissionKey>,
 {
-    parse_note_version(plaintext.as_ref())?;
+    if !Pr::is_valid_note_plaintext_lead_byte(plaintext.as_ref()) {
+        return None;
+    }
 
     // The unwraps below are guaranteed to succeed
     let diversifier = Diversifier::from_bytes(

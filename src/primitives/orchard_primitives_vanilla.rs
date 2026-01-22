@@ -108,6 +108,11 @@ impl OrchardPrimitives for OrchardVanilla {
         ));
         h.finalize()
     }
+
+    /// Returns true if the note plaintext leadByte is equal to 0x02.
+    fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool {
+        plaintext.first() == Some(&NOTE_VERSION_BYTE_V2)
+    }
 }
 
 #[cfg(test)]
@@ -137,9 +142,8 @@ mod tests {
             compact_action::CompactAction,
             orchard_domain::OrchardDomain,
             redpallas,
-            zcash_note_encryption_domain::{
-                parse_note_plaintext_without_memo, parse_note_version, prf_ock_orchard,
-            },
+            zcash_note_encryption_domain::{parse_note_plaintext_without_memo, prf_ock_orchard},
+            OrchardPrimitives,
         },
         value::{NoteValue, ValueCommitment},
     };
@@ -161,7 +165,7 @@ mod tests {
             let domain = OrchardDomainVanilla::for_rho(rho);
             let (compact, parsed_memo) = domain.split_plaintext_at_memo(&plaintext).unwrap();
 
-            assert!(parse_note_version(compact.as_ref()).is_some());
+            assert!(<OrchardVanilla as OrchardPrimitives>::is_valid_note_plaintext_lead_byte(compact.as_ref()));
 
             let (parsed_note, parsed_recipient) = parse_note_plaintext_without_memo::<OrchardVanilla, _>(rho, &compact,
                 |diversifier| {
