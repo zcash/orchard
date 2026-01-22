@@ -120,6 +120,18 @@ impl NoteValue {
     pub(crate) fn to_le_bits(self) -> BitArray<[u8; 8], Lsb0> {
         BitArray::<_, Lsb0>::new(self.0.to_le_bytes())
     }
+
+    /// Adds two `NoteValue`s.
+    ///
+    /// This helper performs checked addition over `NoteValue`s and returns `None` on overflow.
+    /// It is required by the issuance flow to aggregate per-asset issuance amounts before
+    /// validating and applying supply changes to the global state.
+    ///
+    /// This function is intended for use only by the issuance logic
+    /// (`IssueAction::verify` and `verify_issue_bundle`).
+    pub(crate) fn add(self, rhs: Self) -> Option<Self> {
+        self.0.checked_add(rhs.0).map(NoteValue)
+    }
 }
 
 #[cfg(feature = "circuit")]
@@ -140,14 +152,6 @@ impl Sub for NoteValue {
             .filter(|v| VALUE_SUM_RANGE.contains(v))
             .map(ValueSum)
             .expect("u64 - u64 result is always in VALUE_SUM_RANGE")
-    }
-}
-
-impl Add for NoteValue {
-    type Output = Option<NoteValue>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        self.0.checked_add(rhs.0).map(NoteValue)
     }
 }
 
@@ -176,13 +180,19 @@ impl ValueSum {
     /// in `Bundle::binding_validating_key`, where we are converting from the user-defined
     /// `valueBalance` type that enforces any additional constraints on the value's valid
     /// range.
+    pub(crate) fn from_raw_inner(value: i64) -> Self {
+        ValueSum(value as i128)
+    }
+
+    /// Creates a value sum from a raw i64 (which is always in range for this type).
     ///
     /// This function needs to be public because Zebra constructs `ValueCommitment`s using
     /// `ValueCommitment::derive`, which takes a `ValueSum` as input. In order to avoid duplicating
     /// the `ValueSum` construction logic between Zebra and Orchard, Zebra must be able to create a
     /// `ValueSum` directly.
+    #[cfg(feature = "temporary-zebra")]
     pub fn from_raw(value: i64) -> Self {
-        ValueSum(value as i128)
+        Self::from_raw_inner(value)
     }
 
     /// Constructs a value sum from its magnitude and sign.

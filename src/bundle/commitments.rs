@@ -80,7 +80,7 @@ pub fn hash_bundle_txid_empty() -> Blake2bHash {
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_bundle_auth_data<V, Pr: OrchardPrimitives>(
     bundle: &Bundle<Authorized, V, Pr>,
-    sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> &'static [u8],
+    sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
 ) -> Blake2bHash {
     Pr::hash_bundle_auth_data(bundle, sighash_info_for_kind)
 }

@@ -1,6 +1,7 @@
 //! This module implements the note encryption and commitment logic specific for the `OrchardZSA`
 //! flavor.
 
+use alloc::vec::Vec;
 use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption::note_bytes::NoteBytesData;
 
@@ -128,7 +129,7 @@ impl OrchardPrimitives for OrchardZSA {
     /// [zip246]: https://zips.z.cash/zip-0246
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, OrchardZSA>,
-        sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> &'static [u8],
+        sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
     ) -> Blake2bHash {
         let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
         let mut agh = hasher(ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION);
@@ -137,7 +138,7 @@ impl OrchardPrimitives for OrchardZSA {
         for action in bundle.actions().iter() {
             let sighash_info = sighash_info_for_kind(action.authorization().sighash_kind());
             sash.update(&get_compact_size(sighash_info.len()));
-            sash.update(sighash_info);
+            sash.update(sighash_info.as_slice());
             sash.update(&<[u8; 64]>::from(action.authorization().sig()));
         }
         agh.update(sash.finalize().as_bytes());
@@ -146,7 +147,7 @@ impl OrchardPrimitives for OrchardZSA {
         let sighash_info =
             sighash_info_for_kind(bundle.authorization().binding_signature().sighash_kind());
         h.update(&get_compact_size(sighash_info.len()));
-        h.update(sighash_info);
+        h.update(sighash_info.as_slice());
         h.update(&<[u8; 64]>::from(
             bundle.authorization().binding_signature().sig(),
         ));

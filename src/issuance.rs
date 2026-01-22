@@ -245,7 +245,7 @@ impl IssueAction {
                 }
 
                 // The total amount should not overflow
-                (value_sum + note.value()).ok_or(ValueOverflow)
+                value_sum.add(note.value()).ok_or(ValueOverflow)
             })?;
 
         Ok((issue_asset, value_sum))
@@ -638,7 +638,7 @@ impl IssueBundle<Signed> {
     /// for a given [`IssueSighashKind`].
     pub fn authorizing_commitment(
         &self,
-        sighash_info_for_kind: impl Fn(&IssueSighashKind) -> &'static [u8],
+        sighash_info_for_kind: impl Fn(&IssueSighashKind) -> Vec<u8>,
     ) -> IssueBundleAuthorizingCommitment {
         IssueBundleAuthorizingCommitment(hash_issue_bundle_auth_data(self, sighash_info_for_kind))
     }
@@ -735,7 +735,7 @@ pub fn verify_issue_bundle(
 
                 // Subsequent issuance of the asset
                 Some(current_record) => {
-                    let amount = (current_record.amount + amount).ok_or(ValueOverflow)?;
+                    let amount = current_record.amount.add(amount).ok_or(ValueOverflow)?;
 
                     if current_record.is_finalized {
                         return Err(IssueActionPreviouslyFinalizedAssetBase);

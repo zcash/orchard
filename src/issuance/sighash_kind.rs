@@ -2,6 +2,9 @@
 
 use crate::issuance::auth::{IssueAuthSig, IssueAuthSigScheme, ZSASchnorr};
 
+#[cfg(test)]
+use alloc::vec::Vec;
+
 /// The kind of data that a sighash commits to.
 ///
 /// This is used to implement [sighash versioning] for issuance transactions.
@@ -45,8 +48,8 @@ pub type BIP340IssueAuthSig = IssueSig<ZSASchnorr>;
 ///
 /// This helper is only intended for use in tests.
 #[cfg(test)]
-pub fn test_sighash_info_for_kind(kind: &IssueSighashKind) -> &'static [u8] {
+pub fn test_sighash_info_for_kind(kind: &IssueSighashKind) -> Vec<u8> {
     match kind {
-        IssueSighashKind::AllEffecting => &[0],
+        IssueSighashKind::AllEffecting => vec![0],
     }
 }

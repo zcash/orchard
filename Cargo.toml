@@ -91,6 +91,7 @@ multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 test-dependencies = ["proptest", "rand/std"]
 zsa-issuance = ["dep:secp256k1"]
+temporary-zebra = []
 
 [[bench]]
 name = "note_decryption"

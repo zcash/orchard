@@ -1,5 +1,6 @@
 //! Issuance-related commitment functions (ZSA feature)
 
+use alloc::vec::Vec;
 use blake2b_simd::Hash as Blake2bHash;
 
 use crate::{
@@ -67,12 +68,12 @@ pub fn hash_issue_bundle_auth_empty() -> Blake2bHash {
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_issue_bundle_auth_data(
     bundle: &IssueBundle<Signed>,
-    sighash_info_for_kind: impl Fn(&IssueSighashKind) -> &'static [u8],
+    sighash_info_for_kind: impl Fn(&IssueSighashKind) -> Vec<u8>,
 ) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
     let sighash_info = sighash_info_for_kind(bundle.authorization().signature().sighash_kind());
     h.update(&get_compact_size(sighash_info.len()));
-    h.update(sighash_info);
+    h.update(sighash_info.as_slice());
 
     let sig_enc = bundle.authorization().signature().sig().encode();
     assert_eq!(sig_enc.len(), 65);

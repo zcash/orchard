@@ -2,6 +2,9 @@
 
 use crate::primitives::redpallas::{Binding, SigType, Signature, SpendAuth};
 
+#[cfg(test)]
+use alloc::vec::Vec;
+
 /// The kind of data that a sighash commits to.
 ///
 /// This is used to implement [sighash versioning] for transactions containing Orchard
@@ -49,8 +52,8 @@ pub type OrchardBindingSig = OrchardSig<Binding>;
 ///
 /// This helper is only intended for use in tests.
 #[cfg(test)]
-pub fn test_sighash_info_for_kind(kind: &OrchardSighashKind) -> &'static [u8] {
+pub fn test_sighash_info_for_kind(kind: &OrchardSighashKind) -> Vec<u8> {
     match kind {
-        OrchardSighashKind::AllEffecting => &[0],
+        OrchardSighashKind::AllEffecting => vec![0],
     }
 }

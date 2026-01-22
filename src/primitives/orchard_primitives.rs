@@ -1,6 +1,7 @@
 //! The OrchardPrimitives trait represents the difference between the `OrchardVanilla` and the
 //! `OrchardZSA` commitment, encryption and decryption procedures.
 
+use alloc::vec::Vec;
 use core::fmt;
 
 use blake2b_simd::Hash as Blake2bHash;
@@ -66,7 +67,7 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
     /// [zip246]: https://zips.z.cash/zip-0246
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, Self>,
-        sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> &'static [u8],
+        sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
     ) -> Blake2bHash;
 
     /// Returns true if the note plaintext leadByte is equal to
