@@ -83,7 +83,7 @@ pprof = { version = "0.11", features = ["criterion", "flamegraph"] }
 bench = false
 
 [features]
-default = ["circuit", "multicore", "std", "zsa-issuance"]
+default = ["circuit", "multicore", "std"]
 std = ["core2/std", "group/wnaf-memuse", "reddsa/std"]
 circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
 unstable-frost = []
