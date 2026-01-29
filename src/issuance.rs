@@ -22,7 +22,6 @@ use rand::RngCore;
 
 use crate::{
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
-    constants::reference_keys::ReferenceKeys,
     note::{rho_for_issuance_note, AssetBase, AssetId, Nullifier},
     value::NoteValue,
     Address, Note,
@@ -39,17 +38,10 @@ use Error::{
 pub mod auth;
 pub mod sighash_kind;
 
+pub use crate::constants::reference_keys::ReferenceKeys;
+
 use auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr};
 use sighash_kind::{BIP340IssueAuthSig, IssueSighashKind};
-
-/// Checks if a given note is a reference note.
-///
-/// A reference note satisfies the following conditions:
-/// - The note's value is zero.
-/// - The note's recipient matches the reference recipient.
-fn is_reference_note(note: &Note) -> bool {
-    note.value() == NoteValue::zero() && note.recipient() == ReferenceKeys::recipient()
-}
 
 /// A bundle of actions to be applied to the ledger.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -752,6 +744,15 @@ pub fn verify_issue_bundle(
     )
 }
 
+/// Checks if a given note is a reference note.
+///
+/// A reference note satisfies the following conditions:
+/// - The note's value is zero.
+/// - The note's recipient matches the reference recipient.
+fn is_reference_note(note: &Note) -> bool {
+    note.value() == NoteValue::zero() && note.recipient() == ReferenceKeys::recipient()
+}
+
 /// Represents aggregated information about an asset, including its supply, finalization status,
 /// and reference note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -759,7 +760,7 @@ pub struct AssetRecord {
     /// The amount of the asset.
     pub amount: NoteValue,
 
-    /// Whether or not the asset is finalized.
+    /// Whether the asset is finalized.
     pub is_finalized: bool,
 
     /// A reference note

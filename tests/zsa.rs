@@ -13,7 +13,7 @@ use orchard::{
     issuance::{
         auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
         compute_asset_desc_hash, verify_issue_bundle, AwaitingNullifier, IssueBundle, IssueInfo,
-        Signed,
+        ReferenceKeys, Signed,
     },
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::{AssetBase, AssetId, ExtractedNoteCommitment, Nullifier},
@@ -312,12 +312,9 @@ fn verify_unique_spent_nullifiers(bundle: &Bundle<Authorized, i64, OrchardZSA>) 
 /// - the asset of the reference note is equal to the provided asset
 /// - the recipient of the reference note is equal to the reference recipient
 fn verify_reference_note(note: &Note, asset: AssetBase) {
-    let reference_sk = SpendingKey::from_bytes([0; 32]).unwrap();
-    let reference_fvk = FullViewingKey::from(&reference_sk);
-    let reference_recipient = reference_fvk.address_at(0u32, Scope::External);
     assert_eq!(note.value(), NoteValue::from_raw(0));
     assert_eq!(note.asset(), asset);
-    assert_eq!(note.recipient(), reference_recipient);
+    assert_eq!(note.recipient(), ReferenceKeys::recipient());
 }
 
 /// Issue several ZSA and zatoshi notes and spend them in different combinations, e.g. split and join
