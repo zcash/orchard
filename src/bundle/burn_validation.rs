@@ -7,6 +7,10 @@ use core::fmt;
 
 use crate::{note::AssetBase, value::NoteValue};
 
+/// Maximum burn value.
+/// Burns must fit in both u64 and i64 for value balance calculations.
+pub const MAX_BURN_VALUE: u64 = (1u64 << 63) - 1;
+
 /// Possible errors that can occur during bundle burn validation.
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
@@ -47,7 +51,7 @@ pub fn validate_bundle_burn(burn: &[(AssetBase, NoteValue)]) -> Result<(), BurnE
         if value.inner() == 0 {
             return Err(BurnError::ZeroAmount);
         }
-        if value.inner() >= (1u64 << 63) {
+        if value.inner() > MAX_BURN_VALUE {
             return Err(BurnError::InvalidAmount);
         }
         if !burn_set.insert(*asset) {
@@ -166,7 +170,7 @@ mod tests {
 
         let bundle_burn = vec![
             burn_tuple_unique(&mut rng, &mut used, 10),
-            burn_tuple_unique(&mut rng, &mut used, 1u64 << 63),
+            burn_tuple_unique(&mut rng, &mut used, MAX_BURN_VALUE + 1),
             burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
