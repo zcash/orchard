@@ -419,7 +419,7 @@ impl Note {
     /// Panics if `self.asset().is_zatoshi()`.
     ///
     /// [Split Input note]: https://zips.z.cash/zip-0226#split-notes
-    pub fn create_split_note(self, rng: &mut impl RngCore) -> Self {
+    pub(crate) fn create_split_note(self, rng: &mut impl RngCore) -> Self {
         assert!(bool::from(!self.asset().is_zatoshi()));
         Note {
             rseed_split_note: CtOption::new(RandomSeed::random(rng, &self.rho()), 1u8.into()),
