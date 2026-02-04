@@ -45,7 +45,7 @@ impl NoteCommitment {
     /// [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommitzsa].
     ///
     /// [concretesinsemillacommit]: https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit
-    /// [notecommitzsa]: https://zips.z.cash/zip-0226#note-structure-commitment
+    /// [notecommitzsa]: https://zips.z.cash/zip-0226#note-structure-and-commitment
     pub(crate) fn derive(
         g_d: [u8; 32],
         pk_d: [u8; 32],
