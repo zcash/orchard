@@ -54,8 +54,8 @@ impl super::Bundle {
                     .clone()
                     .ok_or(ProverError::MissingWitness)?;
 
-                let spend = SpendInfo::new(fvk, note, merkle_path, false)
-                    .ok_or(ProverError::WrongFvkForNote)?;
+                let spend =
+                    SpendInfo::new(fvk, note, merkle_path).ok_or(ProverError::WrongFvkForNote)?;
 
                 let output_note = Note::from_parts(
                     action

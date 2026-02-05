@@ -251,18 +251,13 @@ impl SpendInfo {
     /// This constructor is public to enable creation of custom builders.
     /// If you are not creating a custom builder, use [`Builder::add_spend`] instead.
     ///
-    /// Creates a `SpendInfo` from note, full viewing key owning the note, merkle path witness of
-    /// the note, and split flag.
+    /// Creates a `SpendInfo` from note, full viewing key owning the note,
+    /// and merkle path witness of the note.
     ///
     /// Returns `None` if the `fvk` does not own the `note`.
     ///
     /// [`Builder::add_spend`]: Builder::add_spend
-    pub fn new(
-        fvk: FullViewingKey,
-        note: Note,
-        merkle_path: MerklePath,
-        split_flag: bool,
-    ) -> Option<Self> {
+    pub fn new(fvk: FullViewingKey, note: Note, merkle_path: MerklePath) -> Option<Self> {
         let scope = fvk.scope_for_address(&note.recipient())?;
         Some(SpendInfo {
             dummy_sk: None,
@@ -270,7 +265,7 @@ impl SpendInfo {
             scope,
             note,
             merkle_path,
-            split_flag,
+            split_flag: false,
         })
     }
 
@@ -655,7 +650,7 @@ impl Builder {
             return Err(SpendError::SpendsDisabled);
         }
 
-        let spend = SpendInfo::new(fvk, note, merkle_path, false).ok_or(SpendError::FvkMismatch)?;
+        let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
 
         // Consistency check: all anchors must be equal.
         if !spend.has_matching_anchor(&self.anchor) {
