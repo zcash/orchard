@@ -1596,4 +1596,9 @@ mod tests {
     fn shielding_bundle_zsa() {
         shielding_bundle::<OrchardZSA>(BundleType::DEFAULT_ZSA)
     }
+
+    #[test]
+    fn shielding_bundle_zsa_with_vanilla_flags() {
+        shielding_bundle::<OrchardZSA>(BundleType::DEFAULT)
+    }
 }
