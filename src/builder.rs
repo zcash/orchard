@@ -272,8 +272,8 @@ impl SpendInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(asset: AssetBase, rng: &mut impl RngCore) -> Self {
-        let (sk, fvk, note) = Note::dummy(rng, None, asset);
+    fn dummy(rng: &mut impl RngCore) -> Self {
+        let (sk, fvk, note) = Note::dummy(rng, None);
         let merkle_path = MerklePath::dummy(rng);
 
         SpendInfo {
@@ -853,7 +853,7 @@ fn pad_spend(
 ) -> Result<SpendInfo, BuildError> {
     if asset.is_zatoshi().into() {
         // For zatoshi asset, extends with dummy notes
-        Ok(SpendInfo::dummy(AssetBase::zatoshi(), &mut rng))
+        Ok(SpendInfo::dummy(&mut rng))
     } else {
         // For ZSA asset, extends with split_notes.
         // If SpendInfo is none, return an error (no split note are available for this asset)
@@ -982,7 +982,7 @@ fn build_bundle<B, R: RngCore>(
                 .entry(AssetBase::zatoshi())
                 .or_insert_with(|| (vec![], vec![]));
             asset_spends.extend(
-                iter::repeat_with(|| (SpendInfo::dummy(AssetBase::zatoshi(), &mut rng), None))
+                iter::repeat_with(|| (SpendInfo::dummy(&mut rng), None))
                     .take(num_actions.saturating_sub(asset_spends.len())),
             );
             asset_outputs.extend(
@@ -1036,7 +1036,7 @@ fn build_bundle<B, R: RngCore>(
         indexed_spends_outputs.extend(
             iter::repeat_with(|| {
                 (
-                    (SpendInfo::dummy(AssetBase::zatoshi(), &mut rng), None),
+                    (SpendInfo::dummy(&mut rng), None),
                     (OutputInfo::dummy(&mut rng, AssetBase::zatoshi()), None),
                 )
             })

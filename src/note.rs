@@ -307,7 +307,6 @@ impl Note {
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Rho>,
-        asset: AssetBase,
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
@@ -316,7 +315,7 @@ impl Note {
         let note = Note::new(
             recipient,
             NoteValue::zero(),
-            asset,
+            AssetBase::zatoshi(),
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
         );

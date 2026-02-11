@@ -647,7 +647,7 @@ mod tests {
     };
 
     fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit<OrchardVanilla>, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetBase::zatoshi());
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -658,7 +658,7 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), AssetBase::zatoshi());
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
