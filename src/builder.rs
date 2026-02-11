@@ -13,17 +13,16 @@ use zcash_note_encryption::NoteEncryption;
 
 use crate::{
     address::Address,
-    builder::BuildError::{BurnNative, BurnZero},
-    bundle::{Authorization, Authorized, Bundle, Flags},
+    bundle::{burn_validation::BurnError, Authorization, Authorized, Bundle, Flags},
+    flavor::OrchardVanilla,
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
     note::{AssetBase, ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
-    orchard_flavor::OrchardVanilla,
-    orchard_sighash_versioning::{VerBindingSig, VerSpendAuthSig},
     primitives::redpallas::{self, Binding, SpendAuth},
     primitives::{OrchardDomain, OrchardPrimitives},
+    sighash_kind::{OrchardBindingSig, OrchardSighashKind, OrchardSpendAuthSig},
     tree::{Anchor, MerklePath},
     value::{self, NoteValue, OverflowError, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Proof,
@@ -35,7 +34,7 @@ use {
         action::Action,
         bundle::derive_bvk,
         circuit::{Circuit, Instance, OrchardCircuit, ProvingKey, Witnesses},
-        orchard_flavor::OrchardFlavor,
+        flavor::OrchardFlavor,
     },
     nonempty::NonEmpty,
 };
@@ -61,9 +60,9 @@ pub enum BundleType {
 
 impl BundleType {
     /// The default bundle type has all flags enabled, ZSA disabled, and does not require a bundle
-    /// to be produced.
-    pub const DEFAULT_VANILLA: BundleType = BundleType::Transactional {
-        flags: Flags::ENABLED_WITHOUT_ZSA,
+    /// to be produced if no spends or outputs have been added to the bundle.
+    pub const DEFAULT: BundleType = BundleType::Transactional {
+        flags: Flags::ENABLED,
         bundle_required: false,
     };
 
@@ -123,7 +122,7 @@ impl BundleType {
     pub fn flags(&self) -> Flags {
         match self {
             BundleType::Transactional { flags, .. } => *flags,
-            BundleType::Coinbase => Flags::SPENDS_DISABLED_WITHOUT_ZSA,
+            BundleType::Coinbase => Flags::SPENDS_DISABLED,
         }
     }
 }
@@ -152,12 +151,8 @@ pub enum BuildError {
     DuplicateSignature,
     /// The bundle being constructed violated the construction rules for the requested bundle type.
     BundleTypeNotSatisfiable,
-    /// Native asset cannot be burned
-    BurnNative,
-    /// The value to be burned cannot be zero
-    BurnZero,
-    /// The asset to be burned is duplicated.
-    BurnDuplicateAsset,
+    /// Burn-specific error.
+    Burn(BurnError),
     /// There is no available split note for this asset.
     NoSplitNoteAvailable,
 }
@@ -180,9 +175,7 @@ impl fmt::Display for BuildError {
             AnchorMismatch => {
                 f.write_str("All spends must share the anchor requested for the transaction.")
             }
-            BurnNative => f.write_str("Burning is only possible for non-native assets"),
-            BurnZero => f.write_str("Burning is not possible for zero values"),
-            BurnDuplicateAsset => f.write_str("Duplicate assets are not allowed when burning"),
+            Burn(e) => write!(f, "Burn error: {}", e),
             NoSplitNoteAvailable => f.write_str("No split note has been provided for this asset"),
         }
     }
@@ -258,18 +251,13 @@ impl SpendInfo {
     /// This constructor is public to enable creation of custom builders.
     /// If you are not creating a custom builder, use [`Builder::add_spend`] instead.
     ///
-    /// Creates a `SpendInfo` from note, full viewing key owning the note, merkle path witness of
-    /// the note, and split flag.
+    /// Creates a `SpendInfo` from note, full viewing key owning the note,
+    /// and merkle path witness of the note.
     ///
     /// Returns `None` if the `fvk` does not own the `note`.
     ///
     /// [`Builder::add_spend`]: Builder::add_spend
-    pub fn new(
-        fvk: FullViewingKey,
-        note: Note,
-        merkle_path: MerklePath,
-        split_flag: bool,
-    ) -> Option<Self> {
+    pub fn new(fvk: FullViewingKey, note: Note, merkle_path: MerklePath) -> Option<Self> {
         let scope = fvk.scope_for_address(&note.recipient())?;
         Some(SpendInfo {
             dummy_sk: None,
@@ -277,15 +265,15 @@ impl SpendInfo {
             scope,
             note,
             merkle_path,
-            split_flag,
+            split_flag: false,
         })
     }
 
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(asset: AssetBase, rng: &mut impl RngCore) -> Self {
-        let (sk, fvk, note) = Note::dummy(rng, None, asset);
+    fn dummy(rng: &mut impl RngCore) -> Self {
+        let (sk, fvk, note) = Note::dummy(rng, None);
         let merkle_path = MerklePath::dummy(rng);
 
         SpendInfo {
@@ -352,7 +340,7 @@ impl SpendInfo {
 
     fn into_pczt(self, rng: impl RngCore) -> crate::pczt::Spend {
         assert!(!self.split_flag);
-        assert_eq!(self.note.asset(), AssetBase::native());
+        assert_eq!(self.note.asset(), AssetBase::zatoshi());
 
         let (nf_old, _, alpha, rk) = self.build(rng);
 
@@ -417,18 +405,18 @@ impl OutputInfo {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    fn build<P: OrchardPrimitives>(
+    fn build<Pr: OrchardPrimitives>(
         &self,
         cv_net: &ValueCommitment,
         nf_old: Nullifier,
         mut rng: impl RngCore,
-    ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext<P>) {
+    ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext<Pr>) {
         let rho = Rho::from_nf_old(nf_old);
         let note = Note::new(self.recipient, self.value, self.asset, rho, &mut rng);
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
-        let encryptor = NoteEncryption::<OrchardDomain<P>>::new(self.ovk.clone(), note, self.memo);
+        let encryptor = NoteEncryption::<OrchardDomain<Pr>>::new(self.ovk.clone(), note, self.memo);
 
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: encryptor.epk().to_bytes().0,
@@ -445,7 +433,7 @@ impl OutputInfo {
         nf_old: Nullifier,
         rng: impl RngCore,
     ) -> crate::pczt::Output {
-        assert_eq!(self.asset, AssetBase::native());
+        assert_eq!(self.asset, AssetBase::zatoshi());
 
         let (note, cmx, encrypted_note) = self.build::<OrchardVanilla>(cv_net, nf_old, rng);
 
@@ -474,7 +462,18 @@ struct ActionInfo {
 }
 
 impl ActionInfo {
+    /// Creates an `ActionInfo` with a random `rcv`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the asset types of the spent and output notes do not match.
     fn new(spend: SpendInfo, output: OutputInfo, rng: impl RngCore) -> Self {
+        assert_eq!(
+            spend.note.asset(),
+            output.asset,
+            "spend and recipient note types must be equal"
+        );
+
         ActionInfo {
             spend,
             output,
@@ -483,6 +482,7 @@ impl ActionInfo {
     }
 
     /// Returns the value sum for this action.
+    ///
     /// Split notes do not contribute to the value sum.
     fn value_sum(&self) -> ValueSum {
         let spent_value = if self.spend.split_flag {
@@ -499,23 +499,13 @@ impl ActionInfo {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
-    ///
-    /// # Panics
-    ///
-    /// Panics if the asset types of the spent and output notes do not match.
     #[cfg(feature = "circuit")]
     fn build<FL: OrchardFlavor>(
         self,
         mut rng: impl RngCore,
     ) -> (Action<SigningMetadata, FL>, Witnesses) {
-        assert_eq!(
-            self.spend.note.asset(),
-            self.output.asset,
-            "spend and recipient note types must be equal"
-        );
-
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv, self.output.asset);
+        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone(), self.output.asset);
 
         let (nf_old, ak, alpha, rk) = self.spend.build(&mut rng);
         let (note, cmx, encrypted_note) = self.output.build(&cv_net, nf_old, &mut rng);
@@ -537,13 +527,8 @@ impl ActionInfo {
     }
 
     fn build_for_pczt(self, mut rng: impl RngCore) -> crate::pczt::Action {
-        assert_eq!(
-            self.spend.note.asset(),
-            self.output.asset,
-            "spend and recipient note types must be equal"
-        );
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv, self.spend.note.asset());
+        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone(), self.spend.note.asset());
 
         let spend = self.spend.into_pczt(&mut rng);
         let output = self.output.into_pczt(&cv_net, spend.nullifier, &mut rng);
@@ -619,6 +604,7 @@ pub type UnauthorizedBundleWithMetadata<V, FL> = (UnauthorizedBundle<V, FL>, Bun
 
 /// A builder for constructing an Orchard [`Bundle`] by specifying notes to spend, outputs to
 /// receive, and assets to burn.
+///
 /// This builder provides a structured way to incrementally assemble the components of a bundle.
 #[derive(Debug)]
 pub struct Builder {
@@ -664,7 +650,7 @@ impl Builder {
             return Err(SpendError::SpendsDisabled);
         }
 
-        let spend = SpendInfo::new(fvk, note, merkle_path, false).ok_or(SpendError::FvkMismatch)?;
+        let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
 
         // Consistency check: all anchors must be equal.
         if !spend.has_matching_anchor(&self.anchor) {
@@ -696,20 +682,25 @@ impl Builder {
         Ok(())
     }
 
-    /// Add an instruction to burn a given amount of a specific asset.
+    /// Adds an instruction to burn a given amount of a specific asset.
     pub fn add_burn(&mut self, asset: AssetBase, value: NoteValue) -> Result<(), BuildError> {
         use alloc::collections::btree_map::Entry;
 
-        if asset.is_native().into() {
-            return Err(BurnNative);
+        if asset.is_zatoshi().into() {
+            return Err(BuildError::Burn(BurnError::ZatoshiAsset));
         }
 
         if value.inner() == 0 {
-            return Err(BurnZero);
+            return Err(BuildError::Burn(BurnError::ZeroAmount));
+        }
+
+        // Check that the burn amount fits in u63
+        if value.inner() >= (1u64 << 63) {
+            return Err(BuildError::Burn(BurnError::InvalidAmount));
         }
 
         match self.burn.entry(asset) {
-            Entry::Occupied(_) => Err(BuildError::BurnDuplicateAsset),
+            Entry::Occupied(_) => Err(BuildError::Burn(BurnError::DuplicateAsset)),
             Entry::Vacant(entry) => {
                 entry.insert(value);
                 Ok(())
@@ -729,7 +720,7 @@ impl Builder {
         &self.outputs
     }
 
-    /// The net native (ZEC) value of the bundle to be built. The value of all spends,
+    /// The net zatoshi value of the bundle to be built. The value of all spends,
     /// minus the value of all outputs.
     ///
     /// Useful for balancing a transaction, as the value balance of an individual bundle
@@ -743,12 +734,12 @@ impl Builder {
         let value_balance = self
             .spends
             .iter()
-            .filter(|spend| spend.note.asset().is_native().into())
+            .filter(|spend| spend.note.asset().is_zatoshi().into())
             .map(|spend| spend.note.value() - NoteValue::zero())
             .chain(
                 self.outputs
                     .iter()
-                    .filter(|output| output.asset.is_native().into())
+                    .filter(|output| output.asset.is_zatoshi().into())
                     .map(|output| NoteValue::zero() - output.value),
             )
             .try_fold(ValueSum::zero(), |acc, note_value| acc + note_value)
@@ -764,7 +755,7 @@ impl Builder {
     pub fn build<V: TryFrom<i64>, FL: OrchardFlavor>(
         self,
         rng: impl RngCore,
-    ) -> Result<UnauthorizedBundleWithMetadata<V, FL>, BuildError> {
+    ) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
         bundle(
             rng,
             self.anchor,
@@ -860,9 +851,9 @@ fn pad_spend(
     asset: AssetBase,
     mut rng: impl RngCore,
 ) -> Result<SpendInfo, BuildError> {
-    if asset.is_native().into() {
-        // For native asset, extends with dummy notes
-        Ok(SpendInfo::dummy(AssetBase::native(), &mut rng))
+    if asset.is_zatoshi().into() {
+        // For zatoshi asset, extends with dummy notes
+        Ok(SpendInfo::dummy(&mut rng))
     } else {
         // For ZSA asset, extends with split_notes.
         // If SpendInfo is none, return an error (no split note are available for this asset)
@@ -884,7 +875,7 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     burn: BTreeMap<AssetBase, NoteValue>,
-) -> Result<UnauthorizedBundleWithMetadata<V, FL>, BuildError> {
+) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
     build_bundle(
         rng,
         anchor,
@@ -893,10 +884,10 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
         outputs,
         burn,
         |pre_actions, flags, value_balance, burn_vec, bundle_meta, mut rng| {
-            let native_value_balance: i64 =
+            let zatoshi_value_balance: i64 =
                 i64::try_from(value_balance).map_err(BuildError::ValueSum)?;
 
-            let result_value_balance = V::try_from(native_value_balance)
+            let result_value_balance = V::try_from(zatoshi_value_balance)
                 .map_err(|_| BuildError::ValueSum(value::OverflowError))?;
 
             // Compute the transaction binding signing key.
@@ -910,27 +901,26 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
             let (actions, witnesses): (Vec<_>, Vec<_>) =
                 pre_actions.into_iter().map(|a| a.build(&mut rng)).unzip();
 
-            // `actions` is never empty. It contains at least MIN_ACTIONS=2 actions.
-            let actions = NonEmpty::from_vec(actions).unwrap();
-
             // Verify that bsk and bvk are consistent.
-            let bvk = derive_bvk(&actions, native_value_balance, &burn_vec);
+            let bvk = derive_bvk(&actions, zatoshi_value_balance, &burn_vec);
             assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
 
-            Ok((
-                Bundle::from_parts(
-                    actions,
-                    flags,
-                    result_value_balance,
-                    burn_vec,
-                    anchor,
-                    InProgress {
-                        proof: Unproven { witnesses },
-                        sigs: Unauthorized { bsk },
-                    },
-                ),
-                bundle_meta,
-            ))
+            Ok(NonEmpty::from_vec(actions).map(|actions| {
+                (
+                    Bundle::from_parts(
+                        actions,
+                        flags,
+                        result_value_balance,
+                        burn_vec,
+                        anchor,
+                        InProgress {
+                            proof: Unproven { witnesses },
+                            sigs: Unauthorized { bsk },
+                        },
+                    ),
+                    bundle_meta,
+                )
+            }))
         },
     )
 }
@@ -945,7 +935,7 @@ fn build_bundle<B, R: RngCore>(
     finisher: impl FnOnce(
         Vec<ActionInfo>,             // pre-actions
         Flags,                       // flags
-        ValueSum,                    // native value balance
+        ValueSum,                    // zatoshi value balance
         Vec<(AssetBase, NoteValue)>, // burn vector
         BundleMetadata,              // bundle metadata
         R,                           // random number generator
@@ -969,14 +959,38 @@ fn build_bundle<B, R: RngCore>(
         return Err(BuildError::OutputsDisabled);
     }
 
+    let num_actions = bundle_type
+        .num_actions(num_requested_spends, num_requested_outputs)
+        .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
+
     // Pair up the spends and outputs, extending with dummy values as necessary.
     let (pre_actions, bundle_meta) = {
         // Use Vec::with_capacity().extend(...) instead of .collect() to avoid reallocations,
         // as we can estimate the vector size beforehand.
-        let mut indexed_spends_outputs =
-            Vec::with_capacity(spends.len().max(outputs.len()).max(MIN_ACTIONS));
+        let mut indexed_spends_outputs = Vec::with_capacity(num_actions);
 
-        let spends_outputs_by_asset = partition_by_asset(&spends, &outputs);
+        let mut spends_outputs_by_asset = partition_by_asset(&spends, &outputs);
+
+        // For zatoshi-only bundles, pad spends and outputs to num_actions
+        // before per-asset processing, so that dummies are created before the shuffle —
+        // matching vanilla Orchard RNG consumption order.
+        if spends_outputs_by_asset
+            .keys()
+            .all(|asset| asset == &AssetBase::zatoshi())
+        {
+            let (asset_spends, asset_outputs) = spends_outputs_by_asset
+                .entry(AssetBase::zatoshi())
+                .or_insert_with(|| (vec![], vec![]));
+            asset_spends.extend(
+                iter::repeat_with(|| (SpendInfo::dummy(&mut rng), None))
+                    .take(num_actions.saturating_sub(asset_spends.len())),
+            );
+            asset_outputs.extend(
+                iter::repeat_with(|| (OutputInfo::dummy(&mut rng, AssetBase::zatoshi()), None))
+                    .take(num_actions.saturating_sub(asset_outputs.len())),
+            );
+        }
+        let asset_count = spends_outputs_by_asset.len();
 
         indexed_spends_outputs.extend(spends_outputs_by_asset.into_iter().flat_map(
             |(asset, (spends, outputs))| {
@@ -1004,8 +1018,9 @@ fn build_bundle<B, R: RngCore>(
                     .take(num_asset_pre_actions)
                     .collect::<Vec<_>>();
 
-                // Shuffle the spends and outputs, so that the position does not reveal any
-                // information about the content.
+                // Shuffle the spends and outputs, so that learning the position of a
+                // specific spent note or output note doesn't reveal anything on its own
+                // about the meaning of that note in the transaction context.
                 indexed_spends.shuffle(&mut rng);
                 indexed_outputs.shuffle(&mut rng);
 
@@ -1015,19 +1030,24 @@ fn build_bundle<B, R: RngCore>(
             },
         ));
 
+        // Pad total actions to num_actions.
+        // This covers the edge case of a single non-zatoshi asset with fewer than
+        // MIN_ACTIONS spends/outputs (e.g. a bundle that only burns a custom asset).
         indexed_spends_outputs.extend(
             iter::repeat_with(|| {
                 (
-                    (SpendInfo::dummy(AssetBase::native(), &mut rng), None),
-                    (OutputInfo::dummy(&mut rng, AssetBase::native()), None),
+                    (SpendInfo::dummy(&mut rng), None),
+                    (OutputInfo::dummy(&mut rng, AssetBase::zatoshi()), None),
                 )
             })
-            .take(MIN_ACTIONS.saturating_sub(indexed_spends_outputs.len())),
+            .take(num_actions.saturating_sub(indexed_spends_outputs.len())),
         );
 
-        // Shuffle the spends and outputs, so that the position does not reveal any information
-        // about the content.
-        indexed_spends_outputs.shuffle(&mut rng);
+        // We shuffled the spends and outputs within each `AssetBase` above; now we
+        // shuffle the actions to achieve a similar property across `AssetBase`s.
+        if asset_count > 1 {
+            indexed_spends_outputs.shuffle(&mut rng);
+        }
 
         let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
         let pre_actions = indexed_spends_outputs
@@ -1052,29 +1072,18 @@ fn build_bundle<B, R: RngCore>(
     };
 
     // Determine the value balance for this bundle, ensuring it is valid.
-    let native_value_balance = pre_actions
+    let zatoshi_value_balance = pre_actions
         .iter()
-        .filter(|action| action.spend.note.asset().is_native().into())
+        .filter(|action| action.spend.note.asset().is_zatoshi().into())
         .try_fold(ValueSum::zero(), |acc, action| acc + action.value_sum())
         .ok_or(OverflowError)?;
 
-    let burn_vec = burn
-        .into_iter()
-        .map(|(asset, value)| {
-            Ok((
-                asset,
-                NoteValue::from_raw(
-                    u64::try_from(i128::from(value))
-                        .map_err(|_| BuildError::ValueSum(OverflowError))?,
-                ),
-            ))
-        })
-        .collect::<Result<Vec<(AssetBase, NoteValue)>, BuildError>>()?;
+    let burn_vec = burn.into_iter().collect();
 
     finisher(
         pre_actions,
         flags,
-        native_value_balance,
+        zatoshi_value_balance,
         burn_vec,
         bundle_meta,
         rng,
@@ -1084,7 +1093,7 @@ fn build_bundle<B, R: RngCore>(
 /// Marker trait representing bundle signatures in the process of being created.
 pub trait InProgressSignatures: fmt::Debug {
     /// The authorization type of an Orchard action in the process of being authorized.
-    type SpendAuth: fmt::Debug + Clone;
+    type SpendAuth: fmt::Debug;
 }
 
 /// Marker for a bundle in the process of being built.
@@ -1194,7 +1203,7 @@ pub struct SigningMetadata {
 /// Marker for a partially-authorized bundle, in the process of being signed.
 #[derive(Debug)]
 pub struct PartiallyAuthorized {
-    binding_signature: VerBindingSig,
+    binding_signature: OrchardBindingSig,
     sighash: [u8; 32],
 }
 
@@ -1204,17 +1213,17 @@ impl InProgressSignatures for PartiallyAuthorized {
 
 /// A heisen[`Signature`] for a particular [`Action`].
 ///
-/// [`Signature`]: VerSpendAuthSig
-#[derive(Debug, Clone)]
+/// [`Signature`]: OrchardSpendAuthSig
+#[derive(Debug)]
 pub enum MaybeSigned {
     /// The information needed to sign this [`Action`].
     SigningMetadata(SigningParts),
-    /// The versioned signature for this [`Action`].
-    Signature(VerSpendAuthSig),
+    /// The signature for this [`Action`].
+    Signature(OrchardSpendAuthSig),
 }
 
 impl MaybeSigned {
-    fn finalize(self) -> Result<VerSpendAuthSig, BuildError> {
+    fn finalize(self) -> Result<OrchardSpendAuthSig, BuildError> {
         match self {
             Self::Signature(sig) => Ok(sig),
             _ => Err(BuildError::MissingSignatures),
@@ -1222,7 +1231,7 @@ impl MaybeSigned {
     }
 }
 
-impl<Proof: fmt::Debug, V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauthorized>, V, P> {
+impl<P: fmt::Debug, V, Pr: OrchardPrimitives> Bundle<InProgress<P, Unauthorized>, V, Pr> {
     /// Loads the sighash into this bundle, preparing it for signing.
     ///
     /// This API ensures that all signatures are created over the same sighash.
@@ -1230,15 +1239,15 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauth
         self,
         mut rng: R,
         sighash: [u8; 32],
-    ) -> Bundle<InProgress<Proof, PartiallyAuthorized>, V, P> {
+    ) -> Bundle<InProgress<P, PartiallyAuthorized>, V, Pr> {
         self.map_authorization(
             &mut rng,
             |rng, _, SigningMetadata { dummy_ask, parts }| {
-                // We can create versioned signatures for dummy spends immediately.
+                // We can create signatures for dummy spends immediately.
                 dummy_ask
                     .map(|ask| {
-                        VerSpendAuthSig::new(
-                            P::default_sighash_version(),
+                        OrchardSpendAuthSig::new(
+                            OrchardSighashKind::AllEffecting,
                             ask.randomize(&parts.alpha).sign(rng, &sighash),
                         )
                     })
@@ -1248,8 +1257,8 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauth
             |rng, auth| InProgress {
                 proof: auth.proof,
                 sigs: PartiallyAuthorized {
-                    binding_signature: VerBindingSig::new(
-                        P::default_sighash_version(),
+                    binding_signature: OrchardBindingSig::new(
+                        OrchardSighashKind::AllEffecting,
                         auth.sigs.bsk.sign(rng, &sighash),
                     ),
 
@@ -1260,7 +1269,7 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauth
     }
 }
 
-impl<V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauthorized>, V, P> {
+impl<V, Pr: OrchardPrimitives> Bundle<InProgress<Proof, Unauthorized>, V, Pr> {
     /// Applies signatures to this bundle, in order to authorize it.
     ///
     /// This is a helper method that wraps [`Bundle::prepare`], [`Bundle::sign`], and
@@ -1270,7 +1279,7 @@ impl<V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauthorized>, V, P> {
         mut rng: R,
         sighash: [u8; 32],
         signing_keys: &[SpendAuthorizingKey],
-    ) -> Result<Bundle<Authorized, V, P>, BuildError> {
+    ) -> Result<Bundle<Authorized, V, Pr>, BuildError> {
         signing_keys
             .iter()
             .fold(self.prepare(&mut rng, sighash), |partial, ask| {
@@ -1280,20 +1289,18 @@ impl<V, P: OrchardPrimitives> Bundle<InProgress<Proof, Unauthorized>, V, P> {
     }
 }
 
-impl<Proof: fmt::Debug, V, P: OrchardPrimitives>
-    Bundle<InProgress<Proof, PartiallyAuthorized>, V, P>
-{
+impl<P: fmt::Debug, V, Pr: OrchardPrimitives> Bundle<InProgress<P, PartiallyAuthorized>, V, Pr> {
     /// Signs this bundle with the given [`SpendAuthorizingKey`].
     ///
-    /// This will apply versioned signatures for all notes controlled by this spending key.
+    /// This will apply signatures for all notes controlled by this spending key.
     pub fn sign<R: RngCore + CryptoRng>(self, mut rng: R, ask: &SpendAuthorizingKey) -> Self {
         let expected_ak = ask.into();
         self.map_authorization(
             &mut rng,
             |rng, partial, maybe| match maybe {
                 MaybeSigned::SigningMetadata(parts) if parts.ak == expected_ak => {
-                    MaybeSigned::Signature(VerSpendAuthSig::new(
-                        P::default_sighash_version(),
+                    MaybeSigned::Signature(OrchardSpendAuthSig::new(
+                        OrchardSighashKind::AllEffecting,
                         ask.randomize(&parts.alpha).sign(rng, &partial.sigs.sighash),
                     ))
                 }
@@ -1302,18 +1309,22 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives>
             |_, partial| partial,
         )
     }
-    /// Appends externally computed versioned signatures.
+
+    /// Appends externally computed signatures.
     ///
-    /// Each versioned signature will be applied to the one input for which it is valid. An error
-    /// will be returned if the versioned signature is not valid for any inputs, or if it is valid
+    /// Each signature will be applied to the one input for which it is valid. An error
+    /// will be returned if the signature is not valid for any inputs, or if it is valid
     /// for more than one input.
     ///
-    /// [`Signature`]: VerSpendAuthSig
-    pub fn append_signatures(self, signatures: &[VerSpendAuthSig]) -> Result<Self, BuildError> {
+    /// [`Signature`]: OrchardSpendAuthSig
+    pub fn append_signatures(self, signatures: &[OrchardSpendAuthSig]) -> Result<Self, BuildError> {
         signatures.iter().try_fold(self, Self::append_signature)
     }
 
-    fn append_signature(self, signature: &VerSpendAuthSig) -> Result<Self, BuildError> {
+    fn append_signature(self, signature: &OrchardSpendAuthSig) -> Result<Self, BuildError> {
+        if signature.sighash_kind() != &OrchardSighashKind::AllEffecting {
+            return Err(BuildError::InvalidExternalSignature);
+        }
         let mut signature_valid_for = 0usize;
         let bundle = self.map_authorization(
             &mut signature_valid_for,
@@ -1343,11 +1354,11 @@ impl<Proof: fmt::Debug, V, P: OrchardPrimitives>
     }
 }
 
-impl<V, P: OrchardPrimitives> Bundle<InProgress<Proof, PartiallyAuthorized>, V, P> {
+impl<V, Pr: OrchardPrimitives> Bundle<InProgress<Proof, PartiallyAuthorized>, V, Pr> {
     /// Finalizes this bundle, enabling it to be included in a transaction.
     ///
     /// Returns an error if any signatures are missing.
-    pub fn finalize(self) -> Result<Bundle<Authorized, V, P>, BuildError> {
+    pub fn finalize(self) -> Result<Bundle<Authorized, V, Pr>, BuildError> {
         self.try_map_authorization(
             &mut (),
             |_, _, maybe| maybe.finalize(),
@@ -1411,9 +1422,9 @@ pub mod testing {
         address::testing::arb_address,
         bundle::{Authorized, Bundle},
         circuit::ProvingKey,
+        flavor::OrchardFlavor,
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::{testing::arb_note, AssetBase},
-        orchard_flavor::OrchardFlavor,
         primitives::OrchardPrimitives,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
@@ -1464,6 +1475,7 @@ pub mod testing {
             builder
                 .build(&mut self.rng)
                 .unwrap()
+                .unwrap()
                 .0
                 .create_proof(&pk, &mut self.rng)
                 .unwrap()
@@ -1475,10 +1487,10 @@ pub mod testing {
     }
 
     /// `BuilderArb` adapts `arb_...` functions for both Vanilla and ZSA Orchard protocol variations
-    /// in property-based testing, addressing proptest crate limitations.    
+    /// in property-based testing, addressing proptest crate limitations.
     #[derive(Debug)]
-    pub struct BuilderArb<P: OrchardPrimitives> {
-        phantom: core::marker::PhantomData<P>,
+    pub struct BuilderArb<Pr: OrchardPrimitives> {
+        phantom: core::marker::PhantomData<Pr>,
     }
 
     impl<FL: OrchardFlavor> BuilderArb<FL> {
@@ -1499,7 +1511,7 @@ pub mod testing {
                     arb_address().prop_flat_map(move |a| {
                         arb_positive_note_value(MAX_NOTE_VALUE / n_outputs as u64)
                             .prop_map(move |v| {
-                                (a,v, AssetBase::native())
+                                (a,v, AssetBase::zatoshi())
                             })
                     }),
                     n_outputs as usize,
@@ -1549,7 +1561,7 @@ pub mod testing {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "circuit"))]
 mod tests {
     use rand::rngs::OsRng;
 
@@ -1559,14 +1571,14 @@ mod tests {
         bundle::{Authorized, Bundle},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
+        flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
         keys::{FullViewingKey, Scope, SpendingKey},
         note::AssetBase,
-        orchard_flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
         tree::EMPTY_ROOTS,
         value::NoteValue,
     };
 
-    fn shielding_bundle<FL: OrchardFlavor>() {
+    fn shielding_bundle<FL: OrchardFlavor>(bundle_type: BundleType) {
         let pk = ProvingKey::build::<FL>();
         let mut rng = OsRng;
 
@@ -1574,17 +1586,14 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let mut builder = Builder::new(
-            BundleType::DEFAULT_VANILLA,
-            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        let mut builder = Builder::new(bundle_type, EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into());
 
         builder
             .add_output(
                 None,
                 recipient,
                 NoteValue::from_raw(5000),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
@@ -1593,6 +1602,7 @@ mod tests {
 
         let bundle: Bundle<Authorized, i64, FL> = builder
             .build(&mut rng)
+            .unwrap()
             .unwrap()
             .0
             .create_proof(&pk, &mut rng)
@@ -1605,11 +1615,16 @@ mod tests {
 
     #[test]
     fn shielding_bundle_vanilla() {
-        shielding_bundle::<OrchardVanilla>()
+        shielding_bundle::<OrchardVanilla>(BundleType::DEFAULT)
     }
 
     #[test]
     fn shielding_bundle_zsa() {
-        shielding_bundle::<OrchardZSA>()
+        shielding_bundle::<OrchardZSA>(BundleType::DEFAULT_ZSA)
+    }
+
+    #[test]
+    fn shielding_bundle_zsa_with_vanilla_flags() {
+        shielding_bundle::<OrchardZSA>(BundleType::DEFAULT)
     }
 }

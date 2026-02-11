@@ -1,10 +1,10 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
-    builder::{Builder, BundleType},
+    builder::Builder,
     circuit::ProvingKey,
+    flavor::{OrchardVanilla, OrchardZSA},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note::AssetBase,
-    orchard_flavor::{OrchardVanilla, OrchardZSA},
     primitives::{CompactAction, OrchardDomain},
     value::NoteValue,
     Anchor, Bundle,
@@ -51,7 +51,7 @@ fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
 
     let bundle = {
         let mut builder = Builder::new(
-            BundleType::DEFAULT_VANILLA,
+            FL::DEFAULT_BUNDLE_TYPE,
             Anchor::from_bytes([0; 32]).unwrap(),
         );
         // The builder pads to two actions, and shuffles their order. Add two recipients
@@ -61,7 +61,7 @@ fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
                 None,
                 recipient,
                 NoteValue::from_raw(10),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0; 512],
             )
             .unwrap();
@@ -70,11 +70,11 @@ fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
                 None,
                 recipient,
                 NoteValue::from_raw(10),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0; 512],
             )
             .unwrap();
-        let bundle: Bundle<_, i64, FL> = builder.build(rng).unwrap().0;
+        let bundle: Bundle<_, i64, FL> = builder.build(rng).unwrap().unwrap().0;
         bundle
             .create_proof(&pk, rng)
             .unwrap()

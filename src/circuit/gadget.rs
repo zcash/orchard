@@ -71,7 +71,7 @@ impl<Lookup: PallasLookupRangeCheck> Config<Lookup> {
     }
 
     pub(super) fn cond_swap_chip(&self) -> CondSwapChip<pallas::Base> {
-        CondSwapChip::construct(self.merkle_config_1.cond_swap_config.clone())
+        CondSwapChip::construct(self.merkle_config_1.cond_swap_config().clone())
     }
 }
 
@@ -105,8 +105,8 @@ where
     )
 }
 
-/// Witnesses is_native_asset.
-pub(in crate::circuit) fn assign_is_native_asset<F: Field>(
+/// Witnesses is_zatoshi_asset.
+pub(in crate::circuit) fn assign_is_zatoshi_asset<F: Field>(
     layouter: impl Layouter<F>,
     column: Column<Advice>,
     asset: Value<AssetBase>,
@@ -118,7 +118,7 @@ where
         layouter,
         column,
         asset.map(|asset| {
-            if bool::from(asset.is_native()) {
+            if bool::from(asset.is_zatoshi()) {
                 pallas::Base::one()
             } else {
                 pallas::Base::zero()

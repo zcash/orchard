@@ -1899,7 +1899,7 @@ impl<Lookup: PallasLookupRangeCheck> NoteCommitChip<Lookup> {
 pub struct ZsaNoteCommitParams {
     pub cond_swap_chip: CondSwapChip<pallas::Base>,
     pub asset: NonIdentityEccPoint,
-    pub is_native_asset: AssignedCell<pallas::Base, pallas::Base>,
+    pub is_zatoshi_asset: AssignedCell<pallas::Base, pallas::Base>,
 }
 pub struct ZsaFinalDecomposition<Lookup: PallasLookupRangeCheck> {
     pub h_zsa: NoteCommitPiece<Lookup>,
@@ -2127,11 +2127,11 @@ pub(in crate::circuit) mod gadgets {
                 // - `hash_point_zsa = hash(Q_ZSA, message_common_prefix || message_suffix_zsa)`.
                 // by sharing a portion of the hash evaluation process between `hash_point_zec` and
                 // `hash_point_zsa`:
-                // 1. Q = if (is_native_asset == 0) {Q_ZSA} else {Q_ZEC}
+                // 1. Q = if (is_zatoshi_asset == 0) {Q_ZSA} else {Q_ZEC}
                 // 2. common_hash = hash(Q, message_common_prefix) // this part is shared
                 // 3. hash_point_zec = hash(common_hash, message_suffix_zec)
                 // 4. hash_point_zsa = hash(common_hash, message_suffix_zsa)
-                // 5. hash_point = if (is_native_asset == 0) {hash_point_zsa} else {hash_point_zec}
+                // 5. hash_point = if (is_zatoshi_asset == 0) {hash_point_zsa} else {hash_point_zec}
                 let zec_domain = CommitDomain::new(
                     chip.clone(),
                     ecc_chip.clone(),
@@ -2141,8 +2141,8 @@ pub(in crate::circuit) mod gadgets {
                     CommitDomain::new(chip, ecc_chip.clone(), &OrchardCommitDomains::NoteZsaCommit);
 
                 // Perform a MUX to select the desired initial Q point
-                // q_init = q_init_zec if is_native_asset is true
-                // q_init = q_init_zsa if is_native_asset is false
+                // q_init = q_init_zec if is_zatoshi_asset is true
+                // q_init = q_init_zsa if is_zatoshi_asset is false
                 let q_init = {
                     let q_init_zec = NonIdentityPoint::new(
                         ecc_chip.clone(),
@@ -2158,7 +2158,7 @@ pub(in crate::circuit) mod gadgets {
 
                     zsa_params.cond_swap_chip.mux_on_non_identity_points(
                         layouter.namespace(|| "mux on hash point"),
-                        &zsa_params.is_native_asset,
+                        &zsa_params.is_zatoshi_asset,
                         q_init_zsa.inner(),
                         q_init_zec.inner(),
                     )?
@@ -2189,13 +2189,13 @@ pub(in crate::circuit) mod gadgets {
                 )?;
 
                 // Perform a MUX to select the desired hash point
-                // hash_point = hash_zec if is_native_asset is true
-                // hash_point = hash_zsa if is_native_asset is false
+                // hash_point = hash_zec if is_zatoshi_asset is true
+                // hash_point = hash_zsa if is_zatoshi_asset is false
                 let hash_point = Point::from_inner(
                     ecc_chip,
                     zsa_params.cond_swap_chip.mux_on_points(
                         layouter.namespace(|| "mux on hash point"),
-                        &zsa_params.is_native_asset,
+                        &zsa_params.is_zatoshi_asset,
                         &(hash_point_zsa.inner().clone().into()),
                         &(hash_point_zec.inner().clone().into()),
                     )?,
@@ -2613,7 +2613,7 @@ mod tests {
 
     use crate::{
         circuit::{
-            gadget::{assign_free_advice, assign_is_native_asset},
+            gadget::{assign_free_advice, assign_is_zatoshi_asset},
             note_commit::{gadgets, NoteCommitChip, NoteCommitConfig, ZsaNoteCommitParams},
         },
         constants::{
@@ -3150,8 +3150,8 @@ mod tests {
                     self.asset.map(|asset| asset.cv_base().to_affine()),
                 )?;
 
-                let is_native_asset = assign_is_native_asset(
-                    layouter.namespace(|| "witness is_native_asset"),
+                let is_zatoshi_asset = assign_is_zatoshi_asset(
+                    layouter.namespace(|| "witness is_zatoshi_asset"),
                     note_commit_config.advices[0],
                     self.asset,
                 )?;
@@ -3169,7 +3169,7 @@ mod tests {
                     Some(ZsaNoteCommitParams {
                         cond_swap_chip,
                         asset: asset.inner().clone(),
-                        is_native_asset,
+                        is_zatoshi_asset,
                     }),
                 )?;
                 let expected_cm = {
@@ -3216,7 +3216,7 @@ mod tests {
 
         // Test different values of `ak`, `nk`
         let mut circuits = vec![];
-        for asset in [random_asset, AssetBase::native()] {
+        for asset in [random_asset, AssetBase::zatoshi()] {
             // `gd_x` = -1, `pkd_x` = -1 (these have to be x-coordinates of curve points)
             // `rho` = 0, `psi` = 0
             circuits.push(MyCircuit {

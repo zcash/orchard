@@ -36,11 +36,16 @@ impl NoteCommitment {
 }
 
 impl NoteCommitment {
-    /// $NoteCommit^Orchard$.
+    /// $NoteCommit^{Orchard}$ when the asset is zatoshi,
+    /// and $NoteCommit^{OrchardZSA}$ otherwise.
     ///
-    /// Defined in [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommit].
+    /// $NoteCommit^{Orchard}$ is defined in
+    /// [Zcash Protocol Spec § 5.4.8.4: Sinsemilla commitments][concretesinsemillacommit].
+    /// $NoteCommit^{OrchardZSA}$ is defined in
+    /// [ZIP-226: Transfer and Burn of Zcash Shielded Assets][notecommitzsa].
     ///
-    /// [notecommit]: https://zips.z.cash/zip-0226#note-structure-commitment
+    /// [concretesinsemillacommit]: https://zips.z.cash/protocol/nu5.pdf#concretesinsemillacommit
+    /// [notecommitzsa]: https://zips.z.cash/zip-0226#note-structure-and-commitment
     pub(crate) fn derive(
         g_d: [u8; 32],
         pk_d: [u8; 32],
@@ -79,7 +84,7 @@ impl NoteCommitment {
         // Select the desired commitment in constant-time
         let commit = commit_with_zsa_domain.and_then(|zsa_commit| {
             commit_with_zec_domain.map(|zec_commit| {
-                pallas::Point::conditional_select(&zsa_commit, &zec_commit, asset.is_native())
+                pallas::Point::conditional_select(&zsa_commit, &zec_commit, asset.is_zatoshi())
             })
         });
 

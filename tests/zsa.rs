@@ -1,20 +1,22 @@
+#![cfg(all(feature = "zsa-issuance", feature = "circuit"))]
+
 mod builder;
 
 use crate::builder::verify_bundle;
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use nonempty::NonEmpty;
 use orchard::{
-    builder::{Builder, BundleType},
-    bundle::Authorized,
+    builder::{BuildError, Builder, BundleType},
+    bundle::{burn_validation::BurnError, Authorized},
     circuit::{ProvingKey, VerifyingKey},
+    flavor::OrchardZSA,
     issuance::{
+        auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
         compute_asset_desc_hash, verify_issue_bundle, AwaitingNullifier, IssueBundle, IssueInfo,
-        Signed,
+        ReferenceKeys, Signed,
     },
-    issuance_auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-    note::{AssetBase, ExtractedNoteCommitment, Nullifier},
-    orchard_flavor::OrchardZSA,
+    note::{AssetBase, AssetId, ExtractedNoteCommitment, Nullifier},
     primitives::OrchardDomain,
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
@@ -26,9 +28,9 @@ use std::collections::HashSet;
 use zcash_note_encryption::try_note_decryption;
 
 #[derive(Debug)]
-struct Keychain {
-    pk: ProvingKey,
-    vk: VerifyingKey,
+struct Keychain<'a> {
+    pk: &'a ProvingKey,
+    vk: &'a VerifyingKey,
     sk: SpendingKey,
     fvk: FullViewingKey,
     isk: IssueAuthKey<ZSASchnorr>,
@@ -36,9 +38,9 @@ struct Keychain {
     recipient: Address,
 }
 
-impl Keychain {
+impl Keychain<'_> {
     fn pk(&self) -> &ProvingKey {
-        &self.pk
+        self.pk
     }
     fn sk(&self) -> &SpendingKey {
         &self.sk
@@ -54,7 +56,7 @@ impl Keychain {
     }
 }
 
-fn prepare_keys(pk: ProvingKey, vk: VerifyingKey, seed: u8) -> Keychain {
+fn prepare_keys<'a>(pk: &'a ProvingKey, vk: &'a VerifyingKey, seed: u8) -> Keychain<'a> {
     let sk = SpendingKey::from_bytes([seed; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
@@ -76,8 +78,9 @@ fn sign_issue_bundle(
     awaiting_nullifier_bundle: IssueBundle<AwaitingNullifier>,
     isk: &IssueAuthKey<ZSASchnorr>,
     first_nullifier: &Nullifier,
+    rng: OsRng,
 ) -> IssueBundle<Signed> {
-    let awaiting_sighash_bundle = awaiting_nullifier_bundle.update_rho(first_nullifier);
+    let awaiting_sighash_bundle = awaiting_nullifier_bundle.update_rho(first_nullifier, rng);
     let sighash = awaiting_sighash_bundle.commitment().into();
     let prepared_bundle = awaiting_sighash_bundle.prepare(sighash);
     prepared_bundle.sign(isk).unwrap()
@@ -89,7 +92,7 @@ fn build_and_sign_bundle(
     pk: &ProvingKey,
     sk: &SpendingKey,
 ) -> Bundle<Authorized, i64, OrchardZSA> {
-    let unauthorized = builder.build(&mut rng).unwrap().0;
+    let unauthorized = builder.build(&mut rng).unwrap().unwrap().0;
     let sighash = unauthorized.commitment().into();
     let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
     proven
@@ -172,7 +175,8 @@ fn issue_zsa_notes(
         )
         .is_ok());
 
-    let issue_bundle = sign_issue_bundle(awaiting_nullifier_bundle, keys.isk(), first_nullifier);
+    let issue_bundle =
+        sign_issue_bundle(awaiting_nullifier_bundle, keys.isk(), first_nullifier, rng);
 
     // Take notes from first action
     let notes = issue_bundle.get_all_notes();
@@ -182,7 +186,7 @@ fn issue_zsa_notes(
 
     verify_reference_note(
         reference_note,
-        AssetBase::derive(&keys.ik().clone(), &asset_desc_hash),
+        AssetBase::custom(&AssetId::new_v0(keys.ik(), &asset_desc_hash)),
     );
 
     assert!(verify_issue_bundle(
@@ -196,7 +200,7 @@ fn issue_zsa_notes(
     (*reference_note, *note1, *note2)
 }
 
-fn create_native_note(keys: &Keychain) -> Note {
+fn create_zatoshi_note(keys: &Keychain) -> Note {
     let mut rng = OsRng;
 
     let shielding_bundle: Bundle<_, i64, OrchardZSA> = {
@@ -209,18 +213,18 @@ fn create_native_note(keys: &Keychain) -> Note {
                 None,
                 keys.recipient,
                 NoteValue::from_raw(100),
-                AssetBase::native(),
+                AssetBase::zatoshi(),
                 [0u8; 512]
             ),
             Ok(())
         );
-        let unauthorized = builder.build(&mut rng).unwrap().0;
+        let unauthorized = builder.build(&mut rng).unwrap().unwrap().0;
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(keys.pk(), &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
     let ivk = keys.fvk().to_ivk(Scope::External);
-    let (native_note, _, _) = shielding_bundle
+    let (zatoshi_note, _, _) = shielding_bundle
         .actions()
         .iter()
         .find_map(|action| {
@@ -229,7 +233,7 @@ fn create_native_note(keys: &Keychain) -> Note {
         })
         .unwrap();
 
-    native_note
+    zatoshi_note
 }
 
 struct TestSpendInfo {
@@ -287,7 +291,7 @@ fn build_and_verify_bundle(
     };
 
     // Verify the shielded bundle, currently without the proof.
-    verify_bundle(&shielded_bundle, &keys.vk, true);
+    verify_bundle(&shielded_bundle, keys.vk, true);
     assert_eq!(shielded_bundle.actions().len(), expected_num_actions);
     assert!(verify_unique_spent_nullifiers(&shielded_bundle));
     Ok(())
@@ -308,15 +312,12 @@ fn verify_unique_spent_nullifiers(bundle: &Bundle<Authorized, i64, OrchardZSA>) 
 /// - the asset of the reference note is equal to the provided asset
 /// - the recipient of the reference note is equal to the reference recipient
 fn verify_reference_note(note: &Note, asset: AssetBase) {
-    let reference_sk = SpendingKey::from_bytes([0; 32]).unwrap();
-    let reference_fvk = FullViewingKey::from(&reference_sk);
-    let reference_recipient = reference_fvk.address_at(0u32, Scope::External);
     assert_eq!(note.value(), NoteValue::from_raw(0));
     assert_eq!(note.asset(), asset);
-    assert_eq!(note.recipient(), reference_recipient);
+    assert_eq!(note.recipient(), ReferenceKeys::recipient());
 }
 
-/// Issue several ZSA and native notes and spend them in different combinations, e.g. split and join
+/// Issue several ZSA and zatoshi notes and spend them in different combinations, e.g. split and join
 #[test]
 fn zsa_issue_and_transfer() {
     // --------------------------- Setup -----------------------------------------
@@ -324,19 +325,19 @@ fn zsa_issue_and_transfer() {
     let pk = ProvingKey::build::<OrchardZSA>();
     let vk = VerifyingKey::build::<OrchardZSA>();
 
-    let keys = prepare_keys(pk.clone(), vk.clone(), 5);
-    let keys2 = prepare_keys(pk.clone(), vk.clone(), 10);
-    let keys3 = prepare_keys(pk, vk, 15);
+    let keys = prepare_keys(&pk, &vk, 5);
+    let keys2 = prepare_keys(&pk, &vk, 10);
+    let keys3 = prepare_keys(&pk, &vk, 15);
 
-    let native_note = create_native_note(&keys);
+    let zatoshi_note = create_zatoshi_note(&keys);
 
     // Prepare ZSA
     let (reference_note, zsa_note1_asset1, zsa_note2_asset1) =
-        issue_zsa_notes(b"zsa_asset", &keys, &native_note.nullifier(keys.fvk()));
+        issue_zsa_notes(b"zsa_asset", &keys, &zatoshi_note.nullifier(keys.fvk()));
     verify_reference_note(&reference_note, zsa_note1_asset1.asset());
 
     let (reference_note_asset2, zsa_note_asset2, _) =
-        issue_zsa_notes(b"zsa_asset2", &keys, &native_note.nullifier(keys.fvk()));
+        issue_zsa_notes(b"zsa_asset2", &keys, &zatoshi_note.nullifier(keys.fvk()));
     verify_reference_note(&reference_note_asset2, zsa_note_asset2.asset());
 
     let asset1 = zsa_note1_asset1.asset();
@@ -346,7 +347,7 @@ fn zsa_issue_and_transfer() {
     let (merkle_paths, anchor) = build_merkle_paths(vec![
         &zsa_note1_asset1,
         &zsa_note2_asset1,
-        &native_note,
+        &zatoshi_note,
         &zsa_note_asset2,
     ]);
 
@@ -358,8 +359,8 @@ fn zsa_issue_and_transfer() {
         note: zsa_note2_asset1,
         merkle_path: merkle_paths.get(1).unwrap().clone(),
     };
-    let native_spend: TestSpendInfo = TestSpendInfo {
-        note: native_note,
+    let zatoshi_spend: TestSpendInfo = TestSpendInfo {
+        note: zatoshi_note,
         merkle_path: merkle_paths.get(2).unwrap().clone(),
     };
     let zsa_spend_asset2 = TestSpendInfo {
@@ -454,7 +455,7 @@ fn zsa_issue_and_transfer() {
     )
     .unwrap();
 
-    // 5. Spend single ZSA note, mixed with native note (shielding)
+    // 5. Spend single ZSA note, mixed with zatoshi note (shielding)
     build_and_verify_bundle(
         vec![&zsa_spend1_asset1],
         vec![
@@ -465,7 +466,7 @@ fn zsa_issue_and_transfer() {
             },
             TestOutputInfo {
                 value: NoteValue::from_raw(100),
-                asset: AssetBase::native(),
+                asset: AssetBase::zatoshi(),
                 recipient: keys2.recipient,
             },
         ],
@@ -476,9 +477,9 @@ fn zsa_issue_and_transfer() {
     )
     .unwrap();
 
-    // 6. Spend single ZSA note, mixed with native note (shielded to shielded)
+    // 6. Spend single ZSA note, mixed with zatoshi note (shielded to shielded)
     build_and_verify_bundle(
-        vec![&zsa_spend1_asset1, &native_spend],
+        vec![&zsa_spend1_asset1, &zatoshi_spend],
         vec![
             TestOutputInfo {
                 value: zsa_spend1_asset1.note.value(),
@@ -486,18 +487,18 @@ fn zsa_issue_and_transfer() {
                 recipient: keys2.recipient,
             },
             TestOutputInfo {
-                value: NoteValue::from_raw(native_spend.note.value().inner() - delta_1 - delta_2),
-                asset: AssetBase::native(),
+                value: NoteValue::from_raw(zatoshi_spend.note.value().inner() - delta_1 - delta_2),
+                asset: AssetBase::zatoshi(),
                 recipient: keys.recipient,
             },
             TestOutputInfo {
                 value: NoteValue::from_raw(delta_1),
-                asset: AssetBase::native(),
+                asset: AssetBase::zatoshi(),
                 recipient: keys2.recipient,
             },
             TestOutputInfo {
                 value: NoteValue::from_raw(delta_2),
-                asset: AssetBase::native(),
+                asset: AssetBase::zatoshi(),
                 recipient: keys3.recipient,
             },
         ],
@@ -587,18 +588,18 @@ fn zsa_issue_and_transfer() {
     )
     .unwrap();
 
-    // 11. Try to burn native asset - should fail
+    // 11. Try to burn zatoshi asset - should fail
     let result = build_and_verify_bundle(
-        vec![&native_spend],
+        vec![&zatoshi_spend],
         vec![],
-        vec![(AssetBase::native(), native_spend.note.value())],
+        vec![(AssetBase::zatoshi(), zatoshi_spend.note.value())],
         anchor,
         2,
         &keys,
     );
     match result {
         Ok(_) => panic!("Test should fail"),
-        Err(error) => assert_eq!(error, "Burning is only possible for non-native assets"),
+        Err(error) => assert_eq!(error, BuildError::Burn(BurnError::ZatoshiAsset).to_string()),
     }
 
     // 12. Try to burn zero value - should fail
@@ -616,6 +617,6 @@ fn zsa_issue_and_transfer() {
     );
     match result {
         Ok(_) => panic!("Test should fail"),
-        Err(error) => assert_eq!(error, "Burning is not possible for zero values"),
+        Err(error) => assert_eq!(error, BuildError::Burn(BurnError::ZeroAmount).to_string()),
     }
 }

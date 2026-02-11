@@ -7,19 +7,26 @@ use core::fmt;
 
 use crate::{note::AssetBase, value::NoteValue};
 
+/// Maximum burn value.
+/// Burns must fit in both u64 and i64 for value balance calculations.
+pub const MAX_BURN_VALUE: u64 = (1u64 << 63) - 1;
+
 /// Possible errors that can occur during bundle burn validation.
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum BurnError {
     /// Encountered a duplicate asset to burn.
     DuplicateAsset,
-    /// Cannot burn a native asset.
-    NativeAsset,
+    /// Cannot burn a zatoshi asset.
+    ZatoshiAsset,
     /// Cannot burn an asset with a zero value.
     ZeroAmount,
+    /// Burn amount does not fit in u63.
+    InvalidAmount,
 }
 
-/// Validates burn for a bundle by ensuring each asset is unique, non-native, and has a non-zero value.
+/// Validates burn for a bundle by ensuring each asset is unique, non-zatoshi, fit in u63 and has a
+/// non-zero value.
 ///
 /// Each burn element is represented as a tuple of `AssetBase` and `NoteValue` (value for the burn).
 ///
@@ -30,18 +37,22 @@ pub enum BurnError {
 /// # Errors
 ///
 /// Returns a `BurnError` if:
-/// * Any asset in the `burn` vector is native (`BurnError::NativeAsset`).
+/// * Any asset in the `burn` vector is zatoshi (`BurnError::ZatoshiAsset`).
 /// * Any asset in the `burn` vector has a zero value (`BurnError::ZeroAmount`).
+/// * Any burn amount in the `burn` vector is out of the u63 range (`BurnError::InvalidAmount`).
 /// * Any asset in the `burn` vector is not unique (`BurnError::DuplicateAsset`).
 pub fn validate_bundle_burn(burn: &[(AssetBase, NoteValue)]) -> Result<(), BurnError> {
     let mut burn_set = BTreeSet::new();
 
     for (asset, value) in burn {
-        if asset.is_native().into() {
-            return Err(BurnError::NativeAsset);
+        if asset.is_zatoshi().into() {
+            return Err(BurnError::ZatoshiAsset);
         }
         if value.inner() == 0 {
             return Err(BurnError::ZeroAmount);
+        }
+        if value.inner() > MAX_BURN_VALUE {
+            return Err(BurnError::InvalidAmount);
         }
         if !burn_set.insert(*asset) {
             return Err(BurnError::DuplicateAsset);
@@ -55,9 +66,12 @@ impl fmt::Display for BurnError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             BurnError::DuplicateAsset => write!(f, "Encountered a duplicate asset to burn."),
-            BurnError::NativeAsset => write!(f, "Cannot burn a native asset."),
+            BurnError::ZatoshiAsset => write!(f, "Cannot burn a zatoshi asset."),
             BurnError::ZeroAmount => {
                 write!(f, "Cannot burn an asset with a zero value.")
+            }
+            BurnError::InvalidAmount => {
+                write!(f, "Burn amount must fit in u63.")
             }
         }
     }
@@ -66,49 +80,33 @@ impl fmt::Display for BurnError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{issuance::compute_asset_desc_hash, issuance_auth::ZSASchnorr, value::NoteValue};
-    use nonempty::NonEmpty;
+    use crate::value::NoteValue;
 
-    /// Creates an item of bundle burn list for a given asset description hash and value.
-    ///
-    /// This function is deterministic and guarantees that each call with the same parameters
-    /// will return the same result. It achieves determinism by using a static `IssueAuthKey`.
-    ///
-    /// # Arguments
-    ///
-    /// * `asset_desc_hash` - The asset description hash.
-    /// * `value` - The value for the burn.
-    ///
-    /// # Returns
-    ///
-    /// A tuple `(AssetBase, Amount)` representing the burn list item.
-    ///
-    fn get_burn_tuple(asset_desc_hash: &[u8; 32], value: u64) -> (AssetBase, NoteValue) {
-        use crate::issuance_auth::{IssueAuthKey, IssueValidatingKey};
+    use alloc::collections::BTreeSet;
+    use rand_core::{CryptoRngCore, OsRng};
 
-        let isk = IssueAuthKey::<ZSASchnorr>::from_bytes(&[1u8; 32]).unwrap();
-
-        (
-            AssetBase::derive(&IssueValidatingKey::from(&isk), asset_desc_hash),
-            NoteValue::from_raw(value),
-        )
+    fn burn_tuple_unique(
+        rng: &mut impl CryptoRngCore,
+        used: &mut BTreeSet<AssetBase>,
+        value: u64,
+    ) -> (AssetBase, NoteValue) {
+        loop {
+            let asset = AssetBase::random(rng);
+            if used.insert(asset) {
+                return (asset, NoteValue::from_raw(value));
+            }
+        }
     }
 
     #[test]
     fn validate_bundle_burn_success() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 2").unwrap()),
-                20,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            burn_tuple_unique(&mut rng, &mut used, 10),
+            burn_tuple_unique(&mut rng, &mut used, 20),
+            burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -118,19 +116,14 @@ mod tests {
 
     #[test]
     fn validate_bundle_burn_duplicate_asset() {
+        let mut rng = OsRng;
+
+        let asset = AssetBase::random(&mut rng);
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                20,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            (asset, NoteValue::from_raw(10)),
+            (asset, NoteValue::from_raw(20)),
+            (AssetBase::random(&mut rng), NoteValue::from_raw(10)),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
@@ -139,43 +132,50 @@ mod tests {
     }
 
     #[test]
-    fn validate_bundle_burn_native_asset() {
+    fn validate_bundle_burn_zatoshi_asset() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
-            (AssetBase::native(), NoteValue::from_raw(20)),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            burn_tuple_unique(&mut rng, &mut used, 10),
+            (AssetBase::zatoshi(), NoteValue::from_raw(20)),
+            burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
 
-        assert_eq!(result, Err(BurnError::NativeAsset));
+        assert_eq!(result, Err(BurnError::ZatoshiAsset));
     }
 
     #[test]
     fn validate_bundle_burn_zero_value() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
         let bundle_burn = vec![
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 1").unwrap()),
-                10,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 2").unwrap()),
-                0,
-            ),
-            get_burn_tuple(
-                &compute_asset_desc_hash(&NonEmpty::from_slice(b"Asset 3").unwrap()),
-                10,
-            ),
+            burn_tuple_unique(&mut rng, &mut used, 10),
+            burn_tuple_unique(&mut rng, &mut used, 0),
+            burn_tuple_unique(&mut rng, &mut used, 10),
         ];
 
         let result = validate_bundle_burn(&bundle_burn);
 
         assert_eq!(result, Err(BurnError::ZeroAmount));
+    }
+
+    #[test]
+    fn validate_bundle_burn_invalid_amount() {
+        let mut rng = OsRng;
+        let mut used = BTreeSet::new();
+
+        let bundle_burn = vec![
+            burn_tuple_unique(&mut rng, &mut used, 10),
+            burn_tuple_unique(&mut rng, &mut used, MAX_BURN_VALUE + 1),
+            burn_tuple_unique(&mut rng, &mut used, 10),
+        ];
+
+        let result = validate_bundle_burn(&bundle_burn);
+
+        assert_eq!(result, Err(BurnError::InvalidAmount));
     }
 }

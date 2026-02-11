@@ -32,7 +32,7 @@ use crate::{
         commit_ivk::{gadgets::commit_ivk, CommitIvkChip},
         derive_nullifier::{gadgets::derive_nullifier, ZsaNullifierParams},
         gadget::{
-            add_chip::AddChip, assign_free_advice, assign_is_native_asset, assign_split_flag,
+            add_chip::AddChip, assign_free_advice, assign_is_zatoshi_asset, assign_split_flag,
         },
         note_commit::{gadgets::note_commit, NoteCommitChip, ZsaNoteCommitParams},
         unpack,
@@ -41,8 +41,8 @@ use crate::{
         ENABLE_OUTPUT, ENABLE_SPEND, ENABLE_ZSA, NF_OLD, RK_X, RK_Y,
     },
     constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
+    flavor::OrchardZSA,
     note::AssetBase,
-    orchard_flavor::OrchardZSA,
 };
 
 impl OrchardCircuit for OrchardZSA {
@@ -69,14 +69,14 @@ impl OrchardCircuit for OrchardZSA {
         // All OrchardZSA constraints:
         // Constrain split_flag to be boolean
         // Constrain v_old * (1 - split_flag) - v_new = magnitude * sign
-        // Constrain (v_old = 0 and is_native_asset = 1) or (calculated root = anchor)
+        // Constrain (v_old = 0 and is_zatoshi_asset = 1) or (calculated root = anchor)
         // Constrain v_old = 0 or enable_spends = 1
         // Constrain v_new = 0 or enable_outputs = 1
-        // Constrain is_native_asset to be boolean
-        // Constraint if is_native_asset = 1 then asset = native_asset else asset != native_asset
+        // Constrain is_zatoshi_asset to be boolean
+        // Constraint if is_zatoshi_asset = 1 then asset = zatoshi_asset else asset != zatoshi_asset
         // Constraint if split_flag = 0 then psi_old = psi_nf
-        // Constraint if split_flag = 1, then is_native_asset = 0
-        // Constraint if enable_zsa = 0, then is_native_asset = 1
+        // Constraint if split_flag = 1, then is_zatoshi_asset = 0
+        // Constraint if enable_zsa = 0, then is_zatoshi_asset = 1
         //
         // [circuitstatement]: https://zips.z.cash/zip-0226#circuit-statement
         let q_orchard = meta.selector();
@@ -95,7 +95,7 @@ impl OrchardCircuit for OrchardZSA {
 
             let split_flag = meta.query_advice(advices[8], Rotation::cur());
 
-            let is_native_asset = meta.query_advice(advices[9], Rotation::cur());
+            let is_zatoshi_asset = meta.query_advice(advices[9], Rotation::cur());
             let asset_x = meta.query_advice(advices[0], Rotation::next());
             let asset_y = meta.query_advice(advices[1], Rotation::next());
             let diff_asset_x_inv = meta.query_advice(advices[2], Rotation::next());
@@ -103,14 +103,14 @@ impl OrchardCircuit for OrchardZSA {
 
             let one = Expression::Constant(pallas::Base::one());
 
-            let native_asset = AssetBase::native()
+            let zatoshi_asset = AssetBase::zatoshi()
                 .cv_base()
                 .to_affine()
                 .coordinates()
                 .unwrap();
 
-            let diff_asset_x = asset_x - Expression::Constant(*native_asset.x());
-            let diff_asset_y = asset_y - Expression::Constant(*native_asset.y());
+            let diff_asset_x = asset_x - Expression::Constant(*zatoshi_asset.x());
+            let diff_asset_y = asset_y - Expression::Constant(*zatoshi_asset.y());
 
             let psi_old = meta.query_advice(advices[4], Rotation::next());
             let psi_nf = meta.query_advice(advices[5], Rotation::next());
@@ -128,12 +128,12 @@ impl OrchardCircuit for OrchardZSA {
                             - magnitude * sign,
                     ),
                     // We already checked that
-                    // * is_native_asset is boolean (just below), and
+                    // * is_zatoshi_asset is boolean (just below), and
                     // * v_old is a 64 bit unsigned integer (in the note commitment evaluation).
-                    // So, 1 - is_native_asset + v_old = 0 only when (is_native_asset = 1 and v_old = 0), no overflow can occur.
+                    // So, 1 - is_zatoshi_asset + v_old = 0 only when (is_zatoshi_asset = 1 and v_old = 0), no overflow can occur.
                     (
-                        "(v_old = 0 and is_native_asset = 1) or (root = anchor)",
-                        (v_old.clone() + one.clone() - is_native_asset.clone()) * (root - anchor),
+                        "(v_old = 0 and is_zatoshi_asset = 1) or (root = anchor)",
+                        (v_old.clone() + one.clone() - is_zatoshi_asset.clone()) * (root - anchor),
                     ),
                     (
                         "v_old = 0 or enable_spends = 1",
@@ -144,25 +144,25 @@ impl OrchardCircuit for OrchardZSA {
                         v_new * (one.clone() - enable_outputs),
                     ),
                     (
-                        "bool_check is_native_asset",
-                        bool_check(is_native_asset.clone()),
+                        "bool_check is_zatoshi_asset",
+                        bool_check(is_zatoshi_asset.clone()),
                     ),
                     (
-                        "(is_native_asset = 1) =>  (asset_x = native_asset_x)",
-                        is_native_asset.clone() * diff_asset_x.clone(),
+                        "(is_zatoshi_asset = 1) =>  (asset_x = zatoshi_asset_x)",
+                        is_zatoshi_asset.clone() * diff_asset_x.clone(),
                     ),
                     (
-                        "(is_native_asset = 1) => (asset_y = native_asset_y)",
-                        is_native_asset.clone() * diff_asset_y.clone(),
+                        "(is_zatoshi_asset = 1) => (asset_y = zatoshi_asset_y)",
+                        is_zatoshi_asset.clone() * diff_asset_y.clone(),
                     ),
-                    // To prove that `asset` is not equal to `native_asset`, we will prove that at
-                    // least one of `x(asset) - x(native_asset)` or `y(asset) - y(native_asset)` is
+                    // To prove that `asset` is not equal to `zatoshi_asset`, we will prove that at
+                    // least one of `x(asset) - x(zatoshi_asset)` or `y(asset) - y(zatoshi_asset)` is
                     // not equal to zero.
-                    // To prove that `x(asset) - x(native_asset)` (resp `y(asset) - y(native_asset)`)
+                    // To prove that `x(asset) - x(zatoshi_asset)` (resp `y(asset) - y(zatoshi_asset)`)
                     // is not equal to zero, we will prove that it is invertible.
                     (
-                        "(is_native_asset = 0) => (asset != native_asset)",
-                        (one.clone() - is_native_asset.clone())
+                        "(is_zatoshi_asset = 0) => (asset != zatoshi_asset)",
+                        (one.clone() - is_zatoshi_asset.clone())
                             * (diff_asset_x * diff_asset_x_inv - one.clone())
                             * (diff_asset_y * diff_asset_y_inv - one.clone()),
                     ),
@@ -171,12 +171,12 @@ impl OrchardCircuit for OrchardZSA {
                         (one.clone() - split_flag.clone()) * (psi_old - psi_nf),
                     ),
                     (
-                        "(split_flag = 1) => (is_native_asset = 0)",
-                        split_flag * is_native_asset.clone(),
+                        "(split_flag = 1) => (is_zatoshi_asset = 0)",
+                        split_flag * is_zatoshi_asset.clone(),
                     ),
                     (
-                        "(enable_zsa = 0) => (is_native_asset = 1)",
-                        (one.clone() - enable_zsa) * (one - is_native_asset),
+                        "(enable_zsa = 0) => (is_zatoshi_asset = 1)",
+                        (one.clone() - enable_zsa) * (one - is_zatoshi_asset),
                     ),
                 ],
             )
@@ -424,11 +424,11 @@ impl OrchardCircuit for OrchardZSA {
             split_flag_value,
         )?;
 
-        // Witness is_native_asset which is equal to
-        // 1 if asset is equal to native asset, and
-        // 0 if asset is not equal to native asset.
-        let is_native_asset = assign_is_native_asset(
-            layouter.namespace(|| "witness is_native_asset"),
+        // Witness is_zatoshi_asset which is equal to
+        // 1 if asset is equal to zatoshi asset, and
+        // 0 if asset is not equal to zatoshi asset.
+        let is_zatoshi_asset = assign_is_zatoshi_asset(
+            layouter.namespace(|| "witness is_zatoshi_asset"),
             config.advices[0],
             asset_value,
         )?;
@@ -506,7 +506,7 @@ impl OrchardCircuit for OrchardZSA {
                 rcv,
                 Some(ZsaValueCommitParams {
                     sinsemilla_chip: config.sinsemilla_chip_1(),
-                    asset: asset.clone(),
+                    asset_base: asset.clone(),
                 }),
             )?;
 
@@ -643,7 +643,7 @@ impl OrchardCircuit for OrchardZSA {
                 Some(ZsaNoteCommitParams {
                     cond_swap_chip: config.cond_swap_chip(),
                     asset: asset.inner().clone(),
-                    is_native_asset: is_native_asset.clone(),
+                    is_zatoshi_asset: is_zatoshi_asset.clone(),
                 }),
             )?;
 
@@ -711,7 +711,7 @@ impl OrchardCircuit for OrchardZSA {
                 Some(ZsaNoteCommitParams {
                     cond_swap_chip: config.cond_swap_chip(),
                     asset: asset.inner().clone(),
-                    is_native_asset: is_native_asset.clone(),
+                    is_zatoshi_asset: is_zatoshi_asset.clone(),
                 }),
             )?;
 
@@ -767,8 +767,8 @@ impl OrchardCircuit for OrchardZSA {
 
                 split_flag.copy_advice(|| "split_flag", &mut region, config.advices[8], 0)?;
 
-                is_native_asset.copy_advice(
-                    || "is_native_asset",
+                is_zatoshi_asset.copy_advice(
+                    || "is_zatoshi_asset",
                     &mut region,
                     config.advices[9],
                     0,
@@ -783,7 +783,7 @@ impl OrchardCircuit for OrchardZSA {
                     .copy_advice(|| "asset_y", &mut region, config.advices[1], 1)?;
 
                 // `diff_asset_x_inv` and `diff_asset_y_inv` will be used to prove that
-                // if is_native_asset = 0, then asset != native_asset.
+                // if is_zatoshi_asset = 0, then asset != zatoshi_asset.
                 region.assign_advice(
                     || "diff_asset_x_inv",
                     config.advices[2],
@@ -791,14 +791,14 @@ impl OrchardCircuit for OrchardZSA {
                     || {
                         asset_value.map(|asset| {
                             let asset_x = *asset.cv_base().to_affine().coordinates().unwrap().x();
-                            let native_asset_x = *AssetBase::native()
+                            let zatoshi_asset_x = *AssetBase::zatoshi()
                                 .cv_base()
                                 .to_affine()
                                 .coordinates()
                                 .unwrap()
                                 .x();
 
-                            let diff_asset_x = asset_x - native_asset_x;
+                            let diff_asset_x = asset_x - zatoshi_asset_x;
 
                             if diff_asset_x == pallas::Base::zero() {
                                 pallas::Base::zero()
@@ -815,14 +815,14 @@ impl OrchardCircuit for OrchardZSA {
                     || {
                         asset_value.map(|asset| {
                             let asset_y = *asset.cv_base().to_affine().coordinates().unwrap().y();
-                            let native_asset_y = *AssetBase::native()
+                            let zatoshi_asset_y = *AssetBase::zatoshi()
                                 .cv_base()
                                 .to_affine()
                                 .coordinates()
                                 .unwrap()
                                 .y();
 
-                            let diff_asset_y = asset_y - native_asset_y;
+                            let diff_asset_y = asset_y - zatoshi_asset_y;
 
                             if diff_asset_y == pallas::Base::zero() {
                                 pallas::Base::zero()
@@ -883,16 +883,16 @@ mod tests {
             AdditionalZsaWitnesses, Circuit, Instance, Proof, ProvingKey, VerifyingKey, Witnesses,
             K,
         },
+        flavor::OrchardZSA,
         keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
         note::{commitment::NoteCommitTrapdoor, AssetBase, Note, NoteCommitment, Nullifier, Rho},
-        orchard_flavor::OrchardZSA,
         primitives::redpallas::VerificationKey,
         tree::MerklePath,
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
     };
 
     fn generate_dummy_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit<OrchardZSA>, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, AssetBase::native());
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -903,12 +903,12 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), AssetBase::native());
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(value, rcv, AssetBase::native());
+        let cv_net = ValueCommitment::derive(value, rcv.clone(), AssetBase::zatoshi());
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());
@@ -1156,13 +1156,16 @@ mod tests {
     }
 
     fn generate_circuit_instance<R: CryptoRngCore>(
-        is_native_asset: bool,
+        is_zatoshi_asset: bool,
         split_flag: bool,
         mut rng: R,
     ) -> (Circuit<OrchardZSA>, Instance) {
+        // We cannot create a split note with a zatoshi asset.
+        assert!(!(is_zatoshi_asset && split_flag));
+
         // Create asset
-        let asset_base = if is_native_asset {
-            AssetBase::native()
+        let asset_base = if is_zatoshi_asset {
+            AssetBase::zatoshi()
         } else {
             AssetBase::random(&mut rng)
         };
@@ -1224,7 +1227,7 @@ mod tests {
         let cmx = output_note.commitment().into();
 
         let rcv = ValueCommitTrapdoor::random(&mut rng);
-        let cv_net = ValueCommitment::derive(v_net, rcv, asset_base);
+        let cv_net = ValueCommitment::derive(v_net, rcv.clone(), asset_base);
 
         let path = MerklePath::dummy(&mut rng);
         let anchor = path.root(spent_note.commitment().into());
@@ -1278,46 +1281,104 @@ mod tests {
     fn orchard_circuit_negative_test() {
         let mut rng = OsRng;
 
-        for is_native_asset in [true, false] {
-            for split_flag in [true, false] {
-                let (circuit, instance) =
-                    generate_circuit_instance(is_native_asset, split_flag, &mut rng);
+        for (is_zatoshi_asset, split_flag) in [(true, false), (false, true), (false, false)] {
+            let (circuit, instance) =
+                generate_circuit_instance(is_zatoshi_asset, split_flag, &mut rng);
 
-                let should_pass = !(matches!((is_native_asset, split_flag), (true, true)));
+            let should_pass = !(matches!((is_zatoshi_asset, split_flag), (true, true)));
 
-                check_proof_of_orchard_circuit(&circuit, &instance, should_pass);
+            check_proof_of_orchard_circuit(&circuit, &instance, should_pass);
 
-                // Set cv_net to be zero
-                // The proof should fail
-                let instance_wrong_cv_net = Instance {
-                    anchor: instance.anchor,
-                    cv_net: ValueCommitment::from_bytes(&[0u8; 32]).unwrap(),
-                    nf_old: instance.nf_old,
-                    rk: instance.rk.clone(),
-                    cmx: instance.cmx,
-                    enable_spend: instance.enable_spend,
-                    enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
-                };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_cv_net, false);
+            // Set cv_net to be zero
+            // The proof should fail
+            let instance_wrong_cv_net = Instance {
+                anchor: instance.anchor,
+                cv_net: ValueCommitment::from_bytes(&[0u8; 32]).unwrap(),
+                nf_old: instance.nf_old,
+                rk: instance.rk.clone(),
+                cmx: instance.cmx,
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_cv_net, false);
 
-                // Set rk_pub to be a dummy VerificationKey
-                // The proof should fail
-                let instance_wrong_rk = Instance {
-                    anchor: instance.anchor,
-                    cv_net: instance.cv_net.clone(),
-                    nf_old: instance.nf_old,
-                    rk: VerificationKey::dummy(),
-                    cmx: instance.cmx,
-                    enable_spend: instance.enable_spend,
-                    enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
-                };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_rk, false);
+            // Set rk_pub to be a dummy VerificationKey
+            // The proof should fail
+            let instance_wrong_rk = Instance {
+                anchor: instance.anchor,
+                cv_net: instance.cv_net.clone(),
+                nf_old: instance.nf_old,
+                rk: VerificationKey::dummy(),
+                cmx: instance.cmx,
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_rk, false);
 
-                // Set cm_old to be a random NoteCommitment
-                // The proof should fail
-                let circuit_wrong_cm_old = Circuit {
+            // Set cm_old to be a random NoteCommitment
+            // The proof should fail
+            let circuit_wrong_cm_old = Circuit {
+                witnesses: Witnesses {
+                    path: circuit.witnesses.path,
+                    pos: circuit.witnesses.pos,
+                    g_d_old: circuit.witnesses.g_d_old,
+                    pk_d_old: circuit.witnesses.pk_d_old,
+                    v_old: circuit.witnesses.v_old,
+                    rho_old: circuit.witnesses.rho_old,
+                    psi_old: circuit.witnesses.psi_old,
+                    rcm_old: circuit.witnesses.rcm_old.clone(),
+                    cm_old: Value::known(random_note_commitment(&mut rng)),
+                    alpha: circuit.witnesses.alpha,
+                    ak: circuit.witnesses.ak.clone(),
+                    nk: circuit.witnesses.nk,
+                    rivk: circuit.witnesses.rivk,
+                    g_d_new: circuit.witnesses.g_d_new,
+                    pk_d_new: circuit.witnesses.pk_d_new,
+                    v_new: circuit.witnesses.v_new,
+                    psi_new: circuit.witnesses.psi_new,
+                    rcm_new: circuit.witnesses.rcm_new.clone(),
+                    rcv: circuit.witnesses.rcv.clone(),
+
+                    additional_zsa_witnesses: circuit.witnesses.additional_zsa_witnesses.clone(),
+                },
+                phantom: core::marker::PhantomData,
+            };
+            check_proof_of_orchard_circuit(&circuit_wrong_cm_old, &instance, false);
+
+            // Set cmx_pub to be a random NoteCommitment
+            // The proof should fail
+            let instance_wrong_cmx_pub = Instance {
+                anchor: instance.anchor,
+                cv_net: instance.cv_net.clone(),
+                nf_old: instance.nf_old,
+                rk: instance.rk.clone(),
+                cmx: random_note_commitment(&mut rng).into(),
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_cmx_pub, false);
+
+            // Set nf_old_pub to be a random Nullifier
+            // The proof should fail
+            let instance_wrong_nf_old_pub = Instance {
+                anchor: instance.anchor,
+                cv_net: instance.cv_net.clone(),
+                nf_old: Nullifier::dummy(&mut rng),
+                rk: instance.rk.clone(),
+                cmx: instance.cmx,
+                enable_spend: instance.enable_spend,
+                enable_output: instance.enable_output,
+                enable_zsa: instance.enable_zsa,
+            };
+            check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
+
+            // If split_flag = 0 , set psi_nf to be a random Pallas base element
+            // The proof should fail
+            if !split_flag {
+                let circuit_wrong_psi_nf = Circuit {
                     witnesses: Witnesses {
                         path: circuit.witnesses.path,
                         pos: circuit.witnesses.pos,
@@ -1327,7 +1388,7 @@ mod tests {
                         rho_old: circuit.witnesses.rho_old,
                         psi_old: circuit.witnesses.psi_old,
                         rcm_old: circuit.witnesses.rcm_old.clone(),
-                        cm_old: Value::known(random_note_commitment(&mut rng)),
+                        cm_old: circuit.witnesses.cm_old.clone(),
                         alpha: circuit.witnesses.alpha,
                         ak: circuit.witnesses.ak.clone(),
                         nk: circuit.witnesses.nk,
@@ -1337,99 +1398,36 @@ mod tests {
                         v_new: circuit.witnesses.v_new,
                         psi_new: circuit.witnesses.psi_new,
                         rcm_new: circuit.witnesses.rcm_new.clone(),
-                        rcv: circuit.witnesses.rcv,
+                        rcv: circuit.witnesses.rcv.clone(),
 
                         additional_zsa_witnesses: circuit
                             .witnesses
                             .additional_zsa_witnesses
-                            .clone(),
+                            .clone()
+                            .map(|zsa_values| AdditionalZsaWitnesses {
+                                psi_nf: pallas::Base::random(&mut rng),
+                                ..zsa_values
+                            }),
                     },
                     phantom: core::marker::PhantomData,
                 };
-                check_proof_of_orchard_circuit(&circuit_wrong_cm_old, &instance, false);
+                check_proof_of_orchard_circuit(&circuit_wrong_psi_nf, &instance, false);
+            }
 
-                // Set cmx_pub to be a random NoteCommitment
-                // The proof should fail
-                let instance_wrong_cmx_pub = Instance {
+            // If asset is not equal to the zatoshi asset, set enable_zsa = 0
+            // The proof should fail
+            if !is_zatoshi_asset {
+                let instance_wrong_enable_zsa = Instance {
                     anchor: instance.anchor,
                     cv_net: instance.cv_net.clone(),
                     nf_old: instance.nf_old,
                     rk: instance.rk.clone(),
-                    cmx: random_note_commitment(&mut rng).into(),
-                    enable_spend: instance.enable_spend,
-                    enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
-                };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_cmx_pub, false);
-
-                // Set nf_old_pub to be a random Nullifier
-                // The proof should fail
-                let instance_wrong_nf_old_pub = Instance {
-                    anchor: instance.anchor,
-                    cv_net: instance.cv_net.clone(),
-                    nf_old: Nullifier::dummy(&mut rng),
-                    rk: instance.rk.clone(),
                     cmx: instance.cmx,
                     enable_spend: instance.enable_spend,
                     enable_output: instance.enable_output,
-                    enable_zsa: instance.enable_zsa,
+                    enable_zsa: false,
                 };
-                check_proof_of_orchard_circuit(&circuit, &instance_wrong_nf_old_pub, false);
-
-                // If split_flag = 0 , set psi_nf to be a random Pallas base element
-                // The proof should fail
-                if !split_flag {
-                    let circuit_wrong_psi_nf = Circuit {
-                        witnesses: Witnesses {
-                            path: circuit.witnesses.path,
-                            pos: circuit.witnesses.pos,
-                            g_d_old: circuit.witnesses.g_d_old,
-                            pk_d_old: circuit.witnesses.pk_d_old,
-                            v_old: circuit.witnesses.v_old,
-                            rho_old: circuit.witnesses.rho_old,
-                            psi_old: circuit.witnesses.psi_old,
-                            rcm_old: circuit.witnesses.rcm_old.clone(),
-                            cm_old: circuit.witnesses.cm_old.clone(),
-                            alpha: circuit.witnesses.alpha,
-                            ak: circuit.witnesses.ak.clone(),
-                            nk: circuit.witnesses.nk,
-                            rivk: circuit.witnesses.rivk,
-                            g_d_new: circuit.witnesses.g_d_new,
-                            pk_d_new: circuit.witnesses.pk_d_new,
-                            v_new: circuit.witnesses.v_new,
-                            psi_new: circuit.witnesses.psi_new,
-                            rcm_new: circuit.witnesses.rcm_new.clone(),
-                            rcv: circuit.witnesses.rcv,
-
-                            additional_zsa_witnesses: circuit
-                                .witnesses
-                                .additional_zsa_witnesses
-                                .clone()
-                                .map(|zsa_values| AdditionalZsaWitnesses {
-                                    psi_nf: pallas::Base::random(&mut rng),
-                                    ..zsa_values
-                                }),
-                        },
-                        phantom: core::marker::PhantomData,
-                    };
-                    check_proof_of_orchard_circuit(&circuit_wrong_psi_nf, &instance, false);
-                }
-
-                // If asset is not equal to the native asset, set enable_zsa = 0
-                // The proof should fail
-                if !is_native_asset {
-                    let instance_wrong_enable_zsa = Instance {
-                        anchor: instance.anchor,
-                        cv_net: instance.cv_net.clone(),
-                        nf_old: instance.nf_old,
-                        rk: instance.rk.clone(),
-                        cmx: instance.cmx,
-                        enable_spend: instance.enable_spend,
-                        enable_output: instance.enable_output,
-                        enable_zsa: false,
-                    };
-                    check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
-                }
+                check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
             }
         }
     }
