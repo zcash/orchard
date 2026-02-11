@@ -969,7 +969,28 @@ fn build_bundle<B, R: RngCore>(
         // as we can estimate the vector size beforehand.
         let mut indexed_spends_outputs = Vec::with_capacity(num_actions);
 
-        let spends_outputs_by_asset = partition_by_asset(&spends, &outputs);
+        let mut spends_outputs_by_asset = partition_by_asset(&spends, &outputs);
+
+        // For zatoshi-only bundles, pad spends and outputs to num_actions
+        // before per-asset processing, so that dummies are created before the shuffle —
+        // matching vanilla Orchard RNG consumption order.
+        if spends_outputs_by_asset
+            .keys()
+            .all(|asset| asset == &AssetBase::zatoshi())
+        {
+            let (asset_spends, asset_outputs) = spends_outputs_by_asset
+                .entry(AssetBase::zatoshi())
+                .or_insert_with(|| (vec![], vec![]));
+            asset_spends.extend(
+                iter::repeat_with(|| (SpendInfo::dummy(AssetBase::zatoshi(), &mut rng), None))
+                    .take(num_actions.saturating_sub(asset_spends.len())),
+            );
+            asset_outputs.extend(
+                iter::repeat_with(|| (OutputInfo::dummy(&mut rng, AssetBase::zatoshi()), None))
+                    .take(num_actions.saturating_sub(asset_outputs.len())),
+            );
+        }
+        let asset_count = spends_outputs_by_asset.len();
 
         indexed_spends_outputs.extend(spends_outputs_by_asset.into_iter().flat_map(
             |(asset, (spends, outputs))| {
@@ -1009,6 +1030,9 @@ fn build_bundle<B, R: RngCore>(
             },
         ));
 
+        // Pad total actions to num_actions.
+        // This covers the edge case of a single non-zatoshi asset with fewer than
+        // MIN_ACTIONS spends/outputs (e.g. a bundle that only burns a custom asset).
         indexed_spends_outputs.extend(
             iter::repeat_with(|| {
                 (
@@ -1021,7 +1045,9 @@ fn build_bundle<B, R: RngCore>(
 
         // We shuffled the spends and outputs within each `AssetBase` above; now we
         // shuffle the actions to achieve a similar property across `AssetBase`s.
-        indexed_spends_outputs.shuffle(&mut rng);
+        if asset_count > 1 {
+            indexed_spends_outputs.shuffle(&mut rng);
+        }
 
         let mut bundle_meta = BundleMetadata::new(num_requested_spends, num_requested_outputs);
         let pre_actions = indexed_spends_outputs
