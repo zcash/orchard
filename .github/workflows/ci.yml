@@ -12,7 +12,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run tests
-        run: cargo test --verbose
+        env:
+          # Disable LTO in CI to avoid very slow/hanging release test builds on macOS (rustc/LLVM).
+          CARGO_PROFILE_RELEASE_LTO: "off"
+        run: cargo test --verbose --release
       - name: Verify working directory is clean
         run: git diff --exit-code
 
