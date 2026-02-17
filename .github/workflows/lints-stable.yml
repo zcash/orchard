@@ -56,9 +56,11 @@ jobs:
       - name: Add target
         working-directory: ./ci-build
         run: rustup target add ${{ matrix.target }}
-      - name: Pin unicode-ident to version compatible with rustc 1.70
+      - name: Pin deps to versions compatible with rustc 1.70
         working-directory: ./ci-build
-        run: cargo update -p unicode-ident --precise 1.0.22
+        run: |
+          cargo update -p unicode-ident --precise 1.0.12
+          cargo update -p syn --precise 2.0.114
       - name: Clippy no_std for target
         working-directory: ./ci-build
         run: cargo clippy --verbose --target ${{ matrix.target }}
