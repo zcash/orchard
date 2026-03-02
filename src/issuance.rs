@@ -575,12 +575,6 @@ fn create_reference_note(asset: AssetBase, mut rng: impl RngCore) -> Note {
     )
 }
 
-/// Test-only helper for creating Orchard reference notes (used by Zebra tests)
-#[cfg(all(feature = "temporary-zebra", feature = "test-dependencies"))]
-pub fn create_test_reference_note(asset: AssetBase, rng: impl RngCore) -> Note {
-    create_reference_note(asset, rng)
-}
-
 impl IssueBundle<Prepared> {
     /// Sign the `IssueBundle`.
     /// The call makes sure that the provided `isk` matches the `ik` and the derived `asset` for each note in the bundle.
