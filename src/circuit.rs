@@ -1115,7 +1115,7 @@ mod tests {
                 let mut rng = OsRng;
 
                 let (circuit, instance) = generate_circuit_instance(OsRng);
-                let instances = &[instance.clone()];
+                let instances = core::slice::from_ref(&instance);
 
                 let pk = ProvingKey::build();
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
