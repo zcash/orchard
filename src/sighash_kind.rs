@@ -9,6 +9,8 @@ use alloc::vec::Vec;
 ///
 /// This is used to implement [sighash versioning] for transactions containing Orchard
 /// bundles.
+///
+/// [sighashversioning]: https://zips.z.cash/zip-0246#sighash-versioning
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum OrchardSighashKind {
     /// The "default" sighash that commits to all effecting data of the transaction, as defined in
@@ -52,7 +54,7 @@ pub type OrchardBindingSig = OrchardSig<Binding>;
 ///
 /// This helper is only intended for use in tests.
 #[cfg(test)]
-pub fn test_sighash_info_for_kind(kind: &OrchardSighashKind) -> Vec<u8> {
+pub(crate) fn test_sighash_info_for_kind(kind: &OrchardSighashKind) -> Vec<u8> {
     match kind {
         OrchardSighashKind::AllEffecting => vec![0],
     }

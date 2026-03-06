@@ -360,7 +360,7 @@ impl Note {
     }
 
     #[cfg(test)]
-    pub fn has_rho(&self) -> bool {
+    pub(crate) fn has_rho(&self) -> bool {
         self.rho.is_some()
     }
 

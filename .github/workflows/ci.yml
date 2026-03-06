@@ -84,6 +84,7 @@ jobs:
         run: |
           cargo update -p unicode-ident --precise 1.0.12
           cargo update -p syn --precise 2.0.114
+          cargo update -p quote --precise 1.0.44
       - name: Build no_std for target
         working-directory: ./ci-build
         run: cargo build --verbose --target ${{ matrix.target }}

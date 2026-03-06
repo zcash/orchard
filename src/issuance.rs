@@ -829,7 +829,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IssueActionNotFound => {
-                write!(f, "the requested IssueAction not exists in the bundle.")
+                write!(f, "the requested IssueAction does not exist in the bundle.")
             }
             IssueBundleIkMismatchAssetBase => {
                 write!(

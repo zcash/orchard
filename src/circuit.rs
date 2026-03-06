@@ -290,7 +290,7 @@ impl VerifyingKey {
 
 /// The proving key for the Orchard Action circuit.
 ///
-/// In the current type system, this could be a verifying key for either
+/// In the current type system, this could be a proving key for either
 /// the original Orchard Action circuit, or the OrchardZSA circuit.
 #[derive(Debug)]
 pub struct ProvingKey {

@@ -94,6 +94,12 @@ impl OrchardPrimitives for OrchardVanilla {
     /// Evaluate `orchard_auth_digest` for the bundle as defined in
     /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
     ///
+    /// # Panics
+    ///
+    /// Panics if any signature in the bundle uses a sighash kind different from
+    /// `OrchardSighashKind::AllEffecting`. In Orchard v5 transactions, this is the
+    /// only defined sighash kind.
+    ///
     /// [zip244]: https://zips.z.cash/zip-0244
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, OrchardVanilla>,
@@ -102,8 +108,16 @@ impl OrchardPrimitives for OrchardVanilla {
         let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
         h.update(bundle.authorization().proof().as_ref());
         for action in bundle.actions().iter() {
+            assert_eq!(
+                *action.authorization().sighash_kind(),
+                OrchardSighashKind::AllEffecting
+            );
             h.update(&<[u8; 64]>::from(action.authorization().sig()));
         }
+        assert_eq!(
+            *bundle.authorization().binding_signature().sighash_kind(),
+            OrchardSighashKind::AllEffecting
+        );
         h.update(&<[u8; 64]>::from(
             bundle.authorization().binding_signature().sig(),
         ));

@@ -59,7 +59,7 @@ impl<'a> AssetId<'a> {
         }
     }
 
-    /// Derives the Asset Digest for the given ZSA asset.
+    /// Derives the Asset Digest for this ZSA asset.
     ///
     /// Defined in [ZIP-227: Issuance of Zcash Shielded Assets][assetdigest].
     ///
@@ -195,6 +195,10 @@ pub mod testing {
 
     use proptest::prelude::*;
 
+    use crate::constants::fixed_bases::ZSA_ASSET_BASE_PERSONALIZATION;
+    use group::Group;
+    use pasta_curves::{arithmetic::CurveExt, pallas};
+
     prop_compose! {
         /// Generate a uniformly distributed asset base.
         pub fn arb_asset_base()
@@ -215,22 +219,15 @@ pub mod testing {
         /// it is sufficient to use a random asset digest. This allows generating a random
         /// `AssetBase` even when `zsa-issuance` feature is disabled.
         pub fn arb_zsa_asset_base()(
-            asset_digest in any::<[u8; 64]>(),
+            asset_digest in any::<[u8; 64]>().prop_filter("hash_to_curve must not be identity", |digest| {
+                // Reject the extremely unlikely case where `hash_to_curve` returns the
+                // identity point. `prop_filter` makes proptest discard such inputs and
+                // regenerate new ones instead of failing the test.
+                let asset_base = pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(digest);
+                !bool::from(asset_base.is_identity())
+            })
         ) -> AssetBase {
-            use crate::constants::fixed_bases::ZSA_ASSET_BASE_PERSONALIZATION;
-            use group::Group;
-            use pasta_curves::{arithmetic::CurveExt, pallas};
-
-            let asset_base = loop {
-                let asset_base =
-                pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(&asset_digest);
-
-                // Extremely unlikely, but explicitly reject the identity point.
-                if bool::from(!asset_base.is_identity()) {
-                    break asset_base;
-                }
-            };
-
+            let asset_base = pallas::Point::hash_to_curve(ZSA_ASSET_BASE_PERSONALIZATION)(&asset_digest);
             AssetBase(asset_base)
         }
     }
