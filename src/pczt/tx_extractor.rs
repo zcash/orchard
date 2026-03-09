@@ -1,3 +1,5 @@
+use core::fmt;
+
 use nonempty::NonEmpty;
 use rand::{CryptoRng, RngCore};
 
@@ -28,7 +30,7 @@ impl super::Bundle {
     ///
     /// [regular `Bundle`]: crate::Bundle
     pub fn extract<V: TryFrom<i64>>(
-        self,
+        &self,
     ) -> Result<Option<crate::Bundle<Unbound, V, OrchardVanilla>>, TxExtractorError> {
         self.to_tx_data(
             |action| {
@@ -107,6 +109,7 @@ impl super::Bundle {
 
 /// Errors that can occur while extracting a regular Orchard bundle from a PCZT bundle.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum TxExtractorError {
     /// The Transaction Extractor role requires `bsk` to be set.
     MissingBindingSignatureSigningKey,
@@ -117,6 +120,30 @@ pub enum TxExtractorError {
     /// The value sum does not fit into a `valueBalance`.
     ValueSumOutOfRange,
 }
+
+impl fmt::Display for TxExtractorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TxExtractorError::MissingBindingSignatureSigningKey => {
+                write!(f, "`bsk` must be set for the Transaction Extractor role")
+            }
+            TxExtractorError::MissingProof => write!(
+                f,
+                "Orchard `zkproof` must be set for the Transaction Extractor role"
+            ),
+            TxExtractorError::MissingSpendAuthSig => write!(
+                f,
+                "`spend_auth_sig` fields must all be set for the Transaction Extractor role"
+            ),
+            TxExtractorError::ValueSumOutOfRange => {
+                write!(f, "value sum does not fit into a `valueBalance`")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for TxExtractorError {}
 
 /// Authorizing data for a bundle of actions that is just missing a binding signature.
 #[derive(Debug)]

@@ -1,3 +1,5 @@
+use core::fmt;
+
 use alloc::vec::Vec;
 
 use rand::{CryptoRng, RngCore};
@@ -61,6 +63,7 @@ impl super::Bundle {
 
 /// Errors that can occur while finalizing the I/O for a PCZT bundle.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum IoFinalizerError {
     /// An error occurred while signing a dummy spend.
     DummySignature(SignerError),
@@ -70,3 +73,24 @@ pub enum IoFinalizerError {
     /// inconsistent.
     ValueCommitMismatch,
 }
+
+impl fmt::Display for IoFinalizerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IoFinalizerError::DummySignature(e) => {
+                write!(f, "An error occurred while signing a dummy spend: {e}")
+            }
+            IoFinalizerError::MissingValueCommitTrapdoor => write!(
+                f,
+                "The IO Finalizer role requires all `rcv` fields to be set"
+            ),
+            IoFinalizerError::ValueCommitMismatch => write!(
+                f,
+                "`cv_net`, `rcv`, and `value_sum` within the Orchard bundle are inconsistent."
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for IoFinalizerError {}

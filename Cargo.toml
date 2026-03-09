@@ -1,8 +1,8 @@
 [package]
 name = "orchard"
-version = "0.11.0"
+version = "0.12.0"
 authors = [
-    "Sean Bowe <sean@electriccoin.co>",
+    "Sean Bowe",
     "Jack Grigg <jack@electriccoin.co>",
     "Daira-Emma Hopwood <daira@jacaranda.org>",
     "Ying Tong Lai",
@@ -42,7 +42,7 @@ nonempty = { version = "0.11", default-features = false }
 poseidon = { package = "halo2_poseidon", version = "0.1" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 sinsemilla = "0.1"
-subtle = { version = "2.3", default-features = false }
+subtle = { version = "2.6", default-features = false }
 zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.8.1"
 zcash_spec = "0.2.1"

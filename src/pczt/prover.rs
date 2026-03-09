@@ -1,3 +1,5 @@
+use core::fmt;
+
 use alloc::vec::Vec;
 
 use halo2_proofs::plonk;
@@ -114,6 +116,7 @@ impl super::Bundle {
 
 /// Errors that can occur while creating Orchard proofs for a PCZT.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ProverError {
     /// The output note's components do not produce a valid note commitment.
     InvalidOutputNote,
@@ -142,3 +145,40 @@ pub enum ProverError {
     /// The provided `fvk` does not own the spent note.
     WrongFvkForNote,
 }
+
+impl fmt::Display for ProverError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ProverError::InvalidOutputNote => write!(f, "output note is invalid"),
+            ProverError::InvalidSpendNote => write!(f, "spent note is invalid"),
+            ProverError::MissingFullViewingKey => {
+                write!(f, "`fvk` must be set for the Prover role")
+            }
+            ProverError::MissingRandomSeed => {
+                write!(f, "`rseed` fields must be set for the Prover role")
+            }
+            ProverError::MissingRecipient => {
+                write!(f, "`recipient` fields must be set for the Prover role")
+            }
+            ProverError::MissingRho => write!(f, "`rho` must be set for the Prover role"),
+            ProverError::MissingSpendAuthRandomizer => {
+                write!(f, "`alpha` must be set for the Prover role")
+            }
+            ProverError::MissingValue => {
+                write!(f, "`value` fields must be set for the Prover role")
+            }
+            ProverError::MissingValueCommitTrapdoor => {
+                write!(f, "`rcv` must be set for the Prover role")
+            }
+            ProverError::MissingWitness => write!(f, "`witness` must be set for the Prover role"),
+            ProverError::ProofFailed(e) => write!(f, "Failed to create proof: {e}"),
+            ProverError::RhoMismatch => {
+                write!(f, "output's `rho` does not match spent note's nullifier")
+            }
+            ProverError::WrongFvkForNote => write!(f, "`fvk` does not own the action's spent note"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ProverError {}

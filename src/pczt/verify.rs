@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{
     keys::{FullViewingKey, SpendValidatingKey},
     note::{AssetBase, ExtractedNoteCommitment, Rho},
@@ -145,6 +147,7 @@ impl super::Output {
 
 /// Errors that can occur while verifying a PCZT bundle.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum VerifyError {
     /// The output note's components do not produce the expected `cmx`.
     InvalidExtractedNoteCommitment,
@@ -177,3 +180,44 @@ pub enum VerifyError {
     /// The provided `fvk` does not own the spent note.
     WrongFvkForNote,
 }
+
+impl fmt::Display for VerifyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VerifyError::InvalidExtractedNoteCommitment => {
+                write!(f, "output note doesn't match `cmx`")
+            }
+            VerifyError::InvalidNullifier => write!(f, "spent note doesn't match `nullifier`"),
+            VerifyError::InvalidOutputNote => write!(f, "invalid output note"),
+            VerifyError::InvalidRandomizedVerificationKey => {
+                write!(f, "spend's `fvk` and `alpha` do not match `rk`")
+            }
+            VerifyError::InvalidSpendNote => write!(f, "invalid spent note"),
+            VerifyError::InvalidValueCommitment => {
+                write!(f, "`cv_net` doesn't match the note values and `rcv`")
+            }
+            VerifyError::MismatchedFullViewingKey => {
+                write!(f, "Provided full viewing key doesn't match the `fvk` field")
+            }
+            VerifyError::MissingFullViewingKey => write!(f, "`fvk` missing for dummy note"),
+            VerifyError::MissingRandomSeed => {
+                write!(f, "`rseed` missing for `nullifier` verification")
+            }
+            VerifyError::MissingRecipient => {
+                write!(f, "`recipient` missing for `nullifier` verification")
+            }
+            VerifyError::MissingRho => write!(f, "`rho` missing for `nullifier` verification"),
+            VerifyError::MissingSpendAuthRandomizer => {
+                write!(f, "`alpha` missing for `rk` verification")
+            }
+            VerifyError::MissingValue => write!(f, "`value` missing"),
+            VerifyError::MissingValueCommitTrapdoor => {
+                write!(f, "`rcv` missing for `cv_net` verification")
+            }
+            VerifyError::WrongFvkForNote => write!(f, "`fvk` does not own the action's spent note"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for VerifyError {}

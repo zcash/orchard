@@ -500,6 +500,10 @@ mod tests {
         for action in pczt_bundle.actions_mut() {
             if action.spend.zip32_derivation.as_ref() == Some(&zip32_derivation) {
                 action.sign(sighash, &ask, rng).unwrap();
+
+                // We can also apply the signature as an external signature.
+                let signature = action.spend().spend_auth_sig().clone().expect("signed");
+                action.apply_signature(sighash, signature).unwrap();
             }
         }
 

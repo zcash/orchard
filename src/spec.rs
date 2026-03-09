@@ -326,6 +326,7 @@ mod tests {
         use group::Group;
         use halo2_proofs::arithmetic::CurveExt;
         use pasta_curves::pallas;
+
         assert!(!bool::from(
             pallas::Point::hash_to_curve("z.cash:Orchard-gd")(&[]).is_identity()
         ));
