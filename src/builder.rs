@@ -898,7 +898,7 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
                 i64::try_from(value_balance).map_err(BuildError::ValueSum)?;
 
             let result_value_balance = V::try_from(zatoshi_value_balance)
-                .map_err(|_| BuildError::ValueSum(value::OverflowError))?;
+                .map_err(|_| BuildError::ValueSum(value::BalanceError::Overflow))?;
 
             // Compute the transaction binding signing key.
             let bsk = pre_actions

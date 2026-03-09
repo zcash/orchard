@@ -237,7 +237,7 @@ impl ValueSum {
     pub(crate) fn into_value_balance<V: TryFrom<i64>>(self) -> Result<V, BuildError> {
         i64::try_from(self)
             .map_err(BuildError::ValueSum)
-            .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(OverflowError)))
+            .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(BalanceError::Overflow)))
     }
 }
 
@@ -505,7 +505,7 @@ mod tests {
 
     use super::{
         testing::{arb_note_value_bounded, arb_trapdoor, arb_value_sum_bounded},
-        BalanceError, ValueCommitTrapdoor, ValueCommitment, ValueSum, MAX_NOTE_VALUE,
+        ValueCommitTrapdoor, ValueCommitment, ValueSum, MAX_NOTE_VALUE,
     };
     use crate::{
         note::asset_base::testing::arb_asset_base, note::AssetBase, primitives::redpallas,
@@ -540,7 +540,7 @@ mod tests {
                     let sum = four_values
                         .iter()
                         .cloned()
-                        .sum::<Result<ValueSum, OverflowError>>()
+                        .sum::<Result<ValueSum, _>>()
                         .expect("we generate values that won't overflow");
 
                     let fifth = negate_value_sum(sum);
@@ -566,7 +566,7 @@ mod tests {
         let zatoshi_value_balance = zatoshi_values
             .iter()
             .map(|(value, _)| value)
-            .sum::<Result<ValueSum, OverflowError>>()
+            .sum::<Result<ValueSum, _>>()
             .expect("we generate values that won't overflow");
 
         let zatoshi_values_with_asset: Vec<(ValueSum, ValueCommitTrapdoor, AssetBase)> =
