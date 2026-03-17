@@ -7,6 +7,56 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- `orchard::pczt::Bundle::extract` now takes its `self` argument by
+  reference instead of by value.
+
+## [0.12.0] - 2025-12-05
+
+### Added
+- `orchard::pczt::Action::apply_signature`
+- `orchard::value::BalanceError`
+- `impl std::error::Error` for the following errors:
+  - `orchard::pczt`:
+    - `IoFinalizerError`
+    - `ParseError`
+    - `ProverError`
+    - `SignerError`
+    - `TxExtractorError`
+    - `UpdaterError`
+    - `VerifyError`
+  - `orchard::zip32::Error`
+
+### Changed
+- `orchard::builder::BuildError::ValueSum` variant now contains
+  `orchard::value::BalanceError`.
+- `orchard::pczt::SignerError` has added variants:
+  - `InvalidExternalSignature`
+- All error enums in this crate are now `#[non_exhaustive]`, to allow future
+  error variants to be added without a SemVer break:
+  - `orchard::builder`:
+    - `BuildError`
+    - `SpendError`
+  - `orchard::pczt`:
+    - `IoFinalizerError`
+    - `ParseError`
+    - `ProverError`
+    - `SignerError`
+    - `TxExtractorError`
+    - `UpdaterError`
+    - `VerifyError`
+  - `orchard::zip32::Error`
+- `orchard::builder::OutputError` has been changed from a zero-sized struct to
+  a `#[non_exhaustive]` enum with (for now) a single variant.
+
+### Removed
+- `orchard::value::OverflowError` (use `BalanceError` instead).
+
+## [0.10.2] - 2025-05-08
+
+### Fixed
+- Fixes problems in test compilation under `--no-default-features`
+
 ## [0.11.0] - 2025-02-20
 
 ### Added

@@ -22,6 +22,7 @@ const ZIP32_ORCHARD_FVFP_PERSONALIZATION: &[u8; 16] = b"ZcashOrchardFVFP";
 
 /// Errors produced in derivation of extended spending keys
 #[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// A seed resulted in an invalid spending key
     InvalidSpendingKey,
@@ -35,7 +36,8 @@ impl fmt::Display for Error {
     }
 }
 
-//impl std::error::Error for Error {}
+#[cfg(feature = "std")]
+impl std::error::Error for Error {}
 
 /// An Orchard full viewing key fingerprint
 struct FvkFingerprint([u8; 32]);
