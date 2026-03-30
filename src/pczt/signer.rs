@@ -1,3 +1,5 @@
+use core::fmt;
+
 use rand::{CryptoRng, RngCore};
 
 use crate::{
@@ -54,6 +56,7 @@ impl super::Action {
 
 /// Errors that can occur while signing an Orchard action in a PCZT.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum SignerError {
     /// A provided external signature was not valid for the action's spend.
     InvalidExternalSignature,
@@ -62,3 +65,22 @@ pub enum SignerError {
     /// The provided `ask` does not own the action's spent note.
     WrongSpendAuthorizingKey,
 }
+
+impl fmt::Display for SignerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SignerError::InvalidExternalSignature => {
+                write!(f, "External signature is invalid for the action's spend")
+            }
+            SignerError::MissingSpendAuthRandomizer => {
+                write!(f, "`alpha` must be set for the Signer role")
+            }
+            SignerError::WrongSpendAuthorizingKey => {
+                write!(f, "provided `ask` does not own the action's spent note")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for SignerError {}

@@ -8,7 +8,10 @@ use tracing::debug;
 use super::{Authorized, Bundle};
 use crate::{
     circuit::VerifyingKey,
-    primitives::redpallas::{self, Binding, SpendAuth},
+    primitives::{
+        redpallas::{self, Binding, SpendAuth},
+        OrchardPrimitives,
+    },
 };
 
 /// A signature within an authorized Orchard bundle.
@@ -37,23 +40,24 @@ impl BatchValidator {
     }
 
     /// Adds the proof and RedPallas signatures from the given bundle to the validator.
-    pub fn add_bundle<V: Copy + Into<i64>>(
+    pub fn add_bundle<V: Copy + Into<i64>, Pr: OrchardPrimitives>(
         &mut self,
-        bundle: &Bundle<Authorized, V>,
+        bundle: &Bundle<Authorized, V, Pr>,
         sighash: [u8; 32],
     ) {
         for action in bundle.actions().iter() {
             self.signatures.push(BundleSignature {
                 signature: action
                     .rk()
-                    .create_batch_item(action.authorization().clone(), &sighash),
+                    .create_batch_item(action.authorization().sig().clone(), &sighash),
             });
         }
 
         self.signatures.push(BundleSignature {
-            signature: bundle
-                .binding_validating_key()
-                .create_batch_item(bundle.authorization().binding_signature().clone(), &sighash),
+            signature: bundle.binding_validating_key().create_batch_item(
+                bundle.authorization().binding_signature().sig().clone(),
+                &sighash,
+            ),
         });
 
         bundle

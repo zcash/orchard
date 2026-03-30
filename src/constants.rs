@@ -1,12 +1,15 @@
 //! Constants used in the Orchard protocol.
 pub mod fixed_bases;
+pub mod nullifier_l;
+pub mod reference_keys;
 pub mod sinsemilla;
 pub mod util;
 
 #[cfg(feature = "circuit")]
-pub use self::sinsemilla::{OrchardCommitDomains, OrchardHashDomains};
-#[cfg(feature = "circuit")]
-pub use fixed_bases::{NullifierK, OrchardFixedBases, OrchardFixedBasesFull, ValueCommitV};
+pub use {
+    self::sinsemilla::{OrchardCommitDomains, OrchardHashDomains},
+    fixed_bases::{NullifierK, OrchardFixedBases, OrchardFixedBasesFull, ValueCommitV},
+};
 
 /// $\mathsf{MerkleDepth^{Orchard}}$
 pub const MERKLE_DEPTH_ORCHARD: usize = 32;

@@ -318,13 +318,15 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
 mod tests {
     use super::{i2lebsp, lebs2ip};
 
-    use group::Group;
-    use halo2_proofs::arithmetic::CurveExt;
-    use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
     #[test]
+    #[cfg(feature = "circuit")]
     fn diversify_hash_substitution() {
+        use group::Group;
+        use halo2_proofs::arithmetic::CurveExt;
+        use pasta_curves::pallas;
+
         assert!(!bool::from(
             pallas::Point::hash_to_curve("z.cash:Orchard-gd")(&[]).is_identity()
         ));
