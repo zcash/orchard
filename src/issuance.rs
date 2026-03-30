@@ -18,11 +18,12 @@ use core::fmt;
 use core::fmt::Debug;
 use group::Group;
 use nonempty::NonEmpty;
+use pasta_curves::pallas;
 use rand::RngCore;
 
 use crate::{
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
-    note::{rho_for_issuance_note, AssetBase, AssetId, Nullifier},
+    note::{rho_for_issuance_note, AssetBase, AssetId, ExtractedNoteCommitment, Nullifier},
     value::NoteValue,
     Address, Note,
 };
@@ -633,6 +634,19 @@ impl IssueBundle<Signed> {
     ) -> IssueBundleAuthorizingCommitment {
         IssueBundleAuthorizingCommitment(hash_issue_bundle_auth_data(self, sighash_info_for_kind))
     }
+
+    /// Returns the note commitments for all notes in this bundle, in action order.
+    ///
+    /// This exposes the commitments directly as `pasta_curves::pallas::Base`
+    /// values for external crates, avoiding extra byte conversions.
+    pub fn note_commitments(&self) -> impl Iterator<Item = pallas::Base> + '_ {
+        self.actions().iter().flat_map(|action| {
+            action
+                .notes()
+                .iter()
+                .map(|note| ExtractedNoteCommitment::from(note.commitment()).inner())
+        })
+    }
 }
 
 /// Checks an [`IssueBundle`] without signature verification.
@@ -907,10 +921,11 @@ mod tests {
         value::NoteValue,
         Address, Note,
     };
-    use alloc::collections::BTreeMap;
+    use alloc::collections::{BTreeMap, BTreeSet};
     use alloc::string::{String, ToString};
     use alloc::vec::Vec;
     use nonempty::NonEmpty;
+    use pasta_curves::pallas;
     use rand::rngs::OsRng;
     use rand::RngCore;
 
@@ -1456,6 +1471,15 @@ mod tests {
                 reference_note3
             ))
         );
+
+        // Verify note_commitments() returns a correct number of non-zero,
+        // unique pallas::Base values
+        let mut unique_commitments = BTreeSet::new();
+        for commitment in signed.note_commitments() {
+            assert_ne!(commitment, pallas::Base::zero());
+            assert!(unique_commitments.insert(commitment));
+        }
+        assert_eq!(unique_commitments.len(), 7);
     }
 
     #[test]
@@ -1992,6 +2016,20 @@ mod tests {
                 assert_eq!(note.rho(), expected_rho);
             }
         }
+    }
+
+    #[test]
+    fn issue_bundle_note_commitments_empty_bundle() {
+        let params = setup_params();
+        let (bundle, _) = IssueBundle::new(
+            params.ik.clone(),
+            asset_desc_hash(b"asset1"),
+            None, // no notes, finalize-only
+            false,
+            params.rng,
+        );
+        let signed = sign_bundle(bundle, &params);
+        assert_eq!(signed.note_commitments().count(), 0);
     }
 }
 
