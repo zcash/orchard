@@ -28,6 +28,8 @@ pub enum Error {
     InvalidSpendingKey,
     /// A child index in a derivation path exceeded 2^31
     InvalidChildIndex(u32),
+    /// Derivation depth would exceed 255
+    MaxDerivationDepth,
 }
 
 impl fmt::Display for Error {
@@ -203,6 +205,8 @@ impl ExtendedSpendingKey {
     ///
     /// Discards index if it results in an invalid sk
     fn derive_child(&self, index: ChildIndex) -> Result<Self, Error> {
+        let depth = self.depth.checked_add(1).ok_or(Error::MaxDerivationDepth)?;
+
         let child_i = self.inner.derive_child(index);
 
         let sk = SpendingKey::from_bytes(*child_i.parts().0);
@@ -213,7 +217,7 @@ impl ExtendedSpendingKey {
         let fvk: FullViewingKey = self.into();
 
         Ok(Self {
-            depth: self.depth + 1,
+            depth,
             parent_fvk_tag: FvkFingerprint::from(&fvk).tag(),
             child_index: KeyIndex::child(index),
             inner: child_i,
@@ -244,6 +248,22 @@ mod tests {
         let xsk_5 = xsk_m.derive_child(i_5);
 
         assert!(xsk_5.is_ok());
+    }
+
+    #[test]
+    fn derive_child_depth_overflow() {
+        let seed = [0; 32];
+        let mut xsk = ExtendedSpendingKey::master(&seed).unwrap();
+
+        let i_5 = ChildIndex::hardened(5);
+        for _ in 0..255 {
+            xsk = xsk.derive_child(i_5).unwrap();
+        }
+        assert_eq!(xsk.depth, 255);
+        assert!(matches!(
+            xsk.derive_child(i_5),
+            Err(Error::MaxDerivationDepth)
+        ));
     }
 
     #[test]
