@@ -302,7 +302,9 @@ impl SpendInfo {
         let nf_old = self.note.nullifier(&self.fvk);
         let ak: SpendValidatingKey = self.fvk.clone().into();
         let alpha = pallas::Scalar::random(&mut rng);
-        let rk = ak.randomize(&alpha);
+        let rk = ak
+            .randomize(&alpha)
+            .expect("alpha was generated randomly, so the identity is vanishingly unlikely");
 
         (nf_old, ak, alpha, rk)
     }
@@ -921,6 +923,8 @@ pub struct SigningParts {
     /// actions they can create signatures for.
     ak: SpendValidatingKey,
     /// The randomization needed to derive the actual signing key for this note.
+    ///
+    /// This is guaranteed (internally) to be derived from randomness.
     alpha: pallas::Scalar,
 }
 
@@ -1068,7 +1072,7 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
             &mut signature_valid_for,
             |valid_for, partial, maybe| match maybe {
                 MaybeSigned::SigningMetadata(parts) => {
-                    let rk = parts.ak.randomize(&parts.alpha);
+                    let rk = parts.ak.randomize(&parts.alpha).expect("SigningParts is constructed only with random alpha, so the identity is vanishingly unlikely.");
                     if rk.verify(&partial.sigs.sighash[..], signature).is_ok() {
                         *valid_for += 1;
                         MaybeSigned::Signature(signature.clone())

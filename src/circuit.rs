@@ -844,10 +844,8 @@ impl Instance {
         instance[NF_OLD] = self.nf_old.0;
 
         let rk = pallas::Point::from_bytes(&self.rk.clone().into())
-            .unwrap()
-            .to_affine()
-            .coordinates()
-            .unwrap();
+            .and_then(|ep| ep.to_affine().coordinates())
+            .expect("The identity VerificationKey for SpendAuth is disallowed by construction.");
 
         instance[RK_X] = *rk.x();
         instance[RK_Y] = *rk.y();
@@ -949,7 +947,9 @@ mod tests {
         let rho = Rho::from_nf_old(nf_old);
         let ak: SpendValidatingKey = fvk.into();
         let alpha = pallas::Scalar::random(&mut rng);
-        let rk = ak.randomize(&alpha);
+        let rk = ak
+            .randomize(&alpha)
+            .expect("alpha was generated randomly, so the identity is vanishingly unlikely");
 
         let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
         let cmx = output_note.commitment().into();

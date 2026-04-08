@@ -181,7 +181,12 @@ impl Eq for SpendValidatingKey {}
 
 impl SpendValidatingKey {
     /// Randomizes this spend validating key with the given `randomizer`.
-    pub fn randomize(&self, randomizer: &pallas::Scalar) -> redpallas::VerificationKey<SpendAuth> {
+    ///
+    /// Returns `None` if randomization would produce the identity [`pallas::Point`].
+    pub fn randomize(
+        &self,
+        randomizer: &pallas::Scalar,
+    ) -> Option<redpallas::VerificationKey<SpendAuth>> {
         self.0.randomize(randomizer)
     }
 
@@ -204,11 +209,10 @@ impl SpendValidatingKey {
         <[u8; 32]>::try_from(bytes)
             .ok()
             .and_then(|b| {
-                // Structural validity checks for ak_P:
-                // - The point must not be the identity
-                //   (which for Pallas is canonically encoded as all-zeroes).
-                // - The sign of the y-coordinate must be positive.
-                if b != [0; 32] && b[31] & 0x80 == 0 {
+                // Structural validity check for ak_P: the sign of the y-coordinate must
+                // be positive. Rejection of the identity point is handled by
+                // `<redpallas::VerificationKey<SpendAuth>>::try_from`.
+                if b[31] & 0x80 == 0 {
                     <redpallas::VerificationKey<SpendAuth>>::try_from(b).ok()
                 } else {
                     None

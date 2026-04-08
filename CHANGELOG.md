@@ -13,6 +13,17 @@ and this project adheres to Rust's notion of
 - `orchard::pczt::Bundle::extract` now takes its `self` argument by
   reference instead of by value.
 - `orchard::zip32::Error` has added variant `MaxDerivationDepth`
+- `orchard::keys::SpendValidatingKey::randomize` now returns
+  `Option<redpallas::VerificationKey<SpendAuth>>`, yielding `None` when
+  randomization would produce the identity `pallas::Point`.
+- `orchard::primitives::redpallas::VerificationKey<SpendAuth>::randomize`
+  now returns `Option<Self>`, returning None when the randomized verification
+  key corresponds to the identity `pallas::Point`.
+- The blanket `impl<T: SigType> TryFrom<[u8; 32]> for
+  orchard::primitives::redpallas::VerificationKey<T>` has been replaced
+  with distinct implementations for `VerificationKey<SpendAuth>` and
+  `VerificationKey<Binding>`. The `SpendAuth` implementation rejects byte
+  encodings of the identity `pallas::Point`.
 
 ## [0.12.0] - 2025-12-05
 

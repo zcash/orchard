@@ -108,7 +108,7 @@ impl super::Spend {
             .as_ref()
             .ok_or(VerifyError::MissingSpendAuthRandomizer)?;
 
-        if ak.randomize(alpha) == self.rk {
+        if ak.randomize(alpha) == Some(self.rk.clone()) {
             Ok(())
         } else {
             Err(VerifyError::InvalidRandomizedVerificationKey)
