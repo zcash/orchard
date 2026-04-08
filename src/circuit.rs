@@ -12,7 +12,7 @@ use halo2_proofs::{
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
 };
-use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
+use pasta_curves::{arithmetic::CurveAffine, pallas, vesta, Fp};
 use rand::RngCore;
 
 use self::{
@@ -843,14 +843,12 @@ impl Instance {
         instance[CV_NET_Y] = self.cv_net.y();
         instance[NF_OLD] = self.nf_old.0;
 
-        let rk = pallas::Point::from_bytes(&self.rk.clone().into())
-            .unwrap()
-            .to_affine()
-            .coordinates()
-            .unwrap();
+        let rk_coords = pallas::Point::from_bytes(&self.rk.clone().into())
+            .and_then(|ep| ep.to_affine().coordinates())
+            .into_option();
 
-        instance[RK_X] = *rk.x();
-        instance[RK_Y] = *rk.y();
+        instance[RK_X] = rk_coords.map_or(Fp::zero(), |c| *c.x());
+        instance[RK_Y] = rk_coords.map_or(Fp::zero(), |c| *c.y());
         instance[CMX] = self.cmx.inner();
         instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(self.enable_spend));
         instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
