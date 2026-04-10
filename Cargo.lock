@@ -1437,6 +1437,17 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 name = "orchard"
 version = "0.12.0"
 dependencies = [
+ "incrementalmerkletree",
+ "orchard_internal",
+ "rand",
+ "shardtree",
+ "zcash_note_encryption",
+]
+
+[[package]]
+name = "orchard_internal"
+version = "0.12.0"
+dependencies = [
  "aes",
  "bitvec",
  "blake2b_simd",

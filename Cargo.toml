@@ -1,11 +1,11 @@
 [workspace]
-members = ["."]
+members = [".", "public"]
 
 [package]
-name = "orchard"
+name = "orchard_internal"
 version = "0.12.0"
 authors = [
-    "Sean Bowe",
+    "Sean Bowe <ewillbefull@gmail.com>",
     "Jack Grigg <jack@electriccoin.co>",
     "Daira-Emma Hopwood <daira@jacaranda.org>",
     "Ying Tong Lai",
@@ -16,8 +16,7 @@ rust-version = "1.85.1"
 description = "The Orchard shielded transaction protocol"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/orchard"
-documentation = "https://docs.rs/orchard"
-readme = "README.md"
+readme = "INTERNAL-README.md"
 categories = ["cryptography::cryptocurrencies"]
 keywords = ["zcash"]
 
