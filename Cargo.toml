@@ -59,7 +59,7 @@ getset = "0.1"
 tracing = { version = "0.1", default-features = false }
 
 # No-std support
-core2 = { version = "0.3", default-features = false, features = ["alloc"] }
+corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
 
 # Developer tooling dependencies
 image = { version = "0.24", optional = true }
@@ -83,7 +83,7 @@ bench = false
 
 [features]
 default = ["circuit", "multicore", "std"]
-std = ["core2/std", "group/wnaf-memuse", "reddsa/std"]
+std = ["corez/std", "group/wnaf-memuse", "reddsa/std"]
 circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
 unstable-frost = []
 multicore = ["halo2_proofs?/multicore"]
