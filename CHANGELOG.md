@@ -8,6 +8,7 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Changed
+- MSRV is now 1.85.1
 - `orchard::pczt::Bundle::extract` now takes its `self` argument by
   reference instead of by value.
 
