@@ -23,7 +23,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 
 [dependencies]
-__impl = { package = "orchard_internal", path = "..", default-features = false }
+__impl = { workspace = true }
 
 [features]
 default = ["circuit", "multicore", "std"]

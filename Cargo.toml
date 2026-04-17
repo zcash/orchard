@@ -1,6 +1,9 @@
 [workspace]
 members = [".", "public"]
 
+[workspace.dependencies]
+__impl = { version = "=0.12.0", path = ".", package = "orchard_internal", default-features = false }
+
 [package]
 name = "orchard_internal"
 version = "0.12.0"
