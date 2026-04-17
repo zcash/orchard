@@ -14,7 +14,7 @@ description = "The Orchard shielded transaction protocol"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/orchard"
 documentation = "https://docs.rs/orchard"
-readme = "../README.md"
+readme = "README.md"
 categories = ["cryptography::cryptocurrencies"]
 keywords = ["zcash"]
 
