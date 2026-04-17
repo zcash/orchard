@@ -422,13 +422,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "core2"
-version = "0.3.3"
+name = "corez"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239fa3ae9b63c2dc74bd3fa852d4792b8b305ae64eeede946265b6af62f1fff3"
-dependencies = [
- "memchr",
-]
+checksum = "4df6f98652d30167eaeea34d77b730e07c8caba6df17bd4551842b9b8da01deb"
 
 [[package]]
 name = "cpp_demangle"
@@ -1443,7 +1440,7 @@ dependencies = [
  "aes",
  "bitvec",
  "blake2b_simd",
- "core2",
+ "corez",
  "criterion",
  "ff",
  "fpe",
