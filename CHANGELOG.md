@@ -12,6 +12,7 @@ and this project adheres to Rust's notion of
 - Migrated from yanked `core2` library to `corez`
 - `orchard::pczt::Bundle::extract` now takes its `self` argument by
   reference instead of by value.
+- `orchard::zip32::Error` has added variant `MaxDerivationDepth`
 
 ## [0.12.0] - 2025-12-05
 
