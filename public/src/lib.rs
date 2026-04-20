@@ -214,6 +214,19 @@ pub mod tree {
 ///   be checked in its `TryFrom<i64>` implementation.
 /// - Define your own "amount" type for note values, and convert it to `NoteValue` prior
 ///   to calling [`Builder::add_output`](builder::Builder::add_output).
+///
+/// # Caution!
+///
+/// An `i64` is _not_ a signed 64-bit integer! The [Rust documentation] calls `i64` the
+/// 64-bit signed integer type, which is true in the sense that its encoding in memory
+/// takes up 64 bits. Numerically, however, `i64` is a signed 63-bit integer.
+///
+/// Fortunately, users of this crate should never need to construct
+/// [`ValueSum`](value::ValueSum) directly; you should only need to interact with
+/// [`NoteValue`](value::NoteValue) (which can be safely constructed from a `u64`) and
+/// `valueBalanceOrchard` (which can be represented as an `i64`).
+///
+/// [Rust documentation]: https://doc.rust-lang.org/stable/std/primitive.i64.html
 pub mod value {
     #[doc(inline)]
     pub use __impl::value::{
