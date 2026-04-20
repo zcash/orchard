@@ -1,11 +1,6 @@
-//! # orchard
+//! Implementation crate for the Orchard shielded transaction protocol.
 //!
-//! ## Nomenclature
-//!
-//! All types in the `orchard` crate, unless otherwise specified, are Orchard-specific
-//! types. For example, [`Address`] is documented as being a shielded payment address; we
-//! implicitly mean it is an Orchard payment address (as opposed to e.g. a Sapling payment
-//! address, which is also shielded).
+//! This crate is re-exported by the public `orchard` crate. Depend on `orchard` instead.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -15,7 +10,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 #[macro_use]
 extern crate alloc;
