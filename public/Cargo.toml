@@ -3,10 +3,10 @@ name = "orchard"
 version = "0.12.0"
 authors = [
     "Sean Bowe <ewillbefull@gmail.com>",
-    "Jack Grigg <jack@electriccoin.co>",
+    "Jack Grigg <thestr4d@gmail.com>",
     "Daira-Emma Hopwood <daira@jacaranda.org>",
     "Ying Tong Lai",
-    "Kris Nuttycombe <kris@electriccoin.co>",
+    "Kris Nuttycombe <kris@nutty.land>",
 ]
 edition = "2021"
 rust-version = "1.70"
