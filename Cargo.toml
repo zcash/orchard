@@ -2,11 +2,11 @@
 members = [".", "public"]
 
 [workspace.dependencies]
-__impl = { version = "=0.12.0", path = ".", package = "orchard_internal", default-features = false }
+__impl = { version = "1", path = ".", package = "orchard_internal", default-features = false }
 
 [package]
 name = "orchard_internal"
-version = "0.12.0"
+version = "1.0.0"
 authors = [
     "Sean Bowe <ewillbefull@gmail.com>",
     "Jack Grigg <thestr4d@gmail.com>",
