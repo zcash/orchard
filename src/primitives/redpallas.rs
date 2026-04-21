@@ -263,27 +263,10 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use group::ff::Field;
+    use group::ff::{Field, PrimeField};
     use pasta_curves::pallas;
 
-    use super::{Binding, SpendAuth, VerificationKey};
-
-    /// The byte-encoding of the basepoint for the Orchard `SpendAuthSig`, reproduced from
-    /// `reddsa::orchard::ORCHARD_SPENDAUTHSIG_BASEPOINT_BYTES` (which is not public).
-    const ORCHARD_SPENDAUTHSIG_BASEPOINT_BYTES: [u8; 32] = [
-        99, 201, 117, 184, 132, 114, 26, 141, 12, 161, 112, 123, 227, 12, 127, 12, 95, 68, 95, 62,
-        124, 24, 141, 59, 6, 214, 241, 40, 179, 35, 85, 183,
-    ];
-
-    #[test]
-    fn orchard_spendauth_basepoint() {
-        use group::GroupEncoding;
-        use pasta_curves::arithmetic::CurveExt;
-        assert_eq!(
-            pallas::Point::hash_to_curve("z.cash:Orchard")(b"G").to_bytes(),
-            ORCHARD_SPENDAUTHSIG_BASEPOINT_BYTES,
-        );
-    }
+    use super::{Binding, SigningKey, SpendAuth, VerificationKey};
 
     #[test]
     fn try_from_identity_bytes_is_rejected() {
@@ -312,11 +295,13 @@ mod tests {
 
     #[test]
     fn spendauth_randomize_to_identity_returns_none() {
-        // Construct a `VerificationKey<SpendAuth>` equal to the SpendAuthSig basepoint
-        // `G`, then randomize by `alpha = -1`. The resulting key is
-        // `rk = G + (-1) * G = identity`, which must be rejected.
-        let ak = VerificationKey::<SpendAuth>::try_from(ORCHARD_SPENDAUTHSIG_BASEPOINT_BYTES)
-            .expect("the SpendAuthSig basepoint is not the identity");
+        // Construct a `VerificationKey<SpendAuth>` corresponding to the
+        // signing key with scalar 1 (so, equal to the `SpendAuthSig` base
+        // point `G`), then randomize by `alpha = -1`. The resulting key is
+        // `rk = [1] G + [-1] G = identity`, which must be rejected.
+        let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr().into();
+        let ask = <SigningKey<SpendAuth>>::try_from(ask_bytes).expect("1 is a valid scalar");
+        let ak = <VerificationKey<SpendAuth>>::from(&ask);
         let alpha = -pallas::Scalar::ONE;
         assert!(
             ak.randomize(&alpha).is_none(),
