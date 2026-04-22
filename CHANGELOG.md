@@ -7,6 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-04-22
+
 ### Added
 - `orchard::primitives::redpallas::VerificationKey<T>::is_identity`, which
   returns `true` if the verification key is the identity `pallas::Point`.
