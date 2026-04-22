@@ -10,7 +10,6 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// # use orchard_internal as orchard;
 /// use orchard::keys::{SpendingKey, FullViewingKey, Scope};
 ///
 /// let sk = SpendingKey::from_bytes([7; 32]).unwrap();

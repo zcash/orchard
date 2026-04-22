@@ -1,4 +1,41 @@
-//! Monetary value types and value commitments for the Orchard shielded pool.
+//! Monetary values within the Orchard shielded pool.
+//!
+//! Values are represented in three places within the Orchard protocol:
+//! - [`NoteValue`], the value of an individual note. It is an unsigned 64-bit integer
+//!   (with maximum value [`MAX_NOTE_VALUE`]), and is serialized in a note plaintext.
+//! - [`ValueSum`], the sum of note values within an Orchard [`Action`] or [`Bundle`].
+//!   It is a signed 64-bit integer (with range [`VALUE_SUM_RANGE`]).
+//! - `valueBalanceOrchard`, which is a signed 63-bit integer. This is represented
+//!   by a user-defined type parameter on [`Bundle`], returned by
+//!   [`Bundle::value_balance`] and [`Builder::value_balance`].
+//!
+//! If your specific instantiation of the Orchard protocol requires a smaller bound on
+//! valid note values (for example, Zcash's `MAX_MONEY` fits into a 51-bit integer), you
+//! should enforce this in two ways:
+//!
+//! - Define your `valueBalanceOrchard` type to enforce your valid value range. This can
+//!   be checked in its `TryFrom<i64>` implementation.
+//! - Define your own "amount" type for note values, and convert it to `NoteValue` prior
+//!   to calling [`Builder::add_output`].
+//!
+//! Inside the circuit, note values are constrained to be unsigned 64-bit integers.
+//!
+//! # Caution!
+//!
+//! An `i64` is _not_ a signed 64-bit integer! The [Rust documentation] calls `i64` the
+//! 64-bit signed integer type, which is true in the sense that its encoding in memory
+//! takes up 64 bits. Numerically, however, `i64` is a signed 63-bit integer.
+//!
+//! Fortunately, users of this crate should never need to construct [`ValueSum`] directly;
+//! you should only need to interact with [`NoteValue`] (which can be safely constructed
+//! from a `u64`) and `valueBalanceOrchard` (which can be represented as an `i64`).
+//!
+//! [`Action`]: crate::action::Action
+//! [`Bundle`]: crate::bundle::Bundle
+//! [`Bundle::value_balance`]: crate::bundle::Bundle::value_balance
+//! [`Builder::value_balance`]: crate::builder::Builder::value_balance
+//! [`Builder::add_output`]: crate::builder::Builder::add_output
+//! [Rust documentation]: https://doc.rust-lang.org/stable/std/primitive.i64.html
 
 use core::fmt::{self, Debug};
 use core::iter::Sum;
