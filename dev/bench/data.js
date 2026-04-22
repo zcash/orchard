@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1776796950326,
+  "lastUpdate": 1776883270874,
   "repoUrl": "https://github.com/zcash/orchard",
   "entries": {
     "Orchard Benchmarks": [
@@ -1259,6 +1259,186 @@ window.BENCHMARK_DATA = {
             "name": "default_address",
             "value": 488303,
             "range": "± 4693",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "kris@nutty.land",
+            "name": "Kris Nuttycombe",
+            "username": "nuttycom"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4a106e1ddd73cfcecf036283d6e725d417846a28",
+          "message": "Merge pull request #492 from daira/alt/rk-identity-at-constructors\n\nconsensus: Reject identity `rk` in `Action::from_parts` and `Instance::from_parts`",
+          "timestamp": "2026-04-22T12:30:49-06:00",
+          "tree_id": "65fb80eae89ce34d491083c4d18b96b997e88ce1",
+          "url": "https://github.com/zcash/orchard/commit/4a106e1ddd73cfcecf036283d6e725d417846a28"
+        },
+        "date": 1776883269665,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "proving/bundle/1",
+            "value": 2135354376,
+            "range": "± 16620168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/2",
+            "value": 2112104836,
+            "range": "± 4125897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/3",
+            "value": 3034972371,
+            "range": "± 17681837",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/4",
+            "value": 3970617933,
+            "range": "± 29534394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/1",
+            "value": 17285387,
+            "range": "± 246809",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/2",
+            "value": 17434094,
+            "range": "± 149143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/3",
+            "value": 19785394,
+            "range": "± 205080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/4",
+            "value": 22525502,
+            "range": "± 139131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/valid",
+            "value": 1227275,
+            "range": "± 18120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/invalid",
+            "value": 104124,
+            "range": "± 209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/compact-valid",
+            "value": 1225083,
+            "range": "± 2419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "compact-note-decryption/invalid",
+            "value": 1094003579,
+            "range": "± 4739013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/10",
+            "value": 12966683,
+            "range": "± 65744",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/10",
+            "value": 1773340,
+            "range": "± 6327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/10",
+            "value": 12942252,
+            "range": "± 276658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/10",
+            "value": 1742042,
+            "range": "± 14890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/50",
+            "value": 64775992,
+            "range": "± 882886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/50",
+            "value": 8817369,
+            "range": "± 9009",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/50",
+            "value": 64651284,
+            "range": "± 52046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/50",
+            "value": 8658002,
+            "range": "± 25983",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/100",
+            "value": 129603001,
+            "range": "± 1199275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/100",
+            "value": 17629228,
+            "range": "± 34892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/100",
+            "value": 129317401,
+            "range": "± 1377281",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/100",
+            "value": 17305152,
+            "range": "± 75258",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "derive_fvk",
+            "value": 375628,
+            "range": "± 1841",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "default_address",
+            "value": 404887,
+            "range": "± 518",
             "unit": "ns/iter"
           }
         ]
