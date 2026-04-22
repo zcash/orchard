@@ -802,13 +802,13 @@ impl ProvingKey {
 /// Every `Instance` has a non-identity `rk`.
 #[derive(Clone, Debug)]
 pub struct Instance {
-    pub(crate) anchor: Anchor,
-    pub(crate) cv_net: ValueCommitment,
-    pub(crate) nf_old: Nullifier,
-    pub(crate) rk: VerificationKey<SpendAuth>,
-    pub(crate) cmx: ExtractedNoteCommitment,
-    pub(crate) enable_spend: bool,
-    pub(crate) enable_output: bool,
+    anchor: Anchor,
+    cv_net: ValueCommitment,
+    nf_old: Nullifier,
+    rk: VerificationKey<SpendAuth>,
+    cmx: ExtractedNoteCommitment,
+    enable_spend: bool,
+    enable_output: bool,
 }
 
 impl Instance {
@@ -847,6 +847,41 @@ impl Instance {
             enable_spend,
             enable_output,
         })
+    }
+
+    /// Returns the Merkle tree anchor of this instance.
+    pub(crate) fn anchor(&self) -> &Anchor {
+        &self.anchor
+    }
+
+    /// Returns the commitment to the net value of this instance.
+    pub(crate) fn cv_net(&self) -> &ValueCommitment {
+        &self.cv_net
+    }
+
+    /// Returns the nullifier of the note being spent by this instance.
+    pub(crate) fn nf_old(&self) -> &Nullifier {
+        &self.nf_old
+    }
+
+    /// Returns the randomized verification key of this instance.
+    pub(crate) fn rk(&self) -> &VerificationKey<SpendAuth> {
+        &self.rk
+    }
+
+    /// Returns the commitment to the new note being created by this instance.
+    pub(crate) fn cmx(&self) -> &ExtractedNoteCommitment {
+        &self.cmx
+    }
+
+    /// Returns whether spends are enabled for this instance.
+    pub(crate) fn enable_spend(&self) -> bool {
+        self.enable_spend
+    }
+
+    /// Returns whether outputs are enabled for this instance.
+    pub(crate) fn enable_output(&self) -> bool {
+        self.enable_output
     }
 
     fn to_halo2_instance(&self) -> [[vesta::Scalar; 9]; 1] {
@@ -1076,16 +1111,15 @@ mod tests {
             instance: &Instance,
             proof: &Proof,
         ) -> std::io::Result<()> {
-            w.write_all(&instance.anchor.to_bytes())?;
-            w.write_all(&instance.cv_net.to_bytes())?;
-            w.write_all(&instance.nf_old.to_bytes())?;
-            w.write_all(&<[u8; 32]>::from(instance.rk.clone()))?;
-            w.write_all(&instance.cmx.to_bytes())?;
+            w.write_all(&instance.anchor().to_bytes())?;
+            w.write_all(&instance.cv_net().to_bytes())?;
+            w.write_all(&instance.nf_old().to_bytes())?;
+            w.write_all(&<[u8; 32]>::from(instance.rk()))?;
+            w.write_all(&instance.cmx().to_bytes())?;
             w.write_all(&[
-                u8::from(instance.enable_spend),
-                u8::from(instance.enable_output),
+                u8::from(instance.enable_spend()),
+                u8::from(instance.enable_output()),
             ])?;
-
             w.write_all(proof.as_ref())?;
             Ok(())
         }
@@ -1243,7 +1277,7 @@ mod tests {
             let instance =
                 Instance::from_parts(anchor, cv_net, nf_old, rk.clone(), cmx, true, true)
                     .expect("non-identity rk must be accepted");
-            assert_eq!(instance.rk, rk);
+            assert_eq!(instance.rk(), &rk);
         }
     }
 }
