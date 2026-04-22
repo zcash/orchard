@@ -72,14 +72,15 @@ impl super::Bundle {
             .map(|action| {
                 let authorization = action_auth(action)?;
 
-                Ok(crate::Action::from_parts(
+                crate::Action::from_parts(
                     action.spend.nullifier,
                     action.spend.rk.clone(),
                     action.output.cmx,
                     action.output.encrypted_note.clone(),
                     action.cv_net.clone(),
                     authorization,
-                ))
+                )
+                .ok_or_else(|| TxExtractorError::IdentityRk.into())
             })
             .collect::<Result<_, E>>()?;
 
@@ -116,6 +117,9 @@ pub enum TxExtractorError {
     MissingSpendAuthSig,
     /// The value sum does not fit into a `valueBalance`.
     ValueSumOutOfRange,
+    /// An action has an identity `rk`, which is forbidden by the consensus
+    /// rule introduced in zcashd v6.12.1 and Zebra 4.3.1.
+    IdentityRk,
 }
 
 impl fmt::Display for TxExtractorError {
@@ -134,6 +138,9 @@ impl fmt::Display for TxExtractorError {
             ),
             TxExtractorError::ValueSumOutOfRange => {
                 write!(f, "value sum does not fit into a `valueBalance`")
+            }
+            TxExtractorError::IdentityRk => {
+                write!(f, "an Orchard action with identity `rk` is not valid")
             }
         }
     }

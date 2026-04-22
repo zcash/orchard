@@ -39,15 +39,16 @@ impl<T> Action<T> {
     /// Prepares the public instance for this action, for creating and verifying the
     /// bundle proof.
     pub fn to_instance(&self, flags: Flags, anchor: Anchor) -> Instance {
-        Instance {
+        Instance::from_parts(
             anchor,
-            cv_net: self.cv_net().clone(),
-            nf_old: *self.nullifier(),
-            rk: self.rk().clone(),
-            cmx: *self.cmx(),
-            enable_spend: flags.spends_enabled,
-            enable_output: flags.outputs_enabled,
-        }
+            self.cv_net().clone(),
+            *self.nullifier(),
+            self.rk().clone(),
+            *self.cmx(),
+            flags.spends_enabled,
+            flags.outputs_enabled,
+        )
+        .expect("this Action's rk is non-identity by construction (Action::from_parts)")
     }
 }
 

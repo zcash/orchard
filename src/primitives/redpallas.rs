@@ -154,6 +154,14 @@ impl<T: SigType> VerificationKey<T> {
     pub fn verify(&self, msg: &[u8], signature: &Signature<T>) -> Result<(), reddsa::Error> {
         self.0.verify(msg, &signature.0)
     }
+
+    /// Returns `true` if this verification key is the identity
+    /// [`pasta_curves::pallas::Point`], which is invalid as `rk`.
+    pub fn is_identity(&self) -> bool {
+        // The only encoding of the identity is `[0u8; 32]`, and
+        // `reddsa::VerificationKey<T>` caches the byte encoding.
+        <[u8; 32]>::from(self) == [0u8; 32]
+    }
 }
 
 /// A RedPallas signature.
@@ -223,6 +231,20 @@ pub mod testing {
         /// Generate a uniformly distributed RedDSA binding verification key.
         pub fn arb_binding_verification_key()(sk in arb_binding_signing_key()) -> VerificationKey<Binding> {
             VerificationKey::from(&sk)
+        }
+    }
+
+    prop_compose! {
+        /// Generate a uniformly distributed valid RedDSA spend authorization key pair
+        /// (rsk, rk), with nonidentity rk and nonzero rsk.
+        pub fn arb_valid_spendauth_keypair()(
+            rsk_and_rk in arb_spendauth_signing_key()
+                .prop_filter_map("rk must not be the identity", |sk| {
+                    let vk = VerificationKey::from(&sk);
+                    (!vk.is_identity()).then_some((sk, vk))
+                }),
+        ) -> (SigningKey<SpendAuth>, VerificationKey<SpendAuth>) {
+            rsk_and_rk
         }
     }
 }

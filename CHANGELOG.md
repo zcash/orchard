@@ -7,12 +7,29 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::primitives::redpallas::VerificationKey<T>::is_identity`, which
+  returns `true` if the verification key is the identity `pallas::Point`.
+- `orchard::primitives::redpallas::testing::arb_valid_spendauth_keypair`
+  (under the `test-dependencies` feature): a uniformly-distributed valid
+  `(rsk, rk)` key pair with non-identity `rk`.
+
 ### Changed
 - MSRV is now 1.85.1
 - Migrated from yanked `core2` library to `corez`
 - `orchard::pczt::Bundle::extract` now takes its `self` argument by
   reference instead of by value.
 - `orchard::zip32::Error` has added variant `MaxDerivationDepth`
+- `orchard::Action::from_parts` and `orchard::circuit::Instance::from_parts`
+  now return `Option<Self>`, yielding `None` when `rk` is the identity
+  `pallas::Point`. Callers that previously treated the return as `Self`
+  must now handle the `None` case. This aligns the crate with the
+  consensus rule introduced in zcashd v6.12.1 and Zebra 4.3.1 (see
+  <https://zodl.com/zcashd-zebra-april-2026-disclosure/> and
+  <https://zfnd.org/zebra-4-3-1-critical-security-fixes-dockerized-mining-and-ci-hardening/>);
+  the Zcash protocol specification will be updated to match.
+- `orchard::pczt::TxExtractorError` has added variant `IdentityRk`.
+- `orchard::pczt::ProverError` has added variant `IdentityRk`.
 
 ## [0.12.0] - 2025-12-05
 

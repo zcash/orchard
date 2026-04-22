@@ -96,8 +96,9 @@ impl super::Bundle {
                     self.flags.spends_enabled(),
                     self.flags.outputs_enabled(),
                 )
+                .ok_or(ProverError::IdentityRk)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, ProverError>>()?;
 
         let proof =
             Proof::create(pk, &circuits, &instances, rng).map_err(ProverError::ProofFailed)?;
@@ -136,6 +137,9 @@ pub enum ProverError {
     ProofFailed(plonk::Error),
     /// The `rho` of the `output_note` is not equal to the nullifier of the spent note.
     RhoMismatch,
+    /// An action has an identity `rk`, which is forbidden by the consensus
+    /// rule introduced in zcashd v6.12.1 and Zebra 4.3.1.
+    IdentityRk,
     /// The provided `fvk` does not own the spent note.
     WrongFvkForNote,
 }
@@ -168,6 +172,9 @@ impl fmt::Display for ProverError {
             ProverError::ProofFailed(e) => write!(f, "Failed to create proof: {e}"),
             ProverError::RhoMismatch => {
                 write!(f, "output's `rho` does not match spent note's nullifier")
+            }
+            ProverError::IdentityRk => {
+                write!(f, "an Orchard action with identity `rk` is not valid")
             }
             ProverError::WrongFvkForNote => write!(f, "`fvk` does not own the action's spent note"),
         }
