@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use orchard_internal::keys::{FullViewingKey, Scope, SpendingKey};
+use orchard::keys::{FullViewingKey, Scope, SpendingKey};
 
 fn key_derivation(c: &mut Criterion) {
     // Meaningless random spending key.
