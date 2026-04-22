@@ -460,7 +460,8 @@ impl ActionInfo {
                     dummy_ask: self.spend.dummy_sk.as_ref().map(SpendAuthorizingKey::from),
                     parts: SigningParts { ak, alpha },
                 },
-            ),
+            )
+            .expect("α was generated randomly, so an identity rk is vanishingly unlikely"),
             Circuit::from_action_context_unchecked(self.spend, note, alpha, self.rcv),
         )
     }

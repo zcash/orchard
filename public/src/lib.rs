@@ -176,7 +176,7 @@ pub mod primitives {
             #[doc(inline)]
             pub use __impl::primitives::redpallas::testing::{
                 arb_binding_signing_key, arb_binding_verification_key, arb_spendauth_signing_key,
-                arb_spendauth_verification_key,
+                arb_spendauth_verification_key, arb_valid_spendauth_keypair,
             };
         }
     }

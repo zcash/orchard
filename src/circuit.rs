@@ -796,6 +796,10 @@ impl ProvingKey {
 }
 
 /// Public inputs to the Orchard Action circuit.
+///
+/// # Invariants
+///
+/// Every `Instance` has a non-identity `rk`.
 #[derive(Clone, Debug)]
 pub struct Instance {
     pub(crate) anchor: Anchor,
@@ -814,6 +818,16 @@ impl Instance {
     /// pipelines for many proofs, where you don't want to pass around the full bundle.
     /// Use [`Bundle::verify_proof`] instead if you have the full bundle.
     ///
+    /// Returns `None` if `rk` is the identity [`pasta_curves::pallas::Point`].
+    /// zcashd v6.12.1 and Zebra 4.3.1 both added a consensus rule rejecting
+    /// transactions whose Orchard actions have an identity `rk`; the Zcash
+    /// protocol specification will be updated to match, and this crate
+    /// aligns with that rule.
+    ///
+    /// See:
+    /// - <https://zodl.com/zcashd-zebra-april-2026-disclosure/>
+    /// - <https://zfnd.org/zebra-4-3-1-critical-security-fixes-dockerized-mining-and-ci-hardening/>
+    ///
     /// [`Bundle::verify_proof`]: crate::Bundle::verify_proof
     pub fn from_parts(
         anchor: Anchor,
@@ -823,8 +837,8 @@ impl Instance {
         cmx: ExtractedNoteCommitment,
         enable_spend: bool,
         enable_output: bool,
-    ) -> Self {
-        Instance {
+    ) -> Option<Self> {
+        (!rk.is_identity()).then_some(Instance {
             anchor,
             cv_net,
             nf_old,
@@ -832,7 +846,7 @@ impl Instance {
             cmx,
             enable_spend,
             enable_output,
-        }
+        })
     }
 
     fn to_halo2_instance(&self) -> [[vesta::Scalar; 9]; 1] {
@@ -844,10 +858,10 @@ impl Instance {
         instance[NF_OLD] = self.nf_old.0;
 
         let rk = pallas::Point::from_bytes(&self.rk.clone().into())
-            .unwrap()
+            .expect("the cached byte encoding of a VerificationKey<_> is canonical")
             .to_affine()
             .coordinates()
-            .unwrap();
+            .expect("rk is non-identity by construction");
 
         instance[RK_X] = *rk.x();
         instance[RK_Y] = *rk.y();
@@ -1101,7 +1115,8 @@ mod tests {
             let enable_spend = read_bool(&mut r);
             let enable_output = read_bool(&mut r);
             let instance =
-                Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output);
+                Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output)
+                    .expect("test vectors were generated with non-identity rk");
 
             let mut proof_bytes = vec![];
             r.read_to_end(&mut proof_bytes)?;
@@ -1174,5 +1189,61 @@ mod tests {
             .view_height(0..(1 << 11))
             .render(K, &circuit, &root)
             .unwrap();
+    }
+
+    mod from_parts_rk_identity {
+        use ff::{Field as _, PrimeField as _};
+        use pasta_curves::pallas;
+
+        use super::super::Instance;
+        use crate::{
+            note::{ExtractedNoteCommitment, Nullifier},
+            primitives::redpallas::{self, SpendAuth},
+            tree::Anchor,
+            value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
+        };
+
+        /// Non-rk fields for `Instance`. Distinct non-zero patterns avoid
+        /// accidental overlap with sentinel values. See the analogous helper
+        /// in `src/action.rs` for notes on which of these fields have
+        /// consensus-level validity checks elsewhere in the pipeline.
+        fn dummy_other_fields() -> (Anchor, ValueCommitment, Nullifier, ExtractedNoteCommitment) {
+            let anchor = Anchor::from_bytes([6u8; 32]).unwrap();
+            let cv_net =
+                ValueCommitment::derive(ValueSum::from_raw(42), ValueCommitTrapdoor::zero());
+            let nf_old = Nullifier::from_bytes(&[1u8; 32]).unwrap();
+            let cmx = ExtractedNoteCommitment::from_bytes(&[2u8; 32]).unwrap();
+            (anchor, cv_net, nf_old, cmx)
+        }
+
+        fn identity_rk() -> redpallas::VerificationKey<SpendAuth> {
+            redpallas::VerificationKey::<SpendAuth>::try_from([0u8; 32])
+                .expect("plain redpallas accepts the identity encoding")
+        }
+
+        fn non_identity_rk() -> redpallas::VerificationKey<SpendAuth> {
+            let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr().into();
+            let ask = redpallas::SigningKey::<SpendAuth>::try_from(ask_bytes)
+                .expect("1 is a valid scalar");
+            (&ask).into()
+        }
+
+        #[test]
+        fn rejects_identity_rk() {
+            let (anchor, cv_net, nf_old, cmx) = dummy_other_fields();
+            let result =
+                Instance::from_parts(anchor, cv_net, nf_old, identity_rk(), cmx, true, true);
+            assert!(result.is_none());
+        }
+
+        #[test]
+        fn accepts_non_identity_rk() {
+            let (anchor, cv_net, nf_old, cmx) = dummy_other_fields();
+            let rk = non_identity_rk();
+            let instance =
+                Instance::from_parts(anchor, cv_net, nf_old, rk.clone(), cmx, true, true)
+                    .expect("non-identity rk must be accepted");
+            assert_eq!(instance.rk, rk);
+        }
     }
 }
