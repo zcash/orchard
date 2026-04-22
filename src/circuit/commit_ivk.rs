@@ -27,6 +27,8 @@ pub struct CommitIvkChip {
 }
 
 impl CommitIvkChip {
+    /// Configures the chip's gate and column assignments.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         advices: [Column<Advice>; 10],
@@ -222,11 +224,15 @@ impl CommitIvkChip {
         config
     }
 
+    /// Constructs the chip from a [`CommitIvkConfig`].
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn construct(config: CommitIvkConfig) -> Self {
         Self { config }
     }
 }
 
+/// Gadget functions for `CommitIvk` operations.
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(in crate::circuit) mod gadgets {
     use halo2_gadgets::utilities::{
         lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
@@ -241,6 +247,7 @@ pub(in crate::circuit) mod gadgets {
     /// [Section 5.4.8.4 Sinsemilla commitments]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillacommit
     #[allow(non_snake_case)]
     #[allow(clippy::type_complexity)]
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn commit_ivk(
         sinsemilla_chip: SinsemillaChip<
             OrchardHashDomains,

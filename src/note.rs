@@ -15,10 +15,20 @@ use crate::{
     Address,
 };
 
+#[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod commitment;
+#[cfg(feature = "unstable-voting-circuits")]
+#[allow(missing_docs)]
+pub mod commitment;
+#[cfg(feature = "unstable-voting-circuits")]
+pub use self::commitment::NoteCommitTrapdoor;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 
+#[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod nullifier;
+#[cfg(feature = "unstable-voting-circuits")]
+#[allow(missing_docs)]
+pub mod nullifier;
 pub use self::nullifier::Nullifier;
 
 /// The randomness used to construct a note.
@@ -50,10 +60,13 @@ impl Rho {
     /// of the note being spent in the [`Action`] under construction.
     ///
     /// [`Action`]: crate::action::Action
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn from_nf_old(nf: Nullifier) -> Self {
-        Rho(nf.0)
+        Rho(nf.inner())
     }
 
+    /// Consumes `self` and returns the inner field element.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn into_inner(self) -> pallas::Base {
         self.0
     }
@@ -92,6 +105,7 @@ impl RandomSeed {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn psi(&self, rho: &Rho) -> pallas::Base {
         to_base(PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
     }
@@ -116,6 +130,7 @@ impl RandomSeed {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn rcm(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
             PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
@@ -186,6 +201,7 @@ impl Note {
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn new(
         recipient: Address,
         value: NoteValue,
@@ -205,6 +221,7 @@ impl Note {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Rho>,

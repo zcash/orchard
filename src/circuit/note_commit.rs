@@ -1437,8 +1437,10 @@ pub struct NoteCommitChip {
 }
 
 impl NoteCommitChip {
+    /// Configures the chip's gates, Sinsemilla instances, and canonicity checks.
     #[allow(non_snake_case)]
     #[allow(clippy::many_single_char_names)]
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         advices: [Column<Advice>; 10],
@@ -1558,19 +1560,25 @@ impl NoteCommitChip {
         }
     }
 
+    /// Constructs the chip from a [`NoteCommitConfig`].
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn construct(config: NoteCommitConfig) -> Self {
         Self { config }
     }
 }
 
+/// Gadget functions for `NoteCommit` operations.
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(in crate::circuit) mod gadgets {
     use halo2_proofs::circuit::{Chip, Value};
 
     use super::*;
 
+    /// Computes the note commitment in-circuit.
     #[allow(clippy::many_single_char_names)]
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn note_commit(
         mut layouter: impl Layouter<pallas::Base>,
         chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
