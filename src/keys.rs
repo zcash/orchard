@@ -128,7 +128,13 @@ impl SpendAuthorizingKey {
     /// Randomizes this spend authorizing key with the given `randomizer`.
     ///
     /// The resulting key can be used to actually sign a spend.
-    pub fn randomize(&self, randomizer: &pallas::Scalar) -> redpallas::SigningKey<SpendAuth> {
+    ///
+    /// Returns `None` if the randomized signing key would correspond to an identity
+    /// [`redpallas::VerificationKey`] (i.e. its scalar is zero).
+    pub fn randomize(
+        &self,
+        randomizer: &pallas::Scalar,
+    ) -> Option<redpallas::SigningKey<SpendAuth>> {
         self.0.randomize(randomizer)
     }
 }

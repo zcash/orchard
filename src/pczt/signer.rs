@@ -24,7 +24,12 @@ impl super::Action {
             .alpha
             .ok_or(SignerError::MissingSpendAuthRandomizer)?;
 
-        let rsk = ask.randomize(&alpha);
+        // If randomization produces a zero scalar the `ask` cannot match: the stored
+        // `rk` is guaranteed non-identity, so the honest `ask` randomized by `alpha`
+        // would never have a zero scalar.
+        let rsk = ask
+            .randomize(&alpha)
+            .ok_or(SignerError::WrongSpendAuthorizingKey)?;
         let rk = redpallas::VerificationKey::from(&rsk);
 
         if self.spend.rk == rk {

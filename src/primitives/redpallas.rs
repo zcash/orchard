@@ -39,7 +39,22 @@ impl<T: SigType> From<&SigningKey<T>> for [u8; 32] {
     }
 }
 
-impl<T: SigType> TryFrom<[u8; 32]> for SigningKey<T> {
+impl TryFrom<[u8; 32]> for SigningKey<SpendAuth> {
+    type Error = reddsa::Error;
+
+    fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
+        // Reject the zero scalar: the corresponding `VerificationKey<SpendAuth>` is the
+        // identity, which would permit forgery of spend authorization signatures. This
+        // maintains the invariant that no `SigningKey<SpendAuth>` can be constructed
+        // whose corresponding verification key is the identity.
+        if bytes == [0u8; 32] {
+            return Err(reddsa::Error::MalformedSigningKey);
+        }
+        bytes.try_into().map(SigningKey)
+    }
+}
+
+impl TryFrom<[u8; 32]> for SigningKey<Binding> {
     type Error = reddsa::Error;
 
     fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
@@ -51,8 +66,19 @@ impl SigningKey<SpendAuth> {
     /// Randomizes this signing key with the given `randomizer`.
     ///
     /// Randomization is only supported for `SpendAuth` keys.
-    pub fn randomize(&self, randomizer: &pallas::Scalar) -> Self {
-        SigningKey(self.0.randomize(randomizer))
+    ///
+    /// Returns `None` if the resulting [`SigningKey`] would correspond to an identity
+    /// [`VerificationKey`] (i.e. its scalar is zero).
+    pub fn randomize(&self, randomizer: &pallas::Scalar) -> Option<Self> {
+        let randomized = self.0.randomize(randomizer);
+        // `SigningKey<T>` encodes as the canonical little-endian repr of its scalar;
+        // scalar 0 (and only scalar 0) encodes as all zeros. The corresponding
+        // verification key is the identity iff the scalar is zero.
+        if <[u8; 32]>::from(randomized) == [0u8; 32] {
+            None
+        } else {
+            Some(SigningKey(randomized))
+        }
     }
 }
 
@@ -228,10 +254,10 @@ pub mod testing {
         /// Generate a uniformly distributed RedDSA spend authorization signing key.
         pub fn arb_spendauth_signing_key()(
             sk in prop::array::uniform32(prop::num::u8::ANY)
-                .prop_map(reddsa::SigningKey::try_from)
-                .prop_filter("Values must be parseable as valid signing keys", |r| r.is_ok())
+                .prop_map(SigningKey::<SpendAuth>::try_from)
+                .prop_filter("Values must be parseable as valid spend authorization signing keys", |r| r.is_ok())
         ) -> SigningKey<SpendAuth> {
-            SigningKey(sk.unwrap())
+            sk.unwrap()
         }
     }
 
@@ -277,6 +303,44 @@ mod tests {
         assert!(
             result.is_err(),
             "VerificationKey::<SpendAuth>::try_from([0u8; 32]) must reject the identity",
+        );
+    }
+
+    #[test]
+    fn signing_key_spendauth_try_from_zero_scalar_is_rejected() {
+        // The all-zeros encoding is the canonical encoding of the zero scalar, whose
+        // corresponding `VerificationKey<SpendAuth>` is the identity. `SigningKey<SpendAuth>`
+        // must reject it to maintain the invariant that no such signing key has an
+        // identity verification key.
+        let result = SigningKey::<SpendAuth>::try_from([0u8; 32]);
+        assert!(
+            result.is_err(),
+            "SigningKey::<SpendAuth>::try_from([0u8; 32]) must reject the zero scalar",
+        );
+    }
+
+    #[test]
+    fn signing_key_binding_try_from_zero_scalar_is_accepted() {
+        // `Binding` permits identity verification keys, so the zero scalar is a valid
+        // signing key for that role.
+        let result = SigningKey::<Binding>::try_from([0u8; 32]);
+        assert!(
+            result.is_ok(),
+            "SigningKey::<Binding>::try_from([0u8; 32]) must accept the zero scalar",
+        );
+    }
+
+    #[test]
+    fn signing_key_spendauth_randomize_to_zero_returns_none() {
+        // Construct a `SigningKey<SpendAuth>` with scalar 1, then randomize by `-1`.
+        // The resulting scalar is zero, whose verification key is the identity — so
+        // `randomize` must return `None`.
+        let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr().into();
+        let ask = <SigningKey<SpendAuth>>::try_from(ask_bytes).expect("1 is a valid scalar");
+        let alpha = -pallas::Scalar::ONE;
+        assert!(
+            ask.randomize(&alpha).is_none(),
+            "randomizing a scalar-1 signing key by -1 produces zero, which must be rejected",
         );
     }
 

@@ -995,7 +995,11 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
             |rng, _, SigningMetadata { dummy_ask, parts }| {
                 // We can create signatures for dummy spends immediately.
                 dummy_ask
-                    .map(|ask| ask.randomize(&parts.alpha).sign(rng, &sighash))
+                    .map(|ask| {
+                        ask.randomize(&parts.alpha)
+                            .expect("alpha was generated randomly, so a zero randomized signing key is vanishingly unlikely")
+                            .sign(rng, &sighash)
+                    })
                     .map(MaybeSigned::Signature)
                     .unwrap_or(MaybeSigned::SigningMetadata(parts))
             },
@@ -1041,7 +1045,9 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
             |rng, partial, maybe| match maybe {
                 MaybeSigned::SigningMetadata(parts) if parts.ak == expected_ak => {
                     MaybeSigned::Signature(
-                        ask.randomize(&parts.alpha).sign(rng, &partial.sigs.sighash),
+                        ask.randomize(&parts.alpha)
+                            .expect("alpha was generated randomly, so a zero randomized signing key is vanishingly unlikely")
+                            .sign(rng, &partial.sigs.sighash),
                     )
                 }
                 s => s,
