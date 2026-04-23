@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::keys::FullViewingKey::from_sk_ak_incompatible_with_quantum_recoverability_and_will_be_removed()`,
+  behind the `unstable-frost` flag. Intended *ONLY FOR EXPERIMENTAL USE* with
+  FROST; see the doc comment for further caveats.
+
 ## [0.13.0] - 2026-04-22
 
 ### Added
@@ -86,7 +91,7 @@ and this project adheres to Rust's notion of
 
 ### Changed
 - MSRV is now 1.70
-- Migrated to `nonempty 0.11`, `incrementalmerkletree 0.8`, `shardtree 0.6`, 
+- Migrated to `nonempty 0.11`, `incrementalmerkletree 0.8`, `shardtree 0.6`,
   `zcash_spec 0.2`, `zip32 0.2`
 - `orchard::builder::Builder::add_output` now takes a `[u8; 512]` for its
   `memo` argument instead of an optional value.
