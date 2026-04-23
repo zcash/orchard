@@ -78,10 +78,14 @@ pub(crate) fn i2lebsp_k(int: usize) -> [bool; K] {
     i2lebsp(int as u64)
 }
 
+/// The Sinsemilla hash domains used in Orchard.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrchardHashDomains {
+    /// The domain used by the `NoteCommit` commitment's internal Sinsemilla hash.
     NoteCommit,
+    /// The domain used by the `CommitIvk` commitment's internal Sinsemilla hash.
     CommitIvk,
+    /// The domain used by the Orchard Merkle tree's `MerkleCRH^Orchard` hash.
     MerkleCrh,
 }
 
@@ -109,9 +113,12 @@ impl HashDomains<pallas::Affine> for OrchardHashDomains {
     }
 }
 
+/// The Sinsemilla commitment domains used in Orchard.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OrchardCommitDomains {
+    /// The `NoteCommit` commitment domain.
     NoteCommit,
+    /// The `CommitIvk` commitment domain.
     CommitIvk,
 }
 

@@ -1,3 +1,11 @@
+//! Sub-circuit implementing the `NoteCommit` gadget.
+//!
+//! `NoteCommit` is the Sinsemilla-based commitment that binds the note's
+//! diversified transmission key `(g_d, pk_d)`, value `v`, ρ, and ψ, with
+//! canonicity checks on each component field element. This module provides
+//! the Halo 2 chip that enforces that commitment inside the Orchard Action
+//! circuit.
+
 use core::iter;
 
 use group::ff::PrimeField;
@@ -1412,6 +1420,9 @@ impl YCanonicity {
     }
 }
 
+/// Configuration for the [`NoteCommitChip`], aggregating the per-field
+/// decomposition and canonicity sub-configurations and the underlying
+/// Sinsemilla configuration.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
 pub struct NoteCommitConfig {
@@ -1431,6 +1442,7 @@ pub struct NoteCommitConfig {
         SinsemillaConfig<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>,
 }
 
+/// A Halo 2 chip that proves correct evaluation of the `NoteCommit` gadget.
 #[derive(Clone, Debug)]
 pub struct NoteCommitChip {
     config: NoteCommitConfig,

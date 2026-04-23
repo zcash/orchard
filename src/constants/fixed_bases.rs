@@ -14,11 +14,17 @@ use halo2_gadgets::ecc::{
 #[cfg(feature = "circuit")]
 use pasta_curves::pallas;
 
+/// Precomputed table for the `CommitIvk` commitment randomness base.
 pub mod commit_ivk_r;
+/// Precomputed table for the `NoteCommit` commitment randomness base.
 pub mod note_commit_r;
+/// Precomputed table for the nullifier base `K^Orchard`.
 pub mod nullifier_k;
+/// Precomputed table for the spend authorization base `G^Orchard`.
 pub mod spend_auth_g;
+/// Precomputed table for the value commitment randomness base.
 pub mod value_commit_r;
+/// Precomputed table for the value commitment value base.
 pub mod value_commit_v;
 
 /// SWU hash-to-curve personalization for the spending key base point and
@@ -52,12 +58,18 @@ pub const NUM_WINDOWS: usize = L_ORCHARD_SCALAR.div_ceil(FIXED_BASE_WINDOW_SIZE)
 /// Number of windows for a short signed scalar
 pub const NUM_WINDOWS_SHORT: usize = L_VALUE.div_ceil(FIXED_BASE_WINDOW_SIZE);
 
+/// Enumeration of every fixed base used in the Orchard circuit.
+///
+/// This enables the shared fixed-base scalar multiplication machinery in
+/// `halo2_gadgets` to dispatch across full-width, base-field, and short-signed
+/// bases using a single type.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-// A sum type for both full-width and short bases. This enables us to use the
-// shared functionality of full-width and short fixed-base scalar multiplication.
 pub enum OrchardFixedBases {
+    /// A full-width scalar multiplication base.
     Full(OrchardFixedBasesFull),
+    /// The nullifier base `K^Orchard`, used with a base-field scalar.
     NullifierK,
+    /// The value commitment value base, used with a short signed scalar.
     ValueCommitV,
 }
 
@@ -82,9 +94,13 @@ impl From<NullifierK> for OrchardFixedBases {
 /// The Orchard fixed bases used in scalar mul with full-width scalars.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OrchardFixedBasesFull {
+    /// Randomness base for the `CommitIvk` commitment.
     CommitIvkR,
+    /// Randomness base for the `NoteCommit` commitment.
     NoteCommitR,
+    /// Randomness base for value commitments.
     ValueCommitR,
+    /// Spend authorization base `G^Orchard`.
     SpendAuthG,
 }
 
