@@ -1,3 +1,11 @@
+//! Note commitments and their trapdoors.
+//!
+//! A [`NoteCommitment`] is the Sinsemilla commitment to the contents of a
+//! note, binding the diversified transmission key, note value, ρ, and ψ. Its
+//! x-coordinate is exposed as [`ExtractedNoteCommitment`] (the value
+//! appearing in the commitment tree), and its randomness is
+//! [`NoteCommitTrapdoor`].
+
 use core::iter;
 
 use bitvec::{array::BitArray, order::Lsb0};

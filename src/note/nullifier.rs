@@ -1,3 +1,11 @@
+//! Orchard nullifiers.
+//!
+//! A [`Nullifier`] is the unique identifier revealed when a note is spent.
+//! Nullifiers are derived deterministically from the note's ρ, the spender's
+//! nullifier-deriving key `nk`, the note's ψ randomness, and the note
+//! commitment, in a way that keeps them unlinkable without the viewing key
+//! but uniquely tied to the note.
+
 use group::{ff::PrimeField, Group};
 use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveExt, pallas};

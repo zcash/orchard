@@ -1,3 +1,5 @@
+//! Small utility helpers used to build fixed-base scalar multiplication tables.
+
 /// Takes in an FnMut closure and returns a constant-length array with elements of
 /// type `Output`.
 pub fn gen_const_array<Output: Copy + Default, const LEN: usize>(

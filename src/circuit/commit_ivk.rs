@@ -1,3 +1,10 @@
+//! Sub-circuit implementing the `CommitIvk` gadget.
+//!
+//! `CommitIvk` is the Sinsemilla-based commitment that binds an incoming
+//! viewing key `ivk` to the full viewing key `(ak, nk)` and the randomness
+//! `rivk`. This module provides the Halo 2 chip that enforces that
+//! commitment inside the Orchard Action circuit.
+
 use core::iter;
 
 use group::ff::{Field, PrimeField};
@@ -15,12 +22,14 @@ use halo2_gadgets::{
     utilities::{bool_check, RangeConstrained},
 };
 
+/// Configuration for the [`CommitIvkChip`], including its selector and advice columns.
 #[derive(Clone, Debug)]
 pub struct CommitIvkConfig {
     q_commit_ivk: Selector,
     advices: [Column<Advice>; 10],
 }
 
+/// A Halo 2 chip that proves correct evaluation of the `CommitIvk` gadget.
 #[derive(Clone, Debug)]
 pub struct CommitIvkChip {
     config: CommitIvkConfig,

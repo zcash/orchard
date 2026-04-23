@@ -34,7 +34,6 @@ pub mod circuit;
 #[cfg(not(feature = "unstable-voting-circuits"))]
 mod constants;
 #[cfg(feature = "unstable-voting-circuits")]
-#[allow(missing_docs)]
 pub mod constants;
 pub mod keys;
 pub mod note;
@@ -44,7 +43,6 @@ pub mod primitives;
 #[cfg(not(feature = "unstable-voting-circuits"))]
 mod spec;
 #[cfg(feature = "unstable-voting-circuits")]
-#[allow(missing_docs)]
 pub mod spec;
 pub mod tree;
 pub mod value;

@@ -774,6 +774,7 @@ pub const U_SHORT: [[[u8; 32]; super::H]; super::NUM_WINDOWS_SHORT] = [
     ],
 ];
 
+/// Returns the affine generator point for this fixed base.
 pub fn generator() -> pallas::Affine {
     pallas::Affine::from_xy(
         pallas::Base::from_repr(GENERATOR.0).unwrap(),
