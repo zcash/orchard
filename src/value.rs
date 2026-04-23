@@ -103,7 +103,7 @@ impl NoteValue {
     /// Returns a zero note value.
     ///
     /// Equivalent to `NoteValue::from_raw(0)`.
-    pub fn zero() -> Self {
+    pub(crate) fn zero() -> Self {
         // Default for u64 is zero.
         Default::default()
     }
