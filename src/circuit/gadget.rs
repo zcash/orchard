@@ -130,7 +130,7 @@ pub(in crate::circuit) fn value_commit_orchard<
     // commitment = [v] ValueCommitV
     let (commitment, _) = {
         let value_commit_v = ValueCommitV;
-        let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v);
+        let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v.into());
         value_commit_v.mul(layouter.namespace(|| "[v] ValueCommitV"), v)?
     };
 
@@ -193,7 +193,7 @@ pub(in crate::circuit) fn derive_nullifier<
     // `product` = [poseidon_hash(nk, rho) + psi] NullifierK.
     //
     let product = {
-        let nullifier_k = FixedPointBaseField::from_inner(ecc_chip, NullifierK);
+        let nullifier_k = FixedPointBaseField::from_inner(ecc_chip, NullifierK.into());
         nullifier_k.mul(
             layouter.namespace(|| "[poseidon_output + psi] NullifierK"),
             scalar,
