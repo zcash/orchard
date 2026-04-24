@@ -31,13 +31,19 @@ pub mod builder;
 pub mod bundle;
 #[cfg(feature = "circuit")]
 pub mod circuit;
+#[cfg(not(feature = "unstable-voting-circuits"))]
 mod constants;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod constants;
 pub mod keys;
 pub mod note;
 pub mod note_encryption;
 pub mod pczt;
 pub mod primitives;
+#[cfg(not(feature = "unstable-voting-circuits"))]
 mod spec;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod spec;
 pub mod tree;
 pub mod value;
 pub mod zip32;
@@ -49,6 +55,7 @@ pub use action::Action;
 pub use address::Address;
 pub use bundle::Bundle;
 pub use constants::MERKLE_DEPTH_ORCHARD as NOTE_COMMITMENT_TREE_DEPTH;
+pub use constants::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE};
 pub use note::Note;
 pub use tree::Anchor;
 

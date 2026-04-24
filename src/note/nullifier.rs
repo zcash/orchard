@@ -1,3 +1,11 @@
+//! Orchard nullifiers.
+//!
+//! A [`Nullifier`] is the unique identifier revealed when a note is spent.
+//! Nullifiers are derived deterministically from the note's ρ, the spender's
+//! nullifier-deriving key `nk`, the note's ψ randomness, and the note
+//! commitment, in a way that keeps them unlinkable without the viewing key
+//! but uniquely tied to the note.
+
 use group::{ff::PrimeField, Group};
 use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveExt, pallas};
@@ -12,12 +20,24 @@ use crate::{
 
 /// A unique nullifier for a note.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Nullifier(pub(crate) pallas::Base);
+pub struct Nullifier(pallas::Base);
 
 // We know that `pallas::Base` doesn't allocate internally.
 memuse::impl_no_dynamic_usage!(Nullifier);
 
 impl Nullifier {
+    /// Constructs a `Nullifier` from the given Pallas base field element.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+    pub(crate) fn from_inner(inner: pallas::Base) -> Self {
+        Self(inner)
+    }
+
+    /// Returns the inner Pallas base field element.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+    pub(crate) fn inner(&self) -> pallas::Base {
+        self.0
+    }
+
     /// Generates a dummy nullifier for use as $\rho$ in dummy spent notes.
     ///
     /// Nullifiers are required by consensus to be unique. For dummy output notes, we get

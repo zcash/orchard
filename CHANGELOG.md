@@ -15,6 +15,36 @@ and this project adheres to Rust's notion of
 - `orchard::primitives::redpallas::testing::arb_valid_spendauth_keypair`
   (under the `test-dependencies` feature): a uniformly-distributed valid
   `(rsk, rk)` key pair with non-identity `rk`.
+- `orchard::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE}`, the bit-length
+  parameters of the Orchard base field, scalar field, and value encoding
+  as defined in the Zcash protocol specification.
+- `orchard::value::NoteValue::zero`, equivalent to `NoteValue::from_raw(0)`.
+- The following modules and APIs are available behind the
+  `unstable-voting-circuits` feature flag to support downstream
+  voting-circuit development. These temporary APIs are not covered by the
+  crate's semver stability guarantees and may change in any future release:
+  - Modules: `orchard::{constants, spec}`,
+    `orchard::circuit::{commit_ivk, commit_ivk::gadgets, note_commit,
+    note_commit::gadgets, gadget::add_chip}`,
+    `orchard::note::{commitment, nullifier}`.
+  - Address and circuit helpers: `Address::{g_d, pk_d}`,
+    `circuit::gadget::{AddInstruction, assign_free_advice, derive_nullifier,
+    commit_ivk, note_commit}`,
+    `circuit::gadget::add_chip::{AddConfig, AddChip}` and
+    `AddChip::{configure, construct}`,
+    `CommitIvkChip::{configure, construct}`,
+    `NoteCommitChip::{configure, construct}`.
+  - Key, note, tree, and value APIs: `SpendingKey::random`,
+    `SpendAuthorizingKey::derive_inner`, `NullifierDerivingKey` and
+    `CommitIvkRandomness` and their `inner` methods,
+    `FullViewingKey::{nk, rivk}`,
+    `DiversifiedTransmissionKey::{inner, to_bytes}`,
+    `orchard::note::NoteCommitTrapdoor` and `NoteCommitTrapdoor::inner`,
+    `Rho::{from_nf_old, into_inner}`, `RandomSeed::{psi, rcm}`,
+    `Note::{new, dummy}`, `NoteCommitment::inner`,
+    `ExtractedNoteCommitment::inner`, `Nullifier::{from_inner, inner}`,
+    `NonIdentityPallasPoint` and `NonIdentityPallasPoint::from_bytes`,
+    `MerklePath::dummy`, and `MerkleHashOrchard::inner`.
 
 ### Changed
 - MSRV is now 1.85.1

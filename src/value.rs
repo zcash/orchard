@@ -100,6 +100,9 @@ impl std::error::Error for BalanceError {}
 pub struct NoteValue(u64);
 
 impl NoteValue {
+    /// Returns a zero note value.
+    ///
+    /// Equivalent to `NoteValue::from_raw(0)`.
     pub(crate) fn zero() -> Self {
         // Default for u64 is zero.
         Default::default()

@@ -20,13 +20,13 @@ pub(crate) const T_Q: u128 = 45560315531506369815346746415080538113;
 pub(crate) const T_P: u128 = 45560315531419706090280762371685220353;
 
 /// $\ell^\mathsf{Orchard}_\mathsf{base}$
-pub(crate) const L_ORCHARD_BASE: usize = 255;
+pub const L_ORCHARD_BASE: usize = 255;
 
 /// $\ell^\mathsf{Orchard}_\mathsf{scalar}$
-pub(crate) const L_ORCHARD_SCALAR: usize = 255;
+pub const L_ORCHARD_SCALAR: usize = 255;
 
 /// $\ell_\mathsf{value}$
-pub(crate) const L_VALUE: usize = 64;
+pub const L_VALUE: usize = 64;
 
 /// SWU hash-to-curve personalization for the group hash for key diversification
 pub const KEY_DIVERSIFICATION_PERSONALIZATION: &str = "z.cash:Orchard-gd";

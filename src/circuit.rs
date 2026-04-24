@@ -58,9 +58,15 @@ use halo2_gadgets::{
     utilities::lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
 };
 
+#[cfg(not(feature = "unstable-voting-circuits"))]
 mod commit_ivk;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod commit_ivk;
 pub mod gadget;
+#[cfg(not(feature = "unstable-voting-circuits"))]
 mod note_commit;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod note_commit;
 
 pub use crate::Proof;
 
@@ -890,7 +896,7 @@ impl Instance {
         instance[ANCHOR] = self.anchor.inner();
         instance[CV_NET_X] = self.cv_net.x();
         instance[CV_NET_Y] = self.cv_net.y();
-        instance[NF_OLD] = self.nf_old.0;
+        instance[NF_OLD] = self.nf_old.inner();
 
         let rk = pallas::Point::from_bytes(&self.rk.clone().into())
             .expect("the cached byte encoding of a VerificationKey<_> is canonical")
