@@ -129,8 +129,7 @@ pub(in crate::circuit) fn value_commit_orchard<
 ) -> Result<Point<pallas::Affine, EccChip>, plonk::Error> {
     // commitment = [v] ValueCommitV
     let (commitment, _) = {
-        let value_commit_v = ValueCommitV;
-        let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), value_commit_v.into());
+        let value_commit_v = FixedPointShort::from_inner(ecc_chip.clone(), ValueCommitV.into());
         value_commit_v.mul(layouter.namespace(|| "[v] ValueCommitV"), v)?
     };
 
