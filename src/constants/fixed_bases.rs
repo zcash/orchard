@@ -215,23 +215,6 @@ impl FixedPoint<pallas::Affine> for OrchardFixedBasesFull {
 }
 
 #[cfg(feature = "circuit")]
-impl FixedPoint<pallas::Affine> for NullifierK {
-    type FixedScalarKind = BaseFieldElem;
-
-    fn generator(&self) -> pallas::Affine {
-        nullifier_k::generator()
-    }
-
-    fn u(&self) -> Vec<[[u8; 32]; H]> {
-        nullifier_k::U.to_vec()
-    }
-
-    fn z(&self) -> Vec<u64> {
-        nullifier_k::Z.to_vec()
-    }
-}
-
-#[cfg(feature = "circuit")]
 impl FixedPoint<pallas::Affine> for OrchardBaseFieldBases {
     type FixedScalarKind = BaseFieldElem;
 
@@ -258,23 +241,6 @@ impl FixedPoint<pallas::Affine> for OrchardBaseFieldBases {
             Self::NullifierK => nullifier_k::Z.to_vec(),
             Self::SpendAuthGBase => spend_auth_g::Z.to_vec(),
         }
-    }
-}
-
-#[cfg(feature = "circuit")]
-impl FixedPoint<pallas::Affine> for ValueCommitV {
-    type FixedScalarKind = ShortScalar;
-
-    fn generator(&self) -> pallas::Affine {
-        value_commit_v::generator()
-    }
-
-    fn u(&self) -> Vec<[[u8; 32]; H]> {
-        value_commit_v::U_SHORT.to_vec()
-    }
-
-    fn z(&self) -> Vec<u64> {
-        value_commit_v::Z_SHORT.to_vec()
     }
 }
 
@@ -424,11 +390,22 @@ mod tests {
     #[test]
     fn value_commit_v_short_routes_correctly() {
         let short = OrchardShortScalarBases::ValueCommitV;
-        let legacy = ValueCommitV;
 
-        assert_eq!(short.generator(), legacy.generator());
-        assert_eq!(short.u(), legacy.u());
-        assert_eq!(short.z(), legacy.z());
+        assert_eq!(
+            short.generator(),
+            value_commit_v::generator(),
+            "OrchardShortScalarBases::ValueCommitV must use the ValueCommitV generator"
+        );
+        assert_eq!(
+            short.u(),
+            value_commit_v::U_SHORT.to_vec(),
+            "OrchardShortScalarBases::ValueCommitV U tables must match"
+        );
+        assert_eq!(
+            short.z(),
+            value_commit_v::Z_SHORT.to_vec(),
+            "OrchardShortScalarBases::ValueCommitV Z tables must match"
+        );
     }
 
     #[test]

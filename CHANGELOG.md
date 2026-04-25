@@ -7,6 +7,18 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Removed
+- `impl halo2_gadgets::ecc::chip::FixedPoint<pasta_curves::pallas::Affine>`
+  for `orchard::constants::NullifierK` and `orchard::constants::ValueCommitV`.
+  These impls are no longer on the in-circuit dispatch path: the ECC chip now
+  routes base-field and short-scalar fixed-base multiplication through the
+  `OrchardBaseFieldBases` / `OrchardShortScalarBases` enums. The `NullifierK`
+  and `ValueCommitV` unit structs and their `From` conversions into the new
+  enums are retained, so `NullifierK.into()` / `ValueCommitV.into()` continue
+  to work. Downstream consumers that previously used these structs as
+  `FixedPoints::Base` / `ShortScalar` directly should switch to
+  `OrchardBaseFieldBases::NullifierK` / `OrchardShortScalarBases::ValueCommitV`.
+
 ## [0.13.1] - 2026-04-27
 
 ### Added
