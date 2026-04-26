@@ -7,6 +7,21 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- The following APIs have changed or been made available behind the
+  `unstable-voting-circuits` feature flag, and are not covered by the
+  crate's semver stability guarantees and may change in any future
+  release:
+  - `orchard::constants::OrchardFixedBases` has been reorganized to wrap
+    two new fixed-base enums, each adding `SpendAuthG` as a supported
+    generator alongside the existing `NullifierK` / `ValueCommitV`
+    generators. Existing `From<NullifierK>` and `From<ValueCommitV>`
+    conversions to `OrchardFixedBases` are preserved.
+  - `orchard::constants::OrchardBaseFieldBases`: fixed bases for scalar
+    multiplication by a base-field scalar.
+  - `orchard::constants::OrchardShortScalarBases`: fixed bases for scalar
+    multiplication by a short signed scalar.
+
 ## [0.13.0] - 2026-04-22
 
 ### Added
