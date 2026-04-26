@@ -7,17 +7,20 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
-### Added
-- `orchard::constants::{OrchardBaseFieldBases, OrchardShortScalarBases}`
-  enums adding `SpendAuthG` as a supported fixed-base generator for
-  base-field scalar multiplication (`SpendAuthGBase`) and short-scalar
-  multiplication (`SpendAuthGShort`). Both are marked `#[non_exhaustive]`.
-  `orchard::constants::OrchardFixedBases` now uses
-  `Base(OrchardBaseFieldBases)` and `Short(OrchardShortScalarBases)`
-  wrapping variants in place of the previous `NullifierK` and `ValueCommitV`
-  variants; existing `From<NullifierK>` and `From<ValueCommitV>` conversions
-  continue to route correctly. Reachable externally only under the
-  `unstable-voting-circuits` feature.
+### Changed
+- The following APIs have changed or been made available behind the
+  `unstable-voting-circuits` feature flag, and are not covered by the
+  crate's semver stability guarantees and may change in any future
+  release:
+  - `orchard::constants::OrchardFixedBases` has been reorganized to wrap
+    two new fixed-base enums, each adding `SpendAuthG` as a supported
+    generator alongside the existing `NullifierK` / `ValueCommitV`
+    generators. Existing `From<NullifierK>` and `From<ValueCommitV>`
+    conversions to `OrchardFixedBases` are preserved.
+  - `orchard::constants::OrchardBaseFieldBases`: fixed bases for scalar
+    multiplication by a base-field scalar.
+  - `orchard::constants::OrchardShortScalarBases`: fixed bases for scalar
+    multiplication by a short signed scalar.
 
 ## [0.13.0] - 2026-04-22
 
