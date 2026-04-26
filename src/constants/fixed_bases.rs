@@ -387,15 +387,35 @@ mod tests {
             NUM_WINDOWS_SHORT,
             "SpendAuthGShort Z table must have NUM_WINDOWS_SHORT entries"
         );
-        // The first NUM_WINDOWS_SHORT - 1 windows are identical (same generator
-        // and window layout); the final window differs because the short-scalar
-        // path accounts for the sign bit of a signed scalar. Asserting the
-        // difference at exactly that window documents the invariant, instead of
-        // relying on any mismatch in the slice.
+        // The first NUM_WINDOWS_SHORT - 1 windows are identical: halo2_gadgets'
+        // `find_zs_and_us` builds them from (base, w) only, with no dependence
+        // on num_windows. Only the last window depends on num_windows (through
+        // its offset), so it must differ between the 85-window and 22-window
+        // tables.
+        let short_u = short.u();
+        let full_u = full.u();
+        let short_z = short.z();
+        let full_z = full.z();
+
+        assert_eq!(
+            short_u[..NUM_WINDOWS_SHORT - 1],
+            full_u[..NUM_WINDOWS_SHORT - 1],
+            "SpendAuthGShort's first NUM_WINDOWS_SHORT - 1 U windows must equal SpendAuthG's"
+        );
+        assert_eq!(
+            short_z[..NUM_WINDOWS_SHORT - 1],
+            full_z[..NUM_WINDOWS_SHORT - 1],
+            "SpendAuthGShort's first NUM_WINDOWS_SHORT - 1 Z windows must equal SpendAuthG's"
+        );
         assert_ne!(
-            short.u()[NUM_WINDOWS_SHORT - 1],
-            full.u()[NUM_WINDOWS_SHORT - 1],
-            "SpendAuthGShort's final window must differ from the full-scalar tables"
+            short_u[NUM_WINDOWS_SHORT - 1],
+            full_u[NUM_WINDOWS_SHORT - 1],
+            "SpendAuthGShort's final U window must differ from the full-scalar table"
+        );
+        assert_ne!(
+            short_z[NUM_WINDOWS_SHORT - 1],
+            full_z[NUM_WINDOWS_SHORT - 1],
+            "SpendAuthGShort's final Z window must differ from the full-scalar table"
         );
     }
 
