@@ -7,6 +7,9 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::value::NoteValue::ZERO`, a `const NoteValue` equal to zero.
+
 ### Changed
 - The following APIs have changed or been made available behind the
   `unstable-voting-circuits` feature flag, and are not covered by the

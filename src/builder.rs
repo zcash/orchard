@@ -276,7 +276,7 @@ impl SpendInfo {
     }
 
     fn has_matching_anchor(&self, anchor: &Anchor) -> bool {
-        if self.note.value() == NoteValue::zero() {
+        if self.note.value() == NoteValue::ZERO {
             true
         } else {
             let cm = self.note.commitment();
@@ -360,7 +360,7 @@ impl OutputInfo {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        Self::new(None, recipient, NoteValue::zero(), [0u8; 512])
+        Self::new(None, recipient, NoteValue::ZERO, [0u8; 512])
     }
 
     /// Builds the output half of an action.
@@ -639,11 +639,11 @@ impl Builder {
         let value_balance = self
             .spends
             .iter()
-            .map(|spend| spend.note.value() - NoteValue::zero())
+            .map(|spend| spend.note.value() - NoteValue::ZERO)
             .chain(
                 self.outputs
                     .iter()
-                    .map(|output| NoteValue::zero() - output.value),
+                    .map(|output| NoteValue::ZERO - output.value),
             )
             .try_fold(ValueSum::zero(), |acc, note_value| acc + note_value)
             .ok_or(BalanceError::Overflow)?;
