@@ -557,14 +557,14 @@ pub mod testing {
         let spend_value_gen = if flags.spends_enabled {
             Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
         } else {
-            Strategy::boxed(Just(NoteValue::zero()))
+            Strategy::boxed(Just(NoteValue::ZERO))
         };
 
         spend_value_gen.prop_flat_map(move |spend_value| {
             let output_value_gen = if flags.outputs_enabled {
                 Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
             } else {
-                Strategy::boxed(Just(NoteValue::zero()))
+                Strategy::boxed(Just(NoteValue::ZERO))
             };
 
             output_value_gen.prop_flat_map(move |output_value| {
@@ -582,14 +582,14 @@ pub mod testing {
         let spend_value_gen = if flags.spends_enabled {
             Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
         } else {
-            Strategy::boxed(Just(NoteValue::zero()))
+            Strategy::boxed(Just(NoteValue::ZERO))
         };
 
         spend_value_gen.prop_flat_map(move |spend_value| {
             let output_value_gen = if flags.outputs_enabled {
                 Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
             } else {
-                Strategy::boxed(Just(NoteValue::zero()))
+                Strategy::boxed(Just(NoteValue::ZERO))
             };
 
             output_value_gen.prop_flat_map(move |output_value| {

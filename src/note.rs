@@ -230,7 +230,7 @@ impl Note {
 
         let note = Note::new(
             recipient,
-            NoteValue::zero(),
+            NoteValue::ZERO,
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
         );
