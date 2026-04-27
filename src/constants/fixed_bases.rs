@@ -97,50 +97,12 @@ pub enum OrchardShortScalarBases {
     SpendAuthGShort,
 }
 
-/// Enumeration of every fixed base used in the Orchard circuit.
-///
-/// This enables the shared fixed-base scalar multiplication machinery in
-/// `halo2_gadgets` to dispatch across full-width, base-field, and short-signed
-/// bases using a single type.
+/// Carrier type for the `FixedPoints<pallas::Affine>` impl that wires Orchard's
+/// per-slot fixed-base enums into halo2_gadgets's ECC, Sinsemilla, and Merkle
+/// chips. Carries no value-level state — the concrete fixed bases live in
+/// `OrchardFixedBasesFull`, `OrchardBaseFieldBases`, and `OrchardShortScalarBases`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum OrchardFixedBases {
-    /// A full-width scalar multiplication base.
-    Full(OrchardFixedBasesFull),
-    /// A base-field-scalar multiplication base.
-    Base(OrchardBaseFieldBases),
-    /// A short-signed-scalar multiplication base.
-    Short(OrchardShortScalarBases),
-}
-
-impl From<OrchardFixedBasesFull> for OrchardFixedBases {
-    fn from(full_width_base: OrchardFixedBasesFull) -> Self {
-        Self::Full(full_width_base)
-    }
-}
-
-impl From<ValueCommitV> for OrchardFixedBases {
-    fn from(_: ValueCommitV) -> Self {
-        Self::Short(OrchardShortScalarBases::ValueCommitV)
-    }
-}
-
-impl From<NullifierK> for OrchardFixedBases {
-    fn from(_: NullifierK) -> Self {
-        Self::Base(OrchardBaseFieldBases::NullifierK)
-    }
-}
-
-impl From<OrchardBaseFieldBases> for OrchardFixedBases {
-    fn from(b: OrchardBaseFieldBases) -> Self {
-        Self::Base(b)
-    }
-}
-
-impl From<OrchardShortScalarBases> for OrchardFixedBases {
-    fn from(b: OrchardShortScalarBases) -> Self {
-        Self::Short(b)
-    }
-}
+pub struct OrchardFixedBases;
 
 impl From<NullifierK> for OrchardBaseFieldBases {
     fn from(_: NullifierK) -> Self {

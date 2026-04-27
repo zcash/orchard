@@ -7,17 +7,25 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- `unstable-voting-circuits`-only:
+  - `orchard::constants::OrchardFixedBases` is now a unit struct rather than a
+    3-variant enum. It is a trait carrier for the halo2_gadgets `FixedPoints`
+    impl and was never constructed as a value; the concrete fixed bases live
+    in `OrchardFixedBasesFull`, `OrchardBaseFieldBases`, and
+    `OrchardShortScalarBases`, which are unchanged.
+
 ### Removed
-- `impl halo2_gadgets::ecc::chip::FixedPoint<pasta_curves::pallas::Affine>`
-  for `orchard::constants::NullifierK` and `orchard::constants::ValueCommitV`.
-  These impls are no longer on the in-circuit dispatch path: the ECC chip now
-  routes base-field and short-scalar fixed-base multiplication through the
-  `OrchardBaseFieldBases` / `OrchardShortScalarBases` enums. The `NullifierK`
-  and `ValueCommitV` unit structs and their `From` conversions into the new
-  enums are retained, so `NullifierK.into()` / `ValueCommitV.into()` continue
-  to work. Downstream consumers that previously used these structs as
-  `FixedPoints::Base` / `ShortScalar` directly should switch to
-  `OrchardBaseFieldBases::NullifierK` / `OrchardShortScalarBases::ValueCommitV`.
+- `unstable-voting-circuits`-only:
+  - The five dead `From<X> for OrchardFixedBases` conversions (from
+    `OrchardFixedBasesFull`, `NullifierK`, `ValueCommitV`,
+    `OrchardBaseFieldBases`, `OrchardShortScalarBases`). None were reachable;
+    in-circuit dispatch goes through the per-slot enums.
+  - `impl FixedPoint<pallas::Affine> for NullifierK` and
+    `impl FixedPoint<pallas::Affine> for ValueCommitV`. After the 0.13.1
+    enum refactor, dispatch routes through `OrchardBaseFieldBases::NullifierK`
+    and `OrchardShortScalarBases::ValueCommitV`, leaving the standalone
+    unit-struct impls dead.
 
 ## [0.13.1] - 2026-04-27
 
