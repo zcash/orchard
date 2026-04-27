@@ -97,50 +97,12 @@ pub enum OrchardShortScalarBases {
     SpendAuthGShort,
 }
 
-/// Enumeration of every fixed base used in the Orchard circuit.
-///
-/// This enables the shared fixed-base scalar multiplication machinery in
-/// `halo2_gadgets` to dispatch across full-width, base-field, and short-signed
-/// bases using a single type.
+/// Carrier type for the `FixedPoints<pallas::Affine>` impl that wires Orchard's
+/// per-slot fixed-base enums into halo2_gadgets's ECC, Sinsemilla, and Merkle
+/// chips. Carries no value-level state — the concrete fixed bases live in
+/// `OrchardFixedBasesFull`, `OrchardBaseFieldBases`, and `OrchardShortScalarBases`.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum OrchardFixedBases {
-    /// A full-width scalar multiplication base.
-    Full(OrchardFixedBasesFull),
-    /// A base-field-scalar multiplication base.
-    Base(OrchardBaseFieldBases),
-    /// A short-signed-scalar multiplication base.
-    Short(OrchardShortScalarBases),
-}
-
-impl From<OrchardFixedBasesFull> for OrchardFixedBases {
-    fn from(full_width_base: OrchardFixedBasesFull) -> Self {
-        Self::Full(full_width_base)
-    }
-}
-
-impl From<ValueCommitV> for OrchardFixedBases {
-    fn from(_: ValueCommitV) -> Self {
-        Self::Short(OrchardShortScalarBases::ValueCommitV)
-    }
-}
-
-impl From<NullifierK> for OrchardFixedBases {
-    fn from(_: NullifierK) -> Self {
-        Self::Base(OrchardBaseFieldBases::NullifierK)
-    }
-}
-
-impl From<OrchardBaseFieldBases> for OrchardFixedBases {
-    fn from(b: OrchardBaseFieldBases) -> Self {
-        Self::Base(b)
-    }
-}
-
-impl From<OrchardShortScalarBases> for OrchardFixedBases {
-    fn from(b: OrchardShortScalarBases) -> Self {
-        Self::Short(b)
-    }
-}
+pub struct OrchardFixedBases;
 
 impl From<NullifierK> for OrchardBaseFieldBases {
     fn from(_: NullifierK) -> Self {
@@ -215,23 +177,6 @@ impl FixedPoint<pallas::Affine> for OrchardFixedBasesFull {
 }
 
 #[cfg(feature = "circuit")]
-impl FixedPoint<pallas::Affine> for NullifierK {
-    type FixedScalarKind = BaseFieldElem;
-
-    fn generator(&self) -> pallas::Affine {
-        nullifier_k::generator()
-    }
-
-    fn u(&self) -> Vec<[[u8; 32]; H]> {
-        nullifier_k::U.to_vec()
-    }
-
-    fn z(&self) -> Vec<u64> {
-        nullifier_k::Z.to_vec()
-    }
-}
-
-#[cfg(feature = "circuit")]
 impl FixedPoint<pallas::Affine> for OrchardBaseFieldBases {
     type FixedScalarKind = BaseFieldElem;
 
@@ -258,23 +203,6 @@ impl FixedPoint<pallas::Affine> for OrchardBaseFieldBases {
             Self::NullifierK => nullifier_k::Z.to_vec(),
             Self::SpendAuthGBase => spend_auth_g::Z.to_vec(),
         }
-    }
-}
-
-#[cfg(feature = "circuit")]
-impl FixedPoint<pallas::Affine> for ValueCommitV {
-    type FixedScalarKind = ShortScalar;
-
-    fn generator(&self) -> pallas::Affine {
-        value_commit_v::generator()
-    }
-
-    fn u(&self) -> Vec<[[u8; 32]; H]> {
-        value_commit_v::U_SHORT.to_vec()
-    }
-
-    fn z(&self) -> Vec<u64> {
-        value_commit_v::Z_SHORT.to_vec()
     }
 }
 
@@ -424,11 +352,22 @@ mod tests {
     #[test]
     fn value_commit_v_short_routes_correctly() {
         let short = OrchardShortScalarBases::ValueCommitV;
-        let legacy = ValueCommitV;
 
-        assert_eq!(short.generator(), legacy.generator());
-        assert_eq!(short.u(), legacy.u());
-        assert_eq!(short.z(), legacy.z());
+        assert_eq!(
+            short.generator(),
+            value_commit_v::generator(),
+            "OrchardShortScalarBases::ValueCommitV must use the ValueCommitV generator"
+        );
+        assert_eq!(
+            short.u(),
+            value_commit_v::U_SHORT.to_vec(),
+            "OrchardShortScalarBases::ValueCommitV U tables must match"
+        );
+        assert_eq!(
+            short.z(),
+            value_commit_v::Z_SHORT.to_vec(),
+            "OrchardShortScalarBases::ValueCommitV Z tables must match"
+        );
     }
 
     #[test]

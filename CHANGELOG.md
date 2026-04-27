@@ -7,6 +7,26 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- `unstable-voting-circuits`-only:
+  - `orchard::constants::OrchardFixedBases` is now a unit struct rather than a
+    3-variant enum. It is a trait carrier for the halo2_gadgets `FixedPoints`
+    impl and was never constructed as a value; the concrete fixed bases live
+    in `OrchardFixedBasesFull`, `OrchardBaseFieldBases`, and
+    `OrchardShortScalarBases`, which are unchanged.
+
+### Removed
+- `unstable-voting-circuits`-only:
+  - The five dead `From<X> for OrchardFixedBases` conversions (from
+    `OrchardFixedBasesFull`, `NullifierK`, `ValueCommitV`,
+    `OrchardBaseFieldBases`, `OrchardShortScalarBases`). None were reachable;
+    in-circuit dispatch goes through the per-slot enums.
+  - `impl FixedPoint<pallas::Affine> for NullifierK` and
+    `impl FixedPoint<pallas::Affine> for ValueCommitV`. After the 0.13.1
+    enum refactor, dispatch routes through `OrchardBaseFieldBases::NullifierK`
+    and `OrchardShortScalarBases::ValueCommitV`, leaving the standalone
+    unit-struct impls dead.
+
 ## [0.13.1] - 2026-04-27
 
 ### Added
