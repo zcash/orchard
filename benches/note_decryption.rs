@@ -1,9 +1,11 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
-    builder::{Builder, BundleType},
+    builder::Builder,
     circuit::ProvingKey,
+    flavor::{OrchardVanilla, OrchardZSA},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
-    note_encryption::{CompactAction, OrchardDomain},
+    note::AssetBase,
+    primitives::{CompactAction, OrchardDomain},
     value::NoteValue,
     Anchor, Bundle,
 };
@@ -13,9 +15,13 @@ use zcash_note_encryption::{batch, try_compact_note_decryption, try_note_decrypt
 #[cfg(unix)]
 use pprof::criterion::{Output, PProfProfiler};
 
-fn bench_note_decryption(c: &mut Criterion) {
+mod utils;
+
+use utils::OrchardFlavorBench;
+
+fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
     let rng = OsRng;
-    let pk = ProvingKey::build();
+    let pk = ProvingKey::build::<FL>();
 
     let fvk = FullViewingKey::from(&SpendingKey::from_bytes([7; 32]).unwrap());
     let valid_ivk = fvk.to_ivk(Scope::External);
@@ -44,16 +50,31 @@ fn bench_note_decryption(c: &mut Criterion) {
         .collect();
 
     let bundle = {
-        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
+        let mut builder = Builder::new(
+            FL::DEFAULT_BUNDLE_TYPE,
+            Anchor::from_bytes([0; 32]).unwrap(),
+        );
         // The builder pads to two actions, and shuffles their order. Add two recipients
         // so the first action is always decryptable.
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10), [0; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10),
+                AssetBase::zatoshi(),
+                [0; 512],
+            )
             .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10), [0; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10),
+                AssetBase::zatoshi(),
+                [0; 512],
+            )
             .unwrap();
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;
+        let bundle: Bundle<_, i64, FL> = builder.build(rng).unwrap().unwrap().0;
         bundle
             .create_proof(&pk, rng)
             .unwrap()
@@ -65,7 +86,7 @@ fn bench_note_decryption(c: &mut Criterion) {
     let domain = OrchardDomain::for_action(action);
 
     let compact = {
-        let mut group = c.benchmark_group("note-decryption");
+        let mut group = FL::benchmark_group(c, "note-decryption");
         group.throughput(Throughput::Elements(1));
 
         group.bench_function("valid", |b| {
@@ -87,7 +108,7 @@ fn bench_note_decryption(c: &mut Criterion) {
     };
 
     {
-        let mut group = c.benchmark_group("compact-note-decryption");
+        let mut group = FL::benchmark_group(c, "compact-note-decryption");
         group.throughput(Throughput::Elements(invalid_ivks.len() as u64));
         group.bench_function("invalid", |b| {
             b.iter(|| {
@@ -114,7 +135,7 @@ fn bench_note_decryption(c: &mut Criterion) {
             })
             .collect();
 
-        let mut group = c.benchmark_group("batch-note-decryption");
+        let mut group = FL::benchmark_group(c, "batch-note-decryption");
 
         for size in [10, 50, 100] {
             group.throughput(Throughput::Elements((ivks * size) as u64));
@@ -141,11 +162,25 @@ fn bench_note_decryption(c: &mut Criterion) {
 }
 
 #[cfg(unix)]
-criterion_group! {
-    name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
-    targets = bench_note_decryption
+fn create_config() -> Criterion {
+    Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
 }
-#[cfg(not(unix))]
-criterion_group!(benches, bench_note_decryption);
-criterion_main!(benches);
+
+#[cfg(windows)]
+fn create_config() -> Criterion {
+    Criterion::default()
+}
+
+criterion_group! {
+    name = benches_vanilla;
+    config = create_config();
+    targets = bench_note_decryption::<OrchardVanilla>
+}
+
+criterion_group! {
+    name = benches_zsa;
+    config = create_config();
+    targets = bench_note_decryption::<OrchardZSA>
+}
+
+criterion_main!(benches_vanilla, benches_zsa);

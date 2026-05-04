@@ -1,3 +1,5 @@
+use core::fmt;
+
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -5,15 +7,19 @@ use alloc::vec::Vec;
 use ff::PrimeField;
 use incrementalmerkletree::Hashable;
 use pasta_curves::pallas;
-use zcash_note_encryption::OutgoingCipherKey;
+use zcash_note_encryption::{note_bytes::NoteBytes, OutgoingCipherKey};
 use zip32::ChildIndex;
 
 use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
     bundle::Flags,
+    flavor::OrchardVanilla,
     keys::{FullViewingKey, SpendingKey},
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
-    primitives::redpallas::{self, SpendAuth},
+    primitives::{
+        redpallas::{self, SpendAuth},
+        OrchardPrimitives,
+    },
     tree::{MerkleHashOrchard, MerklePath},
     value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Address, Anchor, Proof, NOTE_COMMITMENT_TREE_DEPTH,
@@ -225,12 +231,12 @@ impl Output {
             .into_option()
             .ok_or(ParseError::InvalidExtractedNoteCommitment)?;
 
-        let encrypted_note = TransmittedNoteCiphertext {
+        let encrypted_note = TransmittedNoteCiphertext::<OrchardVanilla> {
             epk_bytes: ephemeral_key,
-            enc_ciphertext: enc_ciphertext
-                .as_slice()
-                .try_into()
-                .map_err(|_| ParseError::InvalidEncCiphertext)?,
+            enc_ciphertext: <OrchardVanilla as OrchardPrimitives>::NoteCiphertextBytes::from_slice(
+                enc_ciphertext.as_slice(),
+            )
+            .ok_or(ParseError::InvalidEncCiphertext)?,
             out_ciphertext: out_ciphertext
                 .as_slice()
                 .try_into()
@@ -294,6 +300,7 @@ impl Zip32Derivation {
 
 /// Errors that can occur while parsing a PCZT bundle.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ParseError {
     /// An invalid anchor was provided.
     InvalidAnchor,
@@ -334,3 +341,34 @@ pub enum ParseError {
     /// The provided `flags` field had unexpected bits set.
     UnexpectedFlagBitsSet,
 }
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::InvalidAnchor => write!(f, "invalid anchor"),
+            ParseError::InvalidBindingSignatureSigningKey => write!(f, "invalid `bsk`"),
+            ParseError::InvalidDummySpendingKey => write!(f, "invalid `dummy_sk`"),
+            ParseError::InvalidEncCiphertext => write!(f, "invalid `enc_ciphertext`"),
+            ParseError::InvalidExtractedNoteCommitment => write!(f, "invalid `cmx`"),
+            ParseError::InvalidFullViewingKey => write!(f, "invalid `fvk`"),
+            ParseError::InvalidNullifier => write!(f, "invalid `nullifier`"),
+            ParseError::InvalidOutCiphertext => write!(f, "invalid `out_ciphertext`"),
+            ParseError::InvalidRandomizedKey => write!(f, "invalid `rk`"),
+            ParseError::InvalidRandomSeed => write!(f, "invalid `rseed`"),
+            ParseError::InvalidRecipient => write!(f, "invalid `recipient`"),
+            ParseError::InvalidRho => write!(f, "invalid `rho`"),
+            ParseError::InvalidSpendAuthRandomizer => write!(f, "invalid `alpha`"),
+            ParseError::InvalidValueCommitment => write!(f, "invalid `cv_net`"),
+            ParseError::InvalidValueCommitTrapdoor => write!(f, "invalid `rcv`"),
+            ParseError::InvalidWitness => write!(f, "invalid `witness`"),
+            ParseError::InvalidZip32Derivation => write!(f, "invalid `zip32_derivation`"),
+            ParseError::MissingRho => {
+                write!(f, "`rho` must be provided whenever `rseed` is provided")
+            }
+            ParseError::UnexpectedFlagBitsSet => write!(f, "`flags` field had unexpected bits set"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for ParseError {}

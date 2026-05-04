@@ -28,14 +28,20 @@ pub const ORCHARD_PERSONALIZATION: &str = "z.cash:Orchard";
 /// SWU hash-to-curve personalization for the value commitment generator
 pub const VALUE_COMMITMENT_PERSONALIZATION: &str = "z.cash:Orchard-cv";
 
+/// SWU hash-to-curve personalization for the ZSA asset base generator
+pub const ZSA_ASSET_BASE_PERSONALIZATION: &str = "z.cash:OrchardZSA";
+
 /// SWU hash-to-curve value for the value commitment generator
-pub const VALUE_COMMITMENT_V_BYTES: [u8; 1] = *b"v";
+pub const ZATOSHI_ASSET_BASE_V_BYTES: [u8; 1] = *b"v";
 
 /// SWU hash-to-curve value for the value commitment generator
 pub const VALUE_COMMITMENT_R_BYTES: [u8; 1] = *b"r";
 
 /// SWU hash-to-curve personalization for the note commitment generator
 pub const NOTE_COMMITMENT_PERSONALIZATION: &str = "z.cash:Orchard-NoteCommit";
+
+/// SWU hash-to-curve personalization for the ZSA note commitment generator
+pub const NOTE_ZSA_COMMITMENT_PERSONALIZATION: &str = "z.cash:ZSA-NoteCommit";
 
 /// SWU hash-to-curve personalization for the IVK commitment generator
 pub const COMMIT_IVK_PERSONALIZATION: &str = "z.cash:Orchard-CommitIvk";
@@ -47,12 +53,10 @@ pub const FIXED_BASE_WINDOW_SIZE: usize = 3;
 pub const H: usize = 1 << FIXED_BASE_WINDOW_SIZE;
 
 /// Number of windows for a full-width scalar
-pub const NUM_WINDOWS: usize =
-    (L_ORCHARD_SCALAR + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
+pub const NUM_WINDOWS: usize = L_ORCHARD_SCALAR.div_ceil(FIXED_BASE_WINDOW_SIZE);
 
 /// Number of windows for a short signed scalar
-pub const NUM_WINDOWS_SHORT: usize =
-    (L_VALUE + FIXED_BASE_WINDOW_SIZE - 1) / FIXED_BASE_WINDOW_SIZE;
+pub const NUM_WINDOWS_SHORT: usize = L_VALUE.div_ceil(FIXED_BASE_WINDOW_SIZE);
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 // A sum type for both full-width and short bases. This enables us to use the

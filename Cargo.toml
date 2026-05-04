@@ -1,15 +1,15 @@
 [package]
 name = "orchard"
-version = "0.11.0"
+version = "0.12.0"
 authors = [
-    "Sean Bowe <sean@electriccoin.co>",
+    "Sean Bowe",
     "Jack Grigg <jack@electriccoin.co>",
     "Daira-Emma Hopwood <daira@jacaranda.org>",
     "Ying Tong Lai",
     "Kris Nuttycombe <kris@electriccoin.co>",
 ]
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.85.1"
 description = "The Orchard shielded transaction protocol"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/zcash/orchard"
@@ -25,11 +25,12 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 [dependencies]
 aes = "0.8"
 bitvec = { version = "1", default-features = false }
-blake2b_simd = { version = "1", default-features = false }
+blake2b_simd = { version = "=1.0.1", default-features = false }
 ff = { version = "0.13", default-features = false }
 fpe = { version = "0.6", default-features = false, features = ["alloc"] }
 group = "0.13"
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
+secp256k1 = { version = "0.29", default-features = false, features = ["alloc", "rand"], optional = true }
 lazy_static = "1"
 memuse = { version = "0.2.2", default-features = false }
 pasta_curves = "0.5"
@@ -41,7 +42,7 @@ nonempty = { version = "0.11", default-features = false }
 poseidon = { package = "halo2_poseidon", version = "0.1" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 sinsemilla = "0.1"
-subtle = { version = "2.3", default-features = false }
+subtle = { version = "2.6", default-features = false }
 zcash_note_encryption = "0.4"
 incrementalmerkletree = "0.8.1"
 zcash_spec = "0.2.1"
@@ -49,7 +50,7 @@ zip32 = { version = "0.2.0", default-features = false }
 visibility = "0.1.1"
 
 # Circuit
-halo2_gadgets = { version = "0.3", optional = true, default-features = false }
+halo2_gadgets = { version = "0.4", optional = true, default-features = false }
 halo2_proofs = { version = "0.3", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 
 # Boilerplate
@@ -59,7 +60,7 @@ getset = "0.1"
 tracing = { version = "0.1", default-features = false }
 
 # No-std support
-core2 = { version = "0.3", default-features = false, features = ["alloc"] }
+corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
 
 # Developer tooling dependencies
 image = { version = "0.24", optional = true }
@@ -67,7 +68,7 @@ plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
-halo2_gadgets = { version = "0.3", features = ["test-dependencies"] }
+halo2_gadgets = { version = "0.4", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
 zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
@@ -83,12 +84,14 @@ bench = false
 
 [features]
 default = ["circuit", "multicore", "std"]
-std = ["core2/std", "group/wnaf-memuse", "reddsa/std"]
+std = ["corez/std", "group/wnaf-memuse", "reddsa/std"]
 circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
 unstable-frost = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 test-dependencies = ["proptest", "rand/std"]
+zsa-issuance = ["dep:secp256k1"]
+temporary-zebra = []
 
 [[bench]]
 name = "note_decryption"
@@ -109,5 +112,7 @@ debug = true
 debug = true
 
 [patch.crates-io]
-halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
+sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
+zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "9f7e93d42cef839d02b9d75918117941d453f8cb" }
 halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
+zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "d5e84264d2ad0646b587a837f4e2424ca64d3a05" }

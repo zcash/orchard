@@ -12,6 +12,7 @@ use zip32::ChildIndex;
 
 use crate::{
     bundle::Flags,
+    flavor::OrchardVanilla,
     keys::{FullViewingKey, SpendingKey},
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, Binding, SpendAuth},
@@ -224,7 +225,7 @@ pub struct Output {
     /// - `ephemeral_key`
     /// - `enc_ciphertext`
     /// - `out_ciphertext`
-    pub(crate) encrypted_note: TransmittedNoteCiphertext,
+    pub(crate) encrypted_note: TransmittedNoteCiphertext<OrchardVanilla>,
 
     /// The address that will receive the output.
     ///
@@ -330,7 +331,7 @@ impl Zip32Derivation {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "circuit"))]
 mod tests {
     use ff::{Field, PrimeField};
     use incrementalmerkletree::{Marking, Retention};
@@ -342,8 +343,9 @@ mod tests {
         builder::{Builder, BundleType},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
+        flavor::OrchardVanilla,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{ExtractedNoteCommitment, RandomSeed, Rho},
+        note::{AssetBase, ExtractedNoteCommitment, RandomSeed, Rho},
         pczt::Zip32Derivation,
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,
@@ -352,7 +354,7 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build::<OrchardVanilla>();
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -365,7 +367,13 @@ mod tests {
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);
@@ -388,7 +396,7 @@ mod tests {
 
     #[test]
     fn shielded_bundle() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build::<OrchardVanilla>();
         let mut rng = OsRng;
 
         // Pretend we derived the spending key via ZIP 32.
@@ -403,9 +411,14 @@ mod tests {
         let note = {
             let rho = Rho::from_bytes(&pallas::Base::random(&mut rng).to_repr()).unwrap();
             loop {
-                if let Some(note) =
-                    Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho))
-                        .into_option()
+                if let Some(note) = Note::from_parts(
+                    recipient,
+                    value,
+                    AssetBase::zatoshi(),
+                    rho,
+                    RandomSeed::random(&mut rng, &rho),
+                )
+                .into_option()
                 {
                     break note;
                 }
@@ -442,13 +455,20 @@ mod tests {
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         builder
             .add_output(
                 Some(fvk.to_ovk(Scope::Internal)),
                 fvk.address_at(0u32, Scope::Internal),
                 NoteValue::from_raw(5_000),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();

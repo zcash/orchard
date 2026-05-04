@@ -23,7 +23,7 @@ jobs:
     strategy:
       matrix:
         target:
-          - wasm32-wasi
+          - wasm32-wasip1
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,15 +47,23 @@ jobs:
       - name: Add lazy_static with the spin_no_std feature
         working-directory: ./ci-build
         run: cargo add lazy_static --no-default-features --features "spin_no_std"
-      - name: Add typenum with the no_std feature
+      - name: Add typenum with no default features
         working-directory: ./ci-build
-        run: cargo add typenum --no-default-features --features "no_std"
+        run: cargo add typenum --no-default-features
       - name: Show Cargo.toml for the synthetic crate
         working-directory: ./ci-build
         run: cat Cargo.toml
+      - name: Copy pinned dependencies into synthetic crate
+        run: cp crate_root/Cargo.lock ci-build/
       - name: Add target
         working-directory: ./ci-build
         run: rustup target add ${{ matrix.target }}
+      - name: Pin deps to versions compatible with rustc 1.70
+        working-directory: ./ci-build
+        run: |
+          cargo update -p unicode-ident --precise 1.0.12
+          cargo update -p syn --precise 2.0.114
+          cargo update -p quote --precise 1.0.44
       - name: Clippy no_std for target
         working-directory: ./ci-build
         run: cargo clippy --verbose --target ${{ matrix.target }}
