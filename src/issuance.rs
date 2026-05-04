@@ -1534,14 +1534,14 @@ mod tests {
         );
     }
 
+    impl IssueBundle<Signed> {
+        pub(crate) fn set_authorization(&mut self, authorization: Signed) {
+            self.authorization = authorization;
+        }
+    }
+
     #[test]
     fn issue_bundle_verify_fail_bad_signature() {
-        impl IssueBundle<Signed> {
-            pub fn set_authorization(&mut self, authorization: Signed) {
-                self.authorization = authorization;
-            }
-        }
-
         let params = setup_params();
         let mut rng = OsRng;
         let (mut signed, _) = new_signed_bundle(&params, b"bad sig", 5);

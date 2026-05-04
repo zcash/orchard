@@ -177,7 +177,7 @@ impl AssetBase {
 impl Hash for AssetBase {
     fn hash<H: Hasher>(&self, h: &mut H) {
         h.write(&self.to_bytes());
-        h.finish();
+        let _ = h.finish();
     }
 }
 

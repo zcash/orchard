@@ -23,7 +23,7 @@ jobs:
     strategy:
       matrix:
         target:
-          - wasm32-wasi
+          - wasm32-wasip1
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,9 +47,9 @@ jobs:
       - name: Add lazy_static with the spin_no_std feature
         working-directory: ./ci-build
         run: cargo add lazy_static --no-default-features --features "spin_no_std"
-      - name: Add typenum with the no_std feature
+      - name: Add typenum with no default features
         working-directory: ./ci-build
-        run: cargo add typenum --no-default-features --features "no_std"
+        run: cargo add typenum --no-default-features
       - name: Show Cargo.toml for the synthetic crate
         working-directory: ./ci-build
         run: cat Cargo.toml

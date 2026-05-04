@@ -353,7 +353,7 @@ fn zsa_issue_and_transfer() {
 
     let zsa_spend1_asset1 = TestSpendInfo {
         note: zsa_note1_asset1,
-        merkle_path: merkle_paths.get(0).unwrap().clone(),
+        merkle_path: merkle_paths.first().unwrap().clone(),
     };
     let zsa_spend2_asset1 = TestSpendInfo {
         note: zsa_note2_asset1,
