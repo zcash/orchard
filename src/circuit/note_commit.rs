@@ -2144,16 +2144,16 @@ pub(in crate::circuit) mod gadgets {
                 // q_init = q_init_zec if is_zatoshi_asset is true
                 // q_init = q_init_zsa if is_zatoshi_asset is false
                 let q_init = {
-                    let q_init_zec = NonIdentityPoint::new(
+                    let q_init_zec = NonIdentityPoint::new_from_constant(
                         ecc_chip.clone(),
                         layouter.namespace(|| "q_init_zec"),
-                        Value::known(zec_domain.q_init()),
+                        zec_domain.q_init(),
                     )?;
 
-                    let q_init_zsa = NonIdentityPoint::new(
+                    let q_init_zsa = NonIdentityPoint::new_from_constant(
                         ecc_chip.clone(),
                         layouter.namespace(|| "q_init_zsa"),
-                        Value::known(zsa_domain.q_init()),
+                        zsa_domain.q_init(),
                     )?;
 
                     zsa_params.cond_swap_chip.mux_on_non_identity_points(
