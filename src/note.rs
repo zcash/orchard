@@ -1,4 +1,5 @@
 //! Data structures used for note construction.
+use alloc::vec::Vec;
 use core::fmt;
 use memuse::DynamicUsage;
 
@@ -6,14 +7,20 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use pasta_curves::pallas;
 use rand::RngCore;
-use subtle::CtOption;
+use subtle::{Choice, ConditionallySelectable, CtOption};
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
+    primitives::OrchardPrimitives,
     spec::{to_base, to_scalar, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
     Address,
 };
+
+pub(crate) mod asset_base;
+pub use self::asset_base::AssetBase;
+#[cfg(feature = "zsa-issuance")]
+pub use self::asset_base::AssetId;
 
 pub(crate) mod commitment;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
@@ -36,7 +43,7 @@ impl Rho {
     /// value otherwise.
     ///
     /// [`Action::rho`]: crate::action::Action::rho
-    /// [`CompactAction::rho`]: crate::note_encryption::CompactAction::rho
+    /// [`CompactAction::rho`]: crate::primitives::CompactAction::rho
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Base::from_repr(*bytes).map(Rho)
     }
@@ -123,6 +130,17 @@ impl RandomSeed {
     }
 }
 
+impl ConditionallySelectable for RandomSeed {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        let result: Vec<u8> =
+            a.0.iter()
+                .zip(b.0.iter())
+                .map(|(a_i, b_i)| u8::conditional_select(a_i, b_i, choice))
+                .collect();
+        RandomSeed(<[u8; 32]>::try_from(result).unwrap())
+    }
+}
+
 /// A discrete amount of funds received by an address.
 #[derive(Debug, Copy, Clone)]
 pub struct Note {
@@ -130,15 +148,28 @@ pub struct Note {
     recipient: Address,
     /// The value of this note.
     value: NoteValue,
+    /// The asset of this note.
+    asset: AssetBase,
     /// A unique creation ID for this note.
     ///
-    /// This is produced from the nullifier of the note that will be spent in the [`Action`] that
-    /// creates this note.
+    /// For notes created by spending an existing note, `rho` is derived from the
+    /// nullifier of the spent note.
     ///
-    /// [`Action`]: crate::action::Action
-    rho: Rho,
+    /// For issuance notes ([ZIP-227]), `rho` is initially unset and later
+    /// deterministically derived from the issuance context when
+    /// `update_rho_for_issuance_note` is called.
+    ///
+    /// The `rho` value is used as domain-separated randomness in the note
+    /// commitment and must be initialized before commitment or equality checks.
+    ///
+    /// [ZIP-227]: https://zips.z.cash/zip-0227
+    rho: Option<Rho>,
     /// The seed randomness for various note components.
     rseed: RandomSeed,
+    /// The seed randomness for split notes.
+    ///
+    /// If it is not a split note, this field is `None`.
+    rseed_split_note: CtOption<RandomSeed>,
 }
 
 impl PartialEq for Note {
@@ -169,14 +200,48 @@ impl Note {
     pub fn from_parts(
         recipient: Address,
         value: NoteValue,
+        asset: AssetBase,
         rho: Rho,
         rseed: RandomSeed,
+    ) -> CtOption<Self> {
+        Self::from_parts_internal(
+            recipient,
+            value,
+            asset,
+            rho,
+            rseed,
+            CtOption::new(rseed, 0u8.into()),
+        )
+    }
+
+    /// Creates a `Note` from its component parts.
+    ///
+    /// This additionally permits constructing a [Split Input note], which is necessary
+    /// for constructing certain patterns of bundles containing ZSA outputs. It is used by
+    /// the PCZT code, which is the only place where these notes are serialized.
+    ///
+    /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
+    ///
+    /// # Caveats
+    ///
+    /// See [`Self::from_parts`].
+    ///
+    /// [Split Input note]: https://zips.z.cash/zip-0226#split-notes
+    pub(crate) fn from_parts_internal(
+        recipient: Address,
+        value: NoteValue,
+        asset: AssetBase,
+        rho: Rho,
+        rseed: RandomSeed,
+        rseed_split_note: CtOption<RandomSeed>,
     ) -> CtOption<Self> {
         let note = Note {
             recipient,
             value,
-            rho,
+            asset,
+            rho: Some(rho),
             rseed,
+            rseed_split_note,
         };
         CtOption::new(note, note.commitment_inner().is_some())
     }
@@ -189,14 +254,48 @@ impl Note {
     pub(crate) fn new(
         recipient: Address,
         value: NoteValue,
+        asset: AssetBase,
         rho: Rho,
         mut rng: impl RngCore,
     ) -> Self {
         loop {
-            let note = Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho));
+            let note = Note::from_parts(
+                recipient,
+                value,
+                asset,
+                rho,
+                RandomSeed::random(&mut rng, &rho),
+            );
             if note.is_some().into() {
                 break note.unwrap();
             }
+        }
+    }
+
+    /// Generates a new issuance note with an uninitialized `rho`.
+    ///
+    /// For issuance notes ([ZIP-227]), the `rho` value is not known at creation
+    /// time and is therefore left unset. It is later deterministically derived
+    /// from the issuance context and assigned via `update_rho_for_issuance_note`.
+    ///
+    /// A temporary `rseed` is sampled at construction time and later updated
+    /// by `update_rho_for_issuance_note` to ensure a valid note commitment.
+    ///
+    /// [ZIP-227]: https://zips.z.cash/zip-0227
+    pub(crate) fn new_issue_note(
+        recipient: Address,
+        value: NoteValue,
+        asset: AssetBase,
+        mut rng: impl RngCore,
+    ) -> Self {
+        let rseed = RandomSeed::random(&mut rng, &Rho(pallas::Base::zero()));
+        Note {
+            recipient,
+            value,
+            asset,
+            rho: None,
+            rseed,
+            rseed_split_note: CtOption::new(rseed, 0u8.into()),
         }
     }
 
@@ -216,6 +315,7 @@ impl Note {
         let note = Note::new(
             recipient,
             NoteValue::zero(),
+            AssetBase::zatoshi(),
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
         );
@@ -233,19 +333,35 @@ impl Note {
         self.value
     }
 
+    /// Returns the asset of this note.
+    pub fn asset(&self) -> AssetBase {
+        self.asset
+    }
+
     /// Returns the rseed value of this note.
     pub fn rseed(&self) -> &RandomSeed {
         &self.rseed
     }
 
+    /// Returns the rseed_split_note value of this note.
+    pub(crate) fn rseed_split_note(&self) -> CtOption<RandomSeed> {
+        self.rseed_split_note
+    }
+
     /// Derives the ephemeral secret key for this note.
     pub(crate) fn esk(&self) -> EphemeralSecretKey {
-        EphemeralSecretKey(self.rseed.esk(&self.rho))
+        EphemeralSecretKey(self.rseed.esk(&self.rho()))
     }
 
     /// Returns rho of this note.
     pub fn rho(&self) -> Rho {
         self.rho
+            .expect("must call Note::update_rho_for_issuance_note first")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_rho(&self) -> bool {
+        self.rho.is_some()
     }
 
     /// Derives the commitment to this note.
@@ -274,36 +390,102 @@ impl Note {
             g_d.to_bytes(),
             self.recipient.pk_d().to_bytes(),
             self.value,
-            self.rho.0,
-            self.rseed.psi(&self.rho),
-            self.rseed.rcm(&self.rho),
+            self.asset,
+            self.rho().0,
+            self.rseed.psi(&self.rho()),
+            self.rseed.rcm(&self.rho()),
         )
     }
 
     /// Derives the nullifier for this note.
     pub fn nullifier(&self, fvk: &FullViewingKey) -> Nullifier {
+        let selected_rseed = self.rseed_split_note.unwrap_or(self.rseed);
+
         Nullifier::derive(
             fvk.nk(),
-            self.rho.0,
-            self.rseed.psi(&self.rho),
+            self.rho().0,
+            selected_rseed.psi(&self.rho()),
             self.commitment(),
+            self.rseed_split_note.is_some(),
         )
     }
+
+    /// Creates a [Split Input note] from a Custom Asset note, for use on the Spend side
+    /// of an Output-only Action.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.asset().is_zatoshi()`.
+    ///
+    /// [Split Input note]: https://zips.z.cash/zip-0226#split-notes
+    pub(crate) fn create_split_note(self, rng: &mut impl RngCore) -> Self {
+        assert!(bool::from(!self.asset().is_zatoshi()));
+        Note {
+            rseed_split_note: CtOption::new(RandomSeed::random(rng, &self.rho()), 1u8.into()),
+            ..self
+        }
+    }
+
+    /// Updates the `rho` value of an issuance note as specified in
+    /// [ZIP-227: Issuance of Zcash Shielded Assets][zip227].
+    ///
+    /// The `rho` value is deterministically derived from the note context and used
+    /// in the Sinsemilla-based note commitment. As required by
+    /// [Section 5.4.8.4] of the Zcash Protocol Specification, the commitment must not
+    /// evaluate to ⊥.
+    ///
+    /// Although the probability of observing ⊥ is negligible, this method enforces
+    /// this invariant by resampling a random `rseed` until a valid commitment is produced.
+    ///
+    /// [zip227]: https://zips.z.cash/zip-0227
+    /// [Section 5.4.8.4]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillacommit
+    pub(crate) fn update_rho_for_issuance_note(
+        &mut self,
+        nullifier: &Nullifier,
+        index_action: u32,
+        index_note: u32,
+        mut rng: impl RngCore,
+    ) {
+        let rho = rho_for_issuance_note(nullifier, index_action, index_note);
+        self.rho = Some(rho);
+        loop {
+            self.rseed = RandomSeed::random(&mut rng, &rho);
+            if self.commitment_inner().is_some().into() {
+                break;
+            }
+        }
+    }
+}
+
+/// Evaluate the rho value of the issuance note (see
+/// [ZIP-227: Issuance of Zcash Shielded Assets][zip227]).
+///
+/// [zip227]: https://zips.z.cash/zip-0227
+pub(crate) fn rho_for_issuance_note(
+    nullifier: &Nullifier,
+    index_action: u32,
+    index_note: u32,
+) -> Rho {
+    Rho(to_base(PrfExpand::ORCHARD_DERIVED_ISSUE_RHO.with(
+        &nullifier.to_bytes(),
+        &index_action.to_le_bytes(),
+        &index_note.to_le_bytes(),
+    )))
 }
 
 /// An encrypted note.
 #[derive(Clone)]
-pub struct TransmittedNoteCiphertext {
+pub struct TransmittedNoteCiphertext<Pr: OrchardPrimitives> {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
     /// The encrypted note ciphertext
-    pub enc_ciphertext: [u8; 580],
+    pub enc_ciphertext: Pr::NoteCiphertextBytes,
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
 }
 
-impl fmt::Debug for TransmittedNoteCiphertext {
+impl<Pr: OrchardPrimitives> fmt::Debug for TransmittedNoteCiphertext<Pr> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransmittedNoteCiphertext")
             .field("epk_bytes", &self.epk_bytes)
@@ -320,8 +502,15 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::{
-        address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
+        address::testing::arb_address,
+        note::{asset_base::testing::arb_asset_base, nullifier::testing::arb_nullifier, AssetBase},
+        value::{testing::arb_note_value, NoteValue},
     };
+
+    #[cfg(feature = "zsa-issuance")]
+    use crate::issuance::auth::{IssueValidatingKey, ZSASchnorr};
+
+    use subtle::CtOption;
 
     use super::{Note, RandomSeed, Rho};
 
@@ -333,17 +522,60 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an action without authorization data.
+        /// Generate an arbitrary note
         pub fn arb_note(value: NoteValue)(
             recipient in arb_address(),
+            rho in arb_nullifier().prop_map(Rho::from_nf_old),
+            rseed in arb_rseed(),
+            asset in arb_asset_base(),
+        ) -> Note {
+            Note {
+                recipient,
+                value,
+                asset,
+                rho: Some(rho),
+                rseed,
+                rseed_split_note: CtOption::new(rseed, 0u8.into()),
+            }
+        }
+    }
+
+    prop_compose! {
+        /// Generate an arbitrary zatoshi note
+        pub fn arb_zatoshi_note()(
+            recipient in arb_address(),
+            value in arb_note_value(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
             rseed in arb_rseed(),
         ) -> Note {
             Note {
                 recipient,
                 value,
-                rho,
+                asset: AssetBase::zatoshi(),
+                rho: Some(rho),
                 rseed,
+                rseed_split_note: CtOption::new(rseed, 0u8.into())
+            }
+        }
+    }
+
+    #[cfg(feature = "zsa-issuance")]
+    prop_compose! {
+        /// Generate an arbitrary zsa note
+        pub fn arb_zsa_note(ik: IssueValidatingKey<ZSASchnorr>, asset_desc_hash: [u8; 32])(
+            recipient in arb_address(),
+            value in arb_note_value(),
+            rho in arb_nullifier().prop_map(Rho::from_nf_old),
+            rseed in arb_rseed(),
+        ) -> Note {
+            use crate::note::AssetId;
+            Note {
+                recipient,
+                value,
+                asset: AssetBase::custom(&AssetId::new_v0(&ik, &asset_desc_hash)),
+                rho: Some(rho),
+                rseed,
+                rseed_split_note: CtOption::new(rseed, 0u8.into()),
             }
         }
     }

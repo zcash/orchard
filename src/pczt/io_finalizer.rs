@@ -1,11 +1,12 @@
+use core::fmt;
+
 use alloc::vec::Vec;
 
 use rand::{CryptoRng, RngCore};
 
 use crate::{
-    keys::SpendAuthorizingKey,
-    primitives::redpallas,
-    value::{ValueCommitTrapdoor, ValueCommitment},
+    bundle::derive_bvk_raw, keys::SpendAuthorizingKey, primitives::redpallas,
+    value::ValueCommitTrapdoor,
 };
 
 use super::SignerError;
@@ -30,13 +31,15 @@ impl super::Bundle {
         let bsk = rcvs.into_iter().sum::<ValueCommitTrapdoor>().into_bsk();
 
         // Verify that bsk and bvk are consistent.
-        let bvk = (self
-            .actions
-            .iter()
-            .map(|a| a.cv_net())
-            .sum::<ValueCommitment>()
-            - ValueCommitment::derive(self.value_sum, ValueCommitTrapdoor::zero()))
-        .into_bvk();
+        let bvk = derive_bvk_raw(
+            &self
+                .actions
+                .iter()
+                .map(|a| a.cv_net().clone())
+                .collect::<Vec<_>>(),
+            self.value_sum,
+            &[],
+        );
         if redpallas::VerificationKey::from(&bsk) != bvk {
             return Err(IoFinalizerError::ValueCommitMismatch);
         }
@@ -60,6 +63,7 @@ impl super::Bundle {
 
 /// Errors that can occur while finalizing the I/O for a PCZT bundle.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum IoFinalizerError {
     /// An error occurred while signing a dummy spend.
     DummySignature(SignerError),
@@ -69,3 +73,24 @@ pub enum IoFinalizerError {
     /// inconsistent.
     ValueCommitMismatch,
 }
+
+impl fmt::Display for IoFinalizerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IoFinalizerError::DummySignature(e) => {
+                write!(f, "An error occurred while signing a dummy spend: {e}")
+            }
+            IoFinalizerError::MissingValueCommitTrapdoor => write!(
+                f,
+                "The IO Finalizer role requires all `rcv` fields to be set"
+            ),
+            IoFinalizerError::ValueCommitMismatch => write!(
+                f,
+                "`cv_net`, `rcv`, and `value_sum` within the Orchard bundle are inconsistent."
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for IoFinalizerError {}

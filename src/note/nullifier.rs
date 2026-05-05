@@ -2,10 +2,11 @@ use group::{ff::PrimeField, Group};
 use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveExt, pallas};
 use rand::RngCore;
-use subtle::{ConstantTimeEq, CtOption};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use super::NoteCommitment;
 use crate::{
+    constants::nullifier_l::nullifier_l,
     keys::NullifierDerivingKey,
     spec::{extract_p, mod_r_p},
 };
@@ -54,10 +55,17 @@ impl Nullifier {
         rho: pallas::Base,
         psi: pallas::Base,
         cm: NoteCommitment,
+        is_split_note: Choice,
     ) -> Self {
         let k = pallas::Point::hash_to_curve("z.cash:Orchard")(b"K");
 
-        Nullifier(extract_p(&(k * mod_r_p(nk.prf_nf(rho) + psi) + cm.0)))
+        let nullifier = k * mod_r_p(nk.prf_nf(rho) + psi) + cm.0;
+        let split_note_nullifier = nullifier + nullifier_l();
+
+        let selected_nullifier =
+            pallas::Point::conditional_select(&nullifier, &split_note_nullifier, is_split_note);
+
+        Nullifier(extract_p(&(selected_nullifier)))
     }
 }
 
