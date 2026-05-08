@@ -17,12 +17,17 @@ use crate::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
     },
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho},
+    note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
+
+/// Lead byte for quantum-recoverable Orchard note plaintexts.
+/// This signals that rcm was derived binding all note fields.
+/// Matches the draft ZIP (0x03 = v3/QR note plaintext).
+pub const QR_NOTE_PLAINTEXT_LEAD_BYTE: u8 = 0x03;
 
 /// Defined in [Zcash Protocol Spec § 5.4.2: Pseudo Random Functions][concreteprfs].
 ///
@@ -59,10 +64,12 @@ where
 {
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
-    // Check note plaintext version
-    if plaintext[0] != 0x02 {
-        return None;
-    }
+    // Check note plaintext version — accept both original and QR
+    let note_version = match plaintext[0] {
+        0x02 => NoteVersion::V2,
+        b if b == QR_NOTE_PLAINTEXT_LEAD_BYTE => NoteVersion::V3_Qr,
+        _ => return None,
+    };
 
     // The unwraps below are guaranteed to succeed by the assertion above
     let diversifier = Diversifier::from_bytes(plaintext[1..12].try_into().unwrap());
@@ -75,7 +82,13 @@ where
     let pk_d = get_pk_d(&diversifier);
 
     let recipient = Address::from_parts(diversifier, pk_d);
-    let note = Option::from(Note::from_parts(recipient, value, domain.rho, rseed))?;
+    let note = Option::from(Note::from_parts_versioned(
+        recipient,
+        value,
+        domain.rho,
+        rseed,
+        note_version,
+    ))?;
     Some((note, recipient))
 }
 
@@ -169,7 +182,10 @@ impl Domain for OrchardDomain {
 
     fn note_plaintext_bytes(note: &Self::Note, memo: &Self::Memo) -> NotePlaintextBytes {
         let mut np = [0; NOTE_PLAINTEXT_SIZE];
-        np[0] = 0x02;
+        np[0] = match note.version() {
+            NoteVersion::V2 => 0x02,
+            NoteVersion::V3_Qr => QR_NOTE_PLAINTEXT_LEAD_BYTE,
+        };
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
         np[20..52].copy_from_slice(note.rseed().as_bytes());

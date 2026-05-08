@@ -10,7 +10,7 @@ use subtle::CtOption;
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
-    spec::{to_base, to_scalar, NonZeroPallasScalar, PrfExpand},
+    spec::{to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
     Address,
 };
@@ -22,6 +22,23 @@ pub mod commitment;
 #[cfg(feature = "unstable-voting-circuits")]
 pub use self::commitment::NoteCommitTrapdoor;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
+
+/// `LEBS2OSP_256(repr_P(V^Orchard))`, used as `AssetBase` in ZIP 2005 QR
+/// rcm derivation.
+const ORCHARD_ASSET_BASE_BYTES: [u8; 32] =
+    crate::constants::fixed_bases::value_commit_v::GENERATOR.0;
+
+/// Note plaintext version, determining rcm derivation strategy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub enum NoteVersion {
+    /// Original Orchard (lead byte 0x02). rcm = PRF(rseed, [0x05] || rho)
+    V2,
+    /// Quantum-recoverable (lead byte 0x03).
+    ///
+    /// rcm = PRF(rseed, [0x0B, 0x03] || g_d || pk_d || v || rho || psi || AssetBase)
+    V3_Qr,
+}
 
 #[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod nullifier;
@@ -134,6 +151,51 @@ impl RandomSeed {
             PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
         ))
     }
+
+    /// QR rcm derivation per [ZIP 2005].
+    ///
+    /// Binds rcm to all note fields for post-quantum commitment binding:
+    ///   pre_rcm = [0x0B, lead_byte] || g_d || pk_d || v_le || rho || psi || AssetBase
+    ///   rcm = ToScalar(PRF^expand(rseed, pre_rcm))
+    ///       = ToScalar(BLAKE2b-512("Zcash_ExpandSeed", rseed || pre_rcm))
+    ///
+    /// [ZIP 2005]: https://zips.z.cash/zip-2005
+    pub(crate) fn qr_rcm(
+        &self,
+        rho: &Rho,
+        g_d: &NonIdentityPallasPoint,
+        pk_d: &NonIdentityPallasPoint,
+        value: u64,
+        psi: &pallas::Base,
+    ) -> commitment::NoteCommitTrapdoor {
+        use crate::note_encryption::QR_NOTE_PLAINTEXT_LEAD_BYTE;
+        use blake2b_simd::Params;
+
+        // BLAKE2b-512 with personalization "Zcash_ExpandSeed" (= PRF^expand)
+        let mut h = Params::new()
+            .hash_length(64)
+            .personal(b"Zcash_ExpandSeed")
+            .to_state();
+        // rseed: raw bytes (32 bytes)
+        h.update(&self.0);
+        // domain separator: [0x0B, lead_byte] (2 bytes, literal)
+        h.update(&[0x0B, QR_NOTE_PLAINTEXT_LEAD_BYTE]);
+        // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
+        h.update(&g_d.to_bytes());
+        // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
+        h.update(&pk_d.to_bytes());
+        // v: I2LEOSP_64(v) — unsigned 64-bit little-endian (8 bytes)
+        h.update(&value.to_le_bytes());
+        // rho: LEBS2OSP_256(repr_P(rho)) — Pallas base field canonical repr (32 bytes)
+        h.update(&rho.to_bytes());
+        // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
+        h.update(&psi.to_repr());
+        // AssetBase: LEBS2OSP_256(repr_P(V^Orchard)) — compressed Pallas point (32 bytes)
+        h.update(&ORCHARD_ASSET_BASE_BYTES);
+
+        let output = *h.finalize().as_array();
+        commitment::NoteCommitTrapdoor(to_scalar(output))
+    }
 }
 
 /// A discrete amount of funds received by an address.
@@ -152,6 +214,8 @@ pub struct Note {
     rho: Rho,
     /// The seed randomness for various note components.
     rseed: RandomSeed,
+    /// The note plaintext version, determining rcm derivation strategy.
+    version: NoteVersion,
 }
 
 impl PartialEq for Note {
@@ -185,11 +249,25 @@ impl Note {
         rho: Rho,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
+        Self::from_parts_versioned(recipient, value, rho, rseed, NoteVersion::V2)
+    }
+
+    /// Creates a `Note` from its component parts with a specific version.
+    ///
+    /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
+    pub fn from_parts_versioned(
+        recipient: Address,
+        value: NoteValue,
+        rho: Rho,
+        rseed: RandomSeed,
+        version: NoteVersion,
+    ) -> CtOption<Self> {
         let note = Note {
             recipient,
             value,
             rho,
             rseed,
+            version,
         };
         CtOption::new(note, note.commitment_inner().is_some())
     }
@@ -206,8 +284,25 @@ impl Note {
         rho: Rho,
         mut rng: impl RngCore,
     ) -> Self {
+        Self::new_versioned(recipient, value, rho, &mut rng, NoteVersion::V2)
+    }
+
+    /// Generates a new note with a specific version.
+    pub(crate) fn new_versioned(
+        recipient: Address,
+        value: NoteValue,
+        rho: Rho,
+        mut rng: impl RngCore,
+        version: NoteVersion,
+    ) -> Self {
         loop {
-            let note = Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho));
+            let note = Note::from_parts_versioned(
+                recipient,
+                value,
+                rho,
+                RandomSeed::random(&mut rng, &rho),
+                version,
+            );
             if note.is_some().into() {
                 break note.unwrap();
             }
@@ -228,11 +323,12 @@ impl Note {
         let fvk: FullViewingKey = (&sk).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let note = Note::new(
+        let note = Note::new_versioned(
             recipient,
             NoteValue::ZERO,
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
+            NoteVersion::V2,
         );
 
         (sk, fvk, note)
@@ -263,6 +359,11 @@ impl Note {
         self.rho
     }
 
+    /// Returns the version of this note.
+    pub fn version(&self) -> NoteVersion {
+        self.version
+    }
+
     /// Derives the commitment to this note.
     ///
     /// Defined in [Zcash Protocol Spec § 3.2: Notes][notes].
@@ -284,15 +385,20 @@ impl Note {
     /// [notes]: https://zips.z.cash/protocol/nu5.pdf#notes
     fn commitment_inner(&self) -> CtOption<NoteCommitment> {
         let g_d = self.recipient.g_d();
+        let g_d_bytes = g_d.to_bytes();
+        let pk_d = self.recipient.pk_d().inner();
+        let pk_d_bytes = pk_d.to_bytes();
+        let psi = self.rseed.psi(&self.rho);
 
-        NoteCommitment::derive(
-            g_d.to_bytes(),
-            self.recipient.pk_d().to_bytes(),
-            self.value,
-            self.rho.0,
-            self.rseed.psi(&self.rho),
-            self.rseed.rcm(&self.rho),
-        )
+        let rcm = match self.version {
+            NoteVersion::V2 => self.rseed.rcm(&self.rho),
+            NoteVersion::V3_Qr => {
+                self.rseed
+                    .qr_rcm(&self.rho, &g_d, &pk_d, self.value.inner(), &psi)
+            }
+        };
+
+        NoteCommitment::derive(g_d_bytes, pk_d_bytes, self.value, self.rho.0, psi, rcm)
     }
 
     /// Derives the nullifier for this note.
@@ -338,7 +444,7 @@ pub mod testing {
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
 
-    use super::{Note, RandomSeed, Rho};
+    use super::{Note, NoteVersion, RandomSeed, Rho};
 
     prop_compose! {
         /// Generate an arbitrary random seed
@@ -359,7 +465,227 @@ pub mod testing {
                 value,
                 rho,
                 rseed,
+                version: NoteVersion::V2,
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    extern crate std;
+    use std::println;
+
+    use crate::keys::{FullViewingKey, Scope, SpendingKey};
+    use ff::PrimeField;
+    use group::GroupEncoding;
+
+    #[test]
+    fn qr_asset_base_encoding_matches_value_commitment_generator() {
+        assert_eq!(
+            ORCHARD_ASSET_BASE_BYTES,
+            crate::constants::fixed_bases::value_commit_v::generator().to_bytes(),
+        );
+    }
+
+    #[test]
+    fn qr_rcm_differs_from_old_rcm() {
+        // Use the first key test vector inputs to construct a note
+        let tv = &crate::test_vectors::keys::test_vectors()[0];
+
+        let sk = SpendingKey::from_bytes(tv.sk).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let addr = fvk.address_at(0u32, Scope::External);
+        let rho = Rho::from_bytes(&tv.note_rho).unwrap();
+        let rseed = RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap();
+
+        let g_d = addr.g_d();
+        let pk_d = addr.pk_d().inner();
+        let g_d_bytes = g_d.to_bytes();
+        let pk_d_bytes = pk_d.to_bytes();
+
+        // Old derivation: rcm = ToScalar(PRF^expand(rseed, 0x05 || rho))
+        let rcm_old = rseed.rcm(&rho);
+
+        // New QR derivation using promoted RandomSeed::qr_rcm()
+        let psi = rseed.psi(&rho);
+        let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, tv.note_v, &psi);
+
+        // Capture scalar repr before moving into derive
+        let rcm_old_repr = rcm_old.0.to_repr();
+        let rcm_new_repr = rcm_new.0.to_repr();
+
+        // The two rcm values MUST differ (different domain sep and inputs)
+        assert_ne!(rcm_old_repr, rcm_new_repr);
+
+        // Old commitment matches the known test vector
+        let rho_inner = rho.into_inner();
+        let cmx_old = NoteCommitment::derive(
+            g_d_bytes,
+            pk_d_bytes,
+            NoteValue::from_raw(tv.note_v),
+            rho_inner,
+            psi,
+            rcm_old,
+        )
+        .unwrap();
+        let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
+        assert_eq!(
+            cmx_old_bytes, tv.note_cmx,
+            "old cmx must match known test vector"
+        );
+
+        // QR commitment uses same Sinsemilla structure, just different rcm
+        let cmx_qr = NoteCommitment::derive(
+            g_d_bytes,
+            pk_d_bytes,
+            NoteValue::from_raw(tv.note_v),
+            rho_inner,
+            psi,
+            rcm_new,
+        )
+        .unwrap();
+        let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
+
+        // QR commitment must differ from old commitment
+        assert_ne!(cmx_old_bytes, cmx_qr_bytes);
+    }
+
+    #[test]
+    fn qr_rcm_generate_test_vectors() {
+        // Generate QR test vectors from the first 3 key test vectors
+        let key_tvs = crate::test_vectors::keys::test_vectors();
+
+        for (i, tv) in key_tvs.iter().take(3).enumerate() {
+            let sk = SpendingKey::from_bytes(tv.sk).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let addr = fvk.address_at(0u32, Scope::External);
+            let rho = Rho::from_bytes(&tv.note_rho).unwrap();
+            let rseed = RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap();
+
+            let g_d = addr.g_d();
+            let pk_d = addr.pk_d().inner();
+            let g_d_bytes = g_d.to_bytes();
+            let pk_d_bytes = pk_d.to_bytes();
+            let rho_bytes = rho.to_bytes();
+
+            let rcm_old = rseed.rcm(&rho);
+            let psi = rseed.psi(&rho);
+            let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, tv.note_v, &psi);
+
+            let rcm_old_repr = rcm_old.0.to_repr();
+            let rcm_new_repr = rcm_new.0.to_repr();
+            let rho_inner = rho.into_inner();
+            let cmx_old = NoteCommitment::derive(
+                g_d_bytes,
+                pk_d_bytes,
+                NoteValue::from_raw(tv.note_v),
+                rho_inner,
+                psi,
+                rcm_old,
+            )
+            .unwrap();
+            let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
+
+            let cmx_qr = NoteCommitment::derive(
+                g_d_bytes,
+                pk_d_bytes,
+                NoteValue::from_raw(tv.note_v),
+                rho_inner,
+                psi,
+                rcm_new,
+            )
+            .unwrap();
+            let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
+
+            println!("        TestVector {{");
+            println!("            d: {:02x?},", addr.diversifier().as_array());
+            println!("            pk_d: {:02x?},", pk_d_bytes);
+            println!("            v: {},", tv.note_v);
+            println!("            rho: {:02x?},", rho_bytes);
+            println!("            rseed: {:02x?},", tv.note_rseed);
+            println!("            g_d: {:02x?},", g_d_bytes);
+            println!("            rcm_old: {:02x?},", rcm_old_repr);
+            println!("            rcm_qr: {:02x?},", rcm_new_repr);
+            println!("            cmx_old: {:02x?},", cmx_old_bytes);
+            println!("            cmx_qr: {:02x?},", cmx_qr_bytes);
+            println!("        }},");
+
+            // Verify old cmx matches known value
+            assert_eq!(cmx_old_bytes, tv.note_cmx, "vector {i}: old cmx must match");
+        }
+    }
+
+    #[test]
+    fn qr_rcm_verify_stored_vectors() {
+        // Verify the stored test vectors in qr_note.rs are correct
+        let qr_tvs = crate::test_vectors::qr_note::test_vectors();
+        let key_tvs = crate::test_vectors::keys::test_vectors();
+
+        for (i, (qr_tv, key_tv)) in qr_tvs.iter().zip(key_tvs.iter()).enumerate() {
+            let sk = SpendingKey::from_bytes(key_tv.sk).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let addr = fvk.address_at(0u32, Scope::External);
+            let rho = Rho::from_bytes(&key_tv.note_rho).unwrap();
+            let rseed = RandomSeed::from_bytes(key_tv.note_rseed, &rho).unwrap();
+
+            let g_d = addr.g_d();
+            let pk_d = addr.pk_d().inner();
+            let g_d_bytes = g_d.to_bytes();
+            let pk_d_bytes = pk_d.to_bytes();
+
+            // Verify address components match
+            assert_eq!(g_d_bytes, qr_tv.g_d, "vector {i}: g_d mismatch");
+            assert_eq!(pk_d_bytes, qr_tv.pk_d, "vector {i}: pk_d mismatch");
+
+            // Verify old rcm
+            let rcm_old = rseed.rcm(&rho);
+            assert_eq!(
+                rcm_old.0.to_repr(),
+                qr_tv.rcm_old,
+                "vector {i}: rcm_old mismatch"
+            );
+
+            // Verify QR rcm using promoted RandomSeed::qr_rcm()
+            let psi = rseed.psi(&rho);
+            let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, key_tv.note_v, &psi);
+            assert_eq!(
+                rcm_new.0.to_repr(),
+                qr_tv.rcm_qr,
+                "vector {i}: rcm_qr mismatch"
+            );
+            let rho_inner = rho.into_inner();
+
+            let cmx_old = NoteCommitment::derive(
+                g_d_bytes,
+                pk_d_bytes,
+                NoteValue::from_raw(key_tv.note_v),
+                rho_inner,
+                psi,
+                rcm_old,
+            )
+            .unwrap();
+            assert_eq!(
+                ExtractedNoteCommitment::from(cmx_old).to_bytes(),
+                qr_tv.cmx_old,
+                "vector {i}: cmx_old mismatch"
+            );
+
+            let cmx_qr = NoteCommitment::derive(
+                g_d_bytes,
+                pk_d_bytes,
+                NoteValue::from_raw(key_tv.note_v),
+                rho_inner,
+                psi,
+                rcm_new,
+            )
+            .unwrap();
+            assert_eq!(
+                ExtractedNoteCommitment::from(cmx_qr).to_bytes(),
+                qr_tv.cmx_qr,
+                "vector {i}: cmx_qr mismatch"
+            );
         }
     }
 }

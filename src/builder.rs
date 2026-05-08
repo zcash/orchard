@@ -16,7 +16,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
+    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -335,10 +335,13 @@ pub struct OutputInfo {
     recipient: Address,
     value: NoteValue,
     memo: [u8; 512],
+    note_version: NoteVersion,
 }
 
 impl OutputInfo {
     /// Constructs a new OutputInfo from its constituent parts.
+    /// This defaults to NoteVersion::V2, for compatability with existing wallets.
+    /// After a coordinated upgrade height for default sends being QR is decided upon, this will be updated to NoteVersion::Qr.
     pub fn new(
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
@@ -350,6 +353,24 @@ impl OutputInfo {
             recipient,
             value,
             memo,
+            note_version: NoteVersion::V2,
+        }
+    }
+
+    /// Constructs a new OutputInfo with a specific note version.
+    pub fn new_versioned(
+        ovk: Option<OutgoingViewingKey>,
+        recipient: Address,
+        value: NoteValue,
+        memo: [u8; 512],
+        note_version: NoteVersion,
+    ) -> Self {
+        Self {
+            ovk,
+            recipient,
+            value,
+            memo,
+            note_version,
         }
     }
 
@@ -375,7 +396,8 @@ impl OutputInfo {
         mut rng: impl RngCore,
     ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext) {
         let rho = Rho::from_nf_old(nf_old);
-        let note = Note::new(self.recipient, self.value, rho, &mut rng);
+        let note =
+            Note::new_versioned(self.recipient, self.value, rho, &mut rng, self.note_version);
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
@@ -661,6 +683,8 @@ impl Builder {
     }
 
     /// Adds an address which will receive funds in this transaction.
+    /// Defaults to the note version that is standard in the current protocol;
+    /// this default may change across wallet SDK updates as the protocol evolves.
     pub fn add_output(
         &mut self,
         ovk: Option<OutgoingViewingKey>,
@@ -668,13 +692,31 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
+        self.add_versioned_output(ovk, recipient, value, memo, NoteVersion::V2)
+    }
+
+    /// Adds an address which will receive funds in this transaction,
+    /// using the specified note version for rcm derivation.
+    pub fn add_versioned_output(
+        &mut self,
+        ovk: Option<OutgoingViewingKey>,
+        recipient: Address,
+        value: NoteValue,
+        memo: [u8; 512],
+        note_version: NoteVersion,
+    ) -> Result<(), OutputError> {
         let flags = self.bundle_type.flags();
         if !flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
 
-        self.outputs
-            .push(OutputInfo::new(ovk, recipient, value, memo));
+        self.outputs.push(OutputInfo::new_versioned(
+            ovk,
+            recipient,
+            value,
+            memo,
+            note_version,
+        ));
 
         Ok(())
     }
