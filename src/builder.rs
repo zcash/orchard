@@ -344,8 +344,7 @@ pub struct OutputInfo {
 impl OutputInfo {
     /// Constructs a new OutputInfo from its constituent parts.
     ///
-    /// This uses [`DEFAULT_NOTE_VERSION`]. This constructor may be changed in a
-    /// future breaking upgrade to use [`NoteVersion::V3`].
+    /// This uses [`DEFAULT_NOTE_VERSION`].
     pub fn new(
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,

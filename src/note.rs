@@ -43,7 +43,8 @@ pub enum NoteVersion {
 /// The note version produced by constructors that do not take an explicit
 /// [`NoteVersion`].
 ///
-/// This may be changed in a future breaking upgrade.
+/// This is planned to be updated to [`NoteVersion::V3`] once V3 parsing is
+/// sufficiently integrated into wallets.
 pub const DEFAULT_NOTE_VERSION: NoteVersion = NoteVersion::V2;
 
 #[cfg(not(feature = "unstable-voting-circuits"))]
