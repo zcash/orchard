@@ -3,18 +3,26 @@
 //!
 //! Per ZIP 2005, the quantum recoverable rcm derivation changes from:
 //!
-//! ```text
-//!   rcm = ToScalar(PRF^expand(rseed, [0x05] || rho))
-//! ```
+//! $$
+//! \mathsf{rcm} =
+//! \mathsf{ToScalar}(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}(
+//! [\mathtt{0x05}] \mathbin\Vert \rho))
+//! $$
 //!
 //! to:
 //!
-//! ```text
-//!   pre_rcm =
-//!       [0x0B, LEAD_BYTE] || g_d || pk_d || le_bytes(v)
-//!       || rho || psi || AssetBase
-//!   rcm = ToScalar(PRF^expand(rseed, pre_rcm))
-//! ```
+//! $$
+//! \mathsf{pre}\_{\mathsf{rcm}} =
+//! [\mathtt{0x0B}, \mathsf{leadByte}] \mathbin\Vert \mathsf{g}\_{\mathsf{d}}
+//! \mathbin\Vert \mathsf{pk}\_{\mathsf{d}} \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
+//! \mathbin\Vert \rho \mathbin\Vert \psi \mathbin\Vert \mathsf{AssetBase}
+//! $$
+//!
+//! $$
+//! \mathsf{rcm} =
+//! \mathsf{ToScalar}(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}(
+//! \mathsf{pre}\_{\mathsf{rcm}}))
+//! $$
 //!
 //! This binds rcm to all note fields, making it an unpredictable function of the full
 //! note plaintext. A quantum adversary who breaks the discrete log in the Sinsemilla
@@ -24,10 +32,12 @@
 //! PRF^expand is BLAKE2b-512 with personalization "Zcash_ExpandSeed".
 //! The full preimage is:
 //!
-//! ```text
-//!   rseed || [0x0B, LEAD_BYTE] || g_d || pk_d || v_le || rho || psi
-//!   || AssetBase
-//! ```
+//! $$
+//! \mathsf{rseed} \mathbin\Vert [\mathtt{0x0B}, \mathsf{leadByte}]
+//! \mathbin\Vert \mathsf{g}\_{\mathsf{d}} \mathbin\Vert \mathsf{pk}\_{\mathsf{d}}
+//! \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v}) \mathbin\Vert \rho
+//! \mathbin\Vert \psi \mathbin\Vert \mathsf{AssetBase}
+//! $$
 //!
 //! Lead byte 0x03 denotes the quantum recoverable note version.
 //!
@@ -43,9 +53,11 @@ use crate::note_encryption::QR_NOTE_PLAINTEXT_LEAD_BYTE;
 ///
 /// The PRF input is:
 ///
-/// ```text
-/// [0x0B, LEAD_BYTE] || g_d || pk_d || v || rho || psi || AssetBase
-/// ```
+/// $$
+/// [\mathtt{0x0B}, \mathsf{leadByte}] \mathbin\Vert \mathsf{g}\_{\mathsf{d}}
+/// \mathbin\Vert \mathsf{pk}\_{\mathsf{d}} \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
+/// \mathbin\Vert \rho \mathbin\Vert \psi \mathbin\Vert \mathsf{AssetBase}
+/// $$
 pub(crate) const QR_RCM_DOMAIN: [u8; 2] = [0x0B, QR_NOTE_PLAINTEXT_LEAD_BYTE];
 
 pub(crate) struct TestVector {
