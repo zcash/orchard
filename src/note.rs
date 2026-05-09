@@ -163,12 +163,18 @@ impl RandomSeed {
     ///
     /// Binds rcm to all note fields for post-quantum commitment binding:
     ///
-    /// ```text
-    /// pre_rcm =
-    ///     [0x0B, lead_byte] || g_d || pk_d || v_le || rho || psi || AssetBase
-    /// rcm = ToScalar(PRF^expand(rseed, pre_rcm))
-    ///     = ToScalar(BLAKE2b-512("Zcash_ExpandSeed", rseed || pre_rcm))
-    /// ```
+    /// $$
+    /// \mathsf{pre}\_{\mathsf{rcm}} =
+    /// [\mathtt{0x0B}, \mathsf{leadByte}] \mathbin\Vert \mathsf{g}\_{\mathsf{d}}
+    /// \mathbin\Vert \mathsf{pk}\_{\mathsf{d}} \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
+    /// \mathbin\Vert \rho \mathbin\Vert \psi \mathbin\Vert \mathsf{AssetBase}
+    /// $$
+    ///
+    /// $$
+    /// \mathsf{rcm} =
+    /// \mathsf{ToScalar}(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}(
+    /// \mathsf{pre}\_{\mathsf{rcm}}))
+    /// $$
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
     fn qr_rcm(
