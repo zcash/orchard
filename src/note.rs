@@ -23,22 +23,28 @@ pub mod commitment;
 pub use self::commitment::NoteCommitTrapdoor;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 
-/// `LEBS2OSP_256(repr_P(V^Orchard))`, used as `AssetBase` in ZIP 2005 QR
-/// rcm derivation.
+/// `LEBS2OSP_256(repr_P(V^Orchard))`, used as `AssetBase` in ZIP 2005
+/// quantum recoverable rcm derivation.
 const ORCHARD_ASSET_BASE_BYTES: [u8; 32] =
     crate::constants::fixed_bases::value_commit_v::GENERATOR.0;
 
-/// Note plaintext version, determining rcm derivation strategy.
+/// Note plaintext version.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
 pub enum NoteVersion {
-    /// Original Orchard (lead byte 0x02). rcm = PRF(rseed, [0x05] || rho)
+    /// The original Orchard note plaintext version.
     V2,
-    /// Quantum-recoverable (lead byte 0x03).
+    /// The quantum recoverable Orchard note plaintext version defined in
+    /// [ZIP 2005].
     ///
-    /// rcm = PRF(rseed, [0x0B, 0x03] || g_d || pk_d || v || rho || psi || AssetBase)
-    V3_Qr,
+    /// [ZIP 2005]: https://zips.z.cash/zip-2005
+    V3,
 }
+
+/// The note version produced by constructors that do not take an explicit
+/// [`NoteVersion`].
+///
+/// This may be changed in a future breaking upgrade.
+pub const DEFAULT_NOTE_VERSION: NoteVersion = NoteVersion::V2;
 
 #[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod nullifier;
@@ -152,15 +158,19 @@ impl RandomSeed {
         ))
     }
 
-    /// QR rcm derivation per [ZIP 2005].
+    /// Quantum recoverable rcm derivation per [ZIP 2005].
     ///
     /// Binds rcm to all note fields for post-quantum commitment binding:
-    ///   pre_rcm = [0x0B, lead_byte] || g_d || pk_d || v_le || rho || psi || AssetBase
-    ///   rcm = ToScalar(PRF^expand(rseed, pre_rcm))
-    ///       = ToScalar(BLAKE2b-512("Zcash_ExpandSeed", rseed || pre_rcm))
+    ///
+    /// ```text
+    /// pre_rcm =
+    ///     [0x0B, lead_byte] || g_d || pk_d || v_le || rho || psi || AssetBase
+    /// rcm = ToScalar(PRF^expand(rseed, pre_rcm))
+    ///     = ToScalar(BLAKE2b-512("Zcash_ExpandSeed", rseed || pre_rcm))
+    /// ```
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
-    pub(crate) fn qr_rcm(
+    fn qr_rcm(
         &self,
         rho: &Rho,
         g_d: &NonIdentityPallasPoint,
@@ -233,6 +243,8 @@ impl Note {
     ///
     /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
     ///
+    /// This uses [`DEFAULT_NOTE_VERSION`].
+    ///
     /// # Caveats
     ///
     /// This low-level constructor enforces that the provided arguments produce an
@@ -249,7 +261,7 @@ impl Note {
         rho: Rho,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
-        Self::from_parts_versioned(recipient, value, rho, rseed, NoteVersion::V2)
+        Self::from_parts_versioned(recipient, value, rho, rseed, DEFAULT_NOTE_VERSION)
     }
 
     /// Creates a `Note` from its component parts with a specific version.
@@ -274,6 +286,8 @@ impl Note {
 
     /// Generates a new note.
     ///
+    /// This uses [`DEFAULT_NOTE_VERSION`].
+    ///
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
@@ -284,7 +298,7 @@ impl Note {
         rho: Rho,
         mut rng: impl RngCore,
     ) -> Self {
-        Self::new_versioned(recipient, value, rho, &mut rng, NoteVersion::V2)
+        Self::new_versioned(recipient, value, rho, &mut rng, DEFAULT_NOTE_VERSION)
     }
 
     /// Generates a new note with a specific version.
@@ -328,7 +342,7 @@ impl Note {
             NoteValue::ZERO,
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
-            NoteVersion::V2,
+            DEFAULT_NOTE_VERSION,
         );
 
         (sk, fvk, note)
@@ -392,10 +406,9 @@ impl Note {
 
         let rcm = match self.version {
             NoteVersion::V2 => self.rseed.rcm(&self.rho),
-            NoteVersion::V3_Qr => {
-                self.rseed
-                    .qr_rcm(&self.rho, &g_d, &pk_d, self.value.inner(), &psi)
-            }
+            NoteVersion::V3 => self
+                .rseed
+                .qr_rcm(&self.rho, &g_d, &pk_d, self.value.inner(), &psi),
         };
 
         NoteCommitment::derive(g_d_bytes, pk_d_bytes, self.value, self.rho.0, psi, rcm)
@@ -444,7 +457,7 @@ pub mod testing {
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
 
-    use super::{Note, NoteVersion, RandomSeed, Rho};
+    use super::{Note, RandomSeed, Rho, DEFAULT_NOTE_VERSION};
 
     prop_compose! {
         /// Generate an arbitrary random seed
@@ -465,7 +478,7 @@ pub mod testing {
                 value,
                 rho,
                 rseed,
-                version: NoteVersion::V2,
+                version: DEFAULT_NOTE_VERSION,
             }
         }
     }
@@ -508,7 +521,7 @@ mod tests {
         // Old derivation: rcm = ToScalar(PRF^expand(rseed, 0x05 || rho))
         let rcm_old = rseed.rcm(&rho);
 
-        // New QR derivation using promoted RandomSeed::qr_rcm()
+        // Quantum recoverable derivation using RandomSeed::qr_rcm().
         let psi = rseed.psi(&rho);
         let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, tv.note_v, &psi);
 
@@ -536,7 +549,8 @@ mod tests {
             "old cmx must match known test vector"
         );
 
-        // QR commitment uses same Sinsemilla structure, just different rcm
+        // Quantum recoverable commitment uses the same Sinsemilla structure,
+        // just with a different rcm.
         let cmx_qr = NoteCommitment::derive(
             g_d_bytes,
             pk_d_bytes,
@@ -548,13 +562,14 @@ mod tests {
         .unwrap();
         let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
 
-        // QR commitment must differ from old commitment
+        // Quantum recoverable commitment must differ from old commitment.
         assert_ne!(cmx_old_bytes, cmx_qr_bytes);
     }
 
     #[test]
     fn qr_rcm_generate_test_vectors() {
-        // Generate QR test vectors from the first 3 key test vectors
+        // Generate quantum recoverable test vectors from the first 3 key test
+        // vectors.
         let key_tvs = crate::test_vectors::keys::test_vectors();
 
         for (i, tv) in key_tvs.iter().take(3).enumerate() {
@@ -647,7 +662,7 @@ mod tests {
                 "vector {i}: rcm_old mismatch"
             );
 
-            // Verify QR rcm using promoted RandomSeed::qr_rcm()
+            // Verify quantum recoverable rcm using RandomSeed::qr_rcm().
             let psi = rseed.psi(&rho);
             let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, key_tv.note_v, &psi);
             assert_eq!(

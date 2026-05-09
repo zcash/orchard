@@ -16,7 +16,10 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
+    note::{
+        ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext,
+        DEFAULT_NOTE_VERSION,
+    },
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -340,8 +343,9 @@ pub struct OutputInfo {
 
 impl OutputInfo {
     /// Constructs a new OutputInfo from its constituent parts.
-    /// This defaults to NoteVersion::V2, for compatability with existing wallets.
-    /// After a coordinated upgrade height for default sends being QR is decided upon, this will be updated to NoteVersion::Qr.
+    ///
+    /// This uses [`DEFAULT_NOTE_VERSION`]. This constructor may be changed in a
+    /// future breaking upgrade to use [`NoteVersion::V3`].
     pub fn new(
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
@@ -353,7 +357,7 @@ impl OutputInfo {
             recipient,
             value,
             memo,
-            note_version: NoteVersion::V2,
+            note_version: DEFAULT_NOTE_VERSION,
         }
     }
 
@@ -683,8 +687,8 @@ impl Builder {
     }
 
     /// Adds an address which will receive funds in this transaction.
-    /// Defaults to the note version that is standard in the current protocol;
-    /// this default may change across wallet SDK updates as the protocol evolves.
+    ///
+    /// This uses [`DEFAULT_NOTE_VERSION`].
     pub fn add_output(
         &mut self,
         ovk: Option<OutgoingViewingKey>,
@@ -692,7 +696,7 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        self.add_versioned_output(ovk, recipient, value, memo, NoteVersion::V2)
+        self.add_versioned_output(ovk, recipient, value, memo, DEFAULT_NOTE_VERSION)
     }
 
     /// Adds an address which will receive funds in this transaction,
