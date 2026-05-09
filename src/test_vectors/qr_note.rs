@@ -1,10 +1,20 @@
-//! Test vectors for quantum-recoverable note commitment randomness (rcm) derivation.
+//! Test vectors for quantum recoverable note commitment randomness (rcm)
+//! derivation.
 //!
-//! Per ZIP 2005, the QR rcm derivation changes from:
+//! Per ZIP 2005, the quantum recoverable rcm derivation changes from:
+//!
+//! ```text
 //!   rcm = ToScalar(PRF^expand(rseed, [0x05] || rho))
+//! ```
+//!
 //! to:
-//!   pre_rcm = [0x0B, LEAD_BYTE] || g_d || pk_d || le_bytes(v) || rho || psi || AssetBase
+//!
+//! ```text
+//!   pre_rcm =
+//!       [0x0B, LEAD_BYTE] || g_d || pk_d || le_bytes(v)
+//!       || rho || psi || AssetBase
 //!   rcm = ToScalar(PRF^expand(rseed, pre_rcm))
+//! ```
 //!
 //! This binds rcm to all note fields, making it an unpredictable function of the full
 //! note plaintext. A quantum adversary who breaks the discrete log in the Sinsemilla
@@ -13,8 +23,13 @@
 //!
 //! PRF^expand is BLAKE2b-512 with personalization "Zcash_ExpandSeed".
 //! The full preimage is:
-//!   rseed || [0x0B, LEAD_BYTE] || g_d || pk_d || v_le || rho || psi || AssetBase
-//! Lead byte 0x03 denotes the quantum-recoverable note version.
+//!
+//! ```text
+//!   rseed || [0x0B, LEAD_BYTE] || g_d || pk_d || v_le || rho || psi
+//!   || AssetBase
+//! ```
+//!
+//! Lead byte 0x03 denotes the quantum recoverable note version.
 //!
 //! These vectors are derived from the first 3 entries in the Orchard key component test
 //! vectors (https://github.com/zcash-hackworks/zcash-test-vectors/blob/master/orchard_key_components.py),
@@ -24,8 +39,13 @@ use alloc::vec::Vec;
 
 use crate::note_encryption::QR_NOTE_PLAINTEXT_LEAD_BYTE;
 
-/// Domain separator for QR rcm derivation per the ZIP.
-/// The PRF input is: [0x0B, LEAD_BYTE] || g_d || pk_d || v || rho || psi || AssetBase
+/// Domain separator for quantum recoverable rcm derivation per ZIP 2005.
+///
+/// The PRF input is:
+///
+/// ```text
+/// [0x0B, LEAD_BYTE] || g_d || pk_d || v || rho || psi || AssetBase
+/// ```
 pub(crate) const QR_RCM_DOMAIN: [u8; 2] = [0x0B, QR_NOTE_PLAINTEXT_LEAD_BYTE];
 
 pub(crate) struct TestVector {
@@ -43,11 +63,12 @@ pub(crate) struct TestVector {
     pub(crate) g_d: [u8; 32],
     /// Original rcm (current protocol): ToScalar(PRF^expand(rseed, [0x05] || rho))
     pub(crate) rcm_old: [u8; 32],
-    /// QR rcm (new derivation): ToScalar(PRF^expand(rseed, [0x0B, LEAD_BYTE] || g_d || pk_d || v || rho || psi || AssetBase))
+    /// Quantum recoverable rcm:
+    /// ToScalar(PRF^expand(rseed, [0x0B, LEAD_BYTE] || ...)).
     pub(crate) rcm_qr: [u8; 32],
     /// Note commitment (cmx) using original rcm
     pub(crate) cmx_old: [u8; 32],
-    /// Note commitment (cmx) using QR rcm
+    /// Note commitment (cmx) using quantum recoverable rcm
     pub(crate) cmx_qr: [u8; 32],
 }
 
