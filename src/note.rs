@@ -24,7 +24,11 @@ pub use self::commitment::NoteCommitTrapdoor;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
 
 /// `LEBS2OSP_256(repr_P(V^Orchard))`, used as `AssetBase` in ZIP 2005
-/// quantum recoverable rcm derivation.
+/// quantum-recoverable rcm derivation.
+///
+/// This extracts the $x$-coordinate serialization of $V^\text{Orchard}$ and
+/// interprets it as a compressed Pallas point encoding. This matches ZIP 2005
+/// because the sign bit of the $y$-coordinate for this base is zero.
 const ORCHARD_ASSET_BASE_BYTES: [u8; 32] =
     crate::constants::fixed_bases::value_commit_v::GENERATOR.0;
 
@@ -33,7 +37,7 @@ const ORCHARD_ASSET_BASE_BYTES: [u8; 32] =
 pub enum NoteVersion {
     /// The original Orchard note plaintext version.
     V2,
-    /// The quantum recoverable Orchard note plaintext version defined in
+    /// The quantum-recoverable Orchard note plaintext version defined in
     /// [ZIP 2005].
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
@@ -159,7 +163,7 @@ impl RandomSeed {
         ))
     }
 
-    /// Quantum recoverable rcm derivation per [ZIP 2005].
+    /// Quantum-recoverable rcm derivation per [ZIP 2005].
     ///
     /// Binds rcm to all note fields for post-quantum commitment binding:
     ///
@@ -268,13 +272,13 @@ impl Note {
         rho: Rho,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
-        Self::from_parts_versioned(recipient, value, rho, rseed, DEFAULT_NOTE_VERSION)
+        Self::from_parts_with_version(recipient, value, rho, rseed, DEFAULT_NOTE_VERSION)
     }
 
     /// Creates a `Note` from its component parts with a specific version.
     ///
     /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
-    pub fn from_parts_versioned(
+    pub fn from_parts_with_version(
         recipient: Address,
         value: NoteValue,
         rho: Rho,
@@ -305,11 +309,11 @@ impl Note {
         rho: Rho,
         mut rng: impl RngCore,
     ) -> Self {
-        Self::new_versioned(recipient, value, rho, &mut rng, DEFAULT_NOTE_VERSION)
+        Self::new_with_version(recipient, value, rho, &mut rng, DEFAULT_NOTE_VERSION)
     }
 
-    /// Generates a new note with a specific version.
-    pub(crate) fn new_versioned(
+    /// Generates a new note with a specified [`NoteVersion`].
+    pub(crate) fn new_with_version(
         recipient: Address,
         value: NoteValue,
         rho: Rho,
@@ -317,7 +321,7 @@ impl Note {
         version: NoteVersion,
     ) -> Self {
         loop {
-            let note = Note::from_parts_versioned(
+            let note = Note::from_parts_with_version(
                 recipient,
                 value,
                 rho,
@@ -344,7 +348,7 @@ impl Note {
         let fvk: FullViewingKey = (&sk).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let note = Note::new_versioned(
+        let note = Note::new_with_version(
             recipient,
             NoteValue::ZERO,
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
@@ -494,9 +498,6 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate std;
-    use std::println;
-
     use crate::keys::{FullViewingKey, Scope, SpendingKey};
     use ff::PrimeField;
     use group::GroupEncoding;
@@ -528,7 +529,7 @@ mod tests {
         // Old derivation: rcm = ToScalar(PRF^expand(rseed, 0x05 || rho))
         let rcm_old = rseed.rcm(&rho);
 
-        // Quantum recoverable derivation using RandomSeed::qr_rcm().
+        // Quantum-recoverable derivation using RandomSeed::qr_rcm().
         let psi = rseed.psi(&rho);
         let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, tv.note_v, &psi);
 
@@ -556,7 +557,7 @@ mod tests {
             "old cmx must match known test vector"
         );
 
-        // Quantum recoverable commitment uses the same Sinsemilla structure,
+        // Quantum-recoverable commitment uses the same Sinsemilla structure,
         // just with a different rcm.
         let cmx_qr = NoteCommitment::derive(
             g_d_bytes,
@@ -569,79 +570,13 @@ mod tests {
         .unwrap();
         let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
 
-        // Quantum recoverable commitment must differ from old commitment.
+        // Quantum-recoverable commitment must differ from old commitment.
         assert_ne!(cmx_old_bytes, cmx_qr_bytes);
     }
 
     #[test]
-    fn qr_rcm_generate_test_vectors() {
-        // Generate quantum recoverable test vectors from the first 3 key test
-        // vectors.
-        let key_tvs = crate::test_vectors::keys::test_vectors();
-
-        for (i, tv) in key_tvs.iter().take(3).enumerate() {
-            let sk = SpendingKey::from_bytes(tv.sk).unwrap();
-            let fvk = FullViewingKey::from(&sk);
-            let addr = fvk.address_at(0u32, Scope::External);
-            let rho = Rho::from_bytes(&tv.note_rho).unwrap();
-            let rseed = RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap();
-
-            let g_d = addr.g_d();
-            let pk_d = addr.pk_d().inner();
-            let g_d_bytes = g_d.to_bytes();
-            let pk_d_bytes = pk_d.to_bytes();
-            let rho_bytes = rho.to_bytes();
-
-            let rcm_old = rseed.rcm(&rho);
-            let psi = rseed.psi(&rho);
-            let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, tv.note_v, &psi);
-
-            let rcm_old_repr = rcm_old.0.to_repr();
-            let rcm_new_repr = rcm_new.0.to_repr();
-            let rho_inner = rho.into_inner();
-            let cmx_old = NoteCommitment::derive(
-                g_d_bytes,
-                pk_d_bytes,
-                NoteValue::from_raw(tv.note_v),
-                rho_inner,
-                psi,
-                rcm_old,
-            )
-            .unwrap();
-            let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
-
-            let cmx_qr = NoteCommitment::derive(
-                g_d_bytes,
-                pk_d_bytes,
-                NoteValue::from_raw(tv.note_v),
-                rho_inner,
-                psi,
-                rcm_new,
-            )
-            .unwrap();
-            let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
-
-            println!("        TestVector {{");
-            println!("            d: {:02x?},", addr.diversifier().as_array());
-            println!("            pk_d: {:02x?},", pk_d_bytes);
-            println!("            v: {},", tv.note_v);
-            println!("            rho: {:02x?},", rho_bytes);
-            println!("            rseed: {:02x?},", tv.note_rseed);
-            println!("            g_d: {:02x?},", g_d_bytes);
-            println!("            rcm_old: {:02x?},", rcm_old_repr);
-            println!("            rcm_qr: {:02x?},", rcm_new_repr);
-            println!("            cmx_old: {:02x?},", cmx_old_bytes);
-            println!("            cmx_qr: {:02x?},", cmx_qr_bytes);
-            println!("        }},");
-
-            // Verify old cmx matches known value
-            assert_eq!(cmx_old_bytes, tv.note_cmx, "vector {i}: old cmx must match");
-        }
-    }
-
-    #[test]
     fn qr_rcm_verify_stored_vectors() {
-        // Verify the stored test vectors in qr_note.rs are correct
+        // Verify the stored regression cases in qr_note.rs are correct.
         let qr_tvs = crate::test_vectors::qr_note::test_vectors();
         let key_tvs = crate::test_vectors::keys::test_vectors();
 
@@ -669,7 +604,7 @@ mod tests {
                 "vector {i}: rcm_old mismatch"
             );
 
-            // Verify quantum recoverable rcm using RandomSeed::qr_rcm().
+            // Verify quantum-recoverable rcm using RandomSeed::qr_rcm().
             let psi = rseed.psi(&rho);
             let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, key_tv.note_v, &psi);
             assert_eq!(

@@ -360,8 +360,8 @@ impl OutputInfo {
         }
     }
 
-    /// Constructs a new OutputInfo with a specific note version.
-    pub fn new_versioned(
+    /// Constructs a new OutputInfo with a specified [`NoteVersion`].
+    pub fn new_with_version(
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
@@ -400,7 +400,7 @@ impl OutputInfo {
     ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext) {
         let rho = Rho::from_nf_old(nf_old);
         let note =
-            Note::new_versioned(self.recipient, self.value, rho, &mut rng, self.note_version);
+            Note::new_with_version(self.recipient, self.value, rho, &mut rng, self.note_version);
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
@@ -629,12 +629,12 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        self.add_versioned_output(ovk, recipient, value, memo, DEFAULT_NOTE_VERSION)
+        self.add_output_with_version(ovk, recipient, value, memo, DEFAULT_NOTE_VERSION)
     }
 
     /// Adds an address which will receive funds in this transaction,
-    /// using the specified note version for rcm derivation.
-    pub fn add_versioned_output(
+    /// using the specified [`NoteVersion`].
+    pub fn add_output_with_version(
         &mut self,
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
@@ -647,7 +647,7 @@ impl Builder {
             return Err(OutputError::OutputsDisabled);
         }
 
-        self.outputs.push(OutputInfo::new_versioned(
+        self.outputs.push(OutputInfo::new_with_version(
             ovk,
             recipient,
             value,
