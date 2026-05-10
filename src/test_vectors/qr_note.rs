@@ -1,7 +1,7 @@
-//! Test vectors for quantum recoverable note commitment randomness (rcm)
+//! Regression cases for quantum-recoverable note commitment randomness (rcm)
 //! derivation.
 //!
-//! Per ZIP 2005, the quantum recoverable rcm derivation changes from:
+//! Per ZIP 2005, the quantum-recoverable rcm derivation changes from:
 //!
 //! $$
 //! \mathsf{rcm} =
@@ -39,52 +39,39 @@
 //! \mathbin\Vert \psi \mathbin\Vert \mathsf{AssetBase}
 //! $$
 //!
-//! Lead byte 0x03 denotes the quantum recoverable note version.
+//! Lead byte 0x03 denotes the quantum-recoverable note version.
 //!
-//! These vectors are derived from the first 3 entries in the Orchard key component test
-//! vectors (https://github.com/zcash-hackworks/zcash-test-vectors/blob/master/orchard_key_components.py),
-//! using the same (sk, note_v, note_rho, note_rseed).
+//! These regression cases reuse the `(sk, note_v, note_rho, note_rseed)` inputs
+//! from the first 3 entries in the Orchard key component test vectors
+//! (https://github.com/zcash-hackworks/zcash-test-vectors/blob/master/orchard_key_components.py).
 
 use alloc::vec::Vec;
 
-use crate::note_encryption::QR_NOTE_PLAINTEXT_LEAD_BYTE;
-
-/// Domain separator for quantum recoverable rcm derivation per ZIP 2005.
-///
-/// The PRF input is:
-///
-/// $$
-/// [\mathtt{0x0B}, \mathsf{leadByte}] \mathbin\Vert \mathsf{g}\_{\mathsf{d}}
-/// \mathbin\Vert \mathsf{pk}\_{\mathsf{d}} \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
-/// \mathbin\Vert \rho \mathbin\Vert \psi \mathbin\Vert \mathsf{AssetBase}
-/// $$
-pub(crate) const QR_RCM_DOMAIN: [u8; 2] = [0x0B, QR_NOTE_PLAINTEXT_LEAD_BYTE];
-
-pub(crate) struct TestVector {
+pub struct TestVector {
     /// Note recipient: diversifier (11 bytes)
-    pub(crate) d: [u8; 11],
+    pub d: [u8; 11],
     /// Note recipient: diversified transmission key pk_d (32 bytes)
-    pub(crate) pk_d: [u8; 32],
+    pub pk_d: [u8; 32],
     /// Note value
-    pub(crate) v: u64,
+    pub v: u64,
     /// Note rho (32 bytes, canonical encoding of a Pallas base field element)
-    pub(crate) rho: [u8; 32],
+    pub rho: [u8; 32],
     /// Random seed (32 bytes)
-    pub(crate) rseed: [u8; 32],
+    pub rseed: [u8; 32],
     /// Diversify hash point g_d (32 bytes, compressed encoding)
-    pub(crate) g_d: [u8; 32],
+    pub g_d: [u8; 32],
     /// Original rcm (current protocol): ToScalar(PRF^expand(rseed, [0x05] || rho))
-    pub(crate) rcm_old: [u8; 32],
-    /// Quantum recoverable rcm:
+    pub rcm_old: [u8; 32],
+    /// Quantum-recoverable rcm:
     /// ToScalar(PRF^expand(rseed, [0x0B, LEAD_BYTE] || ...)).
-    pub(crate) rcm_qr: [u8; 32],
+    pub rcm_qr: [u8; 32],
     /// Note commitment (cmx) using original rcm
-    pub(crate) cmx_old: [u8; 32],
-    /// Note commitment (cmx) using quantum recoverable rcm
-    pub(crate) cmx_qr: [u8; 32],
+    pub cmx_old: [u8; 32],
+    /// Note commitment (cmx) using quantum-recoverable rcm
+    pub cmx_qr: [u8; 32],
 }
 
-pub(crate) fn test_vectors() -> Vec<TestVector> {
+pub fn test_vectors() -> Vec<TestVector> {
     vec![
         TestVector {
             d: [
