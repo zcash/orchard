@@ -3,6 +3,7 @@
 use core::iter;
 use core::ops::Deref;
 
+use blake2b_simd::Params as Blake2bParams;
 use ff::{Field, FromUniformBytes, PrimeField, PrimeFieldBits};
 use group::{Curve, Group, GroupEncoding, WnafBase, WnafScalar};
 #[cfg(feature = "circuit")]
@@ -16,7 +17,8 @@ use pasta_curves::{
 use subtle::{ConditionallySelectable, CtOption};
 
 use crate::constants::{
-    fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
+    fixed_bases::{value_commit_v, COMMIT_IVK_PERSONALIZATION},
+    util::gen_const_array,
     KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
 };
 
@@ -245,6 +247,79 @@ pub(crate) fn prf_nf(nk: pallas::Base, rho: pallas::Base) -> pallas::Base {
         .hash([nk, rho])
 }
 
+const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";
+const ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR: u8 = 0x0B;
+
+/// `LEBS2OSP_256(repr_P(V^Orchard))`, used as `AssetBase` in ZIP 2005
+/// quantum-recoverable rcm derivation.
+///
+/// This extracts the $x$-coordinate serialization of $V^\text{Orchard}$ and
+/// interprets it as a compressed Pallas point encoding. This matches ZIP 2005
+/// because the sign bit of the $y$-coordinate for this base is zero.
+const ORCHARD_ASSET_BASE_BYTES: [u8; 32] = value_commit_v::GENERATOR.0;
+
+/// ZIP 2005 quantum-recoverable Orchard note commitment randomness.
+///
+/// Binds rcm to all note fields for post-quantum commitment binding. This
+/// implements the $\mathtt{0x03}$ note plaintext version case of
+/// $\mathsf{H}^{\mathsf{rcm},\mathsf{Orchard}}\_{\mathsf{rseed}}$:
+///
+/// $$
+/// \mathsf{pre}\_{\mathsf{rcm}} =
+/// [ \mathtt{0x0B}, \mathsf{leadByte} ]
+/// \mathbin\Vert \mathsf{g}^\star\_{\mathsf{d}}
+/// \mathbin\Vert \mathsf{pk}^\star\_{\mathsf{d}}
+/// \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
+/// \mathbin\Vert \rho
+/// \mathbin\Vert \mathsf{I2LEOSP}\_{256}(\psi)
+/// \mathbin\Vert \mathsf{AssetBase}^\star
+/// $$
+///
+/// $$
+/// \mathsf{rcm} =
+/// \mathsf{ToScalar}^{\mathsf{Orchard}}
+/// \left(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}
+/// (\mathsf{pre}\_{\mathsf{rcm}})\right)
+/// $$
+///
+/// Here $\mathsf{AssetBase} = V^\mathsf{Orchard}$ as defined in Zcash
+/// Protocol Spec § 5.4.8.3.
+///
+/// [ZIP 2005]: https://zips.z.cash/zip-2005
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn h_rcm_orchard_qr(
+    rseed: &[u8; 32],
+    lead_byte: u8,
+    g_d: &NonIdentityPallasPoint,
+    pk_d: &NonIdentityPallasPoint,
+    value: u64,
+    rho: &pallas::Base,
+    psi: &pallas::Base,
+) -> pallas::Scalar {
+    let mut h = Blake2bParams::new()
+        .hash_length(64)
+        .personal(PRF_EXPAND_PERSONALIZATION)
+        .to_state();
+    // rseed: raw bytes (32 bytes)
+    h.update(rseed);
+    // domain separator: [0x0B, lead_byte] (2 bytes, literal)
+    h.update(&[ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR, lead_byte]);
+    // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
+    h.update(&g_d.to_bytes());
+    // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
+    h.update(&pk_d.to_bytes());
+    // v: I2LEOSP_64(v) — unsigned 64-bit little-endian (8 bytes)
+    h.update(&value.to_le_bytes());
+    // rho: LEBS2OSP_256(repr_P(rho)) — Pallas base field canonical repr (32 bytes)
+    h.update(&rho.to_repr());
+    // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
+    h.update(&psi.to_repr());
+    // AssetBase: LEBS2OSP_256(repr_P(V^Orchard)) — compressed Pallas point (32 bytes)
+    h.update(&ORCHARD_ASSET_BASE_BYTES);
+
+    to_scalar(*h.finalize().as_array())
+}
+
 /// Defined in [Zcash Protocol Spec § 5.4.5.5: Orchard Key Agreement][concreteorchardkeyagreement].
 ///
 /// [concreteorchardkeyagreement]: https://zips.z.cash/protocol/nu5.pdf#concreteorchardkeyagreement
@@ -321,9 +396,18 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
 
 #[cfg(test)]
 mod tests {
-    use super::{i2lebsp, lebs2ip};
+    use super::{i2lebsp, lebs2ip, ORCHARD_ASSET_BASE_BYTES};
 
+    use group::GroupEncoding;
     use rand::{rngs::OsRng, RngCore};
+
+    #[test]
+    fn qr_asset_base_encoding_matches_value_commitment_generator() {
+        assert_eq!(
+            ORCHARD_ASSET_BASE_BYTES,
+            crate::constants::fixed_bases::value_commit_v::generator().to_bytes(),
+        );
+    }
 
     #[test]
     #[cfg(feature = "circuit")]
