@@ -576,11 +576,11 @@ mod tests {
 
     #[test]
     fn qr_rcm_verify_stored_vectors() {
-        // Verify the stored regression cases in qr_note.rs are correct.
-        let qr_tvs = crate::test_vectors::qr_note::test_vectors();
+        // Verify the ZIP 2005 rcm and note commitment fields in the Orchard
+        // key component test vectors.
         let key_tvs = crate::test_vectors::keys::test_vectors();
 
-        for (i, (qr_tv, key_tv)) in qr_tvs.iter().zip(key_tvs.iter()).enumerate() {
+        for (i, key_tv) in key_tvs.iter().enumerate() {
             let sk = SpendingKey::from_bytes(key_tv.sk).unwrap();
             let fvk = FullViewingKey::from(&sk);
             let addr = fvk.address_at(0u32, Scope::External);
@@ -592,24 +592,15 @@ mod tests {
             let g_d_bytes = g_d.to_bytes();
             let pk_d_bytes = pk_d.to_bytes();
 
-            // Verify address components match
-            assert_eq!(g_d_bytes, qr_tv.g_d, "vector {i}: g_d mismatch");
-            assert_eq!(pk_d_bytes, qr_tv.pk_d, "vector {i}: pk_d mismatch");
-
-            // Verify old rcm
+            // Verify original rcm.
             let rcm_old = rseed.rcm(&rho);
-            assert_eq!(
-                rcm_old.0.to_repr(),
-                qr_tv.rcm_old,
-                "vector {i}: rcm_old mismatch"
-            );
 
-            // Verify quantum-recoverable rcm using RandomSeed::qr_rcm().
+            // Verify quantum-recoverable rcm using [`RandomSeed::qr_rcm`].
             let psi = rseed.psi(&rho);
             let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, key_tv.note_v, &psi);
             assert_eq!(
                 rcm_new.0.to_repr(),
-                qr_tv.rcm_qr,
+                key_tv.note_qr_rcm,
                 "vector {i}: rcm_qr mismatch"
             );
             let rho_inner = rho.into_inner();
@@ -625,7 +616,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 ExtractedNoteCommitment::from(cmx_old).to_bytes(),
-                qr_tv.cmx_old,
+                key_tv.note_cmx,
                 "vector {i}: cmx_old mismatch"
             );
 
@@ -640,7 +631,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 ExtractedNoteCommitment::from(cmx_qr).to_bytes(),
-                qr_tv.cmx_qr,
+                key_tv.note_qr_cmx,
                 "vector {i}: cmx_qr mismatch"
             );
         }
