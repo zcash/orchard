@@ -10,7 +10,10 @@ use subtle::CtOption;
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
-    spec::{to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar, PrfExpand},
+    spec::{
+        h_rcm_orchard_qr, to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar,
+        PrfExpand,
+    },
     value::NoteValue,
     Address,
 };
@@ -22,15 +25,6 @@ pub mod commitment;
 #[cfg(feature = "unstable-voting-circuits")]
 pub use self::commitment::NoteCommitTrapdoor;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
-
-/// `LEBS2OSP_256(repr_P(V^Orchard))`, used as `AssetBase` in ZIP 2005
-/// quantum-recoverable rcm derivation.
-///
-/// This extracts the $x$-coordinate serialization of $V^\text{Orchard}$ and
-/// interprets it as a compressed Pallas point encoding. This matches ZIP 2005
-/// because the sign bit of the $y$-coordinate for this base is zero.
-const ORCHARD_ASSET_BASE_BYTES: [u8; 32] =
-    crate::constants::fixed_bases::value_commit_v::GENERATOR.0;
 
 /// Note plaintext version.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -165,19 +159,14 @@ impl RandomSeed {
 
     /// Quantum-recoverable rcm derivation per [ZIP 2005].
     ///
-    /// Binds rcm to all note fields for post-quantum commitment binding:
+    /// Binds rcm to all note fields for post-quantum commitment binding. See
+    /// [`h_rcm_orchard_qr`] for the protocol definition.
     ///
     /// $$
-    /// \mathsf{pre}\_{\mathsf{rcm}} =
-    /// [\mathtt{0x0B}, \mathsf{leadByte}] \mathbin\Vert \mathsf{g}\_{\mathsf{d}}
-    /// \mathbin\Vert \mathsf{pk}\_{\mathsf{d}} \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
-    /// \mathbin\Vert \rho \mathbin\Vert \psi \mathbin\Vert \mathsf{AssetBase}
-    /// $$
-    ///
-    /// $$
-    /// \mathsf{rcm} =
-    /// \mathsf{ToScalar}(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}(
-    /// \mathsf{pre}\_{\mathsf{rcm}}))
+    /// \mathsf{rcm} = \mathsf{H}^{\mathsf{rcm},\mathsf{Orchard}}\_{\mathsf{rseed}}
+    /// \big(\mathsf{leadByte}, (
+    /// \mathsf{g}^\star\_{\mathsf{d}}, \mathsf{pk}^\star\_{\mathsf{d}},
+    /// \mathsf{v}, \rho, \psi, \mathsf{AssetBase}^\star)\big)
     /// $$
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
@@ -190,32 +179,16 @@ impl RandomSeed {
         psi: &pallas::Base,
     ) -> commitment::NoteCommitTrapdoor {
         use crate::note_encryption::QR_NOTE_PLAINTEXT_LEAD_BYTE;
-        use blake2b_simd::Params;
 
-        // BLAKE2b-512 with personalization "Zcash_ExpandSeed" (= PRF^expand)
-        let mut h = Params::new()
-            .hash_length(64)
-            .personal(b"Zcash_ExpandSeed")
-            .to_state();
-        // rseed: raw bytes (32 bytes)
-        h.update(&self.0);
-        // domain separator: [0x0B, lead_byte] (2 bytes, literal)
-        h.update(&[0x0B, QR_NOTE_PLAINTEXT_LEAD_BYTE]);
-        // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
-        h.update(&g_d.to_bytes());
-        // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
-        h.update(&pk_d.to_bytes());
-        // v: I2LEOSP_64(v) — unsigned 64-bit little-endian (8 bytes)
-        h.update(&value.to_le_bytes());
-        // rho: LEBS2OSP_256(repr_P(rho)) — Pallas base field canonical repr (32 bytes)
-        h.update(&rho.to_bytes());
-        // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
-        h.update(&psi.to_repr());
-        // AssetBase: LEBS2OSP_256(repr_P(V^Orchard)) — compressed Pallas point (32 bytes)
-        h.update(&ORCHARD_ASSET_BASE_BYTES);
-
-        let output = *h.finalize().as_array();
-        commitment::NoteCommitTrapdoor(to_scalar(output))
+        commitment::NoteCommitTrapdoor(h_rcm_orchard_qr(
+            &self.0,
+            QR_NOTE_PLAINTEXT_LEAD_BYTE,
+            g_d,
+            pk_d,
+            value,
+            &rho.0,
+            psi,
+        ))
     }
 }
 
@@ -501,14 +474,6 @@ mod tests {
     use crate::keys::{FullViewingKey, Scope, SpendingKey};
     use ff::PrimeField;
     use group::GroupEncoding;
-
-    #[test]
-    fn qr_asset_base_encoding_matches_value_commitment_generator() {
-        assert_eq!(
-            ORCHARD_ASSET_BASE_BYTES,
-            crate::constants::fixed_bases::value_commit_v::generator().to_bytes(),
-        );
-    }
 
     #[test]
     fn qr_rcm_differs_from_old_rcm() {
