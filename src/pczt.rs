@@ -13,7 +13,9 @@ use zip32::ChildIndex;
 use crate::{
     bundle::Flags,
     keys::{FullViewingKey, SpendingKey},
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
+    note::{
+        ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
+    },
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::MerklePath,
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -218,6 +220,12 @@ pub struct Output {
     /// A commitment to the new note being created.
     pub(crate) cmx: ExtractedNoteCommitment,
 
+    /// The plaintext version of the new note being created.
+    ///
+    /// This is set by the Constructor, and is required by Verifiers and
+    /// Provers to reconstruct the note commitment.
+    pub(crate) note_version: NoteVersion,
+
     /// The transmitted note ciphertext.
     ///
     /// This contains the following PCZT fields:
@@ -279,6 +287,7 @@ impl fmt::Debug for Output {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Output")
             .field("cmx", &self.cmx)
+            .field("note_version", &self.note_version)
             .field("encrypted_note", &self.encrypted_note)
             .field("recipient", &self.recipient)
             .field("value", &self.value)
@@ -343,8 +352,8 @@ mod tests {
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{ExtractedNoteCommitment, RandomSeed, Rho},
-        pczt::{ProverError, TxExtractorError, Zip32Derivation},
+        note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
+        pczt::{ProverError, TxExtractorError, VerifyError, Zip32Derivation},
         primitives::redpallas::{self, SpendAuth},
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,
@@ -411,6 +420,50 @@ mod tests {
         assert_eq!(bundle.value_balance(), &(-5000));
         // We can successfully bind the bundle.
         bundle.apply_binding_signature(sighash, rng).unwrap();
+    }
+
+    #[test]
+    fn qr_output_version_checks_note_commitment() {
+        let mut rng = OsRng;
+
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+        );
+        builder
+            .add_output_with_version(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                [0u8; 512],
+                NoteVersion::V3,
+            )
+            .unwrap();
+        let mut pczt_bundle = builder.build_for_pczt(&mut rng).unwrap().0;
+
+        let action = &pczt_bundle.actions()[0];
+        assert_eq!(action.output.note_version(), &NoteVersion::V3);
+        action
+            .output
+            .verify_note_commitment(&action.spend)
+            .expect("V3 output version verifies the QR note commitment");
+
+        let sighash = [0; 32];
+        pczt_bundle.finalize_io(sighash, &mut rng).unwrap();
+        pczt_bundle
+            .create_proof(&ProvingKey::build(), &mut rng)
+            .expect("V3 output version reconstructs the QR note for proving");
+
+        let action = &mut pczt_bundle.actions_mut()[0];
+        action.output.note_version = NoteVersion::V2;
+        assert!(matches!(
+            action.output.verify_note_commitment(&action.spend),
+            Err(VerifyError::InvalidExtractedNoteCommitment)
+        ));
     }
 
     #[test]

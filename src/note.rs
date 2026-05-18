@@ -300,7 +300,10 @@ impl Note {
     ///
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
+    /// Per [ZIP 2005], dummy notes use [`DEFAULT_NOTE_VERSION`].
+    ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
+    /// [ZIP 2005]: https://zips.z.cash/zip-2005
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
@@ -460,15 +463,21 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::{FullViewingKey, Scope, SpendingKey};
+    use crate::{
+        keys::{FullViewingKey, Scope, SpendingKey},
+        test_vectors::keys::TestVector,
+    };
     use ff::PrimeField;
     use group::GroupEncoding;
 
-    #[test]
-    fn qr_rcm_differs_from_old_rcm() {
-        // Use the first key test vector inputs to construct a note
-        let tv = &crate::test_vectors::keys::test_vectors()[0];
+    struct QrRcmDerivation {
+        rcm_old_repr: [u8; 32],
+        rcm_new_repr: [u8; 32],
+        cmx_old_bytes: [u8; 32],
+        cmx_qr_bytes: [u8; 32],
+    }
 
+    fn qr_rcm_from_key_test_vector(tv: &TestVector) -> QrRcmDerivation {
         let sk = SpendingKey::from_bytes(tv.sk).unwrap();
         let fvk = FullViewingKey::from(&sk);
         let addr = fvk.address_at(0u32, Scope::External);
@@ -480,112 +489,59 @@ mod tests {
         let g_d_bytes = g_d.to_bytes();
         let pk_d_bytes = pk_d.to_bytes();
 
-        // Old derivation: rcm = ToScalar(PRF^expand(rseed, 0x05 || rho))
         let rcm_old = rseed.rcm(&rho);
-
-        // Quantum-recoverable derivation using RandomSeed::qr_rcm().
         let psi = rseed.psi(&rho);
         let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, tv.note_v, &psi);
 
-        // Capture scalar repr before moving into derive
         let rcm_old_repr = rcm_old.0.to_repr();
         let rcm_new_repr = rcm_new.0.to_repr();
-
-        // The two rcm values MUST differ (different domain sep and inputs)
-        assert_ne!(rcm_old_repr, rcm_new_repr);
-
-        // Old commitment matches the known test vector
         let rho_inner = rho.into_inner();
-        let cmx_old = NoteCommitment::derive(
-            g_d_bytes,
-            pk_d_bytes,
-            NoteValue::from_raw(tv.note_v),
-            rho_inner,
-            psi,
-            rcm_old,
-        )
-        .unwrap();
-        let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
-        assert_eq!(
-            cmx_old_bytes, tv.note_cmx,
-            "old cmx must match known test vector"
-        );
+        let value = NoteValue::from_raw(tv.note_v);
 
-        // Quantum-recoverable commitment uses the same Sinsemilla structure,
-        // just with a different rcm.
-        let cmx_qr = NoteCommitment::derive(
-            g_d_bytes,
-            pk_d_bytes,
-            NoteValue::from_raw(tv.note_v),
-            rho_inner,
-            psi,
-            rcm_new,
-        )
-        .unwrap();
+        let cmx_old =
+            NoteCommitment::derive(g_d_bytes, pk_d_bytes, value, rho_inner, psi, rcm_old).unwrap();
+        let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
+
+        let cmx_qr =
+            NoteCommitment::derive(g_d_bytes, pk_d_bytes, value, rho_inner, psi, rcm_new).unwrap();
         let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
 
-        // Quantum-recoverable commitment must differ from old commitment.
-        assert_ne!(cmx_old_bytes, cmx_qr_bytes);
+        QrRcmDerivation {
+            rcm_old_repr,
+            rcm_new_repr,
+            cmx_old_bytes,
+            cmx_qr_bytes,
+        }
+    }
+
+    #[test]
+    fn qr_rcm_differs_from_old_rcm() {
+        let tv = &crate::test_vectors::keys::test_vectors()[0];
+        let derived = qr_rcm_from_key_test_vector(tv);
+
+        assert_ne!(derived.rcm_old_repr, derived.rcm_new_repr);
+        assert_eq!(
+            derived.cmx_old_bytes, tv.note_cmx,
+            "old cmx must match known test vector"
+        );
+        assert_ne!(derived.cmx_old_bytes, derived.cmx_qr_bytes);
     }
 
     #[test]
     fn qr_rcm_verify_stored_vectors() {
-        // Verify the ZIP 2005 rcm and note commitment fields in the Orchard
-        // key component test vectors.
-        let key_tvs = crate::test_vectors::keys::test_vectors();
+        for (i, key_tv) in crate::test_vectors::keys::test_vectors().iter().enumerate() {
+            let derived = qr_rcm_from_key_test_vector(key_tv);
 
-        for (i, key_tv) in key_tvs.iter().enumerate() {
-            let sk = SpendingKey::from_bytes(key_tv.sk).unwrap();
-            let fvk = FullViewingKey::from(&sk);
-            let addr = fvk.address_at(0u32, Scope::External);
-            let rho = Rho::from_bytes(&key_tv.note_rho).unwrap();
-            let rseed = RandomSeed::from_bytes(key_tv.note_rseed, &rho).unwrap();
-
-            let g_d = addr.g_d();
-            let pk_d = addr.pk_d().inner();
-            let g_d_bytes = g_d.to_bytes();
-            let pk_d_bytes = pk_d.to_bytes();
-
-            // Verify original rcm.
-            let rcm_old = rseed.rcm(&rho);
-
-            // Verify quantum-recoverable rcm using [`RandomSeed::qr_rcm`].
-            let psi = rseed.psi(&rho);
-            let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, key_tv.note_v, &psi);
             assert_eq!(
-                rcm_new.0.to_repr(),
-                key_tv.note_qr_rcm,
+                derived.rcm_new_repr, key_tv.note_qr_rcm,
                 "vector {i}: rcm_qr mismatch"
             );
-            let rho_inner = rho.into_inner();
-
-            let cmx_old = NoteCommitment::derive(
-                g_d_bytes,
-                pk_d_bytes,
-                NoteValue::from_raw(key_tv.note_v),
-                rho_inner,
-                psi,
-                rcm_old,
-            )
-            .unwrap();
             assert_eq!(
-                ExtractedNoteCommitment::from(cmx_old).to_bytes(),
-                key_tv.note_cmx,
+                derived.cmx_old_bytes, key_tv.note_cmx,
                 "vector {i}: cmx_old mismatch"
             );
-
-            let cmx_qr = NoteCommitment::derive(
-                g_d_bytes,
-                pk_d_bytes,
-                NoteValue::from_raw(key_tv.note_v),
-                rho_inner,
-                psi,
-                rcm_new,
-            )
-            .unwrap();
             assert_eq!(
-                ExtractedNoteCommitment::from(cmx_qr).to_bytes(),
-                key_tv.note_qr_cmx,
+                derived.cmx_qr_bytes, key_tv.note_qr_cmx,
                 "vector {i}: cmx_qr mismatch"
             );
         }
