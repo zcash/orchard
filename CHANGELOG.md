@@ -10,6 +10,8 @@ and this project adheres to Rust's notion of
 ### Added
 - `orchard::NoteVersion`, which identifies the Orchard note plaintext version
   used to derive a note commitment.
+- `orchard::NoteVersion::DEFAULT`, the note version produced by constructors
+  that do not take an explicit note version.
 - Version-aware note and builder APIs:
   - `orchard::Note::from_parts_with_version`
   - `orchard::Note::version`
