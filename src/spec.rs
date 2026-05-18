@@ -3,7 +3,6 @@
 use core::iter;
 use core::ops::Deref;
 
-use blake2b_simd::Params as Blake2bParams;
 use ff::{Field, FromUniformBytes, PrimeField, PrimeFieldBits};
 use group::{Curve, Group, GroupEncoding, WnafBase, WnafScalar};
 #[cfg(feature = "circuit")]
@@ -244,62 +243,6 @@ pub(crate) fn diversify_hash(d: &[u8; 11]) -> NonIdentityPallasPoint {
 pub(crate) fn prf_nf(nk: pallas::Base, rho: pallas::Base) -> pallas::Base {
     poseidon::Hash::<_, poseidon::P128Pow5T3, poseidon::ConstantLength<2>, 3, 2>::init()
         .hash([nk, rho])
-}
-
-const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";
-const ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR: u8 = 0x0B;
-
-/// ZIP 2005 quantum-recoverable Orchard note commitment randomness.
-///
-/// Binds rcm to all note fields for post-quantum commitment binding. This
-/// implements $\mathsf{H}^{\mathsf{rcm},\mathsf{Orchard}}\_{\mathsf{rseed}}$:
-///
-/// $$
-/// \mathsf{pre}\_{\mathsf{rcm}} =
-/// [ \mathtt{0x0B} ]
-/// \mathbin\Vert \mathsf{g}^\star\_{\mathsf{d}}
-/// \mathbin\Vert \mathsf{pk}^\star\_{\mathsf{d}}
-/// \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
-/// \mathbin\Vert \rho
-/// \mathbin\Vert \mathsf{I2LEOSP}\_{256}(\psi)
-/// $$
-///
-/// $$
-/// \mathsf{rcm} =
-/// \mathsf{ToScalar}^{\mathsf{Orchard}}
-/// \left(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}
-/// (\mathsf{pre}\_{\mathsf{rcm}})\right)
-/// $$
-///
-/// [ZIP 2005]: https://zips.z.cash/zip-2005
-pub(crate) fn h_rcm_orchard_qr(
-    rseed: &[u8; 32],
-    g_d: &NonIdentityPallasPoint,
-    pk_d: &NonIdentityPallasPoint,
-    value: u64,
-    rho: &pallas::Base,
-    psi: &pallas::Base,
-) -> pallas::Scalar {
-    let mut h = Blake2bParams::new()
-        .hash_length(64)
-        .personal(PRF_EXPAND_PERSONALIZATION)
-        .to_state();
-    // rseed: raw bytes (32 bytes)
-    h.update(rseed);
-    // domain separator: [0x0B] (1 byte, literal)
-    h.update(&[ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR]);
-    // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
-    h.update(&g_d.to_bytes());
-    // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
-    h.update(&pk_d.to_bytes());
-    // v: I2LEOSP_64(v) — unsigned 64-bit little-endian (8 bytes)
-    h.update(&value.to_le_bytes());
-    // rho: LEBS2OSP_256(repr_P(rho)) — Pallas base field canonical repr (32 bytes)
-    h.update(&rho.to_repr());
-    // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
-    h.update(&psi.to_repr());
-
-    to_scalar(*h.finalize().as_array())
 }
 
 /// Defined in [Zcash Protocol Spec § 5.4.5.5: Orchard Key Agreement][concreteorchardkeyagreement].

@@ -2,6 +2,7 @@
 use core::fmt;
 use memuse::DynamicUsage;
 
+use blake2b_simd::Params as Blake2bParams;
 use ff::PrimeField;
 use group::GroupEncoding;
 use pasta_curves::pallas;
@@ -10,13 +11,13 @@ use subtle::CtOption;
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
-    spec::{
-        h_rcm_orchard_qr, to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar,
-        PrfExpand,
-    },
+    spec::{to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
     Address,
 };
+
+const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";
+const ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR: u8 = 0x0B;
 
 #[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod commitment;
@@ -179,13 +180,24 @@ impl RandomSeed {
 
     /// Quantum-recoverable rcm derivation per [ZIP 2005].
     ///
-    /// Binds rcm to all note fields for post-quantum commitment binding. See
-    /// [`h_rcm_orchard_qr`] for the protocol definition.
+    /// Binds rcm to all note fields for post-quantum commitment binding. This
+    /// implements $\mathsf{H}^{\mathsf{rcm},\mathsf{Orchard}}\_{\mathsf{rseed}}$:
     ///
     /// $$
-    /// \mathsf{rcm} = \mathsf{H}^{\mathsf{rcm},\mathsf{Orchard}}\_{\mathsf{rseed}}
-    /// \big(\mathsf{g}^\star\_{\mathsf{d}}, \mathsf{pk}^\star\_{\mathsf{d}},
-    /// \mathsf{v}, \rho, \psi\big)
+    /// \mathsf{pre}\_{\mathsf{rcm}} =
+    /// [ \mathtt{0x0B} ]
+    /// \mathbin\Vert \mathsf{g}^\star\_{\mathsf{d}}
+    /// \mathbin\Vert \mathsf{pk}^\star\_{\mathsf{d}}
+    /// \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
+    /// \mathbin\Vert \rho
+    /// \mathbin\Vert \mathsf{I2LEOSP}\_{256}(\psi)
+    /// $$
+    ///
+    /// $$
+    /// \mathsf{rcm} =
+    /// \mathsf{ToScalar}^{\mathsf{Orchard}}
+    /// \left(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}
+    /// (\mathsf{pre}\_{\mathsf{rcm}})\right)
     /// $$
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
@@ -197,7 +209,26 @@ impl RandomSeed {
         value: u64,
         psi: &pallas::Base,
     ) -> commitment::NoteCommitTrapdoor {
-        commitment::NoteCommitTrapdoor(h_rcm_orchard_qr(&self.0, g_d, pk_d, value, &rho.0, psi))
+        let mut h = Blake2bParams::new()
+            .hash_length(64)
+            .personal(PRF_EXPAND_PERSONALIZATION)
+            .to_state();
+        // rseed: raw bytes (32 bytes)
+        h.update(&self.0);
+        // domain separator: [0x0B] (1 byte, literal)
+        h.update(&[ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR]);
+        // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
+        h.update(&g_d.to_bytes());
+        // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
+        h.update(&pk_d.to_bytes());
+        // v: I2LEOSP_64(v) — unsigned 64-bit little-endian (8 bytes)
+        h.update(&value.to_le_bytes());
+        // rho: LEBS2OSP_256(repr_P(rho)) — Pallas base field canonical repr (32 bytes)
+        h.update(&rho.0.to_repr());
+        // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
+        h.update(&psi.to_repr());
+
+        commitment::NoteCommitTrapdoor(to_scalar(*h.finalize().as_array()))
     }
 }
 
