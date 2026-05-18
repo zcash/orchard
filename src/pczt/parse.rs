@@ -14,7 +14,9 @@ use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
     bundle::Flags,
     keys::{FullViewingKey, SpendingKey},
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
+    note::{
+        ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
+    },
     primitives::redpallas::{self, SpendAuth},
     tree::{MerkleHashOrchard, MerklePath},
     value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -206,12 +208,13 @@ impl Spend {
 }
 
 impl Output {
-    /// Parses a PCZT output from its component parts, and the corresponding `Spend`'s
-    /// nullifier.
+    /// Parses a PCZT output from its component parts, and the corresponding
+    /// `Spend`'s nullifier.
     #[allow(clippy::too_many_arguments)]
     pub fn parse(
         spend_nullifier: Nullifier,
         cmx: [u8; 32],
+        note_version: NoteVersion,
         ephemeral_key: [u8; 32],
         enc_ciphertext: Vec<u8>,
         out_ciphertext: Vec<u8>,
@@ -263,6 +266,7 @@ impl Output {
 
         Ok(Self {
             cmx,
+            note_version,
             encrypted_note,
             recipient,
             value,

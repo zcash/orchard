@@ -126,11 +126,12 @@ impl super::Output {
     ///
     /// `spend` must be the Spend from the same Orchard action.
     pub fn verify_note_commitment(&self, spend: &super::Spend) -> Result<(), VerifyError> {
-        let note = Note::from_parts(
+        let note = Note::from_parts_with_version(
             self.recipient.ok_or(VerifyError::MissingRecipient)?,
             self.value.ok_or(VerifyError::MissingValue)?,
             Rho::from_nf_old(spend.nullifier),
             self.rseed.ok_or(VerifyError::MissingRandomSeed)?,
+            self.note_version,
         )
         .into_option()
         .ok_or(VerifyError::InvalidOutputNote)?;

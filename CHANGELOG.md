@@ -7,7 +7,22 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::NoteVersion`, which identifies the Orchard note plaintext version
+  used to derive a note commitment.
+- Version-aware note and builder APIs:
+  - `orchard::Note::from_parts_with_version`
+  - `orchard::Note::version`
+  - `orchard::builder::OutputInfo::new_with_version`
+  - `orchard::builder::Builder::add_output_with_version`
+- `orchard::pczt::Output::note_version`, exposed via the existing PCZT output
+  getter pattern, so PCZT verifiers and provers can reconstruct output note
+  commitments with the intended note plaintext version.
+
 ### Changed
+- `orchard::pczt::Output::parse` now takes an `orchard::NoteVersion` argument.
+  This is used by `orchard::pczt::Output::verify_note_commitment` and
+  `orchard::pczt::Bundle::create_proof` when reconstructing output notes.
 - `unstable-voting-circuits`-only:
   - `orchard::constants::OrchardFixedBases` is now a unit struct rather than a
     3-variant enum. It is a trait carrier for the halo2_gadgets `FixedPoints`

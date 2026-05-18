@@ -425,6 +425,7 @@ impl OutputInfo {
 
         crate::pczt::Output {
             cmx,
+            note_version: self.note_version,
             encrypted_note,
             recipient: Some(self.recipient),
             value: Some(self.value),
