@@ -164,9 +164,8 @@ impl RandomSeed {
     ///
     /// $$
     /// \mathsf{rcm} = \mathsf{H}^{\mathsf{rcm},\mathsf{Orchard}}\_{\mathsf{rseed}}
-    /// \big(\mathsf{leadByte}, (
-    /// \mathsf{g}^\star\_{\mathsf{d}}, \mathsf{pk}^\star\_{\mathsf{d}},
-    /// \mathsf{v}, \rho, \psi, \mathsf{AssetBase}^\star)\big)
+    /// \big(\mathsf{g}^\star\_{\mathsf{d}}, \mathsf{pk}^\star\_{\mathsf{d}},
+    /// \mathsf{v}, \rho, \psi\big)
     /// $$
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
@@ -178,17 +177,7 @@ impl RandomSeed {
         value: u64,
         psi: &pallas::Base,
     ) -> commitment::NoteCommitTrapdoor {
-        use crate::note_encryption::QR_NOTE_PLAINTEXT_LEAD_BYTE;
-
-        commitment::NoteCommitTrapdoor(h_rcm_orchard_qr(
-            &self.0,
-            QR_NOTE_PLAINTEXT_LEAD_BYTE,
-            g_d,
-            pk_d,
-            value,
-            &rho.0,
-            psi,
-        ))
+        commitment::NoteCommitTrapdoor(h_rcm_orchard_qr(&self.0, g_d, pk_d, value, &rho.0, psi))
     }
 }
 
