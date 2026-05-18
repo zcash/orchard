@@ -38,12 +38,32 @@ pub enum NoteVersion {
     V3,
 }
 
-/// The note version produced by constructors that do not take an explicit
-/// [`NoteVersion`].
-///
-/// This is planned to be updated to [`NoteVersion::V3`] once V3 parsing is
-/// sufficiently integrated into wallets.
-pub const DEFAULT_NOTE_VERSION: NoteVersion = NoteVersion::V2;
+impl NoteVersion {
+    /// The note version produced by constructors that do not take an explicit
+    /// [`NoteVersion`].
+    ///
+    /// This is planned to be updated to [`Self::V3`] once V3 parsing is
+    /// sufficiently integrated into wallets.
+    pub const DEFAULT: Self = Self::V2;
+
+    /// Returns the note plaintext lead byte signaling this version.
+    pub(crate) const fn lead_byte(self) -> u8 {
+        match self {
+            Self::V2 => 0x02,
+            Self::V3 => 0x03,
+        }
+    }
+
+    /// Parses a note plaintext lead byte into the corresponding version,
+    /// returning `None` if the byte is not a recognized version.
+    pub(crate) fn from_lead_byte(b: u8) -> Option<Self> {
+        match b {
+            0x02 => Some(Self::V2),
+            0x03 => Some(Self::V3),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod nullifier;
@@ -216,7 +236,7 @@ impl Note {
     ///
     /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
     ///
-    /// This uses [`DEFAULT_NOTE_VERSION`].
+    /// This uses [`NoteVersion::DEFAULT`].
     ///
     /// # Caveats
     ///
@@ -234,7 +254,7 @@ impl Note {
         rho: Rho,
         rseed: RandomSeed,
     ) -> CtOption<Self> {
-        Self::from_parts_with_version(recipient, value, rho, rseed, DEFAULT_NOTE_VERSION)
+        Self::from_parts_with_version(recipient, value, rho, rseed, NoteVersion::DEFAULT)
     }
 
     /// Creates a `Note` from its component parts with a specific version.
@@ -259,7 +279,7 @@ impl Note {
 
     /// Generates a new note.
     ///
-    /// This uses [`DEFAULT_NOTE_VERSION`].
+    /// This uses [`NoteVersion::DEFAULT`].
     ///
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
@@ -271,7 +291,7 @@ impl Note {
         rho: Rho,
         mut rng: impl RngCore,
     ) -> Self {
-        Self::new_with_version(recipient, value, rho, &mut rng, DEFAULT_NOTE_VERSION)
+        Self::new_with_version(recipient, value, rho, &mut rng, NoteVersion::DEFAULT)
     }
 
     /// Generates a new note with a specified [`NoteVersion`].
@@ -300,7 +320,7 @@ impl Note {
     ///
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
-    /// Per [ZIP 2005], dummy notes use [`DEFAULT_NOTE_VERSION`].
+    /// Per [ZIP 2005], dummy notes use [`NoteVersion::DEFAULT`].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
@@ -318,7 +338,7 @@ impl Note {
             NoteValue::ZERO,
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
             rng,
-            DEFAULT_NOTE_VERSION,
+            NoteVersion::DEFAULT,
         );
 
         (sk, fvk, note)
@@ -433,7 +453,7 @@ pub mod testing {
         address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
     };
 
-    use super::{Note, RandomSeed, Rho, DEFAULT_NOTE_VERSION};
+    use super::{Note, NoteVersion, RandomSeed, Rho};
 
     prop_compose! {
         /// Generate an arbitrary random seed
@@ -454,7 +474,7 @@ pub mod testing {
                 value,
                 rho,
                 rseed,
-                version: DEFAULT_NOTE_VERSION,
+                version: NoteVersion::DEFAULT,
             }
         }
     }

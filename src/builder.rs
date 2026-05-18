@@ -16,10 +16,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{
-        ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext,
-        DEFAULT_NOTE_VERSION,
-    },
+    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -344,7 +341,7 @@ pub struct OutputInfo {
 impl OutputInfo {
     /// Constructs a new OutputInfo from its constituent parts.
     ///
-    /// This uses [`DEFAULT_NOTE_VERSION`].
+    /// This uses [`NoteVersion::DEFAULT`].
     pub fn new(
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
@@ -356,7 +353,7 @@ impl OutputInfo {
             recipient,
             value,
             memo,
-            note_version: DEFAULT_NOTE_VERSION,
+            note_version: NoteVersion::DEFAULT,
         }
     }
 
@@ -688,7 +685,7 @@ impl Builder {
 
     /// Adds an address which will receive funds in this transaction.
     ///
-    /// This uses [`DEFAULT_NOTE_VERSION`].
+    /// This uses [`NoteVersion::DEFAULT`].
     pub fn add_output(
         &mut self,
         ovk: Option<OutgoingViewingKey>,
@@ -696,7 +693,7 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        self.add_output_with_version(ovk, recipient, value, memo, DEFAULT_NOTE_VERSION)
+        self.add_output_with_version(ovk, recipient, value, memo, NoteVersion::DEFAULT)
     }
 
     /// Adds an address which will receive funds in this transaction,

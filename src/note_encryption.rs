@@ -24,15 +24,6 @@ use crate::{
 
 const PRF_OCK_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_Orchardock";
 
-/// Lead byte for original Orchard note plaintexts.
-const ORIGINAL_NOTE_PLAINTEXT_LEAD_BYTE: u8 = 0x02;
-
-/// Lead byte for quantum-recoverable Orchard note plaintexts.
-///
-/// This signals that rcm was derived binding all note fields, as defined in
-/// ZIP 2005.
-pub(crate) const QR_NOTE_PLAINTEXT_LEAD_BYTE: u8 = 0x03;
-
 /// Defined in [Zcash Protocol Spec § 5.4.2: Pseudo Random Functions][concreteprfs].
 ///
 /// [concreteprfs]: https://zips.z.cash/protocol/nu5.pdf#concreteprfs
@@ -70,11 +61,7 @@ where
 
     // Check note plaintext version; accept both original and
     // quantum-recoverable versions.
-    let note_version = match plaintext[0] {
-        ORIGINAL_NOTE_PLAINTEXT_LEAD_BYTE => NoteVersion::V2,
-        QR_NOTE_PLAINTEXT_LEAD_BYTE => NoteVersion::V3,
-        _ => return None,
-    };
+    let note_version = NoteVersion::from_lead_byte(plaintext[0])?;
 
     // The unwraps below are guaranteed to succeed by the assertion above
     let diversifier = Diversifier::from_bytes(plaintext[1..12].try_into().unwrap());
@@ -187,10 +174,7 @@ impl Domain for OrchardDomain {
 
     fn note_plaintext_bytes(note: &Self::Note, memo: &Self::Memo) -> NotePlaintextBytes {
         let mut np = [0; NOTE_PLAINTEXT_SIZE];
-        np[0] = match note.version() {
-            NoteVersion::V2 => ORIGINAL_NOTE_PLAINTEXT_LEAD_BYTE,
-            NoteVersion::V3 => QR_NOTE_PLAINTEXT_LEAD_BYTE,
-        };
+        np[0] = note.version().lead_byte();
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
         np[20..52].copy_from_slice(note.rseed().as_bytes());
