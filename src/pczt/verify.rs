@@ -68,11 +68,12 @@ impl super::Spend {
     ) -> Result<(), VerifyError> {
         let fvk = self.fvk_for_validation(expected_fvk)?;
 
-        let note = Note::from_parts(
+        let note = Note::from_parts_with_version(
             self.recipient.ok_or(VerifyError::MissingRecipient)?,
             self.value.ok_or(VerifyError::MissingValue)?,
             self.rho.ok_or(VerifyError::MissingRho)?,
             self.rseed.ok_or(VerifyError::MissingRandomSeed)?,
+            self.note_version,
         )
         .into_option()
         .ok_or(VerifyError::InvalidSpendNote)?;

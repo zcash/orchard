@@ -318,6 +318,7 @@ impl SpendInfo {
             value: Some(self.note.value()),
             rho: Some(self.note.rho()),
             rseed: Some(*self.note.rseed()),
+            note_version: self.note.version(),
             fvk: Some(self.fvk),
             witness: Some(self.merkle_path),
             alpha: Some(alpha),

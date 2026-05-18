@@ -405,6 +405,21 @@ impl Note {
         self.version
     }
 
+    /// Derives the note commitment trapdoor for this note.
+    pub(crate) fn rcm(&self) -> commitment::NoteCommitTrapdoor {
+        let g_d = self.recipient.g_d();
+        let pk_d = self.recipient.pk_d().inner();
+        let rho = self.rho();
+        let psi = self.rseed.psi(&rho);
+
+        match self.version {
+            NoteVersion::V2 => self.rseed.rcm(&rho),
+            NoteVersion::V3 => self
+                .rseed
+                .qr_rcm(&rho, &g_d, &pk_d, self.value.inner(), &psi),
+        }
+    }
+
     /// Derives the commitment to this note.
     ///
     /// Defined in [Zcash Protocol Spec § 3.2: Notes][notes].
@@ -431,14 +446,14 @@ impl Note {
         let pk_d_bytes = pk_d.to_bytes();
         let psi = self.rseed.psi(&self.rho);
 
-        let rcm = match self.version {
-            NoteVersion::V2 => self.rseed.rcm(&self.rho),
-            NoteVersion::V3 => self
-                .rseed
-                .qr_rcm(&self.rho, &g_d, &pk_d, self.value.inner(), &psi),
-        };
-
-        NoteCommitment::derive(g_d_bytes, pk_d_bytes, self.value, self.rho.0, psi, rcm)
+        NoteCommitment::derive(
+            g_d_bytes,
+            pk_d_bytes,
+            self.value,
+            self.rho.0,
+            psi,
+            self.rcm(),
+        )
     }
 
     /// Derives the nullifier for this note.

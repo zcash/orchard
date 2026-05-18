@@ -36,7 +36,7 @@ impl super::Bundle {
                     .clone()
                     .ok_or(ProverError::MissingFullViewingKey)?;
 
-                let note = Note::from_parts(
+                let note = Note::from_parts_with_version(
                     action
                         .spend
                         .recipient
@@ -44,6 +44,7 @@ impl super::Bundle {
                     action.spend.value.ok_or(ProverError::MissingValue)?,
                     action.spend.rho.ok_or(ProverError::MissingRho)?,
                     action.spend.rseed.ok_or(ProverError::MissingRandomSeed)?,
+                    action.spend.note_version,
                 )
                 .into_option()
                 .ok_or(ProverError::InvalidSpendNote)?;

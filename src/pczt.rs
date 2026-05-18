@@ -178,6 +178,12 @@ pub struct Spend {
     /// - This is required by the Prover.
     pub(crate) rseed: Option<RandomSeed>,
 
+    /// The plaintext version of the note being spent.
+    ///
+    /// This is set by the Constructor, and is required by Verifiers and
+    /// Provers to reconstruct the note commitment.
+    pub(crate) note_version: NoteVersion,
+
     /// The full viewing key that received the note being spent.
     ///
     /// - This is set by the Updater.
@@ -443,9 +449,10 @@ mod tests {
                 NoteVersion::V3,
             )
             .unwrap();
-        let mut pczt_bundle = builder.build_for_pczt(&mut rng).unwrap().0;
+        let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        let output_action_index = bundle_meta.output_action_index(0).unwrap();
 
-        let action = &pczt_bundle.actions()[0];
+        let action = &pczt_bundle.actions()[output_action_index];
         assert_eq!(action.output.note_version(), &NoteVersion::V3);
         action
             .output
@@ -458,11 +465,91 @@ mod tests {
             .create_proof(&ProvingKey::build(), &mut rng)
             .expect("V3 output version reconstructs the QR note for proving");
 
-        let action = &mut pczt_bundle.actions_mut()[0];
+        let action = &mut pczt_bundle.actions_mut()[output_action_index];
         action.output.note_version = NoteVersion::V2;
         assert!(matches!(
             action.output.verify_note_commitment(&action.spend),
             Err(VerifyError::InvalidExtractedNoteCommitment)
+        ));
+    }
+
+    #[test]
+    fn qr_spend_version_checks_nullifier_and_proves() {
+        let pk = ProvingKey::build();
+        let mut rng = OsRng;
+
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let value = NoteValue::from_raw(15_000);
+        let note = {
+            let rho = Rho::from_bytes(&pallas::Base::random(&mut rng).to_repr()).unwrap();
+            loop {
+                if let Some(note) = Note::from_parts_with_version(
+                    recipient,
+                    value,
+                    rho,
+                    RandomSeed::random(&mut rng, &rho),
+                    NoteVersion::V3,
+                )
+                .into_option()
+                {
+                    break note;
+                }
+            }
+        };
+
+        let (anchor, merkle_path) = {
+            let cmx: ExtractedNoteCommitment = note.commitment().into();
+            let leaf = MerkleHashOrchard::from_cmx(&cmx);
+            let mut tree: ShardTree<MemoryShardStore<MerkleHashOrchard, u32>, 32, 16> =
+                ShardTree::new(MemoryShardStore::empty(), 100);
+            tree.append(
+                leaf,
+                Retention::Checkpoint {
+                    id: 0,
+                    marking: Marking::Marked,
+                },
+            )
+            .unwrap();
+            let root = tree.root_at_checkpoint_id(&0).unwrap().unwrap();
+            let position = tree.max_leaf_position(None).unwrap().unwrap();
+            let merkle_path = tree
+                .witness_at_checkpoint_id(position, &0)
+                .unwrap()
+                .unwrap();
+            assert_eq!(root, merkle_path.root(MerkleHashOrchard::from_cmx(&cmx)));
+            (root.into(), merkle_path)
+        };
+
+        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        builder
+            .add_spend(fvk.clone(), note, merkle_path.into())
+            .unwrap();
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+            .unwrap();
+        let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
+
+        let action = &pczt_bundle.actions()[spend_action_index];
+        assert_eq!(action.spend.note_version(), &NoteVersion::V3);
+        action
+            .spend
+            .verify_nullifier(None)
+            .expect("V3 spend version verifies the QR note nullifier");
+
+        pczt_bundle.finalize_io([0; 32], &mut rng).unwrap();
+        pczt_bundle
+            .create_proof(&pk, &mut rng)
+            .expect("V3 spend version reconstructs the QR note for proving");
+
+        let action = &mut pczt_bundle.actions_mut()[spend_action_index];
+        action.spend.note_version = NoteVersion::V2;
+        assert!(matches!(
+            action.spend.verify_nullifier(None),
+            Err(VerifyError::InvalidNullifier)
         ));
     }
 
