@@ -355,7 +355,7 @@ mod tests {
 
     use crate::{
         builder::{Builder, BundleType},
-        circuit::ProvingKey,
+        circuit::{ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
@@ -431,6 +431,8 @@ mod tests {
     #[test]
     fn qr_output_version_checks_note_commitment() {
         let mut rng = OsRng;
+        let pk = ProvingKey::build();
+        let vk = VerifyingKey::build();
 
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
@@ -462,15 +464,26 @@ mod tests {
         let sighash = [0; 32];
         pczt_bundle.finalize_io(sighash, &mut rng).unwrap();
         pczt_bundle
-            .create_proof(&ProvingKey::build(), &mut rng)
+            .create_proof(&pk, &mut rng)
             .expect("V3 output version reconstructs the QR note for proving");
 
+        // Try mutating the note version and verify the proof fails.
+        // Show that verifying the note commitment by the caller would fail.
+        // Also show that taking the V3 proof, and veifying it against the V2 note commitment would fail.
         let action = &mut pczt_bundle.actions_mut()[output_action_index];
         action.output.note_version = NoteVersion::V2;
         assert!(matches!(
             action.output.verify_note_commitment(&action.spend),
             Err(VerifyError::InvalidExtractedNoteCommitment)
         ));
+        pczt_bundle.create_proof(&pk, &mut rng).unwrap();
+        let bundle = pczt_bundle
+            .extract::<i64>()
+            .unwrap()
+            .unwrap()
+            .apply_binding_signature(sighash, &mut rng)
+            .unwrap();
+        assert!(bundle.verify_proof(&vk).is_err());
     }
 
     #[test]
@@ -547,9 +560,15 @@ mod tests {
 
         let action = &mut pczt_bundle.actions_mut()[spend_action_index];
         action.spend.note_version = NoteVersion::V2;
+        // This checks the public PCZT verification helper. The prover path is
+        // checked above by `create_proof`.
         assert!(matches!(
             action.spend.verify_nullifier(None),
             Err(VerifyError::InvalidNullifier)
+        ));
+        assert!(matches!(
+            pczt_bundle.create_proof(&pk, &mut rng),
+            Err(ProverError::RhoMismatch)
         ));
     }
 
