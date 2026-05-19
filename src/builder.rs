@@ -16,7 +16,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
+    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -318,6 +318,7 @@ impl SpendInfo {
             value: Some(self.note.value()),
             rho: Some(self.note.rho()),
             rseed: Some(*self.note.rseed()),
+            note_version: self.note.version(),
             fvk: Some(self.fvk),
             witness: Some(self.merkle_path),
             alpha: Some(alpha),
@@ -335,10 +336,13 @@ pub struct OutputInfo {
     recipient: Address,
     value: NoteValue,
     memo: [u8; 512],
+    note_version: NoteVersion,
 }
 
 impl OutputInfo {
     /// Constructs a new OutputInfo from its constituent parts.
+    ///
+    /// This uses [`NoteVersion::DEFAULT`].
     pub fn new(
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
@@ -350,6 +354,24 @@ impl OutputInfo {
             recipient,
             value,
             memo,
+            note_version: NoteVersion::DEFAULT,
+        }
+    }
+
+    /// Constructs a new OutputInfo with a specified [`NoteVersion`].
+    pub fn new_with_version(
+        ovk: Option<OutgoingViewingKey>,
+        recipient: Address,
+        value: NoteValue,
+        memo: [u8; 512],
+        note_version: NoteVersion,
+    ) -> Self {
+        Self {
+            ovk,
+            recipient,
+            value,
+            memo,
+            note_version,
         }
     }
 
@@ -375,7 +397,8 @@ impl OutputInfo {
         mut rng: impl RngCore,
     ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext) {
         let rho = Rho::from_nf_old(nf_old);
-        let note = Note::new(self.recipient, self.value, rho, &mut rng);
+        let note =
+            Note::new_with_version(self.recipient, self.value, rho, &mut rng, self.note_version);
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
@@ -400,6 +423,7 @@ impl OutputInfo {
 
         crate::pczt::Output {
             cmx,
+            note_version: self.note_version,
             encrypted_note,
             recipient: Some(self.recipient),
             value: Some(self.value),
@@ -595,6 +619,8 @@ impl Builder {
     }
 
     /// Adds an address which will receive funds in this transaction.
+    ///
+    /// This uses [`NoteVersion::DEFAULT`].
     pub fn add_output(
         &mut self,
         ovk: Option<OutgoingViewingKey>,
@@ -602,13 +628,31 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
+        self.add_output_with_version(ovk, recipient, value, memo, NoteVersion::DEFAULT)
+    }
+
+    /// Adds an address which will receive funds in this transaction,
+    /// using the specified [`NoteVersion`].
+    pub fn add_output_with_version(
+        &mut self,
+        ovk: Option<OutgoingViewingKey>,
+        recipient: Address,
+        value: NoteValue,
+        memo: [u8; 512],
+        note_version: NoteVersion,
+    ) -> Result<(), OutputError> {
         let flags = self.bundle_type.flags();
         if !flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
 
-        self.outputs
-            .push(OutputInfo::new(ovk, recipient, value, memo));
+        self.outputs.push(OutputInfo::new_with_version(
+            ovk,
+            recipient,
+            value,
+            memo,
+            note_version,
+        ));
 
         Ok(())
     }

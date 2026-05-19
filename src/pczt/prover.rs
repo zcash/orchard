@@ -36,7 +36,7 @@ impl super::Bundle {
                     .clone()
                     .ok_or(ProverError::MissingFullViewingKey)?;
 
-                let note = Note::from_parts(
+                let note = Note::from_parts_with_version(
                     action
                         .spend
                         .recipient
@@ -44,6 +44,7 @@ impl super::Bundle {
                     action.spend.value.ok_or(ProverError::MissingValue)?,
                     action.spend.rho.ok_or(ProverError::MissingRho)?,
                     action.spend.rseed.ok_or(ProverError::MissingRandomSeed)?,
+                    action.spend.note_version,
                 )
                 .into_option()
                 .ok_or(ProverError::InvalidSpendNote)?;
@@ -57,7 +58,7 @@ impl super::Bundle {
                 let spend =
                     SpendInfo::new(fvk, note, merkle_path).ok_or(ProverError::WrongFvkForNote)?;
 
-                let output_note = Note::from_parts(
+                let output_note = Note::from_parts_with_version(
                     action
                         .output
                         .recipient
@@ -65,6 +66,7 @@ impl super::Bundle {
                     action.output.value.ok_or(ProverError::MissingValue)?,
                     Rho::from_nf_old(action.spend.nullifier),
                     action.output.rseed.ok_or(ProverError::MissingRandomSeed)?,
+                    action.output.note_version,
                 )
                 .into_option()
                 .ok_or(ProverError::InvalidOutputNote)?;

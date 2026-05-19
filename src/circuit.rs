@@ -163,11 +163,11 @@ impl Circuit {
         let sender_address = spend.note.recipient();
         let rho_old = spend.note.rho();
         let psi_old = spend.note.rseed().psi(&rho_old);
-        let rcm_old = spend.note.rseed().rcm(&rho_old);
+        let rcm_old = spend.note.rcm();
 
         let rho_new = output_note.rho();
         let psi_new = output_note.rseed().psi(&rho_new);
-        let rcm_new = output_note.rseed().rcm(&rho_new);
+        let rcm_new = output_note.rcm();
 
         Circuit {
             path: Value::known(spend.merkle_path.auth_path()),

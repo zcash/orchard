@@ -17,7 +17,7 @@ use crate::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
     },
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho},
+    note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
     value::{NoteValue, ValueCommitment},
     Address, Note,
 };
@@ -59,10 +59,9 @@ where
 {
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
-    // Check note plaintext version
-    if plaintext[0] != 0x02 {
-        return None;
-    }
+    // Check note plaintext version; accept both original and
+    // quantum-recoverable versions.
+    let note_version = NoteVersion::from_lead_byte(plaintext[0])?;
 
     // The unwraps below are guaranteed to succeed by the assertion above
     let diversifier = Diversifier::from_bytes(plaintext[1..12].try_into().unwrap());
@@ -75,7 +74,13 @@ where
     let pk_d = get_pk_d(&diversifier);
 
     let recipient = Address::from_parts(diversifier, pk_d);
-    let note = Option::from(Note::from_parts(recipient, value, domain.rho, rseed))?;
+    let note = Option::from(Note::from_parts_with_version(
+        recipient,
+        value,
+        domain.rho,
+        rseed,
+        note_version,
+    ))?;
     Some((note, recipient))
 }
 
@@ -169,7 +174,7 @@ impl Domain for OrchardDomain {
 
     fn note_plaintext_bytes(note: &Self::Note, memo: &Self::Memo) -> NotePlaintextBytes {
         let mut np = [0; NOTE_PLAINTEXT_SIZE];
-        np[0] = 0x02;
+        np[0] = note.version().lead_byte();
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
         np[12..20].copy_from_slice(&note.value().to_bytes());
         np[20..52].copy_from_slice(note.rseed().as_bytes());
