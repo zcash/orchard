@@ -22,6 +22,7 @@ const config: Config = {
   projectName: FORK_REPO,
 
   onBrokenLinks: 'throw',
+  onBrokenAnchors: 'throw',
 
   i18n: {
     defaultLocale: 'en',
@@ -30,6 +31,9 @@ const config: Config = {
 
   markdown: {
     format: 'detect',
+    hooks: {
+      onBrokenMarkdownLinks: 'throw',
+    },
   },
 
   presets: [
