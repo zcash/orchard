@@ -119,7 +119,7 @@ suggested track is:
    full; come back to
    [Chapter 4](./04-halo2-primer.md) only as a navigation aid.
 3. Read
-   [Chapter 5 Sections 3.5 to 3.8](./05-action-circuit.md#35-differences-from-sapling-at-the-circuit-level)
+   [Chapter 5 Sections 3.6 to 3.8](./05-action-circuit.md#36-differences-from-sapling-at-the-circuit-level)
    for the design trade-offs and the recursion status.
 4. Read
    [Chapter 18](./18-shielded-transfers.md) for the security
