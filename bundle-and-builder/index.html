@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">The Bundle and the Builder | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/bundle-and-builder"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="The Bundle and the Builder | Orchard onboarding"><meta data-rh="true" name="description" content="Assembly of Actions into a Bundle and the Unauthorized -&gt; Authorized typestate."><meta data-rh="true" property="og:description" content="Assembly of Actions into a Bundle and the Unauthorized -&gt; Authorized typestate."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/bundle-and-builder"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/bundle-and-builder" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/bundle-and-builder" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"The Bundle and the Builder","item":"https://dannywillems.github.io/orchard/bundle-and-builder"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.710676e4.css">
-<script src="/orchard/assets/js/runtime~main.fdabda4b.js" defer="defer"></script>
+<script src="/orchard/assets/js/runtime~main.7ec8fc62.js" defer="defer"></script>
 <script src="/orchard/assets/js/main.a00ae8eb.js" defer="defer"></script>
 </head>
 <body>
@@ -77,7 +77,8 @@ returning a structured error from <code>add_bundle</code>.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="35-sighash">3.5 SIGHASH<a href="#35-sighash" class="hash-link" aria-label="Direct link to 3.5 SIGHASH" title="Direct link to 3.5 SIGHASH" translate="no">​</a></h3>
 <p><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/bundle/commitments.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/bundle/commitments.rs</code></a>
 implements the per-Bundle digests used by the binding signature
-and the spend authorising signatures (per ZIP 244).</p>
+and the spend authorising signatures (per
+<a href="https://zips.z.cash/zip-0244" target="_blank" rel="noopener noreferrer" class="">ZIP 244</a>).</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="4-failure-modes">4. Failure Modes<a href="#4-failure-modes" class="hash-link" aria-label="Direct link to 4. Failure Modes" title="Direct link to 4. Failure Modes" translate="no">​</a></h2>
 <ul>
 <li class=""><strong>Order-dependent randomness</strong>. The builder shuffles the

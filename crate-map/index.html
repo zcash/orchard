@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Crate and Module Map | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/crate-map"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Crate and Module Map | Orchard onboarding"><meta data-rh="true" name="description" content="The module graph of zcash/orchard, what each module owns, and how a transaction flows through them."><meta data-rh="true" property="og:description" content="The module graph of zcash/orchard, what each module owns, and how a transaction flows through them."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/crate-map"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/crate-map" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/crate-map" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Crate and Module Map","item":"https://dannywillems.github.io/orchard/crate-map"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.710676e4.css">
-<script src="/orchard/assets/js/runtime~main.fdabda4b.js" defer="defer"></script>
+<script src="/orchard/assets/js/runtime~main.7ec8fc62.js" defer="defer"></script>
 <script src="/orchard/assets/js/main.a00ae8eb.js" defer="defer"></script>
 </head>
 <body>
@@ -89,7 +89,8 @@ the Sinsemilla-based incremental Merkle tree wrapper.</li>
 <li class=""><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/keys.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/keys.rs</code></a>
 derives every key in the Orchard key hierarchy.</li>
 <li class=""><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/zip32.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/zip32.rs</code></a>
-implements ZIP 32 hardened derivation on top.</li>
+implements <a href="https://zips.z.cash/zip-0032" target="_blank" rel="noopener noreferrer" class="">ZIP 32</a> hardened
+derivation on top.</li>
 <li class=""><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note_encryption.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/note_encryption.rs</code></a>
 plugs the Orchard-specific KDF and encoding into
 <code>zcash_note_encryption</code>.</li>
