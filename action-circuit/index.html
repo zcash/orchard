@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">The Orchard Action Circuit | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/action-circuit"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="The Orchard Action Circuit | Orchard onboarding"><meta data-rh="true" name="description" content="Public inputs, witness layout, and constraints of src/circuit.rs."><meta data-rh="true" property="og:description" content="Public inputs, witness layout, and constraints of src/circuit.rs."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/action-circuit"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/action-circuit" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/action-circuit" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"The Orchard Action Circuit","item":"https://dannywillems.github.io/orchard/action-circuit"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.710676e4.css">
-<script src="/orchard/assets/js/runtime~main.31e20607.js" defer="defer"></script>
+<script src="/orchard/assets/js/runtime~main.9c3ba696.js" defer="defer"></script>
 <script src="/orchard/assets/js/main.324263f9.js" defer="defer"></script>
 </head>
 <body>
@@ -56,22 +56,77 @@ subcircuit is disabled (dummy spend); when <code>enableOutputs = 0</code>,
 the output subcircuit is disabled.</li>
 </ol>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="3-the-code">3. The Code<a href="#3-the-code" class="hash-link" aria-label="Direct link to 3. The Code" title="Direct link to 3. The Code" translate="no">​</a></h2>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="31-the-config-struct">3.1 The <code>Config</code> Struct<a href="#31-the-config-struct" class="hash-link" aria-label="Direct link to 31-the-config-struct" title="Direct link to 31-the-config-struct" translate="no">​</a></h3>
-<div class="docusaurus-theme-github-codeblock"><div class="language-rust codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockTitle_OeMC">src/circuit.rs</div><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-rust codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">loading</span><span class="token punctuation" style="color:#393A34">...</span><br></div></code></pre></div></div><div style="font-size:.9em;font-weight:600;color:#0E75DD;text-align:right;padding-bottom:13px;text-decoration:underline"><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L17-L40" class="githubLink" style="margin:0 10px" target="_blank">View on GitHub</a></div></div>
-<p>The <code>Config</code> bundles all chip configs the Action circuit uses: the
-ECC chip, the Poseidon chip, two Sinsemilla configs (one per
-domain), the
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="31-what-the-circuit-proves-in-plain-terms">3.1 What the Circuit Proves, in Plain Terms<a href="#31-what-the-circuit-proves-in-plain-terms" class="hash-link" aria-label="Direct link to 3.1 What the Circuit Proves, in Plain Terms" title="Direct link to 3.1 What the Circuit Proves, in Plain Terms" translate="no">​</a></h3>
+<p>Before reading the source, fix the high-level picture: one
+invocation of the Action circuit produces a single zk-SNARK that
+convinces a verifier of all of the following at once, <strong>without
+revealing the secrets that make them true</strong>.</p>
+<ol>
+<li class=""><strong>The spender owns a real, unspent note</strong>. There exists a note
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>n</mi><mrow><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">l</mi><mi mathvariant="sans-serif">d</mi></mrow></msub></mrow><annotation encoding="application/x-tex">n_{\mathsf{old}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">old</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em"><span></span></span></span></span></span></span></span></span></span> whose commitment <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mrow><mi mathvariant="sans-serif">c</mi><mi mathvariant="sans-serif">m</mi></mrow><mrow><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">l</mi><mi mathvariant="sans-serif">d</mi></mrow></msub></mrow><annotation encoding="application/x-tex">\mathsf{cm}_{\mathsf{old}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5944em;vertical-align:-0.15em"></span><span class="mord"><span class="mord"><span class="mord mathsf">cm</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em"><span style="top:-2.55em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">old</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em"><span></span></span></span></span></span></span></span></span></span>
+is part of the global note commitment tree at the public
+anchor. The Merkle authentication path is in the witness; the
+anchor is public. The verifier learns nothing about the
+position of the note in the tree or its contents.</li>
+<li class=""><strong>The spender is authorised to spend it</strong>. The wallet knows the
+spending key whose authorising public key is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">a</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{ak}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">ak</span></span></span></span></span>.
+The circuit re-randomises <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">a</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{ak}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">ak</span></span></span></span></span> with a fresh scalar
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi></mrow><annotation encoding="application/x-tex">\alpha</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal" style="margin-right:0.0037em">α</span></span></span></span> into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">r</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{rk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">rk</span></span></span></span></span>, which is public; the verifier
+checks the signature against <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">r</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{rk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">rk</span></span></span></span></span> outside the circuit,
+but the circuit forces <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">r</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{rk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">rk</span></span></span></span></span> to be a re-randomisation
+of a key that controls a real note.</li>
+<li class=""><strong>The nullifier was computed honestly</strong>. The public nullifier
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">n</mi><mi mathvariant="sans-serif">f</mi></mrow><annotation encoding="application/x-tex">\mathsf{nf}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf" style="margin-right:0.0694em">nf</span></span></span></span></span> is the deterministic output of the spec&#x27;s
+nullifier formula on <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">n</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{nk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">nk</span></span></span></span></span> and the old note&#x27;s
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ρ</mi></mrow><annotation encoding="application/x-tex">\rho</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.625em;vertical-align:-0.1944em"></span><span class="mord mathnormal">ρ</span></span></span></span>. Two distinct spends of the same note necessarily
+produce the same nullifier, so the chain rejects the double
+spend without ever seeing the spender&#x27;s identity.</li>
+<li class=""><strong>A new note was committed to</strong>. There exists a fresh note
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>n</mi><mrow><mi mathvariant="sans-serif">n</mi><mi mathvariant="sans-serif">e</mi><mi mathvariant="sans-serif">w</mi></mrow></msub></mrow><annotation encoding="application/x-tex">n_{\mathsf{new}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.5806em;vertical-align:-0.15em"></span><span class="mord"><span class="mord mathnormal">n</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1611em"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight" style="margin-right:0.0139em">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em"><span></span></span></span></span></span></span></span></span></span> (recipient, value, randomness) whose
+commitment <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mrow><mi mathvariant="sans-serif">c</mi><mi mathvariant="sans-serif">m</mi></mrow><mo>⋆</mo></msup></mrow><annotation encoding="application/x-tex">\mathsf{cm}^\star</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6887em"></span><span class="mord"><span class="mord"><span class="mord mathsf">cm</span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.6887em"><span style="top:-3.063em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mbin mtight">⋆</span></span></span></span></span></span></span></span></span></span></span> is public and inserted into the
+tree on chain. The recipient and value are hidden; the
+commitment is opaque.</li>
+<li class=""><strong>Value is conserved up to a declared imbalance</strong>. The public
+net value commitment <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mrow><mi mathvariant="sans-serif">c</mi><mi mathvariant="sans-serif">v</mi></mrow><mrow><mi mathvariant="sans-serif">n</mi><mi mathvariant="sans-serif">e</mi><mi mathvariant="sans-serif">t</mi></mrow></msup></mrow><annotation encoding="application/x-tex">\mathsf{cv}^{\mathsf{net}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.763em"></span><span class="mord"><span class="mord"><span class="mord mathsf" style="margin-right:0.0139em">cv</span></span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.763em"><span style="top:-3.063em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">net</span></span></span></span></span></span></span></span></span></span></span></span></span> equals
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false">[</mo><msub><mi>v</mi><mrow><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">l</mi><mi mathvariant="sans-serif">d</mi></mrow></msub><mo>−</mo><msub><mi>v</mi><mrow><mi mathvariant="sans-serif">n</mi><mi mathvariant="sans-serif">e</mi><mi mathvariant="sans-serif">w</mi></mrow></msub><mo stretchy="false">]</mo><mi mathvariant="script">V</mi><mo>+</mo><mo stretchy="false">[</mo><mrow><mi mathvariant="sans-serif">r</mi><mi mathvariant="sans-serif">c</mi><mi mathvariant="sans-serif">v</mi></mrow><mo stretchy="false">]</mo><mi mathvariant="script">R</mi></mrow><annotation encoding="application/x-tex">[v_{\mathsf{old}} - v_{\mathsf{new}}] \mathcal{V} +
+[\mathsf{rcv}] \mathcal{R}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em"></span><span class="mopen">[</span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">old</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.1611em"><span style="top:-2.55em;margin-left:-0.0359em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight" style="margin-right:0.0139em">new</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em"><span></span></span></span></span></span></span><span class="mclose">]</span><span class="mord mathcal" style="margin-right:0.0822em">V</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em"></span><span class="mopen">[</span><span class="mord"><span class="mord mathsf" style="margin-right:0.0139em">rcv</span></span><span class="mclose">]</span><span class="mord mathcal">R</span></span></span></span> inside the circuit; summed across
+all Actions in the bundle, the differences add up to the
+public <code>value_balance</code> (verified outside the circuit by the
+binding signature; see <a class="" href="/orchard/value-commitments">Chapter 13</a>).</li>
+<li class=""><strong>Optional spend / output suppression</strong>. The public
+<code>enableSpends</code> and <code>enableOutputs</code> flags switch off the
+corresponding subcircuit when the Action is a dummy. This is
+how Orchard pads to a power-of-two Action count without
+leaking the real spend / output count.</li>
+</ol>
+<p>The circuit asserts these jointly. Every shielded Orchard
+transaction&#x27;s proof is one such SNARK over the whole bundle: each
+Action is one execution trace through this circuit, and the
+single proof attests to all of them together.</p>
+<p>A useful mental model: think of the Action circuit as a single
+small program that takes the witness as input, runs through the
+checks above in order, and aborts on the first failure. The
+prover convinces the verifier that an accepting execution exists,
+without revealing the input.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="32-the-config-struct">3.2 The <code>Config</code> Struct<a href="#32-the-config-struct" class="hash-link" aria-label="Direct link to 32-the-config-struct" title="Direct link to 32-the-config-struct" translate="no">​</a></h3>
+<div class="docusaurus-theme-github-codeblock"><div class="language-rust codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockTitle_OeMC">src/circuit.rs</div><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-rust codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">loading</span><span class="token punctuation" style="color:#393A34">...</span><br></div></code></pre></div></div><div style="font-size:.9em;font-weight:600;color:#0E75DD;text-align:right;padding-bottom:13px;text-decoration:underline"><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L87-L105" class="githubLink" style="margin:0 10px" target="_blank">View on GitHub</a></div></div>
+<p><code>Config</code> bundles every chip configuration the Action circuit uses:
+the primary instance column, the <code>q_orchard</code> selector, ten advice
+columns, the addition chip, the ECC chip, a Poseidon
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>P</mi><mn>128</mn><mrow><mi mathvariant="normal">P</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">s</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">a</mi></mrow></msubsup></mrow><annotation encoding="application/x-tex">P_{128}^{\mathrm{Pasta}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0894em;vertical-align:-0.2481em"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8413em"><span style="top:-2.4519em;margin-left:-0.1389em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">128</span></span></span></span><span style="top:-3.063em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">Pasta</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2481em"><span></span></span></span></span></span></span></span></span></span> sponge, two Merkle configs (one per
+hash domain), two Sinsemilla configs, the
 <a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit/commit_ivk.rs" target="_blank" rel="noopener noreferrer" class=""><code>CommitIvkChip</code></a>
-config, and the
+config, and two
 <a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit/note_commit.rs" target="_blank" rel="noopener noreferrer" class=""><code>NoteCommitChip</code></a>
-config.</p>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="32-synthesise">3.2 Synthesise<a href="#32-synthesise" class="hash-link" aria-label="Direct link to 3.2 Synthesise" title="Direct link to 3.2 Synthesise" translate="no">​</a></h3>
+configs (old and new note commitments share the chip but use
+distinct configurations).</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="33-synthesise">3.3 Synthesise<a href="#33-synthesise" class="hash-link" aria-label="Direct link to 3.3 Synthesise" title="Direct link to 3.3 Synthesise" translate="no">​</a></h3>
 <p><code>Circuit::synthesize</code> runs top to bottom: load the ECC and
 Sinsemilla chips, witness the Merkle path, derive <code>rk</code>, derive the
 nullifier, build both note commitments, and finally build the
 value commitment. Each step ends with a public-input equality
 constraint against the appropriate instance column.</p>
-<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="33-the-pinned-snapshot">3.3 The Pinned Snapshot<a href="#33-the-pinned-snapshot" class="hash-link" aria-label="Direct link to 3.3 The Pinned Snapshot" title="Direct link to 3.3 The Pinned Snapshot" translate="no">​</a></h3>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="34-the-pinned-snapshot">3.4 The Pinned Snapshot<a href="#34-the-pinned-snapshot" class="hash-link" aria-label="Direct link to 3.4 The Pinned Snapshot" title="Direct link to 3.4 The Pinned Snapshot" translate="no">​</a></h3>
 <p><a href="https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description" target="_blank" rel="noopener noreferrer" class=""><code>src/circuit_description/</code></a>
 holds a textual snapshot of the column layout, gates, and lookup
 tables; any change to the circuit shape must update it. The
@@ -79,6 +134,158 @@ companion
 <a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_proof_test_case.bin" target="_blank" rel="noopener noreferrer" class=""><code>src/circuit_proof_test_case.bin</code></a>
 is a pinned proof exercised by the unit tests; see
 <a class="" href="/orchard/test-vectors">Chapter 16 (Test Vectors)</a>.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="35-differences-from-sapling-at-the-circuit-level">3.5 Differences From Sapling at the Circuit Level<a href="#35-differences-from-sapling-at-the-circuit-level" class="hash-link" aria-label="Direct link to 3.5 Differences From Sapling at the Circuit Level" title="Direct link to 3.5 Differences From Sapling at the Circuit Level" translate="no">​</a></h3>
+<p>Sapling and Orchard solve the same problem (a shielded UTXO with
+a zk proof per output and per spend), but the circuit-level
+implementations differ on every axis. A reader who has read the
+Sapling Spend or Output circuit should expect almost no
+structural overlap with <code>src/circuit.rs</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Axis</th><th>Sapling</th><th>Orchard</th></tr></thead><tbody><tr><td>Proof system</td><td>Groth16</td><td>Halo 2 (IPA, no trusted setup)</td></tr><tr><td>Setup</td><td>Per-circuit MPC trusted setup (&quot;Powers of Tau&quot; + Sapling-specific)</td><td>Universal, transparent (only the SRS lives in code)</td></tr><tr><td>Arithmetisation</td><td>R1CS</td><td>PLONKish: advice + fixed + selector + instance columns, custom gates, lookups</td></tr><tr><td>Pairing curve</td><td>BLS12-381</td><td>None (no pairing; commitments are IPA on Vesta)</td></tr><tr><td>Embedded curve</td><td>Jubjub (twisted Edwards)</td><td>Pallas (short Weierstrass with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">j = 0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.854em;vertical-align:-0.1944em"></span><span class="mord mathnormal" style="margin-right:0.0572em">j</span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">0</span></span></span></span> endomorphism)</td></tr><tr><td>Distinct circuits</td><td>Two: <code>Spend</code> and <code>Output</code></td><td>One: <code>Action</code> (combines a spend and an output, with enable flags)</td></tr><tr><td>Proofs per transaction</td><td>One per Spend, one per Output</td><td>One per <code>Bundle</code> (all Actions in a single proof)</td></tr><tr><td>Merkle CRH</td><td>Pedersen hash on Jubjub</td><td>Sinsemilla on Pallas (windowed Pedersen with a 1024-entry lookup table)</td></tr><tr><td>Note commitment</td><td>Windowed Pedersen commitment</td><td><code>SinsemillaCommit</code> (same windowed structure as the CRH)</td></tr><tr><td>Nullifier PRF</td><td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">B</mi><mi mathvariant="sans-serif">l</mi><mi mathvariant="sans-serif">a</mi><mi mathvariant="sans-serif">k</mi><mi mathvariant="sans-serif">e</mi><mn mathvariant="sans-serif">2</mn><mi mathvariant="sans-serif">s</mi></mrow><annotation encoding="application/x-tex">\mathsf{Blake2s}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">Blake2s</span></span></span></span></span> in-circuit</td><td>Poseidon <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>P</mi><mn>128</mn><mrow><mi mathvariant="normal">P</mi><mi mathvariant="normal">a</mi><mi mathvariant="normal">s</mi><mi mathvariant="normal">t</mi><mi mathvariant="normal">a</mi></mrow></msubsup></mrow><annotation encoding="application/x-tex">P_{128}^{\mathrm{Pasta}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0894em;vertical-align:-0.2481em"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.1389em">P</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.8413em"><span style="top:-2.4519em;margin-left:-0.1389em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">128</span></span></span></span><span style="top:-3.063em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathrm mtight">Pasta</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2481em"><span></span></span></span></span></span></span></span></span></span> in-circuit</td></tr><tr><td>Spend authorisation</td><td>RedJubjub re-randomisable Schnorr</td><td>RedPallas re-randomisable Schnorr</td></tr><tr><td>Value commitment</td><td>Pedersen on Jubjub</td><td>Pedersen on Pallas</td></tr><tr><td>Circuit shape pin</td><td>None in-tree (compiled snapshots only)</td><td><a href="https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description" target="_blank" rel="noopener noreferrer" class=""><code>src/circuit_description/</code></a> text + pinned proof</td></tr><tr><td>Dummy padding</td><td>Not needed (separate Spend/Output proofs)</td><td>Pads Action list to a power of two with dummies gated by enable flags</td></tr><tr><td>Recursion-friendly</td><td>No (Groth16 + BLS12-381 does not recurse cleanly)</td><td>Yes (Halo 2 + Pasta cycle is designed for amortised recursion)</td></tr></tbody></table>
+<p>Consequences a contributor should keep in mind:</p>
+<ul>
+<li class="">A Sapling-style &quot;byte-oriented hash inside the circuit&quot; (Blake2s,
+SHA-256) is dramatically more expensive in Halo 2 than in
+Groth16 because PLONKish gates are field-aligned. Orchard&#x27;s
+switch to Sinsemilla and Poseidon was driven by this asymmetry.</li>
+<li class="">The single-proof-per-bundle design means every Action shares
+the prover&#x27;s expensive setup costs; bundle-level fixed costs
+dominate over per-Action marginal costs. This is the opposite
+trade-off to Sapling&#x27;s per-description proofs.</li>
+<li class="">Halo 2&#x27;s custom gates and lookups make the Action circuit
+cheaper at the cost of a much harder review surface. A reviewer
+comfortable with R1CS soundness arguments still needs to learn
+Halo 2&#x27;s PLONKish-specific failure modes
+(<a class="" href="/orchard/halo2-primer">Chapter 4</a>).</li>
+<li class="">The Pasta cycle exists precisely because Halo 2 wants future
+recursion. Sapling&#x27;s pairing-based setup could not do that
+without a separate cycle-of-pairings construction.</li>
+</ul>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="36-why-recursion-matters">3.6 Why Recursion Matters<a href="#36-why-recursion-matters" class="hash-link" aria-label="Direct link to 3.6 Why Recursion Matters" title="Direct link to 3.6 Why Recursion Matters" translate="no">​</a></h3>
+<p>The Pasta cycle and Halo 2&#x27;s transparent setup were chosen with
+<strong>proof recursion</strong> in mind. Recursion here means: a proof
+verifier is itself encoded as a circuit, so a proof can attest
+to the verification of another proof. The current Orchard Action
+circuit does not use recursion in production, but the design
+keeps the door open. Three reasons this matters.</p>
+<ol>
+<li class=""><strong>Cost amortisation across many transactions</strong>. Without
+recursion, a verifier validates each transaction&#x27;s proof
+independently in <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>O</mi><mo stretchy="false">(</mo><mi>log</mi><mo>⁡</mo><mi>n</mi><mo stretchy="false">)</mo></mrow><annotation encoding="application/x-tex">O(\log n)</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em"></span><span class="mord mathnormal" style="margin-right:0.0278em">O</span><span class="mopen">(</span><span class="mop">lo<span style="margin-right:0.0139em">g</span></span><span class="mspace" style="margin-right:0.1667em"></span><span class="mord mathnormal">n</span><span class="mclose">)</span></span></span></span> time, where <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal">n</span></span></span></span> is the circuit
+size. With recursion, many proofs collapse into one
+&quot;rollup&quot; proof whose verification time is independent of the
+batch size. For a chain that handles millions of shielded
+transactions, this is the difference between a node syncing
+in days versus in minutes.</li>
+<li class=""><strong>Light-client succinctness</strong>. A light client that cannot
+afford to store the chain can verify a single recursive proof
+that the chain&#x27;s entire history is valid. Without recursion,
+the light client must trust a third party for the chain&#x27;s
+state. Recursive Halo proofs make trust-minimised light
+clients feasible.</li>
+<li class=""><strong>Composable cryptography</strong>. Application-layer protocols
+(private bridges, private rollups, recursive zk-VMs) need to
+nest proofs cleanly. Sapling&#x27;s Groth16 cannot recurse without
+a second pairing-friendly curve cycle, which roughly doubles
+the prover cost and re-introduces a trusted setup. Halo 2
+over Pasta recurses with no extra ceremony: the verifier
+circuit and the prover live in the same field hierarchy.</li>
+</ol>
+<p>The cycle requirement (see <a class="" href="/orchard/pasta-curves">Chapter 3</a>) is
+the structural prerequisite: the field a circuit operates over
+must equal the scalar field of the curve that the inner proof
+uses, so the inner proof&#x27;s group elements can be witnessed as
+in-circuit values. The Pasta pair (Pallas, Vesta) is that
+prerequisite met with no trusted setup.</p>
+<p>In short: even when Orchard does not invoke recursion today, the
+choice of Halo 2 + Pasta keeps the future migration to recursive
+proofs an engineering exercise rather than a protocol break.</p>
+<p>For the parallel implementation, see
+<a href="https://github.com/zcash/sapling-crypto" target="_blank" rel="noopener noreferrer" class=""><code>zcash/sapling-crypto</code></a>.</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="4-failure-modes">4. Failure Modes<a href="#4-failure-modes" class="hash-link" aria-label="Direct link to 4. Failure Modes" title="Direct link to 4. Failure Modes" translate="no">​</a></h2>
 <ul>
 <li class=""><strong>Underconstrained witness</strong>. The most dangerous category of
@@ -128,6 +335,6 @@ the higher-level walkthrough maintained by EC Co. engineers.</li>
 <li class="">The audit reports cited in
 <a class="" href="/orchard/audits">Chapter 17 (Audits)</a> include line-by-line
 reviews of the circuit.</li>
-</ul></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href="https://github.com/dannywillems/orchard/edit/onboarding/onboarding/docs/05-action-circuit.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_Z9Sw" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/orchard/halo2-primer"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Halo 2 Primer</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/orchard/sinsemilla"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Sinsemilla</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#1-why-this-chapter-exists" class="table-of-contents__link toc-highlight">1. Why This Chapter Exists</a></li><li><a href="#2-definitions" class="table-of-contents__link toc-highlight">2. Definitions</a><ul><li><a href="#definition-21-public-inputs-of-an-action" class="table-of-contents__link toc-highlight">Definition 2.1 (Public Inputs of an Action)</a></li><li><a href="#definition-22-witness" class="table-of-contents__link toc-highlight">Definition 2.2 (Witness)</a></li><li><a href="#definition-23-constraint-groups" class="table-of-contents__link toc-highlight">Definition 2.3 (Constraint Groups)</a></li></ul></li><li><a href="#3-the-code" class="table-of-contents__link toc-highlight">3. The Code</a><ul><li><a href="#31-the-config-struct" class="table-of-contents__link toc-highlight">3.1 The <code>Config</code> Struct</a></li><li><a href="#32-synthesise" class="table-of-contents__link toc-highlight">3.2 Synthesise</a></li><li><a href="#33-the-pinned-snapshot" class="table-of-contents__link toc-highlight">3.3 The Pinned Snapshot</a></li></ul></li><li><a href="#4-failure-modes" class="table-of-contents__link toc-highlight">4. Failure Modes</a></li><li><a href="#5-spec-pointers" class="table-of-contents__link toc-highlight">5. Spec Pointers</a></li><li><a href="#6-exercises" class="table-of-contents__link toc-highlight">6. Exercises</a></li><li><a href="#7-further-reading" class="table-of-contents__link toc-highlight">7. Further Reading</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Source</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/dannywillems/orchard/tree/onboarding" target="_blank" rel="noopener noreferrer" class="footer__link-item">Fork (this site)<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/zcash/orchard" target="_blank" rel="noopener noreferrer" class="footer__link-item">Upstream zcash/orchard<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">References</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://zips.z.cash/protocol/protocol.pdf" target="_blank" rel="noopener noreferrer" class="footer__link-item">Zcash Protocol Specification<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://zips.z.cash/" target="_blank" rel="noopener noreferrer" class="footer__link-item">ZIPs index<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://zcash.github.io/halo2/" target="_blank" rel="noopener noreferrer" class="footer__link-item">Halo 2 Book<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Orchard onboarding course, ASCII only, neutral voice.</div></div></div></footer></div>
+</ul></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href="https://github.com/dannywillems/orchard/edit/onboarding/onboarding/docs/05-action-circuit.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_Z9Sw" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/orchard/halo2-primer"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Halo 2 Primer</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/orchard/sinsemilla"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Sinsemilla</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#1-why-this-chapter-exists" class="table-of-contents__link toc-highlight">1. Why This Chapter Exists</a></li><li><a href="#2-definitions" class="table-of-contents__link toc-highlight">2. Definitions</a><ul><li><a href="#definition-21-public-inputs-of-an-action" class="table-of-contents__link toc-highlight">Definition 2.1 (Public Inputs of an Action)</a></li><li><a href="#definition-22-witness" class="table-of-contents__link toc-highlight">Definition 2.2 (Witness)</a></li><li><a href="#definition-23-constraint-groups" class="table-of-contents__link toc-highlight">Definition 2.3 (Constraint Groups)</a></li></ul></li><li><a href="#3-the-code" class="table-of-contents__link toc-highlight">3. The Code</a><ul><li><a href="#31-what-the-circuit-proves-in-plain-terms" class="table-of-contents__link toc-highlight">3.1 What the Circuit Proves, in Plain Terms</a></li><li><a href="#32-the-config-struct" class="table-of-contents__link toc-highlight">3.2 The <code>Config</code> Struct</a></li><li><a href="#33-synthesise" class="table-of-contents__link toc-highlight">3.3 Synthesise</a></li><li><a href="#34-the-pinned-snapshot" class="table-of-contents__link toc-highlight">3.4 The Pinned Snapshot</a></li><li><a href="#35-differences-from-sapling-at-the-circuit-level" class="table-of-contents__link toc-highlight">3.5 Differences From Sapling at the Circuit Level</a></li><li><a href="#36-why-recursion-matters" class="table-of-contents__link toc-highlight">3.6 Why Recursion Matters</a></li></ul></li><li><a href="#4-failure-modes" class="table-of-contents__link toc-highlight">4. Failure Modes</a></li><li><a href="#5-spec-pointers" class="table-of-contents__link toc-highlight">5. Spec Pointers</a></li><li><a href="#6-exercises" class="table-of-contents__link toc-highlight">6. Exercises</a></li><li><a href="#7-further-reading" class="table-of-contents__link toc-highlight">7. Further Reading</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Source</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/dannywillems/orchard/tree/onboarding" target="_blank" rel="noopener noreferrer" class="footer__link-item">Fork (this site)<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/zcash/orchard" target="_blank" rel="noopener noreferrer" class="footer__link-item">Upstream zcash/orchard<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">References</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://zips.z.cash/protocol/protocol.pdf" target="_blank" rel="noopener noreferrer" class="footer__link-item">Zcash Protocol Specification<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://zips.z.cash/" target="_blank" rel="noopener noreferrer" class="footer__link-item">ZIPs index<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://zcash.github.io/halo2/" target="_blank" rel="noopener noreferrer" class="footer__link-item">Halo 2 Book<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Orchard onboarding course, ASCII only, neutral voice.</div></div></div></footer></div>
 </body>
 </html>
