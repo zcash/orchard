@@ -17,6 +17,24 @@ the reader can match each clause of the Action statement in the
 Zcash Protocol Specification to a `Constraints::with_selector`
 block in this file.
 
+### A Note on the Term "Action"
+
+Sapling has two separate description types per shielded operation,
+`Spend` and `Output`, that an external observer can count and
+distinguish. Orchard collapses both into a single unified
+description called an **Action**, with `enableSpends` /
+`enableOutputs` flags that toggle the spend or output subcircuit
+on or off. The privacy gain is that an external observer cannot
+tell, from the shape of the bundle, whether an Action is a real
+spend with a real output, a real spend with a dummy output, a
+dummy spend with a real output, or two dummies; everything looks
+the same on the wire. The term was introduced in the original
+Orchard proposal,
+[zcash/zips#435 "Orchard (provisional name) Shielded Protocol"](https://github.com/zcash/zips/issues/435),
+and normalised in
+[ZIP 224](https://zips.z.cash/zip-0224) and Section 4.20 of the
+Zcash Protocol Specification.
+
 ## 2. Definitions
 
 ### Definition 2.1 (Public Inputs of an Action)
@@ -142,7 +160,80 @@ nullifier, build both note commitments, and finally build the
 value commitment. Each step ends with a public-input equality
 constraint against the appropriate instance column.
 
-### 3.4 The Pinned Snapshot
+### 3.4 Proving and Verifying Keys (Location and Size)
+
+Halo 2 needs two derived keys per circuit:
+
+- A **`VerifyingKey`**: the structured reference string (SRS) plus
+  the commitments to the fixed columns (selectors, lookup tables,
+  precomputed bases). Sufficient to verify a proof.
+- A **`ProvingKey`**: the `VerifyingKey` plus the prover-side
+  precomputed data (the Lagrange evaluation of every fixed
+  column, the permutation argument data). Sufficient to produce a
+  proof.
+
+Both types are declared in
+[`src/circuit.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs):
+
+- [`VerifyingKey`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L765-L782)
+  (lines 765 to 782).
+- [`ProvingKey`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L784-L802)
+  (lines 784 to 802).
+
+Neither key is stored as a file in the repository. Both are
+**deterministically (re)derived** at process start by calling
+`VerifyingKey::build()` or `ProvingKey::build()`. Both functions
+take no parameters: the SRS is built from
+`halo2_proofs::poly::commitment::Params::new(K)` and the
+verifying key from `plonk::keygen_vk(&params, &circuit)` against
+the default `Circuit`. The construction is reproducible bit for
+bit because it has no random input; the SRS is the IPA-style
+public parameters, with no trusted setup.
+
+#### Size
+
+The circuit constant is `const K: u32 = 11;` (line 74 of
+[`src/circuit.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L74-L74)),
+so the PLONKish table has $2^{K} = 2048$ rows. The keys' sizes
+scale with $2^K$:
+
+- **SRS (`Params<vesta::Affine>`)**: a vector of $2^K$ Vesta
+  curve points. Each compressed point is 32 bytes, so the SRS
+  is on the order of $2^{11} \times 32 \approx 64$ KiB. The
+  uncompressed (in-memory) form roughly doubles that.
+- **`VerifyingKey`**: SRS plus one Vesta-point commitment per
+  fixed column. With a few tens of fixed columns the additional
+  data is on the order of a kilobyte; the verifying key is
+  dominated by the SRS.
+- **`ProvingKey`**: `VerifyingKey` plus the Lagrange basis
+  evaluation of every fixed column (one `[Fp; 2^K]` array per
+  column), plus the permutation polynomial data. Each scalar is
+  32 bytes; with a few tens of fixed and advice columns at
+  $2^K = 2048$ rows, the proving key sits in the low single-digit
+  megabytes.
+- **Action proof itself** (one per bundle, not per Action): a
+  fixed-size sequence of group elements and scalars that grows
+  with $\log(2^K) = K$ rounds of IPA. At the pin, an Action proof
+  is in the kilobytes range.
+
+A contributor must remember three operational consequences:
+
+1. The keys are **not persisted to disk** by the crate. A
+   long-running prover usually calls `ProvingKey::build()` once
+   at startup and reuses the result; rebuilding for every proof
+   wastes seconds of CPU.
+2. **Increasing `K`** (because a new gate ran out of rows)
+   doubles the SRS, the verifying key, and roughly doubles the
+   prover time and proof size. Any PR that bumps `K` must
+   justify the cost.
+3. The keys depend on the **circuit shape**, not on a witness.
+   Any change to a chip configuration that affects column
+   counts, gate definitions, or lookup tables invalidates the
+   keys derived by previous binaries. The pinned proof
+   [`src/circuit_proof_test_case.bin`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_proof_test_case.bin)
+   catches such drift in CI.
+
+### 3.5 The Pinned Snapshot
 
 [`src/circuit_description/`](https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description)
 holds a textual snapshot of the column layout, gates, and lookup
@@ -152,7 +243,7 @@ companion
 is a pinned proof exercised by the unit tests; see
 [Chapter 16 (Test Vectors)](./16-test-vectors.md).
 
-### 3.5 Differences From Sapling at the Circuit Level
+### 3.6 Differences From Sapling at the Circuit Level
 
 Sapling and Orchard solve the same problem (a shielded UTXO with
 a zk proof per output and per spend), but the circuit-level
@@ -176,7 +267,7 @@ structural overlap with `src/circuit.rs`.
 | Value commitment          | Pedersen on Jubjub                                                   | Pedersen on Pallas                                                         |
 | Circuit shape pin         | None in-tree (compiled snapshots only)                               | [`src/circuit_description/`](https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description) text + pinned proof |
 | Dummy padding             | Not needed (separate Spend/Output proofs)                            | Pads Action list to a power of two with dummies gated by enable flags      |
-| Recursion-friendly        | No (Groth16 + BLS12-381 does not recurse cleanly)                    | Yes (Halo 2 + Pasta cycle is designed for amortised recursion)             |
+| Recursion-friendly        | No (Groth16 + BLS12-381 does not recurse cleanly)                    | Designed for it (Halo 2 + Pasta cycle); recursion not yet shipped in `zcash/halo2` (see [#75](https://github.com/zcash/halo2/issues/75), [#249](https://github.com/zcash/halo2/issues/249), [#251](https://github.com/zcash/halo2/issues/251)) |
 
 Consequences a contributor should keep in mind:
 
@@ -197,14 +288,68 @@ Consequences a contributor should keep in mind:
   recursion. Sapling's pairing-based setup could not do that
   without a separate cycle-of-pairings construction.
 
-### 3.6 Why Recursion Matters
+### 3.7 What Halo 2 Is Used For Today
 
-The Pasta cycle and Halo 2's transparent setup were chosen with
-**proof recursion** in mind. Recursion here means: a proof
-verifier is itself encoded as a circuit, so a proof can attest
-to the verification of another proof. The current Orchard Action
-circuit does not use recursion in production, but the design
-keeps the door open. Three reasons this matters.
+Orchard ships Halo 2 as a **transparent, non-recursive zk-SNARK
+for a single fixed circuit**. Concretely, the production usage
+consists of three layers and nothing more:
+
+1. **Custom-gate PLONKish arithmetisation**. The Action circuit
+   is one PLONKish table of $2^K$ rows with the column layout
+   described in `Config` ([Section 3.2](#32-the-config-struct)).
+   Custom gates and lookups encode the bit-decomposition checks,
+   the Sinsemilla windowed multiplication, and the Poseidon
+   permutation. Source:
+   [`zcash/halo2` `halo2_proofs`](https://github.com/zcash/halo2/tree/main/halo2_proofs).
+2. **Inner-product-argument (IPA) polynomial commitments over
+   Vesta**. Column commitments are folded with the IPA protocol
+   from the
+   [Halo paper](https://eprint.iacr.org/2019/1021).
+   This is what makes the setup transparent: there is no trusted
+   setup ceremony, only a public structured reference string
+   derived from a published seed.
+3. **Blake2b Fiat-Shamir transcript**. The outer transcript that
+   binds commitments and challenges is a plain Blake2b instance;
+   no in-circuit verifier exists yet. See
+   [Chapter 4](./04-halo2-primer.md).
+
+Production Orchard **does not**, at the pin, do any of the
+following:
+
+- **Recursive proof composition**. The Halo 2 verifier is not
+  encoded as a circuit. Each Action bundle's proof is verified
+  classically and standalone. The recursion machinery is tracked
+  by the open issues
+  [zcash/halo2#75 "Implement support for recursion"](https://github.com/zcash/halo2/issues/75),
+  [zcash/halo2#249 "Implement recursion circuit logic for
+  handling public inputs"](https://github.com/zcash/halo2/issues/249),
+  and
+  [zcash/halo2#251 "Implement user-facing API for recursive
+  proving of IVC"](https://github.com/zcash/halo2/issues/251),
+  all open at the time the course was pinned. These issues carry
+  the `A-recursion` and `C-target` labels: target functionality
+  that is part of the long-term roadmap but not yet shipped.
+- **Accumulation / folding**. Halo's original accumulation
+  argument is the building block that recursion would need; the
+  upstream crate does not expose an accumulator API yet.
+- **A circuit-level verifier**. There is no in-circuit
+  verification gadget in `halo2_gadgets`. Adding one is a
+  prerequisite to any recursion work.
+
+In short, Halo 2 in Orchard today is the **plain non-recursive
+SNARK** layer of the protocol. The Pasta cycle is the structural
+prerequisite that *would let* recursion happen without further
+breaking changes; the work of actually shipping that recursion is
+upstream and unfinished.
+
+### 3.8 Why Recursion Matters
+
+Recursion here means: a proof verifier is itself encoded as a
+circuit, so a proof can attest to the verification of another
+proof. The Orchard Action circuit does not use recursion at the
+pin (see [Section 3.7](#37-what-halo-2-is-used-for-today) for the
+tracking issues). The design keeps the door open. Three reasons
+this matters.
 
 1. **Cost amortisation across many transactions**. Without
    recursion, a verifier validates each transaction's proof
