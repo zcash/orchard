@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-worked-example" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.10.1">
+<title data-rh="true">Worked Example: Byte-by-Byte Anatomy of an Orchard Bundle | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/worked-example"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Worked Example: Byte-by-Byte Anatomy of an Orchard Bundle | Orchard onboarding"><meta data-rh="true" name="description" content="A reproducible Orchard transaction (from tests/builder.rs) dissected field by field, with every byte linked to the source code that produced it and the ZIP that specifies its wire format."><meta data-rh="true" property="og:description" content="A reproducible Orchard transaction (from tests/builder.rs) dissected field by field, with every byte linked to the source code that produced it and the ZIP that specifies its wire format."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/worked-example"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/worked-example" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/worked-example" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Worked Example: Byte-by-Byte Anatomy of an Orchard Bundle","item":"https://dannywillems.github.io/orchard/worked-example"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.710676e4.css">
+<script src="/orchard/assets/js/runtime~main.a7786921.js" defer="defer"></script>
+<script src="/orchard/assets/js/main.e26681d5.js" defer="defer"></script>
+</head>
+<body>
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const n=new URLSearchParams(window.location.search).entries();for(var[t,e]of n)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}(),document.documentElement.setAttribute("data-announcement-bar-initially-dismissed",function(){try{return"true"===localStorage.getItem("docusaurus.announcement.dismiss")}catch(t){}return!1}())</script><div id="__docusaurus"><div role="region" aria-label="Skip to main content"><a class="skipToContent_fXgn" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><div class="theme-announcement-bar announcementBar_mb4j" style="background-color:#fef3c7;color:#78350f" role="banner"><div class="content_knG7 announcementBarContent_xLdY">This site is automatically generated using Claude Code. Errors may have been introduced. The code is the law, always refer to the source in the zcash/orchard crate.</div></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" href="/orchard/"><b class="navbar__title text--truncate">Orchard onboarding</b></a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/orchard/">Course</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a href="https://github.com/dannywillems/orchard/tree/onboarding" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link">GitHub (fork)<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_Bca1"><div class="navbar__search searchBarContainer_NW3z" dir="ltr"><input placeholder="Search" aria-label="Search" class="navbar__search-input searchInput_YFbd" value=""><div class="loadingRing_RJI3 searchBarLoadingRing_YnHq"><div></div><div></div><div></div><div></div></div></div></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class="docsWrapper_hBAB"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type="button"></button><div class="docRoot_UBD9"><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class="sidebarViewport_aRkj"><div class="sidebar_njMd"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_SIkG menuWithAnnouncementBar_GW3s"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/"><span title="Orchard Onboarding Course" class="linkLabel_WmDU">Orchard Onboarding Course</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/references"><span title="Names, ZIPs, Issues, and PRs" class="linkLabel_WmDU">Names, ZIPs, Issues, and PRs</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/crate-map"><span title="Crate and Module Map" class="linkLabel_WmDU">Crate and Module Map</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/build-test-contribute"><span title="Build, Test, and Contribute" class="linkLabel_WmDU">Build, Test, and Contribute</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/pasta-curves"><span title="The Pasta Cycle of Curves" class="linkLabel_WmDU">The Pasta Cycle of Curves</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/halo2-primer"><span title="Halo 2 Primer" class="linkLabel_WmDU">Halo 2 Primer</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/action-circuit"><span title="The Orchard Action Circuit" class="linkLabel_WmDU">The Orchard Action Circuit</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/sinsemilla"><span title="Sinsemilla" class="linkLabel_WmDU">Sinsemilla</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/poseidon"><span title="Poseidon" class="linkLabel_WmDU">Poseidon</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/keys-and-addresses"><span title="Keys and Addresses" class="linkLabel_WmDU">Keys and Addresses</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/notes-nullifiers-commitments"><span title="Notes, Nullifiers, and Commitments" class="linkLabel_WmDU">Notes, Nullifiers, and Commitments</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/note-encryption"><span title="Note Encryption" class="linkLabel_WmDU">Note Encryption</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/merkle-tree"><span title="The Note Commitment Tree" class="linkLabel_WmDU">The Note Commitment Tree</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/bundle-and-builder"><span title="The Bundle and the Builder" class="linkLabel_WmDU">The Bundle and the Builder</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/value-commitments"><span title="Value Commitments and the Value Pool" class="linkLabel_WmDU">Value Commitments and the Value Pool</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/redpallas"><span title="RedPallas, the Action Signature Scheme" class="linkLabel_WmDU">RedPallas, the Action Signature Scheme</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/dependencies"><span title="Dependencies and Constant-Time Discipline" class="linkLabel_WmDU">Dependencies and Constant-Time Discipline</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/test-vectors"><span title="Test Vectors and Cross-Implementation Checks" class="linkLabel_WmDU">Test Vectors and Cross-Implementation Checks</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/audits"><span title="Audits and Historical Issues" class="linkLabel_WmDU">Audits and Historical Issues</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/shielded-transfers"><span title="From Actions to Shielded Transfers" class="linkLabel_WmDU">From Actions to Shielded Transfers</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/research-frontier"><span title="Research Frontier and Improvement Vectors" class="linkLabel_WmDU">Research Frontier and Improvement Vectors</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/study-plan"><span title="Six-Week Study Plan" class="linkLabel_WmDU">Six-Week Study Plan</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/cheat-sheet"><span title="Local Development Cheat Sheet" class="linkLabel_WmDU">Local Development Cheat Sheet</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/pr-checklist"><span title="PR Checklist" class="linkLabel_WmDU">PR Checklist</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/glossary"><span title="Glossary" class="linkLabel_WmDU">Glossary</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" href="/orchard/worked-example"><span title="Worked Example: Byte-by-Byte Anatomy of an Orchard Bundle" class="linkLabel_WmDU">Worked Example: Byte-by-Byte Anatomy of an Orchard Bundle</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/orchard/discovery"><span title="Discovery Notes" class="linkLabel_WmDU">Discovery Notes</span></a></li></ul></nav></div></div></aside><main class="docMainContainer_TBSr"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_VOVn"><div class="docItemContainer_Djhp"><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label="Breadcrumbs"><ul class="breadcrumbs"><li class="breadcrumbs__item"><a aria-label="Home page" class="breadcrumbs__link" href="/orchard/"><svg viewBox="0 0 24 24" class="breadcrumbHomeIcon_YNFT"><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill="currentColor"></path></svg></a></li><li class="breadcrumbs__item breadcrumbs__item--active"><span class="breadcrumbs__link">Worked Example: Byte-by-Byte Anatomy of an Orchard Bundle</span></li></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type="button" class="clean-btn tocCollapsibleButton_TO0P">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Worked Example: Byte-by-Byte Anatomy of an Orchard Bundle</h1></header>
+<p>This page picks a single concrete Orchard bundle and decodes
+every byte. The bundle is the one produced by the integration
+test
+<a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/tests/builder.rs" target="_blank" rel="noopener noreferrer" class=""><code>tests/builder.rs::bundle_chain</code></a>
+at the pin
+(<a href="https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669" target="_blank" rel="noopener noreferrer" class=""><code>f8915bc</code></a>),
+which means the reader can reproduce every number locally with
+<code>cargo test --release --test builder</code>.</p>
+<p>The byte layout follows
+<a href="https://zips.z.cash/zip-0225" target="_blank" rel="noopener noreferrer" class="">ZIP 225 &quot;Version 5 Transaction Format&quot;</a>;
+the Orchard fields appear inside the transaction in the order
+documented there.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="1-the-scenario">1. The Scenario<a href="#1-the-scenario" class="hash-link" aria-label="Direct link to 1. The Scenario" title="Direct link to 1. The Scenario" translate="no">​</a></h2>
+<p><code>bundle_chain</code> builds two bundles in sequence. The first spends a
+single note from a freshly-funded account and creates two output
+notes (one to a fresh recipient, one to the sender as change).
+The second spends one of those output notes. We dissect the
+<strong>first</strong> bundle.</p>
+<p>Parameters at construction time:</p>
+<ul>
+<li class=""><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">N = 2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">2</span></span></span></span> Actions (the minimum;
+<a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/builder.rs#L36-L36" target="_blank" rel="noopener noreferrer" class=""><code>MIN_ACTIONS</code></a>).
+Both Actions are real (no dummies needed for <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">N = 2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">2</span></span></span></span>).</li>
+<li class=""><code>flagsOrchard</code>: spends enabled, outputs enabled.</li>
+<li class=""><code>valueBalanceOrchard</code>: zero (a pure shielded -&gt; shielded
+transfer of the input value, split into two outputs).</li>
+<li class=""><code>anchorOrchard</code>: the root of a tree containing exactly the
+fresh input note&#x27;s commitment.</li>
+</ul>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="2-anatomy-of-one-action-description">2. Anatomy of One Action Description<a href="#2-anatomy-of-one-action-description" class="hash-link" aria-label="Direct link to 2. Anatomy of One Action Description" title="Direct link to 2. Anatomy of One Action Description" translate="no">​</a></h2>
+<p>An Action description on the wire is exactly <strong>820 bytes</strong>,
+laid out in the order below. Field source links point at the
+Rust type or function that produces the bytes; serialisation
+itself happens in <code>librustzcash</code>&#x27;s transaction encoder against
+the public surface of this crate.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th style="text-align:right">Offset</th><th style="text-align:right">Size</th><th>Field</th><th>Wire encoding</th><th>Source</th></tr></thead><tbody><tr><td style="text-align:right">0</td><td style="text-align:right">32 bytes</td><td><code>cv_net_i</code></td><td>Compressed Pallas point (<code>pallas::Point::to_bytes</code>)</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/value.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/value.rs</code></a> <code>ValueCommitment::to_bytes</code></td></tr><tr><td style="text-align:right">32</td><td style="text-align:right">32 bytes</td><td><code>nf_i</code></td><td>Pallas base-field element, little-endian</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note/nullifier.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/note/nullifier.rs</code></a> <code>Nullifier::to_bytes</code></td></tr><tr><td style="text-align:right">64</td><td style="text-align:right">32 bytes</td><td><code>rk_i</code></td><td>Compressed Pallas point (RedPallas VerificationKey)</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/primitives/redpallas.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/primitives/redpallas.rs</code></a> (via <a href="https://github.com/ZcashFoundation/reddsa" target="_blank" rel="noopener noreferrer" class=""><code>reddsa</code></a>)</td></tr><tr><td style="text-align:right">96</td><td style="text-align:right">32 bytes</td><td><code>cmx_i</code></td><td>Pallas base-field element, little-endian</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note/commitment.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/note/commitment.rs</code></a> <code>ExtractedNoteCommitment::to_bytes</code></td></tr><tr><td style="text-align:right">128</td><td style="text-align:right">32 bytes</td><td><code>epk_i</code></td><td>Compressed Pallas point (ephemeral public key)</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs#L311-L319" target="_blank" rel="noopener noreferrer" class=""><code>src/note.rs</code></a> <code>TransmittedNoteCiphertext.epk_bytes</code></td></tr><tr><td style="text-align:right">160</td><td style="text-align:right">580 bytes</td><td><code>enc_ciphertext_i</code></td><td>ChaCha20-Poly1305 AEAD output (plaintext + 16-byte tag)</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note_encryption.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/note_encryption.rs</code></a> <code>OrchardDomain</code></td></tr><tr><td style="text-align:right">740</td><td style="text-align:right">80 bytes</td><td><code>out_ciphertext_i</code></td><td>ChaCha20-Poly1305 AEAD output (32-byte <code>pk_d</code> + 32-byte <code>esk</code> + 16-byte tag)</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note_encryption.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/note_encryption.rs</code></a> <code>OrchardDomain</code></td></tr><tr><td style="text-align:right">820</td><td style="text-align:right">end</td><td></td><td></td><td></td></tr></tbody></table>
+<p>The in-memory layout of the same data is the
+<a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/action.rs#L18-L27" target="_blank" rel="noopener noreferrer" class=""><code>Action&lt;A&gt;</code></a>
+struct (six fields, with the spend-authorising signature stored
+separately in the <code>Authorization</code> typestate parameter <code>A</code>).
+Field semantics are documented in
+<a class="" href="/orchard/action-circuit">Chapter 5 (the Action circuit)</a> and
+<a class="" href="/orchard/bundle-and-builder">Chapter 12 (Bundle and Builder)</a>.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="21-inside-enc_ciphertext_i-580-bytes">2.1 Inside <code>enc_ciphertext_i</code> (580 Bytes)<a href="#21-inside-enc_ciphertext_i-580-bytes" class="hash-link" aria-label="Direct link to 21-inside-enc_ciphertext_i-580-bytes" title="Direct link to 21-inside-enc_ciphertext_i-580-bytes" translate="no">​</a></h3>
+<p>The plaintext that is encrypted is the
+<a href="https://github.com/zcash/librustzcash/tree/main/zcash_note_encryption" target="_blank" rel="noopener noreferrer" class=""><code>NotePlaintextBytes</code></a>
+encoding (564 bytes) followed by a 16-byte Poly1305 tag:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th style="text-align:right">Sub-offset</th><th style="text-align:right">Size</th><th>Field</th><th>Source</th></tr></thead><tbody><tr><td style="text-align:right">0</td><td style="text-align:right">1 byte</td><td>lead byte</td><td><a href="https://zips.z.cash/zip-0212" target="_blank" rel="noopener noreferrer" class="">ZIP 212</a> version tag (<code>0x02</code> for Orchard)</td></tr><tr><td style="text-align:right">1</td><td style="text-align:right">11 bytes</td><td>diversifier <code>d</code></td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/keys.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/keys.rs</code></a> <code>Diversifier</code></td></tr><tr><td style="text-align:right">12</td><td style="text-align:right">8 bytes</td><td>value <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal" style="margin-right:0.0359em">v</span></span></span></span></td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/value.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/value.rs</code></a> <code>NoteValue</code> (little-endian u64)</td></tr><tr><td style="text-align:right">20</td><td style="text-align:right">32 bytes</td><td><code>rseed</code></td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/note.rs</code></a> <code>RandomSeed</code></td></tr><tr><td style="text-align:right">52</td><td style="text-align:right">512 bytes</td><td>memo</td><td>Per <a href="https://zips.z.cash/zip-0302" target="_blank" rel="noopener noreferrer" class="">ZIP 302</a>; padded to a fixed length</td></tr><tr><td style="text-align:right">564</td><td style="text-align:right">16 bytes</td><td>AEAD tag</td><td>Poly1305 over the ChaCha20 keystream of the previous 564 bytes</td></tr><tr><td style="text-align:right">580</td><td style="text-align:right">end</td><td></td><td></td></tr></tbody></table>
+<p>The recipient derives <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>ψ</mi></mrow><annotation encoding="application/x-tex">\psi</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em"></span><span class="mord mathnormal" style="margin-right:0.0359em">ψ</span></span></span></span> and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">r</mi><mi mathvariant="sans-serif">c</mi><mi mathvariant="sans-serif">m</mi></mrow><annotation encoding="application/x-tex">\mathsf{rcm}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4444em"></span><span class="mord"><span class="mord mathsf">rcm</span></span></span></span></span> from <code>rseed</code>
+(see <a class="" href="/orchard/note-encryption">Chapter 10</a>, Section 3.1), so the
+plaintext does not transmit them explicitly. This is the
+malleability defence introduced by ZIP 212.</p>
+<h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="22-inside-out_ciphertext_i-80-bytes">2.2 Inside <code>out_ciphertext_i</code> (80 Bytes)<a href="#22-inside-out_ciphertext_i-80-bytes" class="hash-link" aria-label="Direct link to 22-inside-out_ciphertext_i-80-bytes" title="Direct link to 22-inside-out_ciphertext_i-80-bytes" translate="no">​</a></h3>
+<p>The outgoing ciphertext lets the sender recover the note from
+their own outgoing viewing key. It encrypts a fixed 64-byte
+plaintext under a key derived from <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">v</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{ovk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">ovk</span></span></span></span></span> and the
+Action&#x27;s public fields:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th style="text-align:right">Sub-offset</th><th style="text-align:right">Size</th><th>Field</th><th>Source</th></tr></thead><tbody><tr><td style="text-align:right">0</td><td style="text-align:right">32 bytes</td><td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">p</mi><msub><mi mathvariant="sans-serif">k</mi><mi mathvariant="sans-serif">d</mi></msub></mrow><annotation encoding="application/x-tex">\mathsf{pk_d}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em"></span><span class="mord"><span class="mord mathsf">p</span><span class="mord"><span class="mord mathsf">k</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3361em"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathsf mtight">d</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em"><span></span></span></span></span></span></span></span></span></span></span></td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/keys.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/keys.rs</code></a> <code>DiversifiedTransmissionKey</code></td></tr><tr><td style="text-align:right">32</td><td style="text-align:right">32 bytes</td><td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">e</mi><mi mathvariant="sans-serif">s</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{esk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">esk</span></span></span></span></span></td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/keys.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/keys.rs</code></a> <code>EphemeralSecretKey</code></td></tr><tr><td style="text-align:right">64</td><td style="text-align:right">16 bytes</td><td>AEAD tag</td><td>Poly1305</td></tr><tr><td style="text-align:right">80</td><td style="text-align:right">end</td><td></td><td></td></tr></tbody></table>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="3-anatomy-of-the-whole-bundle">3. Anatomy of the Whole Bundle<a href="#3-anatomy-of-the-whole-bundle" class="hash-link" aria-label="Direct link to 3. Anatomy of the Whole Bundle" title="Direct link to 3. Anatomy of the Whole Bundle" translate="no">​</a></h2>
+<p>A v5 transaction&#x27;s Orchard region (ZIP 225, Section &quot;Orchard
+Transaction Fields&quot;) is laid out as follows. For our two-Action
+bundle the total is approximately <strong>3.85 KiB</strong>, dominated by the
+two Action descriptions and the proof.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Field</th><th>Size</th><th>Wire encoding</th><th>Source</th></tr></thead><tbody><tr><td><code>nActionsOrchard</code></td><td><code>CompactSize</code> (1 byte for <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">N=2</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">2</span></span></span></span>)</td><td>Variable-length count prefix</td><td>Transaction encoder</td></tr><tr><td><code>vActionsOrchard</code></td><td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>×</mo><mn>820</mn><mo>=</mo><mn>1640</mn></mrow><annotation encoding="application/x-tex">N \times 820 = 1640</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">820</span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">1640</span></span></span></span> bytes</td><td>Concatenated Action descriptions, in shuffle order (see <a class="" href="/orchard/bundle-and-builder">Chapter 12</a>)</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/action.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/action.rs</code></a></td></tr><tr><td><code>flagsOrchard</code></td><td>1 byte</td><td>Bit 0 = <code>enableSpends</code>, Bit 1 = <code>enableOutputs</code>, bits 2..7 reserved zero</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/bundle.rs#L57-L74" target="_blank" rel="noopener noreferrer" class=""><code>src/bundle.rs</code></a> <code>Flags</code></td></tr><tr><td><code>valueBalanceOrchard</code></td><td>8 bytes</td><td>Signed 63-bit integer encoded as a signed little-endian i64</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/value.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/value.rs</code></a> <code>ValueSum</code></td></tr><tr><td><code>anchorOrchard</code></td><td>32 bytes</td><td>Pallas base-field element</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/tree.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/tree.rs</code></a> <code>Anchor::to_bytes</code></td></tr><tr><td><code>sizeProofsOrchard</code></td><td><code>CompactSize</code></td><td>Byte length of the Halo 2 proof that follows</td><td>Transaction encoder</td></tr><tr><td><code>proofsOrchard</code></td><td>~2 KiB (varies with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.0715em">K</span></span></span></span>, not <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span></span></span></span>)</td><td>The Halo 2 IPA proof bytes</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/circuit.rs</code></a> <code>Proof::create</code></td></tr><tr><td><code>vSpendAuthSigsOrchard</code></td><td><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi><mo>×</mo><mn>64</mn><mo>=</mo><mn>128</mn></mrow><annotation encoding="application/x-tex">N \times 64 = 128</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">64</span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">128</span></span></span></span> bytes</td><td>Concatenated RedPallas <code>SpendAuth</code> signatures</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/primitives/redpallas.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/primitives/redpallas.rs</code></a></td></tr><tr><td><code>bindingSigOrchard</code></td><td>64 bytes</td><td>One RedPallas <code>Binding</code> signature</td><td><a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/primitives/redpallas.rs" target="_blank" rel="noopener noreferrer" class=""><code>src/primitives/redpallas.rs</code></a></td></tr></tbody></table>
+<p>The fixed-size parts of the bundle for this scenario:</p>
+<div class="language-text codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-text codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token plain">nActionsOrchard         1   bytes      (CompactSize 0x02)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">vActionsOrchard      1640   bytes      (2 x 820)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">flagsOrchard            1   byte</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">valueBalanceOrchard     8   bytes</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">anchorOrchard          32   bytes</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">sizeProofsOrchard      ~2   bytes      (CompactSize for ~2 KiB)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">proofsOrchard       ~2048   bytes</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">vSpendAuthSigsOrchard 128   bytes      (2 x 64)</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">bindingSigOrchard      64   bytes</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">-----------------------------------</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">total                 ~3924 bytes  (~3.85 KiB)</span><br></div></code></pre></div></div>
+<p>The <strong>per-Action marginal cost</strong> is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>820</mn><mo>+</mo><mn>64</mn><mo>=</mo><mn>884</mn></mrow><annotation encoding="application/x-tex">820 + 64 = 884</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em"></span><span class="mord">820</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">64</span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">=</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">884</span></span></span></span> bytes
+(Action description plus its spend-auth signature). The bundle&#x27;s
+<strong>fixed overhead</strong> is <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>1</mn><mo>+</mo><mn>1</mn><mo>+</mo><mn>8</mn><mo>+</mo><mn>32</mn><mo>+</mo><mn>64</mn><mo>+</mo><mrow><mi mathvariant="sans-serif">p</mi><mi mathvariant="sans-serif">r</mi><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">f</mi></mrow><mo>≈</mo><mn>2156</mn></mrow><annotation encoding="application/x-tex">1 + 1 + 8 + 32 + 64 + \mathsf{proof} \approx
+2156</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em"></span><span class="mord">1</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em"></span><span class="mord">8</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em"></span><span class="mord">32</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em"></span><span class="mord">64</span><span class="mspace" style="margin-right:0.2222em"></span><span class="mbin">+</span><span class="mspace" style="margin-right:0.2222em"></span></span><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em"></span><span class="mord"><span class="mord mathsf" style="margin-right:0.0694em">proof</span></span><span class="mspace" style="margin-right:0.2778em"></span><span class="mrel">≈</span><span class="mspace" style="margin-right:0.2778em"></span></span><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">2156</span></span></span></span> bytes; the proof dominates and is independent of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span></span></span></span> for
+small <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span></span></span></span>. This is the wire-format consequence of the
+single-proof-per-bundle design discussed in
+<a class="" href="/orchard/action-circuit#36-differences-from-sapling-at-the-circuit-level">Chapter 5 Section 3.6</a>.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="4-what-each-field-asserts">4. What Each Field Asserts<a href="#4-what-each-field-asserts" class="hash-link" aria-label="Direct link to 4. What Each Field Asserts" title="Direct link to 4. What Each Field Asserts" translate="no">​</a></h2>
+<p>Every field on the wire is consumed by one of the consensus
+checks of
+<a class="" href="/orchard/shielded-transfers#definition-23-bundle-validity">Chapter 18 Definition 2.3</a>.
+The mapping:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Wire field</th><th>Consumed by</th></tr></thead><tbody><tr><td><code>cv_net_i</code></td><td>Sum into <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mo>∑</mo><mi>i</mi></msub><msubsup><mrow><mi mathvariant="sans-serif">c</mi><mi mathvariant="sans-serif">v</mi></mrow><mi>i</mi><mrow><mi mathvariant="sans-serif">n</mi><mi mathvariant="sans-serif">e</mi><mi mathvariant="sans-serif">t</mi></mrow></msubsup></mrow><annotation encoding="application/x-tex">\sum_i \mathsf{cv}^{\mathsf{net}}_i</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0627em;vertical-align:-0.2997em"></span><span class="mop"><span class="mop op-symbol small-op" style="position:relative;top:0em">∑</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.162em"><span style="top:-2.4003em;margin-left:0em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2997em"><span></span></span></span></span></span></span><span class="mspace" style="margin-right:0.1667em"></span><span class="mord"><span class="mord"><span class="mord mathsf" style="margin-right:0.0139em">cv</span></span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.763em"><span style="top:-2.4413em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span><span style="top:-3.063em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">net</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2587em"><span></span></span></span></span></span></span></span></span></span>; binding-signature key derivation (Cond. 2.3.4) and value commitment public input to the proof.</td></tr><tr><td><code>nf_i</code></td><td>Nullifier-set disjointness (Cond. 2.3.2); public input to the proof.</td></tr><tr><td><code>rk_i</code></td><td>Spend-authorising signature verification (Cond. 2.3.5); public input to the proof.</td></tr><tr><td><code>cmx_i</code></td><td>Inserted into the note commitment tree at acceptance; public input to the proof.</td></tr><tr><td><code>epk_i</code></td><td>Recipient KDF input; out-ciphertext sender recovery input.</td></tr><tr><td><code>enc_ciphertext_i</code></td><td>Trial-decryption by recipients with the matching <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">i</mi><mi mathvariant="sans-serif">v</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{ivk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">ivk</span></span></span></span></span>.</td></tr><tr><td><code>out_ciphertext_i</code></td><td>Sender-side recovery with the matching <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">v</mi><mi mathvariant="sans-serif">k</mi></mrow><annotation encoding="application/x-tex">\mathsf{ovk}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6944em"></span><span class="mord"><span class="mord mathsf">ovk</span></span></span></span></span>.</td></tr><tr><td><code>flagsOrchard</code></td><td>Selects whether the spend / output subcircuit is active (Cond. 2.3.3 via <code>enableSpends</code>, <code>enableOutputs</code>).</td></tr><tr><td><code>valueBalanceOrchard</code></td><td>Binding-signature key (Cond. 2.3.4); chain-level pool accounting.</td></tr><tr><td><code>anchorOrchard</code></td><td>Anchor freshness (Cond. 2.3.1); public input to the proof.</td></tr><tr><td><code>proofsOrchard</code></td><td>Halo 2 verifier input (Cond. 2.3.3).</td></tr><tr><td><code>vSpendAuthSigsOrchard</code></td><td>Per-Action signature verification (Cond. 2.3.5).</td></tr><tr><td><code>bindingSigOrchard</code></td><td>Binding-signature verification (Cond. 2.3.4).</td></tr></tbody></table>
+<p>If the reader has internalised this table, the rest of the
+chapters are commentary.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="5-reproducing-the-example-locally">5. Reproducing the Example Locally<a href="#5-reproducing-the-example-locally" class="hash-link" aria-label="Direct link to 5. Reproducing the Example Locally" title="Direct link to 5. Reproducing the Example Locally" translate="no">​</a></h2>
+<p>To produce the exact byte sequence:</p>
+<div class="language-bash codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-bash codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token function" style="color:#d73a49">git</span><span class="token plain"> clone https://github.com/zcash/orchard</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token builtin class-name">cd</span><span class="token plain"> orchard</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token function" style="color:#d73a49">git</span><span class="token plain"> checkout </span><span class="token number" style="color:#36acaa">0.13</span><span class="token plain">.1</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token function" style="color:#d73a49">cargo</span><span class="token plain"> </span><span class="token builtin class-name">test</span><span class="token plain"> </span><span class="token parameter variable" style="color:#36acaa">--release</span><span class="token plain"> </span><span class="token parameter variable" style="color:#36acaa">--test</span><span class="token plain"> builder</span><br></div></code></pre></div></div>
+<p>To inspect a real Bundle programmatically without going through
+a transaction encoder, the integration test exposes the
+<code>Authorized</code> Bundle via <code>verify_bundle</code>. Add the following
+fragment to a copy of
+<a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/tests/builder.rs" target="_blank" rel="noopener noreferrer" class=""><code>tests/builder.rs</code></a>
+after the first bundle is built:</p>
+<div class="language-rust codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-rust codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token keyword" style="color:#00009f">let</span><span class="token plain"> actions </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> bundle</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">actions</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token keyword" style="color:#00009f">for</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">i</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> a</span><span class="token punctuation" style="color:#393A34">)</span><span class="token plain"> </span><span class="token keyword" style="color:#00009f">in</span><span class="token plain"> actions</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">iter</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">enumerate</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token plain"> </span><span class="token punctuation" style="color:#393A34">{</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;action {i}:&quot;</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;  cv_net = {}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">a</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">cv_net</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">to_bytes</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;  nf     = {}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">a</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">nullifier</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">to_bytes</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;  rk     = {}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token operator" style="color:#393A34">&lt;</span><span class="token punctuation" style="color:#393A34">[</span><span class="token keyword" style="color:#00009f">u8</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"> </span><span class="token number" style="color:#36acaa">32</span><span class="token punctuation" style="color:#393A34">]</span><span class="token operator" style="color:#393A34">&gt;</span><span class="token punctuation" style="color:#393A34">::</span><span class="token function" style="color:#d73a49">from</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">a</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">rk</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;  cmx    = {}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">a</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">cmx</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">to_bytes</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token keyword" style="color:#00009f">let</span><span class="token plain"> ct </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> a</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">encrypted_note</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;  epk    = {}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">ct</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">epk_bytes</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;  enc    = {} ({} bytes)&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token operator" style="color:#393A34">&amp;</span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">ct</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">enc_ciphertext</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">[</span><span class="token punctuation" style="color:#393A34">..</span><span class="token number" style="color:#36acaa">32</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> ct</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">enc_ciphertext</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">len</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;  out    = {} ({} bytes)&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token operator" style="color:#393A34">&amp;</span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">ct</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">out_ciphertext</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">[</span><span class="token punctuation" style="color:#393A34">..</span><span class="token number" style="color:#36acaa">32</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> ct</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">out_ciphertext</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">len</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">}</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;flags          = {:08b}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> bundle</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">flags</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">to_byte</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;value_balance  = {}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> bundle</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">value_balance</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;anchor         = {}&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> </span><span class="token namespace" style="opacity:0.7">hex</span><span class="token namespace punctuation" style="opacity:0.7;color:#393A34">::</span><span class="token function" style="color:#d73a49">encode</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain">bundle</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">anchor</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">to_bytes</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token macro property" style="color:#36acaa">println!</span><span class="token punctuation" style="color:#393A34">(</span><span class="token string" style="color:#e3116c">&quot;proof length   = {} bytes&quot;</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> bundle</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">authorization</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">proof</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">as_ref</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">.</span><span class="token function" style="color:#d73a49">len</span><span class="token punctuation" style="color:#393A34">(</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">;</span><br></div></code></pre></div></div>
+<p>Run <code>cargo test --release --test builder -- --nocapture</code> and
+match the printed lengths against the table in Section 2. The
+actual hex values will differ between runs (the prover samples
+fresh randomness), but the lengths are invariant.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="6-on-chain-decoding">6. On-Chain Decoding<a href="#6-on-chain-decoding" class="hash-link" aria-label="Direct link to 6. On-Chain Decoding" title="Direct link to 6. On-Chain Decoding" translate="no">​</a></h2>
+<p>To inspect a real on-chain Orchard transaction, fetch the raw
+transaction hex from any Zcash full node, locate the Orchard
+region per
+<a href="https://zips.z.cash/zip-0225" target="_blank" rel="noopener noreferrer" class="">ZIP 225 &quot;Version 5 Transaction Format&quot;</a>,
+and walk it byte by byte against the table in Section 3.</p>
+<p>A canonical reference implementation of the transaction decoder
+lives in
+<a href="https://github.com/zcash/librustzcash" target="_blank" rel="noopener noreferrer" class=""><code>zcash/librustzcash</code></a>;
+the
+<a href="https://github.com/zcash/librustzcash/tree/main/zcash_primitives" target="_blank" rel="noopener noreferrer" class=""><code>zcash_primitives</code> crate</a>
+exposes <code>Transaction::read</code> which delegates Orchard parsing to
+this crate&#x27;s
+<a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/bundle.rs" target="_blank" rel="noopener noreferrer" class=""><code>Bundle</code></a>
+type via the
+<a href="https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/pczt/parse.rs" target="_blank" rel="noopener noreferrer" class=""><code>pczt::parse</code></a>
+helpers.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="7-what-stays-the-same-what-varies">7. What Stays the Same, What Varies<a href="#7-what-stays-the-same-what-varies" class="hash-link" aria-label="Direct link to 7. What Stays the Same, What Varies" title="Direct link to 7. What Stays the Same, What Varies" translate="no">​</a></h2>
+<p>Across bundles in the wild, the <strong>shape</strong> of every Orchard
+region is constant: the field order, the per-Action byte count
+(820), the signature size (64), the proof byte format. What
+varies:</p>
+<ul>
+<li class=""><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>N</mi></mrow><annotation encoding="application/x-tex">N</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.109em">N</span></span></span></span> (the Action count) is always a power of two greater than
+or equal to <code>MIN_ACTIONS = 2</code>.</li>
+<li class="">The proof length varies slightly with <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>K</mi></mrow><annotation encoding="application/x-tex">K</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.0715em">K</span></span></span></span> but is constant for
+a fixed <code>K = 11</code> (see
+<a class="" href="/orchard/action-circuit#34-proving-and-verifying-keys-location-and-size">Chapter 5 Section 3.4</a>).</li>
+<li class=""><code>valueBalanceOrchard</code> is signed and may be negative (value
+enters the pool) or positive (value leaves the pool).</li>
+<li class=""><code>flagsOrchard</code> is almost always <code>0b11</code> (both enabled) in
+normal usage; coinbase transactions force <code>enableSpends = 0</code>
+per <a href="https://zips.z.cash/zip-0213" target="_blank" rel="noopener noreferrer" class="">ZIP 213</a>.</li>
+</ul></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href="https://github.com/dannywillems/orchard/edit/onboarding/onboarding/docs/worked-example.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_Z9Sw" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/orchard/glossary"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Glossary</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/orchard/discovery"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Discovery Notes</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#1-the-scenario" class="table-of-contents__link toc-highlight">1. The Scenario</a></li><li><a href="#2-anatomy-of-one-action-description" class="table-of-contents__link toc-highlight">2. Anatomy of One Action Description</a><ul><li><a href="#21-inside-enc_ciphertext_i-580-bytes" class="table-of-contents__link toc-highlight">2.1 Inside <code>enc_ciphertext_i</code> (580 Bytes)</a></li><li><a href="#22-inside-out_ciphertext_i-80-bytes" class="table-of-contents__link toc-highlight">2.2 Inside <code>out_ciphertext_i</code> (80 Bytes)</a></li></ul></li><li><a href="#3-anatomy-of-the-whole-bundle" class="table-of-contents__link toc-highlight">3. Anatomy of the Whole Bundle</a></li><li><a href="#4-what-each-field-asserts" class="table-of-contents__link toc-highlight">4. What Each Field Asserts</a></li><li><a href="#5-reproducing-the-example-locally" class="table-of-contents__link toc-highlight">5. Reproducing the Example Locally</a></li><li><a href="#6-on-chain-decoding" class="table-of-contents__link toc-highlight">6. On-Chain Decoding</a></li><li><a href="#7-what-stays-the-same-what-varies" class="table-of-contents__link toc-highlight">7. What Stays the Same, What Varies</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class="footer__title">Source</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://github.com/dannywillems/orchard/tree/onboarding" target="_blank" rel="noopener noreferrer" class="footer__link-item">Fork (this site)<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://github.com/zcash/orchard" target="_blank" rel="noopener noreferrer" class="footer__link-item">Upstream zcash/orchard<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div><div class="theme-layout-footer-column col footer__col"><div class="footer__title">References</div><ul class="footer__items clean-list"><li class="footer__item"><a href="https://zips.z.cash/protocol/protocol.pdf" target="_blank" rel="noopener noreferrer" class="footer__link-item">Zcash Protocol Specification<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://zips.z.cash/" target="_blank" rel="noopener noreferrer" class="footer__link-item">ZIPs index<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li><li class="footer__item"><a href="https://zcash.github.io/halo2/" target="_blank" rel="noopener noreferrer" class="footer__link-item">Halo 2 Book<svg width="13.5" height="13.5" aria-label="(opens in new tab)" class="iconExternalLink_nPIU"><use href="#theme-svg-external-link"></use></svg></a></li></ul></div></div><div class="footer__bottom text--center"><div class="footer__copyright">Orchard onboarding course, ASCII only, neutral voice.</div></div></div></footer></div>
+</body>
+</html>
