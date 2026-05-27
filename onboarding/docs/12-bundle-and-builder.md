@@ -99,7 +99,8 @@ returning a structured error from `add_bundle`.
 
 [`src/bundle/commitments.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/bundle/commitments.rs)
 implements the per-Bundle digests used by the binding signature
-and the spend authorising signatures (per ZIP 244).
+and the spend authorising signatures (per
+[ZIP 244](https://zips.z.cash/zip-0244)).
 
 ## 4. Failure Modes
 

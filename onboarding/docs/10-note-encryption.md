@@ -51,9 +51,10 @@ recover the note from their own viewing key.
 ### Definition 2.5 (Note Plaintext Encoding)
 
 The 580-byte note plaintext encodes the lead byte, $d$, $v$,
-$\mathsf{rseed}$, and the 512-byte memo. ZIP 212 deterministically
-derives $\psi$ and $\mathsf{rcm}$ from $\mathsf{rseed}$ at decode
-time, which prevents a malleability attack.
+$\mathsf{rseed}$, and the 512-byte memo.
+[ZIP 212](https://zips.z.cash/zip-0212) deterministically derives
+$\psi$ and $\mathsf{rcm}$ from $\mathsf{rseed}$ at decode time,
+which prevents a malleability attack.
 
 ## 3. The Code
 

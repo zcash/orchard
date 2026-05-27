@@ -78,7 +78,7 @@ https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/s
 The struct has four private fields: the `Address` recipient, the
 `NoteValue`, the `Rho` creation identifier, and the
 `RandomSeed`. From the latter, $\psi$ and $\mathsf{rcm}$ are
-derived deterministically (ZIP 212). Note equality is defined by
+derived deterministically ([ZIP 212](https://zips.z.cash/zip-0212)). Note equality is defined by
 the commitment, not by structural equality of the fields, which
 prevents two distinct field encodings of the "same" note from
 appearing distinct.
@@ -127,7 +127,7 @@ taking arbitrary field elements does not exist.
 - **`rseed` reuse**. Reusing $\mathsf{rseed}$ across two notes
   with the same recipient produces the same $\psi$ and
   $\mathsf{rcm}$, which leaks information. The encoding rules in
-  ZIP 212 forbid reuse.
+  [ZIP 212](https://zips.z.cash/zip-0212) forbid reuse.
 
 ## 5. Spec Pointers
 

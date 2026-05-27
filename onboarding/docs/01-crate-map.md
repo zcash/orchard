@@ -94,7 +94,8 @@ same file.
 - [`src/keys.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/keys.rs)
   derives every key in the Orchard key hierarchy.
 - [`src/zip32.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/zip32.rs)
-  implements ZIP 32 hardened derivation on top.
+  implements [ZIP 32](https://zips.z.cash/zip-0032) hardened
+  derivation on top.
 - [`src/note_encryption.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note_encryption.rs)
   plugs the Orchard-specific KDF and encoding into
   `zcash_note_encryption`.

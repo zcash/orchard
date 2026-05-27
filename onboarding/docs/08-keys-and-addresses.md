@@ -22,8 +22,9 @@ for each operation and prove that no extra capability leaks.
 ### Definition 2.1 (Spending Key)
 
 $\mathsf{sk} \in \{0, 1\}^{256}$, the root of the key hierarchy.
-Hierarchical derivation via ZIP 32 produces an extended spending
-key $(\mathsf{sk}, \mathsf{c}) \in \{0, 1\}^{256+256}$ with chain
+Hierarchical derivation via
+[ZIP 32](https://zips.z.cash/zip-0032) produces an extended
+spending key $(\mathsf{sk}, \mathsf{c}) \in \{0, 1\}^{256+256}$ with chain
 code $\mathsf{c}$.
 
 ### Definition 2.2 (Derived Scalars and Bases)
@@ -117,13 +118,16 @@ parsing API trusts the encoded form.
 ### 3.4 ZIP 32
 
 [`src/zip32.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/zip32.rs)
-implements hardened-only derivation: $(\mathsf{sk}, \mathsf{c}, i)
-\to (\mathsf{sk}', \mathsf{c}')$ with $i$ in the hardened range.
-There is no non-hardened path; see Failure Modes.
+implements the Orchard branch of
+[ZIP 32](https://zips.z.cash/zip-0032), hardened-only derivation:
+$(\mathsf{sk}, \mathsf{c}, i) \to (\mathsf{sk}', \mathsf{c}')$ with
+$i$ in the hardened range. There is no non-hardened path; see
+Failure Modes.
 
 ## 4. Failure Modes
 
-- **Non-hardened derivation reintroduced**. Orchard's ZIP 32 path
+- **Non-hardened derivation reintroduced**. Orchard's
+  [ZIP 32](https://zips.z.cash/zip-0032) path
   is hardened-only. Adding a non-hardened branch lets a child
   $\mathsf{ak}$ and one child private key together reveal the
   parent $\mathsf{ask}$. This is the same property that broke

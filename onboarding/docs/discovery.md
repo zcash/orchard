@@ -214,7 +214,8 @@ Sampled from `gh issue list --state open --limit 20`:
 - [#347](https://github.com/zcash/orchard/issues/347): add a public
   `Circuit` constructor.
 - [#191](https://github.com/zcash/orchard/issues/191): test vectors
-  for ZIP 32 derivation in `src/zip32.rs`.
+  for [ZIP 32](https://zips.z.cash/zip-0032) derivation in
+  `src/zip32.rs`.
 - [#125](https://github.com/zcash/orchard/issues/125) and
   [#84](https://github.com/zcash/orchard/issues/84): name and prove
   polynomial constraints; correctness proofs for scalar

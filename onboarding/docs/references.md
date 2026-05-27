@@ -82,8 +82,8 @@ of curves.
 
 The name was originally **Pollard** in the internal design
 discussions of 2020. The protocol was renamed to "Orchard"
-during ZIP drafting; the explicit citation is the ZIP 224
-proposal,
+during ZIP drafting; the explicit citation is the
+[ZIP 224](https://zips.z.cash/zip-0224) proposal,
 [`zcash/zips#435`](https://github.com/zcash/zips/issues/435),
 opened on 2021-03-04, whose body states verbatim:
 
@@ -170,7 +170,7 @@ queue is at
 
 | Issue                                                                    | Subject                                                                  |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| [#191](https://github.com/zcash/orchard/issues/191)                      | Add test vectors for ZIP 32 derivation                                   |
+| [#191](https://github.com/zcash/orchard/issues/191)                      | Add test vectors for [ZIP 32](https://zips.z.cash/zip-0032) derivation   |
 | [#216](https://github.com/zcash/orchard/issues/216)                      | Update description of hierarchical addresses in the book                 |
 | [#256](https://github.com/zcash/orchard/issues/256)                      | Measure memory-usage benchmarks                                          |
 | [#347](https://github.com/zcash/orchard/issues/347)                      | Add a `Circuit` constructor                                              |

@@ -162,7 +162,10 @@ each in a paragraph.
 3. Which generators are used by Sinsemilla, Poseidon,
    RedPallas (per flavour), and the Pedersen value commitment?
    Where in the source are they defined?
-4. How does ZIP 32 for Orchard differ from BIP 32, and why?
+4. How does [ZIP 32](https://zips.z.cash/zip-0032) for Orchard
+   differ from
+   [BIP 32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki),
+   and why?
 5. Which dependencies of `orchard` would invalidate consensus
    if they changed semantics, and which would only change
    performance?

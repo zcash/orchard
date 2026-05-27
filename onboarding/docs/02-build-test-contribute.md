@@ -169,7 +169,8 @@ Candidate first PRs from
 
 - [#191 (Test vectors for ZIP 32 derivation)](https://github.com/zcash/orchard/issues/191):
   purely additive, exercises
-  [`src/zip32.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/zip32.rs).
+  [`src/zip32.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/zip32.rs);
+  see [ZIP 32](https://zips.z.cash/zip-0032).
 - [#467 (Make `NoteCommitment` public)](https://github.com/zcash/orchard/issues/467):
   one-line `pub` change plus a doc comment; needs a deliberate
   argument about what becomes stable.

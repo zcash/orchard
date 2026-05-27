@@ -187,7 +187,8 @@ optimally so. Candidate research questions:
   classical and PQ ciphertexts.
 - **Cross-pool linkability**. A transaction that touches both
   the Sapling pool and the Orchard pool is observable as such.
-  A unified shielded pool would close this gap; ZIP 316 is the
+  A unified shielded pool would close this gap;
+  [ZIP 316](https://zips.z.cash/zip-0316) is the
   current architectural answer at the address layer, but the
   on-chain pool separation remains.
 - **Memo confidentiality vs compressibility**. The 512-byte
