@@ -103,8 +103,8 @@ Used throughout, following the Zcash Protocol Specification.
 | $\mathbb{G}$, $E_p$                   | A cyclic group; the curve over $\mathbb{F}_p$ |
 | $[k] P$                               | Scalar multiplication of $P$ by $k$    |
 | $\mathsf{Com}(m; r)$                  | Commitment to $m$ with randomness $r$  |
-| $x \stackrel{\$}{\leftarrow} S$       | Sample $x$ uniformly from $S$          |
-| $a \mathbin{\\|} b$                  | Byte-string concatenation              |
+| $x \xleftarrow{R} S$                  | Sample $x$ uniformly from $S$          |
+| $a \mathbin{\Vert} b$                 | Byte-string concatenation              |
 | $\mathsf{Sinsemilla}_D(m)$            | Sinsemilla hash of $m$ in domain $D$   |
 | $\mathsf{Poseidon}(x_1, \dots, x_n)$  | Poseidon permutation output            |
 | $q$, $r$                              | Base / scalar field orders             |

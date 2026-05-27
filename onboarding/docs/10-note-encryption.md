@@ -19,9 +19,8 @@ each byte of an Orchard note ciphertext to its source in
 
 ### Definition 2.1 (Ephemeral Key)
 
-Sender samples $\mathsf{esk} \stackrel{\$}{\leftarrow}
-\mathbb{F}_q^*$ and publishes $\mathsf{epk} = [\mathsf{esk}]\,
-g_d \in E_p$.
+Sender samples $\mathsf{esk} \xleftarrow{R} \mathbb{F}_q^*$ and
+publishes $\mathsf{epk} = [\mathsf{esk}]\, g_d \in E_p$.
 
 ### Definition 2.2 (Shared Secret and KDF)
 

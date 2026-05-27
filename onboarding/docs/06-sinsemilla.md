@@ -23,8 +23,8 @@ Sinsemilla domain end to end.
 
 Fix the window size $k = 10$. The hash operates on bit strings of
 length divisible by $k$. Given $m \in \{0, 1\}^{kn}$, partition
-into $n$ chunks $m = m_0 \mathbin{\\|} m_1 \mathbin{\\|} \dots
-\mathbin{\\|} m_{n-1}$ of $k$ bits each.
+into $n$ chunks $m = m_0 \mathbin{\|} m_1 \mathbin{\|} \dots
+\mathbin{\|} m_{n-1}$ of $k$ bits each.
 
 ### Definition 2.2 (Generators)
 

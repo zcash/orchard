@@ -53,10 +53,10 @@ const config: Config = {
 
   stylesheets: [
     {
-      href: 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css',
+      href: 'https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css',
       type: 'text/css',
       integrity:
-        'sha384-nB0miv6/jRmo5EGIE6RDQE0etf4GvjBR1bkf4pcUk2TprLGa0k7/rJkRnCu6WSt6',
+        'sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB',
       crossorigin: 'anonymous',
     },
   ],

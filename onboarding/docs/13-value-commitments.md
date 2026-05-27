@@ -27,8 +27,8 @@ domain strings.
 ### Definition 2.2 (Per-Action Net Commitment)
 
 For Action $i$ with input value $v_i^{\mathsf{old}}$, output value
-$v_i^{\mathsf{new}}$, and trapdoor $\mathsf{rcv}_i
-\stackrel{\$}{\leftarrow} \mathbb{F}_q$:
+$v_i^{\mathsf{new}}$, and trapdoor
+$\mathsf{rcv}_i \xleftarrow{R} \mathbb{F}_q$:
 
 $$
 \mathsf{cv}^{\mathsf{net}}_i =

@@ -30,7 +30,7 @@ For $\ell \in \{0, \dots, d - 1\}$,
 $$
 \mathsf{MerkleCRH}^{\mathsf{Orchard}}_\ell(L, R) =
 \mathsf{Extract}_{\mathbb{P}}\Big(
-\mathsf{SinsemillaHashToPoint}_{D}\big(\ell \mathbin{\\|} L \mathbin{\\|} R\big)
+\mathsf{SinsemillaHashToPoint}_{D}\big(\ell \mathbin{\|} L \mathbin{\|} R\big)
 \Big),
 $$
 

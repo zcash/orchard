@@ -28,7 +28,7 @@ secret $\mathsf{sk}$ with public $\mathsf{pk} = [\mathsf{sk}]
 1. Sample nonce $r \in \mathbb{F}_r$ deterministically from
    $\mathsf{sk}$ and $m$.
 2. $R = [r]\, \mathcal{G}$.
-3. $c = H(R \mathbin{\\|} \mathsf{pk} \mathbin{\\|} m)$.
+3. $c = H(R \mathbin{\|} \mathsf{pk} \mathbin{\|} m)$.
 4. $s = r + c \cdot \mathsf{sk} \pmod r$.
 5. Output $\sigma = (R, s)$.
 
