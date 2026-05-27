@@ -85,7 +85,7 @@ const config: Config = {
       content:
         'This site is automatically generated using Claude Code. Errors may have been introduced. The code is the law, always refer to the source in the zcash/orchard crate.',
       backgroundColor: '#fef3c7',
-      textColor: '#7c2d12',
+      textColor: '#78350f',
       isCloseable: false,
     },
     navbar: {
@@ -130,6 +130,10 @@ const config: Config = {
             {
               label: 'ZIPs index',
               href: 'https://zips.z.cash/',
+            },
+            {
+              label: 'Halo 2 Book',
+              href: 'https://zcash.github.io/halo2/',
             },
           ],
         },
