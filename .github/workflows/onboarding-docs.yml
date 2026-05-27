@@ -58,6 +58,34 @@ jobs:
           cache: 'npm'
           cache-dependency-path: onboarding/package-lock.json
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Check Python formatting (onboarding/data)
+        working-directory: onboarding/data
+        run: ruff format --check .
+
+      - name: Lint Python (onboarding/data)
+        working-directory: onboarding/data
+        run: ruff check .
+
+      - name: Smoke-test the v5 transaction parser
+        working-directory: onboarding/data
+        run: |
+          set -euo pipefail
+          # Parse the 3-Action vector and assert the expected
+          # invariants hold. If the JSON mirror, the parser, or
+          # the ZIP 244 vectors ever drift, this fails the deploy.
+          out=$(python3 parse_v5.py 2)
+          echo "$out" | grep -F 'nActionsOrchard (CS)  3'
+          echo "$out" | grep -F 'Orchard region total:         3031'
+          echo "$out" | grep -F 'leftover bytes (should be 0): 0'
+
       - name: Install dependencies
         working-directory: onboarding
         run: npm install

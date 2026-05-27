@@ -1,0 +1,23 @@
+# Project metadata for the standalone Python helpers shipped with the
+# onboarding course (currently just parse_v5.py).
+#
+# Run from this directory:
+#   ruff format --check .
+#   ruff check .
+#   python3 parse_v5.py 2
+
+[project]
+name = "orchard-onboarding-data"
+version = "0.1.0"
+description = "Worked-example data and tools for the Orchard onboarding course"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+
+[tool.ruff.format]
+quote-style = "single"
