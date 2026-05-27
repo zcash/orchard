@@ -122,5 +122,13 @@ See [Discovery Notes](./discovery.md) for the full rationale.
 
 The sidebar on the left lists every chapter in order. The intended
 reading path is linear: Chapter 1 maps the crate, Chapter 2
-unlocks the contribution loop, and Chapters 3 to 18 each pick one
-subsystem and follow the seven-section skeleton.
+unlocks the contribution loop, and Chapters 3 to 19 each pick one
+subsystem and follow the seven-section skeleton. Chapter 20 is the
+six-week study plan that ties everything together.
+
+Before reading chapter 1, skim
+[Names, ZIPs, Issues, and PRs](./references.md): it explains the
+botanical naming convention (Sprout / Sapling / Orchard, formerly
+Pollard), and gives a curated index of every external reference
+the chapters cite (ZIPs, open issues, merged PRs, cross-repository
+anchors).

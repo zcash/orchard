@@ -1,5 +1,5 @@
 ---
-sidebar_position: 18
+sidebar_position: 20
 title: Six-Week Study Plan
 description: A week-by-week reading plan that converges on a real first PR.
 ---
@@ -63,7 +63,7 @@ passes CI, and addresses a real issue (one of the candidates in
 - Insert ten leaves into an
   `incrementalmerkletree` frontier and recompute the root.
 
-### 3.5 Week 5: Bundle and Action Circuit
+### 3.5 Week 5: Bundle, Value, and Signature
 
 - Read [Chapter 5](./05-action-circuit.md),
   [Chapter 12](./12-bundle-and-builder.md),
@@ -74,8 +74,11 @@ passes CI, and addresses a real issue (one of the candidates in
   [`tests/builder.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/tests/builder.rs)
   and confirm the proof system rejects.
 
-### 3.6 Week 6: Audits, Tests, and the First PR
+### 3.6 Week 6: Composition, Audits, and the First PR
 
+- Read [Chapter 18](./18-shielded-transfers.md): how Actions
+  compose into a single bundle-level state transition; what an
+  on-chain observer sees; replay protection.
 - Read [Chapter 15](./15-dependencies.md),
   [Chapter 16](./16-test-vectors.md), and
   [Chapter 17](./17-audits.md).
@@ -83,6 +86,47 @@ passes CI, and addresses a real issue (one of the candidates in
   [Chapter 2](./02-build-test-contribute.md#37-a-real-first-pr).
 - Write a one-paragraph plan, post it as a comment on the issue,
   wait for a maintainer signal, then open the PR.
+
+### 3.7 Optional Week 7: Research Frontier
+
+For readers who want to contribute at the protocol level, not
+just at the API level. Skip if the goal is purely engineering
+contributions.
+
+- Read [Chapter 19](./19-research-frontier.md) for the open
+  questions and improvement vectors.
+- Pick one of: a proof-system swap (KZG, Nova, HyperPlonk), a
+  circuit shape change (a smaller `K`, a unified
+  Sinsemilla/Poseidon chip), or a privacy primitive
+  (post-quantum hybrid KEM, padding distribution).
+- Sketch a one-page proposal citing the relevant paper(s) from
+  Chapter 19 Section 3.7. Post it as an
+  [issue on `zcash/zips`](https://github.com/zcash/zips/issues)
+  for protocol-level change or
+  [`zcash/orchard`](https://github.com/zcash/orchard/issues) for
+  crate-level change.
+
+### 3.8 An Alternative: The Researcher Track
+
+A cryptography researcher can read in a different order. The
+suggested track is:
+
+1. Start with
+   [References Index](./references.md) and
+   [Chapter 19](./19-research-frontier.md), Section 3.7 for the
+   reading list.
+2. Read the [Halo 2 Book](https://zcash.github.io/halo2/) in
+   full; come back to
+   [Chapter 4](./04-halo2-primer.md) only as a navigation aid.
+3. Read
+   [Chapter 5 Sections 3.5 to 3.8](./05-action-circuit.md#35-differences-from-sapling-at-the-circuit-level)
+   for the design trade-offs and the recursion status.
+4. Read
+   [Chapter 18](./18-shielded-transfers.md) for the security
+   model the proof must support.
+5. Use [Chapter 17](./17-audits.md) and
+   [Chapter 19](./19-research-frontier.md) as gateways into the
+   open audit reports and the open research questions.
 
 ## 4. Failure Modes
 
