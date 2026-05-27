@@ -55,13 +55,14 @@ on higher tiers.
 ### 3.1 Public Re-Exports
 
 ```rust reference title="src/lib.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/lib.rs#L51-L60
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/lib.rs#L54-L60
 ```
 
-Eight names land at the crate root: the `Action`, `Address`,
-`Bundle`, `Note`, `Anchor`, the `Proof` opaque newtype, the
-re-exported Merkle depth constant, and the three bit-length
-constants used by canonical encodings.
+Seven names land at the crate root in this `pub use` block:
+`Action`, `Address`, `Bundle`, the re-exported Merkle depth
+constant, three bit-length constants, `Note`, and `Anchor`. The
+`Proof` opaque newtype is defined just below this block in the
+same file.
 
 ### 3.2 Tier 0: Primitives
 

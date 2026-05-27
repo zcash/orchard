@@ -60,13 +60,16 @@ time, which prevents a malleability attack.
 ### 3.1 The Domain
 
 ```rust reference title="src/note_encryption.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note_encryption.rs#L1-L30
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note_encryption.rs#L82-L86
 ```
 
-`OrchardDomain` implements the
+`OrchardDomain` carries just a single field, `rho`, which binds
+the trial-decryption attempt to the Action's nullifier seed. The
+implementation of the
 [`zcash_note_encryption::Domain`](https://github.com/zcash/librustzcash/tree/main/zcash_note_encryption)
-trait. It plugs in the KDF, the ephemeral key derivation, the
-note plaintext encoder, and the AEAD instance.
+trait further down the same file supplies the KDF, the
+ephemeral-key derivation, the note plaintext encoder, and the
+AEAD instance.
 
 ### 3.2 Trial Decryption
 

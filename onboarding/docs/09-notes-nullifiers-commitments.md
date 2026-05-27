@@ -72,13 +72,16 @@ sharing a nullifier without one of them being a forgery.
 ### 3.1 The `Note` Type
 
 ```rust reference title="src/note.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs#L1-L40
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs#L139-L155
 ```
 
-Fields are private; constructors are
-`Note::new` (from random) and `Note::from_parts` (with explicit
-trapdoor). Both return `CtOption<Note>` because deserialisation
-of $g_d$ may fail.
+The struct has four private fields: the `Address` recipient, the
+`NoteValue`, the `Rho` creation identifier, and the
+`RandomSeed`. From the latter, $\psi$ and $\mathsf{rcm}$ are
+derived deterministically (ZIP 212). Note equality is defined by
+the commitment, not by structural equality of the fields, which
+prevents two distinct field encodings of the "same" note from
+appearing distinct.
 
 ### 3.2 Note Commitment
 
@@ -96,13 +99,14 @@ in-circuit version is in
 ### 3.4 The `Rho` Newtype
 
 ```rust reference title="src/note.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs#L37-L42
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs#L32-L34
 ```
 
-`Rho` wraps a `pallas::Base` and exposes `from_nf` so that
-$\rho$ for a new note is always created from a previous
-nullifier; the constructor that takes raw bytes is
-`pub(crate)` only.
+`Rho` is a newtype around `pallas::Base` with a tightly
+controlled construction surface. The public API exposes
+`Rho::from_nf_old` (chaining from a previous nullifier) and
+`Rho::from_bytes` (used only inside parsing); a free constructor
+taking arbitrary field elements does not exist.
 
 ## 4. Failure Modes
 

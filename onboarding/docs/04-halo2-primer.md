@@ -71,7 +71,7 @@ Orchard.
 ### 3.1 The Halo 2 Imports
 
 ```rust reference title="src/circuit.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L5-L15
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L6-L14
 ```
 
 The `plonk` re-exports name the column kinds, the `Constraints`

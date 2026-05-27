@@ -74,13 +74,14 @@ authorisations.
 ### 3.1 The Spending Key
 
 ```rust reference title="src/keys.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/keys.rs#L1-L30
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/keys.rs#L36-L42
 ```
 
-`SpendingKey` is opaque: the bytes are private, and access goes
-through derivation methods that return wrapper types
+`SpendingKey` is a newtype around `[u8; 32]` with a `Debug` impl
+that does not leak the secret bytes. Access goes through
+derivation methods that return wrapper types
 (`SpendAuthorizingKey`, `NullifierDerivingKey`,
-`CommitIvkRandomness`).
+`CommitIvkRandomness`); the inner bytes never escape the module.
 
 ### 3.2 The Derivation Tree
 
@@ -104,12 +105,14 @@ the various branches.
 ### 3.3 Addresses
 
 ```rust reference title="src/address.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/address.rs#L1-L40
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/address.rs#L18-L31
 ```
 
-`Address::from_parts` is the canonical constructor; it does not
-perform any algebraic check beyond well-formedness of the
-$g_d$ deserialisation.
+`Address::from_parts` is the canonical (crate-private) constructor.
+It does not perform any algebraic check beyond what its argument
+types enforce: callers must guarantee `pk_d` is derived from `d`.
+The doc comment in the source explicitly notes that the public
+parsing API trusts the encoded form.
 
 ### 3.4 ZIP 32
 

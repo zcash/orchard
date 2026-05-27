@@ -68,7 +68,7 @@ In Orchard:
 ### 3.1 Where the Crate Imports Pasta
 
 ```rust reference title="src/circuit.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L15-L16
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L15-L15
 ```
 
 `pasta_curves::pallas` exposes `Base`, `Scalar`, `Point`, `Affine`,

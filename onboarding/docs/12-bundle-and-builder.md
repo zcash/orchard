@@ -56,23 +56,27 @@ leaking the count of real spends and outputs.
 ### 3.1 The `Bundle` Type
 
 ```rust reference title="src/bundle.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/bundle.rs#L1-L20
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/bundle.rs#L161-L176
 ```
 
-`Bundle<A, V>` is generic over the authorisation state `A` and
-the user-defined `valueBalanceOrchard` type `V`. The public
-methods are gated on `A`; only `Authorized` exposes
-`Bundle::authorization` and the proof bytes.
+`Bundle<T, V>` is generic over the authorisation typestate `T`
+(which implements the `Authorization` trait declared just above
+this block) and the user-defined `valueBalanceOrchard` type `V`.
+The public methods are gated on `T`; only the `Authorized`
+typestate exposes the proof bytes and the per-Action signatures.
 
 ### 3.2 The `Builder`
 
 ```rust reference title="src/builder.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/builder.rs#L1-L40
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/builder.rs#L541-L562
 ```
 
-`Builder::new(flags, anchor)` opens a builder; `add_spend` and
-`add_output` queue inputs and outputs; `build(rng)` shuffles,
-pads, and produces the `Unauthorized` bundle.
+`Builder::new(bundle_type, anchor)` opens an empty builder
+parameterised by a `BundleType` (transactional or coinbase, with
+spends/outputs enablement flags) and the Merkle root every spend
+must commit under. `add_spend` and `add_output` queue inputs and
+outputs; `build(rng)` shuffles, pads with dummies, and produces
+an `Unauthorized` `Bundle` ready for proving.
 
 ### 3.3 The Signing Flow
 

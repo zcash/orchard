@@ -62,21 +62,79 @@ The circuit enforces six groups of constraints:
 
 ## 3. The Code
 
-### 3.1 The `Config` Struct
+### 3.1 What the Circuit Proves, in Plain Terms
+
+Before reading the source, fix the high-level picture: one
+invocation of the Action circuit produces a single zk-SNARK that
+convinces a verifier of all of the following at once, **without
+revealing the secrets that make them true**.
+
+1. **The spender owns a real, unspent note**. There exists a note
+   $n_{\mathsf{old}}$ whose commitment $\mathsf{cm}_{\mathsf{old}}$
+   is part of the global note commitment tree at the public
+   anchor. The Merkle authentication path is in the witness; the
+   anchor is public. The verifier learns nothing about the
+   position of the note in the tree or its contents.
+2. **The spender is authorised to spend it**. The wallet knows the
+   spending key whose authorising public key is $\mathsf{ak}$.
+   The circuit re-randomises $\mathsf{ak}$ with a fresh scalar
+   $\alpha$ into $\mathsf{rk}$, which is public; the verifier
+   checks the signature against $\mathsf{rk}$ outside the circuit,
+   but the circuit forces $\mathsf{rk}$ to be a re-randomisation
+   of a key that controls a real note.
+3. **The nullifier was computed honestly**. The public nullifier
+   $\mathsf{nf}$ is the deterministic output of the spec's
+   nullifier formula on $\mathsf{nk}$ and the old note's
+   $\rho$. Two distinct spends of the same note necessarily
+   produce the same nullifier, so the chain rejects the double
+   spend without ever seeing the spender's identity.
+4. **A new note was committed to**. There exists a fresh note
+   $n_{\mathsf{new}}$ (recipient, value, randomness) whose
+   commitment $\mathsf{cm}^\star$ is public and inserted into the
+   tree on chain. The recipient and value are hidden; the
+   commitment is opaque.
+5. **Value is conserved up to a declared imbalance**. The public
+   net value commitment $\mathsf{cv}^{\mathsf{net}}$ equals
+   $[v_{\mathsf{old}} - v_{\mathsf{new}}] \mathcal{V} +
+   [\mathsf{rcv}] \mathcal{R}$ inside the circuit; summed across
+   all Actions in the bundle, the differences add up to the
+   public `value_balance` (verified outside the circuit by the
+   binding signature; see [Chapter 13](./13-value-commitments.md)).
+6. **Optional spend / output suppression**. The public
+   `enableSpends` and `enableOutputs` flags switch off the
+   corresponding subcircuit when the Action is a dummy. This is
+   how Orchard pads to a power-of-two Action count without
+   leaking the real spend / output count.
+
+The circuit asserts these jointly. Every shielded Orchard
+transaction's proof is one such SNARK over the whole bundle: each
+Action is one execution trace through this circuit, and the
+single proof attests to all of them together.
+
+A useful mental model: think of the Action circuit as a single
+small program that takes the witness as input, runs through the
+checks above in order, and aborts on the first failure. The
+prover convinces the verifier that an accepting execution exists,
+without revealing the input.
+
+### 3.2 The `Config` Struct
 
 ```rust reference title="src/circuit.rs"
-https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L17-L40
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L87-L105
 ```
 
-The `Config` bundles all chip configs the Action circuit uses: the
-ECC chip, the Poseidon chip, two Sinsemilla configs (one per
-domain), the
+`Config` bundles every chip configuration the Action circuit uses:
+the primary instance column, the `q_orchard` selector, ten advice
+columns, the addition chip, the ECC chip, a Poseidon
+$P_{128}^{\mathrm{Pasta}}$ sponge, two Merkle configs (one per
+hash domain), two Sinsemilla configs, the
 [`CommitIvkChip`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit/commit_ivk.rs)
-config, and the
+config, and two
 [`NoteCommitChip`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit/note_commit.rs)
-config.
+configs (old and new note commitments share the chip but use
+distinct configurations).
 
-### 3.2 Synthesise
+### 3.3 Synthesise
 
 `Circuit::synthesize` runs top to bottom: load the ECC and
 Sinsemilla chips, witness the Merkle path, derive `rk`, derive the
@@ -84,7 +142,7 @@ nullifier, build both note commitments, and finally build the
 value commitment. Each step ends with a public-input equality
 constraint against the appropriate instance column.
 
-### 3.3 The Pinned Snapshot
+### 3.4 The Pinned Snapshot
 
 [`src/circuit_description/`](https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description)
 holds a textual snapshot of the column layout, gates, and lookup
@@ -93,6 +151,96 @@ companion
 [`src/circuit_proof_test_case.bin`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_proof_test_case.bin)
 is a pinned proof exercised by the unit tests; see
 [Chapter 16 (Test Vectors)](./16-test-vectors.md).
+
+### 3.5 Differences From Sapling at the Circuit Level
+
+Sapling and Orchard solve the same problem (a shielded UTXO with
+a zk proof per output and per spend), but the circuit-level
+implementations differ on every axis. A reader who has read the
+Sapling Spend or Output circuit should expect almost no
+structural overlap with `src/circuit.rs`.
+
+| Axis                      | Sapling                                                              | Orchard                                                                    |
+| ------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Proof system              | Groth16                                                              | Halo 2 (IPA, no trusted setup)                                             |
+| Setup                     | Per-circuit MPC trusted setup ("Powers of Tau" + Sapling-specific)   | Universal, transparent (only the SRS lives in code)                        |
+| Arithmetisation           | R1CS                                                                 | PLONKish: advice + fixed + selector + instance columns, custom gates, lookups |
+| Pairing curve             | BLS12-381                                                            | None (no pairing; commitments are IPA on Vesta)                            |
+| Embedded curve            | Jubjub (twisted Edwards)                                             | Pallas (short Weierstrass with $j = 0$ endomorphism)                       |
+| Distinct circuits         | Two: `Spend` and `Output`                                            | One: `Action` (combines a spend and an output, with enable flags)          |
+| Proofs per transaction    | One per Spend, one per Output                                        | One per `Bundle` (all Actions in a single proof)                           |
+| Merkle CRH                | Pedersen hash on Jubjub                                              | Sinsemilla on Pallas (windowed Pedersen with a 1024-entry lookup table)    |
+| Note commitment           | Windowed Pedersen commitment                                         | `SinsemillaCommit` (same windowed structure as the CRH)                    |
+| Nullifier PRF             | $\mathsf{Blake2s}$ in-circuit                                        | Poseidon $P_{128}^{\mathrm{Pasta}}$ in-circuit                             |
+| Spend authorisation       | RedJubjub re-randomisable Schnorr                                    | RedPallas re-randomisable Schnorr                                          |
+| Value commitment          | Pedersen on Jubjub                                                   | Pedersen on Pallas                                                         |
+| Circuit shape pin         | None in-tree (compiled snapshots only)                               | [`src/circuit_description/`](https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description) text + pinned proof |
+| Dummy padding             | Not needed (separate Spend/Output proofs)                            | Pads Action list to a power of two with dummies gated by enable flags      |
+| Recursion-friendly        | No (Groth16 + BLS12-381 does not recurse cleanly)                    | Yes (Halo 2 + Pasta cycle is designed for amortised recursion)             |
+
+Consequences a contributor should keep in mind:
+
+- A Sapling-style "byte-oriented hash inside the circuit" (Blake2s,
+  SHA-256) is dramatically more expensive in Halo 2 than in
+  Groth16 because PLONKish gates are field-aligned. Orchard's
+  switch to Sinsemilla and Poseidon was driven by this asymmetry.
+- The single-proof-per-bundle design means every Action shares
+  the prover's expensive setup costs; bundle-level fixed costs
+  dominate over per-Action marginal costs. This is the opposite
+  trade-off to Sapling's per-description proofs.
+- Halo 2's custom gates and lookups make the Action circuit
+  cheaper at the cost of a much harder review surface. A reviewer
+  comfortable with R1CS soundness arguments still needs to learn
+  Halo 2's PLONKish-specific failure modes
+  ([Chapter 4](./04-halo2-primer.md)).
+- The Pasta cycle exists precisely because Halo 2 wants future
+  recursion. Sapling's pairing-based setup could not do that
+  without a separate cycle-of-pairings construction.
+
+### 3.6 Why Recursion Matters
+
+The Pasta cycle and Halo 2's transparent setup were chosen with
+**proof recursion** in mind. Recursion here means: a proof
+verifier is itself encoded as a circuit, so a proof can attest
+to the verification of another proof. The current Orchard Action
+circuit does not use recursion in production, but the design
+keeps the door open. Three reasons this matters.
+
+1. **Cost amortisation across many transactions**. Without
+   recursion, a verifier validates each transaction's proof
+   independently in $O(\log n)$ time, where $n$ is the circuit
+   size. With recursion, many proofs collapse into one
+   "rollup" proof whose verification time is independent of the
+   batch size. For a chain that handles millions of shielded
+   transactions, this is the difference between a node syncing
+   in days versus in minutes.
+2. **Light-client succinctness**. A light client that cannot
+   afford to store the chain can verify a single recursive proof
+   that the chain's entire history is valid. Without recursion,
+   the light client must trust a third party for the chain's
+   state. Recursive Halo proofs make trust-minimised light
+   clients feasible.
+3. **Composable cryptography**. Application-layer protocols
+   (private bridges, private rollups, recursive zk-VMs) need to
+   nest proofs cleanly. Sapling's Groth16 cannot recurse without
+   a second pairing-friendly curve cycle, which roughly doubles
+   the prover cost and re-introduces a trusted setup. Halo 2
+   over Pasta recurses with no extra ceremony: the verifier
+   circuit and the prover live in the same field hierarchy.
+
+The cycle requirement (see [Chapter 3](./03-pasta-curves.md)) is
+the structural prerequisite: the field a circuit operates over
+must equal the scalar field of the curve that the inner proof
+uses, so the inner proof's group elements can be witnessed as
+in-circuit values. The Pasta pair (Pallas, Vesta) is that
+prerequisite met with no trusted setup.
+
+In short: even when Orchard does not invoke recursion today, the
+choice of Halo 2 + Pasta keeps the future migration to recursive
+proofs an engineering exercise rather than a protocol break.
+
+For the parallel implementation, see
+[`zcash/sapling-crypto`](https://github.com/zcash/sapling-crypto).
 
 ## 4. Failure Modes
 

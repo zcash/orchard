@@ -69,7 +69,7 @@ https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/C
 
 ### 3.2 The Parameter Set
 
-`P128Pow5T3` (the `P_{128}^{\mathrm{Pasta}}$ trait) lives in
+`P128Pow5T3` (the $P_{128}^{\mathrm{Pasta}}$ trait) lives in
 `halo2_gadgets::poseidon::primitives`. It exposes the MDS matrix
 $M$ and the round-constants table.
 
