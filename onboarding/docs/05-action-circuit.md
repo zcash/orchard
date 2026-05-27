@@ -37,6 +37,44 @@ Zcash Protocol Specification.
 
 ## 2. Definitions
 
+### Vocabulary Recap (Quick Reminder)
+
+The Action circuit is the SNARK that asserts an entire shielded
+state transition in zero knowledge. Before reading the formal
+definitions, the reader should have the five Zerocash-inherited
+terms in scope. Each is treated in full on the
+[lineage page](./protocol-lineage.md#4-the-shielded-pool-vocabulary)
+and in its dedicated chapter; this is just a refresher.
+
+- **Note** $n = (d, \mathsf{pk_d}, v, \rho, \psi, \mathsf{rcm})$:
+  a shielded UTXO. Diversifier, recipient key, value, nullifier
+  seed, auxiliary randomness, commitment trapdoor.
+  ([Chapter 9](./09-notes-nullifiers-commitments.md))
+- **Note commitment** $\mathsf{cm}$: a binding, hiding
+  Sinsemilla commitment to a note. Its extracted form
+  $\mathsf{cm}^\star = \mathsf{Extract}_{\mathbb{P}}(\mathsf{cm})$
+  is what is inserted into the tree.
+  ([Chapter 6](./06-sinsemilla.md),
+  [Chapter 9](./09-notes-nullifiers-commitments.md))
+- **Anchor**: the root of the global note commitment tree at
+  some recent block height. A spend proves membership of its
+  input note's commitment under this anchor.
+  ([Chapter 11](./11-merkle-tree.md))
+- **Nullifier** $\mathsf{nf}$: the deterministic, unique
+  identifier of a spent note. Published on chain so the chain
+  can reject double-spends without learning which note was
+  spent.
+  ([Chapter 9](./09-notes-nullifiers-commitments.md))
+- **Value commitment** $\mathsf{cv^{\mathsf{net}}}$: a Pedersen
+  commitment that hides individual note values while letting
+  consensus check value conservation across the bundle via the
+  binding signature.
+  ([Chapter 13](./13-value-commitments.md))
+
+If any of these are unfamiliar, read
+[Background: From Zerocoin to Orchard](./protocol-lineage.md)
+first; the formal definitions below assume them.
+
 ### Definition 2.1 (Public Inputs of an Action)
 
 The instance columns of the Action circuit hold

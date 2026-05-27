@@ -126,9 +126,17 @@ unlocks the contribution loop, and Chapters 3 to 19 each pick one
 subsystem and follow the seven-section skeleton. Chapter 20 is the
 six-week study plan that ties everything together.
 
-Before reading chapter 1, skim
-[Names, ZIPs, Issues, and PRs](./references.md): it explains the
-botanical naming convention (Sprout / Sapling / Orchard, formerly
-Pollard), and gives a curated index of every external reference
-the chapters cite (ZIPs, open issues, merged PRs, cross-repository
-anchors).
+Before reading chapter 1, two short front-pages set the
+context:
+
+- [Background: From Zerocoin to Orchard](./protocol-lineage.md)
+  explains the lineage. Zcash implements **Zerocash** (2014),
+  not **Zerocoin** (2013); Sprout, Sapling, and Orchard each
+  refine the Zerocash note model and replace specific
+  primitives. The page also defines the shielded-pool
+  vocabulary (note, commitment, anchor, nullifier, action) that
+  every later chapter uses without ceremony.
+- [Names, ZIPs, Issues, and PRs](./references.md) gives the
+  botanical naming convention (Sprout / Sapling / Orchard,
+  formerly Pollard) and a curated index of every external
+  reference the chapters cite.
