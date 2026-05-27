@@ -18,6 +18,28 @@ growth. The metaphor is deliberate: each protocol replaces the
 previous one as the "current" shielded pool while the older
 pools remain spendable.
 
+### 1.0 Botanical Glossary
+
+The names borrow specific words from arboriculture and
+horticulture. Their plain English meanings:
+
+| Name        | Botanical meaning                                                                                                                                                                                                                                                                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Sprout**  | The first shoot a seed pushes above the soil. The earliest visible stage of a plant's life, before it can be identified as a particular species. By extension, any small beginning.                                                                                                                                                                            |
+| **Sapling** | A young tree, no longer a seedling but not yet mature. Distinct from a sprout in that it is unambiguously a tree of a specific species, and has grown a recognisable trunk and crown.                                                                                                                                                                          |
+| **Pollard** | A mature tree that has been heavily pruned by repeatedly cutting back the upper branches to encourage a dense head of new growth. The technique is called pollarding; the resulting tree is called a pollard. Pollards are common in European urban forestry. (The name was the internal-only name for what later became Orchard; the rename is documented below.) |
+| **Orchard** | A deliberate planting of fruit-bearing or nut-bearing trees, managed as a group. An orchard differs from a forest in that the trees are planted for harvest and tended individually.                                                                                                                                                                           |
+
+The metaphor is a progression: a sprout becomes a sapling, a
+sapling matures into a productive tree (a pollard is one
+horticultural form of such a mature tree), and many mature trees
+together form an orchard. Each Zcash protocol generation
+inherits the structure of the previous one and adds the next
+stage of capability.
+
+The remaining sections document the exact source of each name in
+the public record.
+
 ### 1.1 "Sprout" (2016)
 
 The original Zcash shielded protocol launched at mainnet
