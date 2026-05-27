@@ -1,0 +1,149 @@
+# Build and deploy the onboarding course (Docusaurus 3) on every push to the
+# onboarding branch.
+#
+# How this is wired:
+# - The source of the site lives in onboarding/ on the `onboarding` branch.
+# - This workflow builds onboarding/build/ and copies its contents to the
+#   ROOT of the same `onboarding` branch.
+# - GitHub Pages must be configured for this repository (or for the fork)
+#   to serve from the `onboarding` branch, folder `/` (root).
+# - The build artefacts at the root are filtered from this workflow's
+#   triggers via paths-ignore, so the auto-commit does not re-trigger the
+#   workflow. The commit message also carries [skip ci] as a belt-and-braces.
+
+name: Onboarding docs
+
+on:
+  push:
+    branches:
+      - onboarding
+    paths-ignore:
+      # Built artefacts that the workflow itself commits to the branch root.
+      - 'index.html'
+      - '404.html'
+      - 'sitemap.xml'
+      - 'manifest.json'
+      - 'robots.txt'
+      - 'opensearch.xml'
+      - 'lunr-index-*.json'
+      - 'search-index*.json'
+      - 'assets/**'
+      - 'img/**'
+      - 'static/**'
+      # The docusaurus build directory itself, in case it lands at the root.
+      - 'build/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-onboarding-docs
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: onboarding
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: onboarding/package-lock.json
+
+      - name: Install dependencies
+        working-directory: onboarding
+        run: npm install
+
+      - name: Build site
+        working-directory: onboarding
+        run: npx docusaurus build
+
+      - name: Publish build to the root of the onboarding branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # Stage the freshly built site in a temporary directory.
+          tmp_publish=$(mktemp -d)
+          cp -R onboarding/build/. "$tmp_publish/"
+
+          # Preserve the parts of the working tree that must NOT be wiped:
+          # the source of the site and the rest of the repository tree.
+          # Anything not in this allow-list and not a dotfile starting with
+          # `.git` is treated as a prior deploy artefact and removed.
+          preserve_dirs=(
+            "onboarding"
+            ".github"
+            "src"
+            "tests"
+            "benches"
+            "book"
+            "proptest-regressions"
+          )
+          preserve_files=(
+            "Cargo.toml"
+            "Cargo.lock"
+            "rust-toolchain.toml"
+            "README.md"
+            "CHANGELOG.md"
+            "LICENSE-APACHE"
+            "LICENSE-MIT"
+            "COPYING.md"
+            "katex-header.html"
+            ".gitignore"
+          )
+
+          should_preserve() {
+            local p="$1"
+            for d in "${preserve_dirs[@]}"; do
+              if [[ "$p" == "$d" || "$p" == "$d"/* ]]; then
+                return 0
+              fi
+            done
+            for f in "${preserve_files[@]}"; do
+              if [[ "$p" == "$f" ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Walk the repo root and remove anything not in the preserve list.
+          shopt -s dotglob
+          for entry in *; do
+            case "$entry" in
+              .git|.github) continue ;;
+            esac
+            if should_preserve "$entry"; then
+              continue
+            fi
+            rm -rf -- "$entry"
+          done
+          shopt -u dotglob
+
+          # Copy the staged site to the repo root.
+          cp -R "$tmp_publish"/. ./
+
+          # Add a .nojekyll so GitHub Pages serves _next/-style paths.
+          touch .nojekyll
+
+          # Configure the bot identity and commit.
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No changes in built site; nothing to commit.'
+            exit 0
+          fi
+
+          git commit -m 'docs: deploy onboarding site [skip ci]'
+          git push origin HEAD:onboarding
