@@ -47,6 +47,39 @@ onboarding branch of the fork:
 
 :::
 
+## Relationship to the Zcash Protocol Specification
+
+The
+[Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf)
+is the canonical, normative reference for everything on this site.
+It is maintained by the protocol team, updated continuously as
+ZIPs are accepted, and re-released as a new PDF revision on every
+substantive change. It already contains every definition,
+constant, parameter, and pseudocode block that the chapters here
+rely on, in far more detail and with the formality required for
+consensus.
+
+Most of the prose on this site is, by design, a paraphrase of the
+specification. The reason for having a second presentation at all
+is operational, not editorial:
+
+- **HTML, not PDF.** Cross-references, full-text search, and
+  responsive layout make the material easier to navigate on a
+  laptop while reading code.
+- **Links to the source.** Every definition that has a Rust
+  counterpart links to the file, line, and pinned commit in
+  `zcash/orchard` (and to `librustzcash`, `zebrad`, or `zcashd`
+  where relevant). The PDF cannot do this without losing its
+  pin-stability.
+- **Lives next to the code.** This site is generated from
+  Markdown checked in to the `onboarding` branch of the fork, so
+  a change in the crate can be reflected in the same PR as a
+  change in the prose.
+
+If a statement on this site conflicts with the PDF, the PDF
+wins. When in doubt, search the PDF first; this site is the
+contributor-oriented index into it, not a replacement.
+
 ## How to Read This Course
 
 Chapters are numbered `NN-slug.md` so the sidebar matches the
@@ -97,18 +130,18 @@ parts of PLONKish arithmetisation needed to read
 
 Used throughout, following the Zcash Protocol Specification.
 
-| Symbol                                | Meaning                                |
-| ------------------------------------- | -------------------------------------- |
-| $\mathbb{F}_p$                        | The prime field with $p$ elements      |
-| $\mathbb{G}$, $E_p$                   | A cyclic group; the curve over $\mathbb{F}_p$ |
-| $[k] P$                               | Scalar multiplication of $P$ by $k$    |
-| $\mathsf{Com}(m; r)$                  | Commitment to $m$ with randomness $r$  |
-| $x \xleftarrow{R} S$                  | Sample $x$ uniformly from $S$          |
-| $a \mathbin{\Vert} b$                 | Byte-string concatenation              |
-| $\mathsf{Sinsemilla}_D(m)$            | Sinsemilla hash of $m$ in domain $D$   |
-| $\mathsf{Poseidon}(x_1, \dots, x_n)$  | Poseidon permutation output            |
-| $q$, $r$                              | Base / scalar field orders             |
-| $\mathsf{Extract}_{\mathbb{P}}(P)$    | $x$-coordinate extraction              |
+| Symbol                               | Meaning                                       |
+| ------------------------------------ | --------------------------------------------- |
+| $\mathbb{F}_p$                       | The prime field with $p$ elements             |
+| $\mathbb{G}$, $E_p$                  | A cyclic group; the curve over $\mathbb{F}_p$ |
+| $[k] P$                              | Scalar multiplication of $P$ by $k$           |
+| $\mathsf{Com}(m; r)$                 | Commitment to $m$ with randomness $r$         |
+| $x \xleftarrow{R} S$                 | Sample $x$ uniformly from $S$                 |
+| $a \mathbin{\Vert} b$                | Byte-string concatenation                     |
+| $\mathsf{Sinsemilla}_D(m)$           | Sinsemilla hash of $m$ in domain $D$          |
+| $\mathsf{Poseidon}(x_1, \dots, x_n)$ | Poseidon permutation output                   |
+| $q$, $r$                             | Base / scalar field orders                    |
+| $\mathsf{Extract}_{\mathbb{P}}(P)$   | $x$-coordinate extraction                     |
 
 ## Pin
 
