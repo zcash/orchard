@@ -94,7 +94,38 @@ the re-randomiser $\alpha$, the nullifier-deriving key
 $\mathsf{nk}$, $\mathsf{rivk}$, the output note's fields, and the
 value commitment trapdoor $\mathsf{rcv}$.
 
-### Definition 2.3 (Constraint Groups)
+### Definition 2.3 (Circuit Size at the Pin)
+
+The shape of the Action circuit, as recorded in the pinned
+[`src/circuit_description`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description)
+snapshot:
+
+| Quantity                     | Value                            |
+| ---------------------------- | -------------------------------- |
+| $K$ (table height exponent)  | $11$                             |
+| Rows ($2^K$)                 | $2048$                           |
+| Extended $K$ (FFT domain)    | $14$                             |
+| Public inputs                | $9$ cells in $1$ instance column |
+| Advice columns (witness)     | $10$                             |
+| Fixed columns (preprocessed) | $29$                             |
+| Selectors                    | $56$                             |
+| Polynomial constraints       | $193$ (see Section 3.5)          |
+
+The nine public inputs are the cells of the single instance
+column, indexed at the top of `src/circuit.rs` (lines 77 to 85):
+$\mathsf{ANCHOR}$, $\mathsf{CV\_NET\_X}$, $\mathsf{CV\_NET\_Y}$,
+$\mathsf{NF\_OLD}$, $\mathsf{RK\_X}$, $\mathsf{RK\_Y}$,
+$\mathsf{CMX}$, $\mathsf{ENABLE\_SPEND}$,
+$\mathsf{ENABLE\_OUTPUT}$.
+
+The "witness" in PLONKish does not split into "private inputs"
+and "intermediate wires": every per-row witness cell is an
+advice-column entry. The total witness cell count is therefore
+$10 \times 2048 = 20480$. Selector and fixed cells are
+preprocessed once during verifier-key generation and do not
+move per proof.
+
+### Definition 2.4 (Constraint Groups)
 
 The circuit enforces six groups of constraints:
 
@@ -289,23 +320,23 @@ implementations differ on every axis. A reader who has read the
 Sapling Spend or Output circuit should expect almost no
 structural overlap with `src/circuit.rs`.
 
-| Axis                      | Sapling                                                              | Orchard                                                                    |
-| ------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Proof system              | Groth16                                                              | Halo 2 (IPA, no trusted setup)                                             |
-| Setup                     | Per-circuit MPC trusted setup ("Powers of Tau" + Sapling-specific)   | Universal, transparent (only the SRS lives in code)                        |
-| Arithmetisation           | R1CS                                                                 | PLONKish: advice + fixed + selector + instance columns, custom gates, lookups |
-| Pairing curve             | BLS12-381                                                            | None (no pairing; commitments are IPA on Vesta)                            |
-| Embedded curve            | Jubjub (twisted Edwards)                                             | Pallas (short Weierstrass with $j = 0$ endomorphism)                       |
-| Distinct circuits         | Two: `Spend` and `Output`                                            | One: `Action` (combines a spend and an output, with enable flags)          |
-| Proofs per transaction    | One per Spend, one per Output                                        | One per `Bundle` (all Actions in a single proof)                           |
-| Merkle CRH                | Pedersen hash on Jubjub                                              | Sinsemilla on Pallas (windowed Pedersen with a 1024-entry lookup table)    |
-| Note commitment           | Windowed Pedersen commitment                                         | `SinsemillaCommit` (same windowed structure as the CRH)                    |
-| Nullifier PRF             | $\mathsf{Blake2s}$ in-circuit                                        | Poseidon $P_{128}^{\mathrm{Pasta}}$ in-circuit                             |
-| Spend authorisation       | RedJubjub re-randomisable Schnorr                                    | RedPallas re-randomisable Schnorr                                          |
-| Value commitment          | Pedersen on Jubjub                                                   | Pedersen on Pallas                                                         |
-| Circuit shape pin         | None in-tree (compiled snapshots only)                               | [`src/circuit_description/`](https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description) text + pinned proof |
-| Dummy padding             | Not needed (separate Spend/Output proofs)                            | Pads Action list to a power of two with dummies gated by enable flags      |
-| Recursion-friendly        | No (Groth16 + BLS12-381 does not recurse cleanly)                    | Designed for it (Halo 2 + Pasta cycle); recursion not yet shipped in `zcash/halo2` (see [#75](https://github.com/zcash/halo2/issues/75), [#249](https://github.com/zcash/halo2/issues/249), [#251](https://github.com/zcash/halo2/issues/251)) |
+| Axis                   | Sapling                                                            | Orchard                                                                                                                                                                                                                                        |
+| ---------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Proof system           | Groth16                                                            | Halo 2 (IPA, no trusted setup)                                                                                                                                                                                                                 |
+| Setup                  | Per-circuit MPC trusted setup ("Powers of Tau" + Sapling-specific) | Universal, transparent (only the SRS lives in code)                                                                                                                                                                                            |
+| Arithmetisation        | R1CS                                                               | PLONKish: advice + fixed + selector + instance columns, custom gates, lookups                                                                                                                                                                  |
+| Pairing curve          | BLS12-381                                                          | None (no pairing; commitments are IPA on Vesta)                                                                                                                                                                                                |
+| Embedded curve         | Jubjub (twisted Edwards)                                           | Pallas (short Weierstrass with $j = 0$ endomorphism)                                                                                                                                                                                           |
+| Distinct circuits      | Two: `Spend` and `Output`                                          | One: `Action` (combines a spend and an output, with enable flags)                                                                                                                                                                              |
+| Proofs per transaction | One per Spend, one per Output                                      | One per `Bundle` (all Actions in a single proof)                                                                                                                                                                                               |
+| Merkle CRH             | Pedersen hash on Jubjub                                            | Sinsemilla on Pallas (windowed Pedersen with a 1024-entry lookup table)                                                                                                                                                                        |
+| Note commitment        | Windowed Pedersen commitment                                       | `SinsemillaCommit` (same windowed structure as the CRH)                                                                                                                                                                                        |
+| Nullifier PRF          | $\mathsf{Blake2s}$ in-circuit                                      | Poseidon $P_{128}^{\mathrm{Pasta}}$ in-circuit                                                                                                                                                                                                 |
+| Spend authorisation    | RedJubjub re-randomisable Schnorr                                  | RedPallas re-randomisable Schnorr                                                                                                                                                                                                              |
+| Value commitment       | Pedersen on Jubjub                                                 | Pedersen on Pallas                                                                                                                                                                                                                             |
+| Circuit shape pin      | None in-tree (compiled snapshots only)                             | [`src/circuit_description/`](https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description) text + pinned proof                                                                                       |
+| Dummy padding          | Not needed (separate Spend/Output proofs)                          | Pads Action list to a power of two with dummies gated by enable flags                                                                                                                                                                          |
+| Recursion-friendly     | No (Groth16 + BLS12-381 does not recurse cleanly)                  | Designed for it (Halo 2 + Pasta cycle); recursion not yet shipped in `zcash/halo2` (see [#75](https://github.com/zcash/halo2/issues/75), [#249](https://github.com/zcash/halo2/issues/249), [#251](https://github.com/zcash/halo2/issues/251)) |
 
 Consequences a contributor should keep in mind:
 
@@ -376,7 +407,7 @@ following:
 
 In short, Halo 2 in Orchard today is the **plain non-recursive
 SNARK** layer of the protocol. The Pasta cycle is the structural
-prerequisite that *would let* recursion happen without further
+prerequisite that _would let_ recursion happen without further
 breaking changes; the work of actually shipping that recursion is
 upstream and unfinished.
 
