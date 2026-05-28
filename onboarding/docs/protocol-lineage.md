@@ -874,7 +874,81 @@ the code.
   prover replay a Sapling commitment as an Orchard commitment
   or vice versa; the spec is explicit about this.
 
-## 8. Spec Pointers
+## 8. Catalogue of Cryptographic Hardness Assumptions
+
+The definitions and security arguments earlier in this page invoke
+several standard cryptographic assumptions. The list below
+catalogues every assumption that the Sapling and Orchard pools
+rely on, with the curve and primitive on which the assumption is
+instantiated, so that a reader who is auditing the security of
+either pool, comparing it to another design, or scoping a future
+upgrade has a single reference list.
+
+All entries here are stated as the protocol specification states
+them; the list is descriptive, not prescriptive, and does not
+recommend any change.
+
+### 8.1 Group-Theoretic Assumptions
+
+| Assumption                      | Sapling instantiation                            | Orchard instantiation                         | Used for                                                                 |
+| ------------------------------- | ------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------ |
+| Discrete-log (DL)               | $\mathbb{J}^{(r)}$ (Jubjub prime-order subgroup) | $\mathbb{P}^*$ (Pallas, embedded curve)       | Recovering $\mathsf{ask}$ from $\mathsf{ak}$; secrecy of all secret keys |
+| Discrete-log (DL)               | n/a                                              | $E_p,\, E_q$ (Pallas / Vesta, proving curves) | Halo 2 / IPA polynomial-commitment binding                               |
+| Decisional Diffie-Hellman (DDH) | $\mathbb{J}^{(r)}$ with $\mathsf{ivk}$ as secret | $\mathbb{P}^*$ with $\mathsf{ivk}$ as secret  | Unlinkability of diversified addresses; IND-CPA of the Orchard KEM       |
+| Gap Diffie-Hellman (Gap-DH)     | n/a                                              | $\mathbb{P}^*$                                | IK-CCA of the Orchard KEM (with the AEAD)                                |
+| Strong-unforgeability of RedDSA | $\mathsf{RedJubjub}$ on $\mathbb{J}^{(r)}$       | $\mathsf{RedPallas}$ on $\mathbb{P}^*$        | Spend-authorising signature; binding signature                           |
+
+### 8.2 Hash and PRF Assumptions
+
+| Assumption                                     | Primitive                                          | Used for                                                                                                                         |
+| ---------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Collision and pre-image resistance             | $\mathsf{Sinsemilla}$ on Pallas                    | $\mathsf{NoteCommit}^{\mathsf{Orchard}}$; $\mathsf{MerkleCRH}$                                                                   |
+| Collision and pre-image resistance             | $\mathsf{Pedersen}$ on Jubjub                      | Sapling note commitment and Merkle CRH                                                                                           |
+| Collision and pre-image resistance             | $\mathsf{Poseidon}\, P_{128}^{\mathrm{Pasta}}$     | $\mathsf{PRF}^{\mathsf{nfOrchard}}$ inner permutation                                                                            |
+| Collision and pre-image resistance (truncated) | SHA-256                                            | Sprout $\mathsf{NoteCommit}$, Sprout Merkle CRH, Sprout nullifier                                                                |
+| PRF security                                   | $\mathsf{Blake2b}$ (256- and 512-bit personalised) | $\mathsf{KDF}^{\mathsf{Orchard}}$, $\mathsf{PRF}^{\mathsf{expand}}$, $\mathsf{PRF}^{\mathsf{ovk}}$, $\mathsf{PRF}^{\mathsf{nk}}$ |
+| PRF security                                   | Blake2s                                            | Sapling nullifier PRF                                                                                                            |
+| Knowledge soundness in the random oracle model | $\mathsf{Blake2b}$ Fiat-Shamir transcript          | Halo 2 proof soundness                                                                                                           |
+
+### 8.3 Symmetric and AEAD Assumptions
+
+| Assumption                          | Primitive         | Used for                                                          |
+| ----------------------------------- | ----------------- | ----------------------------------------------------------------- |
+| IND-CCA security of the AEAD        | ChaCha20-Poly1305 | Note encryption (`enc`, `out` ciphertexts in Sapling and Orchard) |
+| Block-cipher pseudorandomness (PRP) | AES-256           | FF1 format-preserving encryption of diversifier indices in ZIP 32 |
+
+### 8.4 Knowledge-Soundness Assumptions of the Proof System
+
+| Pool    | Proof system                                | Model                                                                            |
+| ------- | ------------------------------------------- | -------------------------------------------------------------------------------- |
+| Sprout  | BCTV14 / Groth16 over alt_bn128             | Knowledge of exponent (KoE) and $q$-PKE in the trusted-setup CRS                 |
+| Sapling | Groth16 over BLS12-381                      | Knowledge of exponent (KoE) and $q$-PKE in the trusted-setup CRS                 |
+| Orchard | Halo 2 (PLONKish + IPA) over Pallas / Vesta | Algebraic group model (AGM) reduction to DL on $E_p,\, E_q$; ROM for Fiat-Shamir |
+
+### 8.5 Classical vs Post-Quantum Status
+
+All hardness assumptions in Sections 8.1 and 8.4 are
+discrete-log-based on elliptic curves. Shor's algorithm solves
+the discrete-log problem in polynomial time on a sufficiently
+capable quantum computer, so these assumptions belong to the
+"classical-only" category of post-quantum classification, as
+do RSA and standard Diffie-Hellman. The same status applies to
+every other major deployed cryptographic-currency consensus
+construction at the time of writing.
+
+The symmetric and hash assumptions in Sections 8.2 and 8.3
+(ChaCha20-Poly1305, AES, SHA-256, Blake2b/s, Sinsemilla,
+Pedersen, Poseidon) are not affected by Shor's algorithm.
+Grover's algorithm gives a quadratic speed-up against pre-image
+and key-search problems but does not break collision resistance
+asymptotically; the practical security margin reduces by roughly
+half in bits.
+
+This page does not recommend any specific upgrade path or
+post-quantum replacement; consult the protocol team's published
+plans and the relevant ZIPs.
+
+## 9. Spec Pointers
 
 Primary sources, in order of relevance to the Orchard crate.
 
@@ -912,7 +986,7 @@ Primary sources, in order of relevance to the Orchard crate.
 - [Names, ZIPs, Issues, and PRs](./references.md):
   this course's curated index of every public reference.
 
-## 9. Where to Go Next
+## 10. Where to Go Next
 
 After this page, the natural reading order is:
 
