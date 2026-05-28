@@ -580,20 +580,20 @@ holds enters the wallet through this path.
 ```mermaid
 sequenceDiagram
   autonumber
-  participant A as Alice (sender)
-  participant C as Chain
-  participant B as Bob (receiver)
-  A->>A: sample fresh (rho, psi, rcm)
-  A->>A: note = (d, pk_d_Bob, v, rho, psi, rcm)
-  A->>A: cm  = NoteCommit_rcm(d, pk_d, v, rho, psi)
-  A->>A: cm* = Extract(cm)
-  A->>A: c_enc = Enc_pk_d(note); derive epk
-  A->>C: publish (cm*, c_enc, epk, ...) inside an Action
-  Note over C: tree.append(cm*)<br/>new root becomes the new anchor
-  B->>C: stream every (epk, c_enc) from new blocks
-  B->>B: trial-decrypt with ivk_Bob
-  B->>B: recover note; verify NoteCommit(...) reproduces cm*
-  B->>B: store (leaf index, Merkle path) for later spending
+  participant Alice
+  participant Chain
+  participant Bob
+  Alice->>Alice: sample fresh (rho, psi, rcm)
+  Alice->>Alice: note = (d, pk_d_Bob, v, rho, psi, rcm)
+  Alice->>Alice: cm = NoteCommit_rcm(d, pk_d, v, rho, psi)
+  Alice->>Alice: cm_star = Extract(cm)
+  Alice->>Alice: c_enc = Enc_pk_d(note), then derive epk
+  Alice->>Chain: publish (cm_star, c_enc, epk, ...) inside an Action
+  Note over Chain: tree.append(cm_star)<br/>new root becomes the new anchor
+  Bob->>Chain: stream every (epk, c_enc) from new blocks
+  Bob->>Bob: trial-decrypt with ivk_Bob
+  Bob->>Bob: recover note, then verify NoteCommit reproduces cm_star
+  Bob->>Bob: store (leaf index, Merkle path) for later spending
 ```
 
 What changes in the tree when the Action lands. The leaf
@@ -647,17 +647,17 @@ under the declared anchor, without revealing which leaf it is.
 ```mermaid
 sequenceDiagram
   autonumber
-  participant B as Bob (spender)
-  participant C as Chain
-  B->>B: select note (knows leaf index, Merkle path)
-  B->>B: nf = Nf(nk_Bob, rho, psi, cm)
-  B->>B: anchor = some recent tree root
-  B->>B: zk-prove: cm* is at path under anchor AND<br/>nf is correctly derived AND value conserved
-  B->>C: publish Action(nf, anchor, cv_net, proof, ...)
-  C->>C: anchor in recent_roots ?
-  C->>C: nf not in NS ?
-  C->>C: proof verifies ?
-  Note over C: NS.insert(nf)<br/>tree is not touched by the spend half
+  participant Bob
+  participant Chain
+  Bob->>Bob: select note (knows leaf index, Merkle path)
+  Bob->>Bob: nf = Nf(nk_Bob, rho, psi, cm)
+  Bob->>Bob: anchor = some recent tree root
+  Bob->>Bob: zk-prove cm_star is at path under anchor AND<br/>nf is correctly derived AND value is conserved
+  Bob->>Chain: publish Action(nf, anchor, cv_net, proof, ...)
+  Chain->>Chain: anchor in recent_roots ?
+  Chain->>Chain: nf not in NS ?
+  Chain->>Chain: proof verifies ?
+  Note over Chain: NS.insert(nf)<br/>tree is not touched by the spend half
 ```
 
 The nullifier set after the spend lands. The tree itself is
