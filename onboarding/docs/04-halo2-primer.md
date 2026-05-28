@@ -70,11 +70,11 @@ pinned to the `halo2_proofs-0.3.0` tag that Orchard 0.13.1
 depends on:
 
 ```rust reference title="halo2_proofs/src/transcript.rs (Blake2bRead::init)"
-https://github.com/zcash/halo2/blob/fe2adf14297fc72e48fe6396790179f87f1066c5/halo2_proofs/src/transcript.rs#L72-L84
+https://github.com/zcash/halo2/blob/263356784042d7d4c1c17d357c94c1acaeb75ab5/halo2_proofs/src/transcript.rs#L72-L84
 ```
 
 ```rust reference title="halo2_proofs/src/transcript.rs (Blake2bWrite::init)"
-https://github.com/zcash/halo2/blob/fe2adf14297fc72e48fe6396790179f87f1066c5/halo2_proofs/src/transcript.rs#L158-L170
+https://github.com/zcash/halo2/blob/263356784042d7d4c1c17d357c94c1acaeb75ab5/halo2_proofs/src/transcript.rs#L158-L170
 ```
 
 ## 3. The Code
