@@ -177,10 +177,11 @@ optimally so. Candidate research questions:
   but the binding to $\mathsf{epk}$ is on chain. A formal forward-
   secrecy treatment would clarify the exact threat model.
 - **Post-quantum threat**. The Orchard KEM is DH-based and
-  therefore broken by any future quantum computer with enough
-  qubits. Research direction: a hybrid KEM that ships both a
-  classical Orchard ciphertext and a post-quantum KEM
-  encapsulation (e.g. ML-KEM 768) for the same plaintext.
+  therefore would not be secure against a sufficiently capable
+  quantum adversary, in line with every other Diffie-Hellman
+  scheme deployed today. Research direction: a hybrid KEM that
+  ships both a classical Orchard ciphertext and a post-quantum
+  KEM encapsulation (e.g. ML-KEM 768) for the same plaintext.
   This is non-trivial because the recipient's IVK lives in
   $\mathbb{F}_q$ but a PQ KEM is byte-oriented; the encoding
   has to be done carefully to avoid linkability between the
@@ -325,8 +326,8 @@ mistakes are:
    for closing it, citing the cited paper(s) in this chapter.
 2. **Research task**. Read
    [PR #471 (ZSA)](https://github.com/zcash/orchard/pull/471).
-   Identify the *security claim* the PR makes and the
-   *primitive* on which the claim rests. Determine whether the
+   Identify the _security claim_ the PR makes and the
+   _primitive_ on which the claim rests. Determine whether the
    claim is reducible to one of Definition 2.2's assumptions.
 3. **Code task**. Run
    `cargo bench --bench circuit -- --quick` at the pin. Record

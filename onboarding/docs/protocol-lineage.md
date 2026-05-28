@@ -104,7 +104,7 @@ on-chain shape less informative (see
 | Aspect             | Value                                                                   |
 | ------------------ | ----------------------------------------------------------------------- |
 | Crypto             | RSA accumulator + double-discrete-log proofs                            |
-| Trusted setup      | RSA modulus (problematic; later mitigated by class groups)              |
+| Trusted setup      | RSA modulus (later replaced by class groups in follow-up work)          |
 | What is hidden     | Linkage between mint and spend                                          |
 | What is not hidden | Amount (fixed denomination), and that a shielded op took place          |
 | Proof size         | ~25 KiB                                                                 |
@@ -141,7 +141,7 @@ parts).
 | Proof system         | BCTV14, later Groth16-backport                            |
 | Note commitment hash | SHA-256 truncated                                         |
 | Merkle tree hash     | SHA-256 PRF                                               |
-| Trusted setup        | "Sprout MPC", 6 participants (a known weakness)           |
+| Trusted setup        | "Sprout MPC", 6 participants                              |
 | Transaction format   | JoinSplit (2-in / 2-out per JoinSplit, multiple per tx)   |
 | Status               | Deprecated; new value cannot enter the pool               |
 | Spec                 | Zcash Protocol Specification, Section 4 (Sprout sections) |
@@ -201,8 +201,8 @@ shielded transfers atomically.
 side kept the Sprout circuit small enough to be practical on
 2016 hardware. Higher arity multiplies the circuit size; lower
 arity makes wallet change painful. The shape survived into
-Sapling's design discussions but was ultimately abandoned in
-favour of separable `SpendDescription` and `OutputDescription`,
+Sapling's design discussions and was ultimately replaced by the
+separable `SpendDescription` and `OutputDescription`,
 so a transaction can have any mix of $m$ inputs and $n$ outputs
 and pays only for the operations it actually uses.
 
@@ -431,7 +431,7 @@ Two reference implementations are publicly documented:
   [dannywillems.github.io/zebra](https://dannywillems.github.io/zebra),
   starting at the `zebra_chain::orchard::tree` module and the
   `zebra_state` crate's `service::finalized_state` module.
-- **zcashd (C++, legacy reference).** The same role is filled by
+- **zcashd (C++, in maintenance).** The same role is filled by
   the `OrchardMerkleFrontier` and the coin/state caches around
   `CCoinsViewCache` and `CChainState`. Browse the doxygen at
   [dannywillems.github.io/zcashd](https://dannywillems.github.io/zcashd),
