@@ -144,7 +144,8 @@ const config: Config = {
           ],
         },
       ],
-      copyright: "Orchard onboarding course, ASCII only, neutral voice.",
+      copyright:
+        "Orchard onboarding course. Pinned to zcash/orchard 0.13.1.",
     },
     prism: {
       theme: prismThemes.github,
