@@ -274,7 +274,52 @@ introduced viewing keys and diversified addresses.
 | Notable additions    | Diversified addresses; full viewing keys; spend-authority signatures (RedJubjub) |
 | Implementation       | [`zcash/sapling-crypto`](https://github.com/zcash/sapling-crypto)                |
 
-Sapling is the most-used shielded pool at the time of writing.
+The three "Notable additions" in the table are the features that
+distinguish Sapling from Sprout. All three are defined in the
+[Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf):
+
+- **Diversified addresses.** A scheme that lets a single Sapling
+  spending key produce many unlinkable payment addresses. Each
+  address is the pair $(d, \mathsf{pk_d})$, where $d$ is an
+  88-bit _diversifier_ and
+  $\mathsf{pk_d} = [\mathsf{ivk}]\, g_d$ with
+  $g_d = \mathsf{DiversifyHash}(d)$. Two addresses
+  $(d, \mathsf{pk_d})$ and $(d', \mathsf{pk_d}')$ from the same
+  spending key are unlinkable on chain to anyone who does not
+  hold the incoming viewing key. See protocol specification
+  Section 4.2.2 ("Sapling Key Components") and Section 5.6
+  ("Encodings of Addresses").
+- **Full viewing keys.** A key that grants read access to a
+  wallet without granting spend access. The Sapling full
+  viewing key is the triple
+  $(\mathsf{ak},\, \mathsf{nk},\, \mathsf{ovk})$: $\mathsf{ak}$
+  is the spend-authorising public key, $\mathsf{nk}$ is the
+  nullifier-deriving key, and $\mathsf{ovk}$ is the outgoing
+  viewing key. From the full viewing key one can derive the
+  incoming viewing key $\mathsf{ivk}$, detect and decrypt
+  incoming notes, recognise the wallet's own outgoing notes,
+  and recompute nullifiers; one cannot construct a valid
+  spend-authorising signature. See protocol specification
+  Section 4.2.2 and
+  [ZIP 32 "Shielded HD Wallets"](https://zips.z.cash/zip-0032).
+- **Spend-authority signatures (RedJubjub).** A
+  re-randomisable Schnorr-style signature scheme on the Jubjub
+  curve, denoted $\mathsf{RedJubjub}$ in the specification.
+  Each Sapling spend signs the transaction under a fresh
+  re-randomisation $\mathsf{rk} = \mathsf{ak} + [\alpha]\, G$
+  of the long-term key $\mathsf{ak}$, where $\alpha$ is a
+  per-spend secret. The transaction publishes $\mathsf{rk}$ and
+  the signature; verifiers check the signature against
+  $\mathsf{rk}$ without learning $\mathsf{ak}$. See protocol
+  specification Section 5.4.6 ("RedDSA, RedJubjub, and
+  RedPallas"). Orchard inherits the same construction over
+  Pallas as $\mathsf{RedPallas}$; see
+  [Chapter 14 (RedPallas)](./14-redpallas.md).
+
+These three additions are kept by Orchard with the curve and
+hash changes documented above; the structural role of each is
+unchanged.
+
 The Sapling circuit is **not** a Halo 2 circuit; it uses
 `bellman`'s Groth16 backend.
 
