@@ -690,6 +690,46 @@ The Merkle tree's root at any block height is called the
 membership against; consensus accepts any recent anchor, which
 lets wallets be a few blocks behind without re-proving.
 
+#### Where Both Structures Live in Code
+
+The `orchard` crate provides the in-memory data types
+(`MerkleHashOrchard`, `Anchor`, `Nullifier`) but does not own the
+storage; the full-node implementation persists both structures.
+
+**Zebra (Rust full node).** The commitment-tree type used by
+consensus is `zebra_chain::orchard::tree::NoteCommitmentTree` and
+its bundle, `zebra_chain::parallel::tree::NoteCommitmentTrees`.
+Persistence is handled by `zebra-state`. The on-disk state uses
+RocksDB column families declared in
+[`zebra-state/src/service/finalized_state.rs`](https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/src/service/finalized_state.rs),
+named `orchard_note_commitment_tree`, `orchard_anchors`, and
+`orchard_nullifiers`. Browse the rustdoc at
+[dannywillems.github.io/zebra](https://dannywillems.github.io/zebra)
+starting at `zebra_chain::orchard::tree` and the `zebra_state`
+crate's `service::finalized_state` module.
+
+**zcashd (C++, in maintenance).** The commitment tree is
+`OrchardMerkleFrontier`, stored as `tree` inside
+`OrchardMerkleFrontierLegacySer` and accessed via
+`CCoinsView::GetOrchardAnchorAt` declared in
+[`src/coins.h`](https://github.com/zcash/zcash/blob/master/src/coins.h)
+and persisted by
+[`src/txdb.h`](https://github.com/zcash/zcash/blob/master/src/txdb.h).
+The nullifier set lives in the same coins cache as a
+`CNullifiersMap mapOrchardNullifiers` /
+`cacheOrchardNullifiers` (also `src/coins.h`); duplicates are
+rejected by the `OrchardDuplicateNullifier` validation error
+inside `ConnectBlock`. Browse the doxygen at
+[dannywillems.github.io/zcashd](https://dannywillems.github.io/zcashd)
+starting at `OrchardMerkleFrontier`, `CCoinsViewCache`, and
+following the call sites of `mapOrchardNullifiers` and
+`GetOrchardAnchorAt`.
+
+The same structural pair (commitment tree plus nullifier set)
+exists for the Sapling and Sprout pools in both
+implementations, with `Sapling`/`Sprout` substituted for
+`Orchard` in every name.
+
 ### 5.2 Receiving a Shielded Output
 
 Alice sends `v` zatoshis to Bob. The output flow is the only
