@@ -21,12 +21,9 @@ This site is automatically generated using
 [Claude Code](https://www.claude.com/product/claude-code). Errors
 may have been introduced. **This site is not authoritative
 documentation or explanation of the Orchard shielded protocol.**
-The only authoritative material is what is published by the Zcash
-organisations that maintain the protocol and its reference
-implementations:
-[Electric Coin Company](https://electriccoin.co/), the
-[Zcash Foundation](https://www.zfnd.org/), and the protocol team
-that maintains the
+The only authoritative material is what is published by the
+Zcash-related organisations that maintain the protocol and its
+reference implementations, in particular the
 [ZIPs](https://zips.z.cash/) and the
 [Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf).
 Anything on this site that disagrees with those sources is wrong
