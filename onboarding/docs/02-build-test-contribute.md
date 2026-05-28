@@ -57,7 +57,7 @@ and the runnable scripts cannot drift.
 ### 3.1 First Build
 
 ```bash reference title="onboarding/scripts/first-build.sh"
-https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/first-build.sh
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/first-build.sh#L7-L10
 ```
 
 The first build downloads `halo2_proofs`, `pasta_curves`, and the
@@ -69,7 +69,7 @@ machine. Subsequent builds are incremental.
 Run the full suite as CI does:
 
 ```bash reference title="onboarding/scripts/full-test.sh"
-https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/full-test.sh
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/full-test.sh#L7-L7
 ```
 
 This exercises:
@@ -88,7 +88,7 @@ This exercises:
 Run a focused test (faster iteration during development):
 
 ```bash reference title="onboarding/scripts/focused-test.sh"
-https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/focused-test.sh
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/focused-test.sh#L7-L9
 ```
 
 The slowest test at the pin is the Halo 2 prover round-trip in
@@ -100,7 +100,7 @@ times slower in the proof system itself.
 ### 3.3 Format and Lint
 
 ```bash reference title="onboarding/scripts/format-and-lint.sh"
-https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/format-and-lint.sh
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/format-and-lint.sh#L7-L8
 ```
 
 The format step is idempotent. Clippy uses the workspace default
@@ -109,7 +109,7 @@ configuration; the crate does not ship a `clippy.toml` at the pin.
 ### 3.4 The `no_std` Build
 
 ```bash reference title="onboarding/scripts/no-std-build.sh"
-https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/no-std-build.sh
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/no-std-build.sh#L7-L8
 ```
 
 A new dependency on `std`-only APIs in any non-test file will
@@ -118,7 +118,7 @@ break this; CI does the same for `thumbv7em-none-eabihf`.
 ### 3.5 Benchmarks
 
 ```bash reference title="onboarding/scripts/benchmarks.sh"
-https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/benchmarks.sh
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/benchmarks.sh#L6-L8
 ```
 
 Source files:
