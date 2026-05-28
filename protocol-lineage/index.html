@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Background: From Zerocoin to Orchard | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/protocol-lineage"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Background: From Zerocoin to Orchard | Orchard onboarding"><meta data-rh="true" name="description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><meta data-rh="true" property="og:description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/protocol-lineage"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Background: From Zerocoin to Orchard","item":"https://dannywillems.github.io/orchard/protocol-lineage"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.777a5427.css">
-<script src="/orchard/assets/js/runtime~main.57ac9e24.js" defer="defer"></script>
+<script src="/orchard/assets/js/runtime~main.d3cc9f39.js" defer="defer"></script>
 <script src="/orchard/assets/js/main.cc228e95.js" defer="defer"></script>
 </head>
 <body>
@@ -267,30 +267,23 @@ their public-value balances against the transparent inputs and
 outputs of the same transaction. This is how one Sprout
 transaction can mix shielding, deshielding, and shielded-to-
 shielded transfers atomically.</p>
-<p><strong>Why two-in two-out.</strong> Fixing the arity to exactly two on each
-side kept the Sprout circuit small enough to be practical on
-2016 hardware. Higher arity multiplies the circuit size; lower
-arity makes wallet change painful. The shape survived into
-Sapling&#x27;s design discussions and was ultimately replaced by the
-separable <code>SpendDescription</code> and <code>OutputDescription</code>,
-so a transaction can have any mix of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi></mrow><annotation encoding="application/x-tex">m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal">m</span></span></span></span> inputs and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal">n</span></span></span></span> outputs
-and pays only for the operations it actually uses.</p>
-<p><strong>Why it disappeared.</strong> Three reasons:</p>
-<ol>
-<li class=""><strong>Circuit cost.</strong> JoinSplit performs spending and outputting
-inside one circuit; Sapling found it cheaper to specialise
-the two halves.</li>
-<li class=""><strong>Hash choice.</strong> Sprout&#x27;s in-circuit SHA-256 was the dominant
-cost; the JoinSplit shape did not survive the redesign that
-moved to Pedersen hashes on Jubjub.</li>
-<li class=""><strong>Flexibility.</strong> Fixed 2-in-2-out forced dummy notes for
-asymmetric transactions; Sapling&#x27;s split descriptions
-eliminated that overhead.</li>
-</ol>
+<p><strong>Arity.</strong> The Zerocash <code>POUR</code> function is fixed at two old
+coins in and two new coins out (Section 4.5 of
+<a href="http://zerocash-project.org/media/pdf/zerocash-extended-20140518.pdf" target="_blank" rel="noopener noreferrer" class="">Ben-Sasson et al.</a>).
+The Sprout JoinSplit description inherits that arity directly,
+as documented in the
+<a href="https://zips.z.cash/protocol/protocol.pdf" target="_blank" rel="noopener noreferrer" class="">Zcash Protocol Specification</a>,
+Section 4 (Sprout). The redesign for Sapling replaced JoinSplit
+with the separable <code>SpendDescription</code> and <code>OutputDescription</code>,
+so a transaction can have any mix of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi></mrow><annotation encoding="application/x-tex">m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal">m</span></span></span></span> inputs and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal">n</span></span></span></span> outputs;
+see the Sapling sections of the same specification document for
+the new layout. This page does not attempt to reconstruct the
+engineering rationale for either choice; readers interested in
+the design history should consult the protocol specification and
+the Sapling paper directly.</p>
 <p><strong>On chain.</strong> A Sprout transaction wire format encodes each
-JoinSplit description as a fixed-size record (the proof is
-296 bytes under BCTV14 and 192 bytes after the Groth16
-back-port). The full layout is documented in the
+JoinSplit description as a fixed-size record. The full layout
+and field sizes are documented in the
 <a href="https://zips.z.cash/protocol/protocol.pdf" target="_blank" rel="noopener noreferrer" class="">Zcash Protocol Specification</a>,
 Section 7.2 (&quot;JoinSplit Description&quot;).</p>
 <p><strong>Code, for reference only.</strong> No new code is written against
