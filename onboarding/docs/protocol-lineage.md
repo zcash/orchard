@@ -201,31 +201,24 @@ outputs of the same transaction. This is how one Sprout
 transaction can mix shielding, deshielding, and shielded-to-
 shielded transfers atomically.
 
-**Why two-in two-out.** Fixing the arity to exactly two on each
-side kept the Sprout circuit small enough to be practical on
-2016 hardware. Higher arity multiplies the circuit size; lower
-arity makes wallet change painful. The shape survived into
-Sapling's design discussions and was ultimately replaced by the
-separable `SpendDescription` and `OutputDescription`,
-so a transaction can have any mix of $m$ inputs and $n$ outputs
-and pays only for the operations it actually uses.
-
-**Why it disappeared.** Three reasons:
-
-1. **Circuit cost.** JoinSplit performs spending and outputting
-   inside one circuit; Sapling found it cheaper to specialise
-   the two halves.
-2. **Hash choice.** Sprout's in-circuit SHA-256 was the dominant
-   cost; the JoinSplit shape did not survive the redesign that
-   moved to Pedersen hashes on Jubjub.
-3. **Flexibility.** Fixed 2-in-2-out forced dummy notes for
-   asymmetric transactions; Sapling's split descriptions
-   eliminated that overhead.
+**Arity.** The Zerocash `POUR` function is fixed at two old
+coins in and two new coins out (Section 4.5 of
+[Ben-Sasson et al.](http://zerocash-project.org/media/pdf/zerocash-extended-20140518.pdf)).
+The Sprout JoinSplit description inherits that arity directly,
+as documented in the
+[Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf),
+Section 4 (Sprout). The redesign for Sapling replaced JoinSplit
+with the separable `SpendDescription` and `OutputDescription`,
+so a transaction can have any mix of $m$ inputs and $n$ outputs;
+see the Sapling sections of the same specification document for
+the new layout. This page does not attempt to reconstruct the
+engineering rationale for either choice; readers interested in
+the design history should consult the protocol specification and
+the Sapling paper directly.
 
 **On chain.** A Sprout transaction wire format encodes each
-JoinSplit description as a fixed-size record (the proof is
-296 bytes under BCTV14 and 192 bytes after the Groth16
-back-port). The full layout is documented in the
+JoinSplit description as a fixed-size record. The full layout
+and field sizes are documented in the
 [Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf),
 Section 7.2 ("JoinSplit Description").
 
