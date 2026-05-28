@@ -468,10 +468,57 @@ with:
 
 Source:
 [`src/note.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs)
-defines `Note`. Sapling's note has the same shape minus the
-explicit $\rho$ and $\psi$ fields; those roles split differently.
-The Zerocash paper uses the symbol $\mathsf{c}$ where Zcash uses
-$\mathsf{note}$.
+defines `Note`. Sapling's note carries $(d, \mathsf{pk_d}, v,\, \mathsf{rcm})$
+only; the Zerocash paper uses the symbol $\mathsf{c}$ where Zcash
+uses $\mathsf{note}$.
+
+#### Why Orchard Carries Explicit $\rho$ and $\psi$
+
+Two structural changes between Sapling and Orchard force the
+$\rho$ and $\psi$ fields to appear in the Orchard note tuple
+while they have no Sapling analogue. Both are documented in the
+[Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf)
+(Section 4.7.3 "Sending Notes (Orchard)" for the derivations;
+Section 4.16.2 "Nullifiers (Orchard)" and Section 5.4.1.4 for
+the construction).
+
+- **Sapling's $\rho$ is $\mathsf{cm}$, not a separate field.**
+  Sapling computes the nullifier as
+  $\mathsf{nf}^{\mathsf{Sapling}} = \mathsf{PRF}^{\mathsf{nfSapling}}_{\mathsf{nk}}(\mathsf{cm})$
+  (Section 4.16.1 of the spec). Because the role of "$\rho$" is
+  played by the commitment $\mathsf{cm}$ itself, no separate
+  storage is needed; once the wallet has $\mathsf{cm}$ it has
+  everything required to derive the nullifier. Orchard's
+  nullifier construction (Section 4.16.2, see also
+  [Chapter 9](./09-notes-nullifiers-commitments.md))
+  feeds $\rho$ to Poseidon **and** adds $\psi$ and $\mathsf{cm}$
+  as separate algebraic terms, so $\rho$ is no longer
+  derivable from $\mathsf{cm}$ and must travel with the note.
+- **Orchard sets $\rho$ to the nullifier of a spent note.** The
+  source-level helper that constructs the $\rho$ of a new note
+  reads
+  [`Rho::from_nf_old(nf: Nullifier) -> Self`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs#L60-L65)
+  and just stores the nullifier's inner field element. This is
+  the **rho chain**: every output note's $\rho$ is the input
+  note's published $\mathsf{nf}_{\mathsf{old}}$. Sapling does
+  not have an analogous chain because $\rho = \mathsf{cm}$
+  already pins the new note to its own commitment; in Orchard
+  the chain links across consecutive Actions and gives
+  domain-separated input to the Poseidon-based nullifier PRF.
+
+$\psi$ is derived from the random seed `rseed` and $\rho$, again
+in `src/note.rs`:
+
+```rust reference title="src/note.rs (psi derivation)"
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note.rs#L107-L109
+```
+
+The wallet stores $\rho$ explicitly (it cannot be recovered from
+$\mathsf{cm}$) and re-derives $\psi$ from `rseed` and $\rho$
+whenever it needs the note in full. Sapling stores $\mathsf{rcm}$
+explicitly for the same operational reason but needs nothing more
+because its commitment scheme and nullifier function do not
+require independent randomness terms.
 
 ### 4.2 Note Commitment
 
