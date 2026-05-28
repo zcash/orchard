@@ -32,7 +32,7 @@
   padding: 0.25rem 0;
 }
 
-div[class^="announcementBar"] {
+.theme-announcement-bar {
   font-weight: 500;
   position: sticky;
   top: 0;
