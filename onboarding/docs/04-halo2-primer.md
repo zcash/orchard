@@ -22,11 +22,11 @@ gates, and lookups are. By the end the reader can read a Halo 2
 A Halo 2 circuit is a rectangular table with $2^K$ rows and a
 fixed number of columns of four kinds:
 
-- *advice* columns $A_0, \dots, A_{a-1}$, populated by the prover;
-- *fixed* columns $F_0, \dots, F_{f-1}$, populated by the verifier
+- _advice_ columns $A_0, \dots, A_{a-1}$, populated by the prover;
+- _fixed_ columns $F_0, \dots, F_{f-1}$, populated by the verifier
   during trusted preprocessing;
-- *instance* columns $I_0, \dots, I_{i-1}$, the public inputs;
-- *selector* columns $S_0, \dots, S_{s-1}$, fixed columns that
+- _instance_ columns $I_0, \dots, I_{i-1}$, the public inputs;
+- _selector_ columns $S_0, \dots, S_{s-1}$, fixed columns that
   toggle constraints on or off per row.
 
 ### Definition 2.2 (Custom Gate)
@@ -40,7 +40,7 @@ S_g(r) \cdot g\big(c_0(r), c_1(r), \dots, c_{m-1}(r)\big) = 0,
 $$
 
 where each $c_j(r)$ is some column at some row $r + \delta_j$. The
-offsets $\delta_j \in \{-1, 0, +1\}$ are *rotations* and let
+offsets $\delta_j \in \{-1, 0, +1\}$ are _rotations_ and let
 gates couple adjacent rows.
 
 ### Definition 2.3 (Lookup)
@@ -64,7 +64,18 @@ no trusted setup. In Orchard, $\mathbb{G}$ is the Vesta curve.
 The Fiat-Shamir transcript is a Blake2b instance personalised with
 `"Halo2-Transcript"`. Every commitment and challenge is absorbed
 in protocol order. The outer transcript is not recursive in
-Orchard.
+Orchard. The personalisation is set in the `Blake2bRead::init`
+and `Blake2bWrite::init` constructors of `halo2_proofs`, both
+pinned to the `halo2_proofs-0.3.0` tag that Orchard 0.13.1
+depends on:
+
+```rust reference title="halo2_proofs/src/transcript.rs (Blake2bRead::init)"
+https://github.com/zcash/halo2/blob/fe2adf14297fc72e48fe6396790179f87f1066c5/halo2_proofs/src/transcript.rs#L72-L84
+```
+
+```rust reference title="halo2_proofs/src/transcript.rs (Blake2bWrite::init)"
+https://github.com/zcash/halo2/blob/fe2adf14297fc72e48fe6396790179f87f1066c5/halo2_proofs/src/transcript.rs#L158-L170
+```
 
 ## 3. The Code
 
@@ -81,8 +92,8 @@ re-exports give Blake2b read/write halves.
 
 ### 3.2 The Chip / Gadget Pattern
 
-A *chip* is a `Config` (column layout, gate definitions) plus the
-synthesis code that populates a region of the table. A *gadget* is
+A _chip_ is a `Config` (column layout, gate definitions) plus the
+synthesis code that populates a region of the table. A _gadget_ is
 a higher-level construction composed of one or more chips. Orchard
 pulls the ECC and Sinsemilla chips from
 [`halo2_gadgets`](https://github.com/zcash/halo2)
@@ -91,13 +102,41 @@ and adds its own Orchard-specific chips:
 and
 [`NoteCommitChip`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit/note_commit.rs).
 
+**Example.** Inside the Action circuit's `Circuit::configure`,
+each chip is constructed by calling its associated `configure`
+function with the columns and helpers it needs. The ECC chip is
+representative:
+
+```rust reference title="src/circuit.rs (ECC chip configuration)"
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L306-L311
+```
+
+The call returns a typed `EccConfig` that records which advice,
+fixed, and lookup columns the chip owns. That `EccConfig` is
+stored inside the Action circuit's `Config` struct and later
+handed to `EccChip::construct(config)` during synthesis, so
+every region that uses curve arithmetic shares the same column
+layout. The Sinsemilla, Poseidon, and Merkle chips just below
+the ECC call in the same function follow exactly the same
+pattern.
+
 ### 3.3 The `K` Constant
 
-The Action circuit uses
-$K$ defined as a constant in
-[`src/circuit.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs).
-$2^K$ is the row count of the table. Larger $K$ admits more
-constraints but doubles the prover time per increment.
+The Action circuit uses $K = 11$, giving $2^K = 2048$ rows in the
+PLONKish table. The constant lives at the top of `src/circuit.rs`:
+
+```rust reference title="src/circuit.rs (K constant)"
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs#L74-L74
+```
+
+$2^K$ is the row count of the table; larger $K$ admits more
+constraints but doubles the prover time per increment. The same
+value appears at the top of the pinned circuit description, which
+serialises the verifier key produced from this `K`:
+
+```text reference title="src/circuit_description (k: 11, extended_k: 14)"
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit_description#L1-L13
+```
 
 ### 3.4 The Lookup Table
 
@@ -109,7 +148,7 @@ maps the window to the precomputed generator multiple.
 
 ## 4. Failure Modes
 
-- **Region overlap**. Chips synthesise into *regions*. Two chips
+- **Region overlap**. Chips synthesise into _regions_. Two chips
   with overlapping selectors silently corrupt each other; the
   reviewer must trace the region offsets.
 - **Constraint not gated**. A custom gate that lacks a selector
@@ -151,7 +190,7 @@ maps the window to the precomputed generator multiple.
    Group them by the chip that consumes them.
 3. **Code task**. Add a new advice column to the Action circuit
    without consuming it (a dead column). Run `cargo test --lib
-   circuit::tests`. Confirm the dev-mode prover rejects the
+circuit::tests`. Confirm the dev-mode prover rejects the
    change with an "unused column" lint, then revert.
 
 ## 7. Further Reading
