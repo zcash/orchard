@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Background: From Zerocoin to Orchard | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/protocol-lineage"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Background: From Zerocoin to Orchard | Orchard onboarding"><meta data-rh="true" name="description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><meta data-rh="true" property="og:description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/protocol-lineage"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Background: From Zerocoin to Orchard","item":"https://dannywillems.github.io/orchard/protocol-lineage"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.777a5427.css">
-<script src="/orchard/assets/js/runtime~main.2a7f87df.js" defer="defer"></script>
+<script src="/orchard/assets/js/runtime~main.57ac9e24.js" defer="defer"></script>
 <script src="/orchard/assets/js/main.cc228e95.js" defer="defer"></script>
 </head>
 <body>
@@ -233,12 +233,16 @@ paper as the operation <em>Pour</em> (Section 4.5 of
 <a href="http://zerocash-project.org/media/pdf/zerocash-extended-20140518.pdf" target="_blank" rel="noopener noreferrer" class="">Ben-Sasson et al.</a>).
 <em>Pour</em> is a single zk-SNARK statement that consumes two old
 coins and produces two new coins, while allowing some net value
-to flow to or from a transparent address in the same step. When
-the Zcash team implemented Zerocash, they renamed <em>Pour</em> to
-<em>JoinSplit</em> to reflect that one such operation can either <em>join</em>
-two old notes into one (set an output to value zero) or <em>split</em>
-one old note into two (set an input to a dummy zero-value note).
-The same SNARK statement covers both directions.</p>
+to flow to or from a transparent address in the same step. The
+<a href="https://zips.z.cash/protocol/protocol.pdf" target="_blank" rel="noopener noreferrer" class="">Zcash Protocol Specification</a>
+(Section 4, Sprout) and the <code>zcashd</code> reference implementation
+(<code>JSDescription</code> in
+<a href="https://github.com/zcash/zcash/blob/master/src/primitives/transaction.h" target="_blank" rel="noopener noreferrer" class=""><code>src/primitives/transaction.h</code></a>)
+call the deployed counterpart of <em>Pour</em> a <strong>JoinSplit
+description</strong>. The 2-in / 2-out shape is the same in both
+documents; the same single SNARK statement covers both
+shielded-only transfers and the mixed transparent / shielded
+cases by setting unused notes or public-value fields to zero.</p>
 <p><strong>Shape.</strong> A single JoinSplit description on the wire contains:</p>
 <ul>
 <li class=""><span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>v</mi><mrow><mi mathvariant="sans-serif">o</mi><mi mathvariant="sans-serif">l</mi><mi mathvariant="sans-serif">d</mi></mrow><mrow><mi mathvariant="sans-serif">p</mi><mi mathvariant="sans-serif">u</mi><mi mathvariant="sans-serif">b</mi></mrow></msubsup></mrow><annotation encoding="application/x-tex">v^{\mathsf{pub}}_{\mathsf{old}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.2683em;vertical-align:-0.3013em"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.0359em">v</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.967em"><span style="top:-2.3987em;margin-left:-0.0359em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">old</span></span></span></span></span><span style="top:-3.1809em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">pub</span></span></span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.3013em"><span></span></span></span></span></span></span></span></span></span> and
