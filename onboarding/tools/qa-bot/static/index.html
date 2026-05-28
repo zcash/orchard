@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>qa-bot</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1a1a1a;
+        --bg: #ffffff;
+        --muted: #555;
+        --border: #d4d4d4;
+        --accent: #6b21a8;
+        --code-bg: #f5f5f5;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e6e6e6;
+          --bg: #0d0d0d;
+          --muted: #aaaaaa;
+          --border: #2a2a2a;
+          --accent: #c084fc;
+          --code-bg: #1a1a1a;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); }
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        line-height: 1.55;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 1rem 1rem 4rem;
+      }
+      h1 { font-size: 1.2rem; margin: 0.5rem 0; }
+      p.notice { color: var(--muted); font-size: 0.875rem; margin: 0.25rem 0 1.5rem; }
+      form { display: flex; gap: 0.5rem; }
+      textarea {
+        flex: 1; min-height: 5rem; resize: vertical;
+        background: var(--bg); color: var(--fg);
+        border: 1px solid var(--border); border-radius: 6px;
+        padding: 0.6rem; font: inherit;
+      }
+      button {
+        background: var(--accent); color: white; border: 0;
+        border-radius: 6px; padding: 0.6rem 1rem; cursor: pointer;
+        font: inherit; min-width: 4.5rem;
+      }
+      button[disabled] { opacity: 0.5; cursor: progress; }
+      .turn { margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+      .q { font-weight: 600; }
+      .a { white-space: pre-wrap; }
+      .a pre, .a code { background: var(--code-bg); padding: 0.1rem 0.3rem; border-radius: 3px; }
+      .sources { font-size: 0.875rem; color: var(--muted); margin-top: 0.75rem; }
+      .sources ol { margin: 0; padding-left: 1.2rem; }
+      .sources a { color: var(--accent); }
+      .error { color: #b00020; }
+    </style>
+  </head>
+  <body>
+    <h1>qa-bot</h1>
+    <p class="notice">
+      Local retrieval over the onboarding docs. Answers come from a
+      configured LLM grounded in the chunks shown under
+      <em>Sources</em>. Treat both as non-authoritative; the protocol
+      specification and the upstream source remain the only ground
+      truth.
+    </p>
+    <form id="form">
+      <textarea
+        id="q"
+        placeholder="e.g. What is rho in an Orchard note, and how does it differ from Sapling?"
+        autofocus
+      ></textarea>
+      <button id="submit" type="submit">Ask</button>
+    </form>
+    <div id="log"></div>
+    <script>
+      const form = document.getElementById("form");
+      const q = document.getElementById("q");
+      const submit = document.getElementById("submit");
+      const log = document.getElementById("log");
+
+      function el(tag, cls, text) {
+        const node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+
+      function escape(html) {
+        return html
+          .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      form.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const question = q.value.trim();
+        if (!question) return;
+        submit.disabled = true;
+        submit.textContent = "...";
+
+        const turn = el("div", "turn");
+        turn.appendChild(el("div", "q", "Q: " + question));
+        const answerNode = el("div", "a", "thinking...");
+        turn.appendChild(answerNode);
+        log.prepend(turn);
+
+        try {
+          const r = await fetch("/api/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question }),
+          });
+          if (!r.ok) {
+            const detail = await r.text();
+            throw new Error("HTTP " + r.status + ": " + detail);
+          }
+          const data = await r.json();
+          answerNode.textContent = data.answer;
+          if (data.sources && data.sources.length) {
+            const s = el("div", "sources");
+            s.appendChild(el("strong", null, "Retrieved chunks (closest first):"));
+            const ol = document.createElement("ol");
+            for (const src of data.sources) {
+              const li = document.createElement("li");
+              const a = document.createElement("a");
+              a.href = src.url;
+              a.target = "_blank";
+              a.rel = "noopener";
+              a.textContent =
+                src.title + " -- " + src.heading +
+                " (d=" + src.distance.toFixed(3) + ")";
+              li.appendChild(a);
+              ol.appendChild(li);
+            }
+            s.appendChild(ol);
+            turn.appendChild(s);
+          }
+        } catch (err) {
+          answerNode.className = "a error";
+          answerNode.textContent = "Error: " + err.message;
+        } finally {
+          submit.disabled = false;
+          submit.textContent = "Ask";
+          q.value = "";
+          q.focus();
+        }
+      });
+    </script>
+  </body>
+</html>

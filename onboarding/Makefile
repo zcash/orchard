@@ -36,10 +36,34 @@ appendix-gates: ## Regenerate docs/appendix-gates.md from the pinned circuit des
 		> docs/appendix-gates.md
 	npx prettier --write docs/appendix-gates.md
 
+.PHONY: qa-bot-install
+qa-bot-install: ## Install qa-bot Python dependencies via uv
+	(cd tools/qa-bot && uv sync)
+
+.PHONY: qa-bot-index
+qa-bot-index: ## Build the qa-bot vector index from docs/
+	(cd tools/qa-bot && uv run qa-bot index)
+
+.PHONY: qa-bot-serve
+qa-bot-serve: ## Run the qa-bot locally on http://127.0.0.1:8765
+	(cd tools/qa-bot && uv run qa-bot serve)
+
+.PHONY: qa-bot-ask
+qa-bot-ask: ## Ask one question (use QUESTION="..." or it will prompt)
+	@if [ -z "$$QUESTION" ]; then \
+		read -r -p "question: " QUESTION; \
+	fi; \
+	(cd tools/qa-bot && uv run qa-bot ask "$$QUESTION")
+
+.PHONY: qa-bot-info
+qa-bot-info: ## Show qa-bot resolved configuration
+	(cd tools/qa-bot && uv run qa-bot info)
+
 .PHONY: clean-doc
 clean-doc: ## Remove generated doc artefacts (keeps node_modules)
 	npx docusaurus clear
 	(cd tools/gates-to-latex && cargo clean)
+	rm -rf tools/qa-bot/data tools/qa-bot/.venv
 	# Stray deploy output if anything was ever copied to the repo root.
 	# These files are produced by CI only; the repo should never carry
 	# them. See .github/workflows/onboarding-docs.yml.
