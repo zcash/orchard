@@ -42,20 +42,22 @@ At the pin:
 
 - [`lints-stable.yml`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/.github/workflows/lints-stable.yml):
   `cargo fmt --check` and `cargo clippy --all-targets
-  --all-features -- -D warnings`. The clippy step treats all
+--all-features -- -D warnings`. The clippy step treats all
   warnings as errors.
 - [`lints-beta.yml`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/.github/workflows/lints-beta.yml):
   the same against the beta toolchain, advisory only.
 
 ## 3. The Code
 
+Every command in this section lives in a shell script under
+[`onboarding/scripts/`](https://github.com/dannywillems/orchard/tree/onboarding/onboarding/scripts);
+the blocks below are imported live from those files so the page
+and the runnable scripts cannot drift.
+
 ### 3.1 First Build
 
-```bash
-git clone https://github.com/zcash/orchard
-cd orchard
-git checkout 0.13.1
-cargo build
+```bash reference title="onboarding/scripts/first-build.sh"
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/first-build.sh
 ```
 
 The first build downloads `halo2_proofs`, `pasta_curves`, and the
@@ -66,8 +68,8 @@ machine. Subsequent builds are incremental.
 
 Run the full suite as CI does:
 
-```bash
-cargo test --verbose
+```bash reference title="onboarding/scripts/full-test.sh"
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/full-test.sh
 ```
 
 This exercises:
@@ -85,13 +87,8 @@ This exercises:
 
 Run a focused test (faster iteration during development):
 
-```bash
-# Run only the keys module's tests.
-cargo test --lib keys::tests
-# Run a single test by name.
-cargo test --lib keys::tests::test_address_components -- --nocapture
-# Skip the slow circuit tests.
-cargo test --lib --no-default-features --features std
+```bash reference title="onboarding/scripts/focused-test.sh"
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/focused-test.sh
 ```
 
 The slowest test at the pin is the Halo 2 prover round-trip in
@@ -102,9 +99,8 @@ times slower in the proof system itself.
 
 ### 3.3 Format and Lint
 
-```bash
-cargo fmt --all
-cargo clippy --all-targets --all-features -- -D warnings
+```bash reference title="onboarding/scripts/format-and-lint.sh"
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/format-and-lint.sh
 ```
 
 The format step is idempotent. Clippy uses the workspace default
@@ -112,9 +108,8 @@ configuration; the crate does not ship a `clippy.toml` at the pin.
 
 ### 3.4 The `no_std` Build
 
-```bash
-rustup target add wasm32-wasip1
-cargo build --release --no-default-features --target wasm32-wasip1
+```bash reference title="onboarding/scripts/no-std-build.sh"
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/no-std-build.sh
 ```
 
 A new dependency on `std`-only APIs in any non-test file will
@@ -122,10 +117,8 @@ break this; CI does the same for `thumbv7em-none-eabihf`.
 
 ### 3.5 Benchmarks
 
-```bash
-cargo bench --bench circuit -- --quick
-cargo bench --bench note_decryption
-cargo bench --bench small
+```bash reference title="onboarding/scripts/benchmarks.sh"
+https://github.com/dannywillems/orchard/blob/onboarding/onboarding/scripts/benchmarks.sh
 ```
 
 Source files:
@@ -140,13 +133,13 @@ system end to end; budget about a minute per run.
 The five files most often touched in the last six months on
 `main`, with the kind of change that lands there:
 
-| File                                                                                                                       | Typical change                                              |
-| -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| [`src/value.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/value.rs)               | API ergonomics on `NoteValue` (constants, `Default` impls)  |
-| [`src/constants/fixed_bases.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/constants/fixed_bases.rs) | Fixed-base refactors and visibility tightening              |
-| [`src/lib.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/lib.rs)                   | Re-exports, feature gating, doc comments                    |
-| [`src/circuit.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs)           | Visibility, accessor functions, internal renames            |
-| [`src/builder.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/builder.rs)           | Builder API tweaks, dummy Action generation                 |
+| File                                                                                                                                          | Typical change                                             |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [`src/value.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/value.rs)                                 | API ergonomics on `NoteValue` (constants, `Default` impls) |
+| [`src/constants/fixed_bases.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/constants/fixed_bases.rs) | Fixed-base refactors and visibility tightening             |
+| [`src/lib.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/lib.rs)                                     | Re-exports, feature gating, doc comments                   |
+| [`src/circuit.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs)                             | Visibility, accessor functions, internal renames           |
+| [`src/builder.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/builder.rs)                             | Builder API tweaks, dummy Action generation                |
 
 See [Discovery Notes](./discovery.md) for the rest of the list and
 the methodology.
@@ -200,7 +193,7 @@ paragraph of motivation, then a bulleted list of what changed".
 - **Format-induced reviews**. The `cargo fmt --check` step in
   [`lints-stable.yml`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/.github/workflows/lints-stable.yml)
   blocks merge. A `pre-push` hook running `cargo fmt && cargo
-  clippy --all-targets --all-features -- -D warnings` removes
+clippy --all-targets --all-features -- -D warnings` removes
   the round trip.
 - **Stale audit pin**. If a PR touches the circuit shape, the
   pinned
