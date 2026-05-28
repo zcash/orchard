@@ -756,6 +756,48 @@ note exists by trial-decrypting every output in every block; this
 is cheap because `ivk` is short and decryption fails fast on the
 authentication tag.
 
+#### Where the Value Comes From
+
+Bob's note is by definition a shielded UTXO. For `cm*_new` to
+appear in the commitment tree the value $v$ has to be **inside
+the shielded pool** at the moment the Action is verified;
+consensus enforces this by checking that every Action's net
+value commitment $\mathsf{cv^{\mathsf{net}}}$ sums to zero
+against the transparent inputs and outputs of the same
+transaction, using the binding signature
+(see [Chapter 13](./13-value-commitments.md)).
+
+This does not mean Alice needs a prior shielded balance. A
+single Zcash transaction can mix three things at once:
+
+- Transparent inputs and outputs (the t-side of the
+  transaction).
+- An Orchard `Bundle` with one or more Actions (each Action
+  consumes one shielded input note and creates one shielded
+  output note, with dummies allowed on either side).
+- Analogous Sapling spend/output descriptions when the Sapling
+  pool is involved.
+
+If Alice is paying Bob purely from a transparent address, the
+transaction has transparent inputs equal to $v$ plus fee, no
+shielded inputs (the spend half of each Action is a dummy with
+value $0$), and an Orchard output containing Bob's note. The
+$v$ that lands in Bob's note enters the Orchard pool inside that
+same transaction. From an external observer's point of view this
+looks like a single payment; from the consensus point of view
+it is one shielding step glued onto one shielded output, both
+covered by the same Action proof and the same binding signature.
+
+If Alice already holds Orchard notes, the same Action shape is
+used with a real shielded input on the spend half. No
+transparent value is needed in that case.
+
+The Orchard protocol does not provide any other path: every
+shielded output's value either consumed a shielded input note
+under the same Action or was shielded from transparent in the
+same transaction. There is no "transparent direct deposit" into
+the commitment tree that bypasses these checks.
+
 ### 5.3 Spending a Shielded Note
 
 Some time later Bob spends the note. The deterministic nullifier
