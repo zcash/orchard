@@ -280,15 +280,46 @@ distinguish Sapling from Sprout. All three are defined in the
 
 - **Diversified addresses.** A scheme that lets a single Sapling
   spending key produce many unlinkable payment addresses. Each
-  address is the pair $(d, \mathsf{pk_d})$, where $d$ is an
-  88-bit _diversifier_ and
-  $\mathsf{pk_d} = [\mathsf{ivk}]\, g_d$ with
-  $g_d = \mathsf{DiversifyHash}(d)$. Two addresses
-  $(d, \mathsf{pk_d})$ and $(d', \mathsf{pk_d}')$ from the same
-  spending key are unlinkable on chain to anyone who does not
-  hold the incoming viewing key. See protocol specification
-  Section 4.2.2 ("Sapling Key Components") and Section 5.6
-  ("Encodings of Addresses").
+  address is the pair $(d,\, \mathsf{pk_d})$. The component
+  domains are:
+  - $d \in \{0, 1\}^{88}$: a fixed-length bit string, the
+    _diversifier_.
+  - $g_d = \mathsf{DiversifyHash}(d) \in \mathbb{J}^{(r)*}$: a
+    non-identity Jubjub point (the prime-order subgroup), derived
+    deterministically from $d$ by a hash-to-curve. The hash may
+    fail to land on a valid point, in which case the diversifier
+    is rejected; the spec defines an "unusable diversifier" outcome.
+  - $\mathsf{ivk} \in \mathbb{F}_{r_{\mathbb{J}}}$: the incoming
+    viewing key, a Jubjub scalar derived from the full viewing key.
+  - $\mathsf{pk_d} = [\mathsf{ivk}]\, g_d \in \mathbb{J}^{(r)*}$:
+    another non-identity Jubjub point, the diversified
+    transmission key.
+
+  Reasoning. The map $d \mapsto g_d$ is the only step that consumes
+  the diversifier, so changing $d$ produces a completely different
+  base point, and the scalar multiplication
+  $[\mathsf{ivk}]\, g_d$ then yields a completely different
+  $\mathsf{pk_d}$. Two addresses from the same spending key share
+  no on-chain identifier.
+
+  Security. Recovering $\mathsf{ivk}$ from
+  $(g_d, \mathsf{pk_d})$ is the discrete-log problem on Jubjub.
+  Recognising two addresses as belonging to the same spending key
+  is the decisional Diffie-Hellman problem with $\mathsf{ivk}$ as
+  the secret, equivalent in hardness to discrete-log on Jubjub
+  under standard assumptions. A holder of $\mathsf{ivk}$ can
+  detect notes addressed to any of these addresses by computing
+  $[\mathsf{ivk}]\, g_d$ and comparing against the published
+  $\mathsf{pk_d}$.
+
+  See protocol specification Section 4.2.2 ("Sapling Key
+  Components"), Section 5.4.1.6 ("Group Hash into Jubjub" for
+  $\mathsf{DiversifyHash}$), and Section 5.6 ("Encodings of
+  Addresses"). Orchard re-uses the same construction over Pallas
+  with $\mathsf{ivk} \in \mathbb{F}_{r_{\mathbb{P}}}$,
+  $g_d \in \mathbb{P}^*$ (non-identity Pallas points), and the
+  same scalar-multiplication step.
+
 - **Full viewing keys.** A key that grants read access to a
   wallet without granting spend access. The Sapling full
   viewing key is the triple
