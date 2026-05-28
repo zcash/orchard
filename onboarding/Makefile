@@ -36,7 +36,13 @@ appendix-gates: ## Regenerate docs/appendix-gates.md from the pinned circuit des
 		> docs/appendix-gates.md
 	npx prettier --write docs/appendix-gates.md
 
-.PHONY: clean
-clean: ## Remove build artefacts and the Docusaurus cache
+.PHONY: clean-doc
+clean-doc: ## Remove generated doc artefacts (keeps node_modules and Cargo.lock)
 	npx docusaurus clear
+	(cd tools/gates-to-latex && cargo clean)
+
+.PHONY: clean
+clean: ## Remove build artefacts, the Docusaurus cache, and node_modules
+	npx docusaurus clear
+	(cd tools/gates-to-latex && cargo clean)
 	rm -rf build node_modules
