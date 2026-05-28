@@ -28,6 +28,14 @@ format: ## Format markdown and TS files
 check-format: ## Check formatting
 	npx prettier --check "docs/**/*.{md,mdx}" "*.ts" "src/**/*.{ts,tsx,css}"
 
+.PHONY: appendix-gates
+appendix-gates: ## Regenerate docs/appendix-gates.md from the pinned circuit description
+	(cd tools/gates-to-latex && cargo build --release)
+	tools/gates-to-latex/target/release/gates-to-latex \
+		data/orchard-0.13.1-circuit_description.txt \
+		> docs/appendix-gates.md
+	npx prettier --write docs/appendix-gates.md
+
 .PHONY: clean
 clean: ## Remove build artefacts and the Docusaurus cache
 	npx docusaurus clear
