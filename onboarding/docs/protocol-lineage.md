@@ -165,12 +165,16 @@ paper as the operation _Pour_ (Section 4.5 of
 [Ben-Sasson et al.](http://zerocash-project.org/media/pdf/zerocash-extended-20140518.pdf)).
 _Pour_ is a single zk-SNARK statement that consumes two old
 coins and produces two new coins, while allowing some net value
-to flow to or from a transparent address in the same step. When
-the Zcash team implemented Zerocash, they renamed _Pour_ to
-_JoinSplit_ to reflect that one such operation can either _join_
-two old notes into one (set an output to value zero) or _split_
-one old note into two (set an input to a dummy zero-value note).
-The same SNARK statement covers both directions.
+to flow to or from a transparent address in the same step. The
+[Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf)
+(Section 4, Sprout) and the `zcashd` reference implementation
+(`JSDescription` in
+[`src/primitives/transaction.h`](https://github.com/zcash/zcash/blob/master/src/primitives/transaction.h))
+call the deployed counterpart of _Pour_ a **JoinSplit
+description**. The 2-in / 2-out shape is the same in both
+documents; the same single SNARK statement covers both
+shielded-only transfers and the mixed transparent / shielded
+cases by setting unused notes or public-value fields to zero.
 
 **Shape.** A single JoinSplit description on the wire contains:
 
