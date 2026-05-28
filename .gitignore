@@ -2,3 +2,19 @@
 **/*.rs.bk
 .vscode
 action-circuit-layout.png
+
+# Docusaurus build output (the onboarding site is deployed via GitHub
+# Pages from CI; the rendered files never belong in the repository).
+/onboarding/build/
+/onboarding/.docusaurus/
+/onboarding/node_modules/
+/onboarding/tools/gates-to-latex/target/
+
+# Stray Docusaurus output if a local build is ever copied to the root.
+/404.html
+/index.html
+/sitemap.xml
+/search-index.json
+/.nojekyll
+/assets/
+/img/

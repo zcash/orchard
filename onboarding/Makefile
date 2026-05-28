@@ -37,12 +37,24 @@ appendix-gates: ## Regenerate docs/appendix-gates.md from the pinned circuit des
 	npx prettier --write docs/appendix-gates.md
 
 .PHONY: clean-doc
-clean-doc: ## Remove generated doc artefacts (keeps node_modules and Cargo.lock)
+clean-doc: ## Remove generated doc artefacts (keeps node_modules)
 	npx docusaurus clear
 	(cd tools/gates-to-latex && cargo clean)
+	# Stray deploy output if anything was ever copied to the repo root.
+	# These files are produced by CI only; the repo should never carry
+	# them. See .github/workflows/onboarding-docs.yml.
+	rm -rf ../404.html ../index.html ../sitemap.xml ../search-index.json \
+		../.nojekyll ../assets ../img \
+		../action-circuit ../appendix-gates ../audits \
+		../build-test-contribute ../bundle-and-builder ../cheat-sheet \
+		../crate-map ../dependencies ../discovery ../glossary \
+		../halo2-primer ../keys-and-addresses ../merkle-tree \
+		../note-encryption ../notes-nullifiers-commitments \
+		../pasta-curves ../poseidon ../pr-checklist ../protocol-lineage \
+		../redpallas ../references ../research-frontier ../search \
+		../shielded-transfers ../sinsemilla ../study-plan ../test-vectors \
+		../value-commitments ../worked-example
 
 .PHONY: clean
-clean: ## Remove build artefacts, the Docusaurus cache, and node_modules
-	npx docusaurus clear
-	(cd tools/gates-to-latex && cargo clean)
+clean: clean-doc ## Remove all build artefacts plus node_modules
 	rm -rf build node_modules
