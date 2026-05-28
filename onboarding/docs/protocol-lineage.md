@@ -482,13 +482,24 @@ $$
 $$
 
 implemented in Orchard as a `SinsemillaCommit` under the
-personalisation `Z.cash:Orchard-NoteCommit`. The extracted form
+personalisation `"z.cash:Orchard-NoteCommit"`, declared once as a
+`const &str` in
+[`src/constants/fixed_bases.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/constants/fixed_bases.rs#L44-L44)
+and consumed at the construction of the commit domain in
+[`src/note/commitment.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note/commitment.rs#L17-L17):
+
+```rust reference title="src/constants/fixed_bases.rs (note-commit personalisation)"
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/constants/fixed_bases.rs#L43-L44
+```
+
+```rust reference title="src/note/commitment.rs (CommitDomain construction)"
+https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note/commitment.rs#L60-L62
+```
+
+The extracted form
 $\mathsf{cm}^\star = \mathsf{Extract}_{\mathbb{P}}(\mathsf{cm})$
 (the $x$-coordinate of the commitment as a Pallas point) is what
 is inserted into the Merkle tree.
-
-Source:
-[`src/note/commitment.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/note/commitment.rs).
 
 In Zerocash this is "cm" or $\mathsf{cm}$ and is computed by a
 generic commitment scheme; in Sprout it was SHA-256; in Sapling
