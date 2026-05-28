@@ -323,16 +323,62 @@ distinguish Sapling from Sprout. All three are defined in the
 - **Full viewing keys.** A key that grants read access to a
   wallet without granting spend access. The Sapling full
   viewing key is the triple
-  $(\mathsf{ak},\, \mathsf{nk},\, \mathsf{ovk})$: $\mathsf{ak}$
-  is the spend-authorising public key, $\mathsf{nk}$ is the
-  nullifier-deriving key, and $\mathsf{ovk}$ is the outgoing
-  viewing key. From the full viewing key one can derive the
-  incoming viewing key $\mathsf{ivk}$, detect and decrypt
-  incoming notes, recognise the wallet's own outgoing notes,
-  and recompute nullifiers; one cannot construct a valid
-  spend-authorising signature. See protocol specification
-  Section 4.2.2 and
-  [ZIP 32 "Shielded HD Wallets"](https://zips.z.cash/zip-0032).
+  $(\mathsf{ak},\, \mathsf{nk},\, \mathsf{ovk})$. The component
+  domains are:
+  - $\mathsf{ak} \in \mathbb{J}^{(r)*}$: the spend-authorising
+    public key, a non-identity Jubjub point of prime order. It
+    is the public component of the RedJubjub signing key pair,
+    $\mathsf{ak} = [\mathsf{ask}]\, G$ for the per-pool
+    generator $G$.
+  - $\mathsf{nk} \in \mathbb{F}_{r_{\mathbb{J}}}$: the
+    nullifier-deriving key, a Jubjub scalar derived from the
+    spending key by the PRF $\mathsf{PRF}^{\mathsf{nk}}$.
+  - $\mathsf{ovk} \in \{0, 1\}^{256}$: the outgoing viewing
+    key, a 256-bit byte string derived from the spending key by
+    the PRF $\mathsf{PRF}^{\mathsf{ovk}}$. Used as a symmetric
+    key to encrypt and recover the recipient address inside the
+    sender-side ciphertext.
+  - Derived from the triple: the incoming viewing key
+    $\mathsf{ivk} \in \mathbb{F}_{r_{\mathbb{J}}}$, a Jubjub
+    scalar, computed as
+    $\mathsf{ivk} = \mathsf{CRH}^{\mathsf{ivk}}(\mathsf{ak},\, \mathsf{nk})$.
+
+  Reasoning. The split into three components mirrors the three
+  read-only capabilities a wallet needs without spend power:
+  $\mathsf{ivk}$ for detecting and decrypting **incoming** notes
+  (Diffie-Hellman with $\mathsf{epk}$), $\mathsf{ovk}$ for
+  decrypting the sender-side memo of **outgoing** notes that the
+  wallet has authored, and $\mathsf{nk}$ for recomputing the
+  **nullifiers** of the wallet's notes so that wallet software
+  can mark notes as spent. None of the three components reveals
+  $\mathsf{ask}$, so a viewing-key holder cannot forge a
+  spend-authorising signature.
+
+  Security. Recovering $\mathsf{ask}$ from $\mathsf{ak}$ is the
+  discrete-log problem on Jubjub. Recovering $\mathsf{nk}$ from
+  $\mathsf{ivk}$ alone is at least as hard as inverting
+  $\mathsf{CRH}^{\mathsf{ivk}}$ on a fixed first argument.
+  Recovering $\mathsf{ovk}$ from outgoing ciphertexts is the
+  pre-image resistance of the underlying PRF used to expand the
+  sender ciphertext key from $\mathsf{ovk}$. The capability
+  hierarchy is documented as a lattice in the protocol
+  specification:
+  $\mathsf{sk} \to \mathsf{fvk} \to \{\mathsf{ivk}, \mathsf{ovk}, \mathsf{nk}\} \to \mathsf{ivk}$.
+  Possession of any lower element does not let the holder derive
+  any strictly higher element except by breaking one of the
+  reductions above.
+
+  See protocol specification Section 4.2.2 ("Sapling Key
+  Components"), Section 5.4.4 ("Pseudo Random Functions" for
+  $\mathsf{PRF}^{\mathsf{nk}}$, $\mathsf{PRF}^{\mathsf{ovk}}$),
+  Section 5.4.8.2 ("Sapling Key Agreement and Key Derivation"),
+  and
+  [ZIP 32 "Shielded HD Wallets"](https://zips.z.cash/zip-0032)
+  for the hardened-only derivation tree. Orchard re-uses the
+  same triple over Pallas, with the additional
+  $\mathsf{rivk}$ trapdoor that randomises the
+  $\mathsf{CRH}^{\mathsf{ivk}}$ step.
+
 - **Spend-authority signatures (RedJubjub).** A
   re-randomisable Schnorr-style signature scheme on the Jubjub
   curve, denoted $\mathsf{RedJubjub}$ in the specification.
