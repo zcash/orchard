@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Background: From Zerocoin to Orchard | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/protocol-lineage"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Background: From Zerocoin to Orchard | Orchard onboarding"><meta data-rh="true" name="description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><meta data-rh="true" property="og:description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/protocol-lineage"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Background: From Zerocoin to Orchard","item":"https://dannywillems.github.io/orchard/protocol-lineage"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.777a5427.css">
-<script src="/orchard/assets/js/runtime~main.0d058feb.js" defer="defer"></script>
+<script src="/orchard/assets/js/runtime~main.2a7f87df.js" defer="defer"></script>
 <script src="/orchard/assets/js/main.cc228e95.js" defer="defer"></script>
 </head>
 <body>
@@ -126,7 +126,7 @@ on-chain shape less informative (see
 
 
 
-<table><thead><tr><th>Aspect</th><th>Value</th></tr></thead><tbody><tr><td>Crypto</td><td>RSA accumulator + double-discrete-log proofs</td></tr><tr><td>Trusted setup</td><td>RSA modulus (problematic; later mitigated by class groups)</td></tr><tr><td>What is hidden</td><td>Linkage between mint and spend</td></tr><tr><td>What is not hidden</td><td>Amount (fixed denomination), and that a shielded op took place</td></tr><tr><td>Proof size</td><td>~25 KiB</td></tr><tr><td>Reference</td><td><a href="https://zerocoin.org/media/pdf/ZerocoinOakland.pdf" target="_blank" rel="noopener noreferrer" class="">Miers et al. 2013</a></td></tr></tbody></table>
+<table><thead><tr><th>Aspect</th><th>Value</th></tr></thead><tbody><tr><td>Crypto</td><td>RSA accumulator + double-discrete-log proofs</td></tr><tr><td>Trusted setup</td><td>RSA modulus (later replaced by class groups in follow-up work)</td></tr><tr><td>What is hidden</td><td>Linkage between mint and spend</td></tr><tr><td>What is not hidden</td><td>Amount (fixed denomination), and that a shielded op took place</td></tr><tr><td>Proof size</td><td>~25 KiB</td></tr><tr><td>Reference</td><td><a href="https://zerocoin.org/media/pdf/ZerocoinOakland.pdf" target="_blank" rel="noopener noreferrer" class="">Miers et al. 2013</a></td></tr></tbody></table>
 <p>Zerocoin shipped briefly in Zcoin (now Firo) and inspired several
 follow-ups (Lelantus, Spark). Zcash does not implement Zerocoin.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="32-zerocash-2014">3.2 Zerocash (2014)<a href="#32-zerocash-2014" class="hash-link" aria-label="Direct link to 3.2 Zerocash (2014)" title="Direct link to 3.2 Zerocash (2014)" translate="no">​</a></h3>
@@ -216,7 +216,7 @@ parts).</p>
 
 
 
-<table><thead><tr><th>Aspect</th><th>Value</th></tr></thead><tbody><tr><td>Curve</td><td>alt_bn128 (Barreto-Naehrig, 254-bit, pairing-friendly)</td></tr><tr><td>Proof system</td><td>BCTV14, later Groth16-backport</td></tr><tr><td>Note commitment hash</td><td>SHA-256 truncated</td></tr><tr><td>Merkle tree hash</td><td>SHA-256 PRF</td></tr><tr><td>Trusted setup</td><td>&quot;Sprout MPC&quot;, 6 participants (a known weakness)</td></tr><tr><td>Transaction format</td><td>JoinSplit (2-in / 2-out per JoinSplit, multiple per tx)</td></tr><tr><td>Status</td><td>Deprecated; new value cannot enter the pool</td></tr><tr><td>Spec</td><td>Zcash Protocol Specification, Section 4 (Sprout sections)</td></tr></tbody></table>
+<table><thead><tr><th>Aspect</th><th>Value</th></tr></thead><tbody><tr><td>Curve</td><td>alt_bn128 (Barreto-Naehrig, 254-bit, pairing-friendly)</td></tr><tr><td>Proof system</td><td>BCTV14, later Groth16-backport</td></tr><tr><td>Note commitment hash</td><td>SHA-256 truncated</td></tr><tr><td>Merkle tree hash</td><td>SHA-256 PRF</td></tr><tr><td>Trusted setup</td><td>&quot;Sprout MPC&quot;, 6 participants</td></tr><tr><td>Transaction format</td><td>JoinSplit (2-in / 2-out per JoinSplit, multiple per tx)</td></tr><tr><td>Status</td><td>Deprecated; new value cannot enter the pool</td></tr><tr><td>Spec</td><td>Zcash Protocol Specification, Section 4 (Sprout sections)</td></tr></tbody></table>
 <p>Sprout is interesting historically; no new code is written
 against it.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="34-the-joinsplit-primitive">3.4 The JoinSplit Primitive<a href="#34-the-joinsplit-primitive" class="hash-link" aria-label="Direct link to 3.4 The JoinSplit Primitive" title="Direct link to 3.4 The JoinSplit Primitive" translate="no">​</a></h3>
@@ -267,8 +267,8 @@ shielded transfers atomically.</p>
 side kept the Sprout circuit small enough to be practical on
 2016 hardware. Higher arity multiplies the circuit size; lower
 arity makes wallet change painful. The shape survived into
-Sapling&#x27;s design discussions but was ultimately abandoned in
-favour of separable <code>SpendDescription</code> and <code>OutputDescription</code>,
+Sapling&#x27;s design discussions and was ultimately replaced by the
+separable <code>SpendDescription</code> and <code>OutputDescription</code>,
 so a transaction can have any mix of <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>m</mi></mrow><annotation encoding="application/x-tex">m</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal">m</span></span></span></span> inputs and <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi></mrow><annotation encoding="application/x-tex">n</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal">n</span></span></span></span> outputs
 and pays only for the operations it actually uses.</p>
 <p><strong>Why it disappeared.</strong> Three reasons:</p>
@@ -605,7 +605,7 @@ the generated documentation at
 <a href="https://dannywillems.github.io/zebra" target="_blank" rel="noopener noreferrer" class="">dannywillems.github.io/zebra</a>,
 starting at the <code>zebra_chain::orchard::tree</code> module and the
 <code>zebra_state</code> crate&#x27;s <code>service::finalized_state</code> module.</li>
-<li class=""><strong>zcashd (C++, legacy reference).</strong> The same role is filled by
+<li class=""><strong>zcashd (C++, in maintenance).</strong> The same role is filled by
 the <code>OrchardMerkleFrontier</code> and the coin/state caches around
 <code>CCoinsViewCache</code> and <code>CChainState</code>. Browse the doxygen at
 <a href="https://dannywillems.github.io/zcashd" target="_blank" rel="noopener noreferrer" class="">dannywillems.github.io/zcashd</a>,
