@@ -19,11 +19,21 @@ against the crate.
 
 This site is automatically generated using
 [Claude Code](https://www.claude.com/product/claude-code). Errors
-may have been introduced. The code in the repository is the law:
-always refer to the authoritative sources before drawing a
-conclusion.
+may have been introduced. **This site is not authoritative
+documentation or explanation of the Orchard shielded protocol.**
+The only authoritative material is what is published by the Zcash
+organisations that maintain the protocol and its reference
+implementations:
+[Electric Coin Company](https://electriccoin.co/), the
+[Zcash Foundation](https://www.zfnd.org/), and the protocol team
+that maintains the
+[ZIPs](https://zips.z.cash/) and the
+[Zcash Protocol Specification](https://zips.z.cash/protocol/protocol.pdf).
+Anything on this site that disagrees with those sources is wrong
+on this site, not in them.
 
-The three authoritative references for everything that follows are:
+Concretely, the authoritative references for everything that
+follows are:
 
 1. The source files in
    [`zcash/orchard`](https://github.com/zcash/orchard/tree/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src),
