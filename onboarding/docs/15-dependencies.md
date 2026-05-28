@@ -84,7 +84,52 @@ Symmetric primitives:
   1.x: Blake2b for KDFs.
 - [`fpe`](https://github.com/str4d/fpe) 0.6: FF1 over AES-256.
 
-### 3.2 `no_std` Posture
+### 3.2 Cargo Features
+
+The crate ships several feature flags. The non-trivial ones at
+the pin:
+
+- **`circuit`** (off by default): pulls in `halo2_proofs` and
+  `halo2_gadgets` and compiles the Action circuit. A consumer
+  that only needs to verify Bundles, parse notes, or work with
+  keys can omit this feature and avoid the proof-system
+  dependency entirely.
+- **`multicore`**: forwards to
+  `halo2_proofs/multicore`; turns on parallel proving for the
+  Action circuit.
+- **`dev-graph`**: pulls in
+  `plotters` and `image` to render the circuit layout as a
+  graph; useful when reviewing a chip layout change. Not part
+  of release builds.
+- **`unstable-voting-circuits`** (off by default): re-exports a
+  set of otherwise-internal modules and types so that downstream
+  voting-circuit projects can re-use Orchard's gadgets. **These
+  APIs are explicitly outside the crate's semver guarantees and
+  may change in any release.**
+
+  Concretely, enabling the feature widens the visibility of
+  `orchard::{constants, spec}`,
+  `orchard::circuit::{commit_ivk, commit_ivk::gadgets,`
+  `note_commit, note_commit::gadgets, gadget::add_chip}`, and
+  `orchard::note::{commitment, nullifier}`, plus a number of
+  `Address`, `Note`, `CommitIvkChip`, `NoteCommitChip`, and
+  `AddChip` accessors. The
+  [CHANGELOG entry](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/CHANGELOG.md)
+  ("`unstable-voting-circuits` feature flag") lists the full
+  surface at the pin. The feature exists to let projects such as
+  voting-circuit research build on top of Orchard's audited
+  gadgets without forking the crate; a consumer that ships in
+  production and depends on these symbols accepts the risk that
+  a future Orchard point release moves or removes them.
+
+  Mechanically the feature uses the
+  [`visibility`](https://crates.io/crates/visibility)
+  proc-macro: each gated item carries
+  `#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]`,
+  which promotes the item from its default `pub(crate)` or
+  module-private visibility to `pub` only when the feature is on.
+
+### 3.3 `no_std` Posture
 
 The crate declares `#![no_std]` in
 [`src/lib.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/lib.rs)
@@ -93,7 +138,7 @@ otherwise pull in `std`. CI runs `build-nostd` for
 `wasm32-wasip1` and `thumbv7em-none-eabihf` (see
 [Chapter 2](./02-build-test-contribute.md)).
 
-### 3.3 Locking and the Latest-Deps Build
+### 3.4 Locking and the Latest-Deps Build
 
 The default CI runs against the committed `Cargo.lock`. A
 separate job removes the lock and re-builds with the latest
