@@ -215,6 +215,74 @@ fn rotation_suffix(r: i64) -> String {
     }
 }
 
+/// A compressed-selector envelope looks like
+/// `(F_c) * (k_1 - F_c) * (k_2 - F_c) * ... * (k_n - F_c) * P`
+/// where P is the actual gate body. `compress_selectors` builds this so
+/// that exactly one value of `F_c` activates each member of the gate
+/// group: the body is enforced when `F_c` takes the value that makes
+/// every `(k_i - F_c)` factor non-zero AND every other body inactive.
+/// We extract `(c, body)` here, treating polynomials that share `c` as
+/// belonging to the same source-level `create_gate` call.
+fn split_envelope(node: &Node) -> Option<(i64, &Node)> {
+    let Node::Call(name, args) = node else { return None };
+    if name != "Product" || args.len() != 2 {
+        return None;
+    }
+    if let Some(c) = find_envelope_col(&args[0]) {
+        return Some((c, &args[1]));
+    }
+    if let Some(c) = find_envelope_col(&args[1]) {
+        return Some((c, &args[0]));
+    }
+    None
+}
+
+/// Walk a left-side Product chain looking for any envelope factor
+/// `F_c` or `(k - F_c)`; return the first column index `c` seen. The
+/// chain may contain non-envelope factors (e.g. an Advice column that
+/// gates the constraint on top of the selector), as long as at least
+/// one envelope factor is present.
+fn find_envelope_col(node: &Node) -> Option<i64> {
+    if let Some(c) = envelope_factor_col(node) {
+        return Some(c);
+    }
+    let Node::Call(name, args) = node else { return None };
+    if name != "Product" || args.len() != 2 {
+        return None;
+    }
+    if let Some(c) = find_envelope_col(&args[0]) {
+        return Some(c);
+    }
+    find_envelope_col(&args[1])
+}
+
+fn envelope_factor_col(node: &Node) -> Option<i64> {
+    // Matches either Fixed{column_index: c, rotation: 0} or
+    // Sum(Constant(k), Negated(Fixed{column_index: c, rotation: 0})).
+    if let Node::Struct(name, fields) = node {
+        if name == "Fixed" && field_rotation(fields) == 0 {
+            return Some(field_int(fields, "column_index"));
+        }
+    }
+    if let Node::Call(name, args) = node {
+        if name == "Sum" && args.len() == 2 {
+            if let (Node::Call(cn, cargs), Node::Call(nn, nargs)) = (&args[0], &args[1]) {
+                if cn == "Constant" && nn == "Negated" && nargs.len() == 1 {
+                    if let Node::Struct(sn, sfields) = &nargs[0] {
+                        if sn == "Fixed"
+                            && field_rotation(sfields) == 0
+                            && matches!(cargs.first(), Some(Node::Hex(_) | Node::Int(_)))
+                        {
+                            return Some(field_int(sfields, "column_index"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn to_latex(node: &Node) -> String {
     match node {
         Node::Call(name, args) => match name.as_str() {
@@ -329,22 +397,86 @@ fn main() {
     println!("  shown in full; larger values are truncated to a six-hex-digit");
     println!("  head followed by `\\ldots` to keep KaTeX expressions readable.");
     println!();
+    println!("**Grouping.** Halo 2's `compress_selectors` pass packs every");
+    println!("`meta.create_gate(...)` group into a single shared fixed column");
+    println!("by giving the column a small integer value per gate member.");
+    println!("That value selects the member through an envelope of the form");
+    println!("$F_c \\cdot (k_1 - F_c) \\cdot \\dots \\cdot (k_n - F_c)$. Two");
+    println!("polynomials that share the same envelope column $c$ therefore");
+    println!("come from the same source-level `create_gate` call. We use $c$");
+    println!("as the group key and list polynomials per group; the");
+    println!("source-level chip that owns each group can be identified by");
+    println!("opening `src/circuit.rs` and reading the chip-configuration");
+    println!("calls in `Circuit::configure` in order. Polynomials that do");
+    println!("not match the envelope pattern are listed under \"Ungrouped\".");
+    println!();
     println!("**Scope.** This is the raw polynomial form, not yet annotated");
-    println!("with chip-level meaning. Phase 2 of this work attaches each");
-    println!("polynomial to the chip (ECC, Sinsemilla, Poseidon, Merkle,");
-    println!("CommitIvk, NoteCommit) that emitted it and explains what it");
-    println!("enforces; until that lands, refer to the column-allocation");
-    println!("comments in");
-    println!("[`src/circuit.rs`](https://github.com/zcash/orchard/blob/f8915bc5c8d1c9fa3124ad28bcf73ce232ef3669/src/circuit.rs)");
-    println!("to map a column index back to its owning chip.");
+    println!("with chip-level meaning. Phase 2 of this work would attach a");
+    println!("source-level chip name to each group (ECC, Sinsemilla,");
+    println!("Poseidon, Merkle, CommitIvk, NoteCommit). Doing so cleanly");
+    println!("requires upstream changes in `halo2_proofs` to expose gate");
+    println!("names; the pinned dump deliberately strips them.");
     println!();
 
-    for (idx, gate) in gates.iter().enumerate() {
-        println!("## Polynomial {}", idx + 1);
+    // Collect (group_id, original_index, polynomial).
+    let mut groups: std::collections::BTreeMap<Option<i64>, Vec<(usize, &Node)>> =
+        std::collections::BTreeMap::new();
+    for (i, g) in gates.iter().enumerate() {
+        let key = split_envelope(g).map(|(c, _)| c);
+        groups.entry(key).or_default().push((i, g));
+    }
+
+    println!("## Summary");
+    println!();
+    println!("| Envelope column $c$ | Polynomials in group | Original indices                   |");
+    println!("| ------------------- | -------------------- | ---------------------------------- |");
+    for (k, v) in &groups {
+        let key_str = match k {
+            Some(c) => format!("$F_{{{}}}$", c),
+            None => "ungrouped".to_string(),
+        };
+        let indices = v
+            .iter()
+            .map(|(i, _)| (i + 1).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let indices = if indices.len() > 60 {
+            format!("{}\\,...", &indices[..60])
+        } else {
+            indices
+        };
+        println!("| {} | {} | {} |", key_str, v.len(), indices);
+    }
+    println!();
+
+    let mut group_no = 0;
+    for (k, v) in &groups {
+        group_no += 1;
+        let header = match k {
+            Some(c) => format!(
+                "## Group {} (envelope column $F_{{{}}}$, {} polynomials)",
+                group_no,
+                c,
+                v.len()
+            ),
+            None => format!(
+                "## Group {} (ungrouped, {} polynomials)",
+                group_no,
+                v.len()
+            ),
+        };
+        println!("{}", header);
         println!();
-        println!("$$");
-        println!("{} = 0", to_latex(gate));
-        println!("$$");
-        println!();
+        for (idx, gate) in v {
+            println!("### Polynomial {} (original index {})", idx + 1, idx + 1);
+            println!();
+            // Print the envelope-stripped body when we have one, so the
+            // selector clutter is moved out of the math block.
+            let body = split_envelope(gate).map(|(_, b)| b).unwrap_or(gate);
+            println!("$$");
+            println!("{} = 0", to_latex(body));
+            println!("$$");
+            println!();
+        }
     }
 }
