@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Background: From Zerocoin to Orchard | Orchard onboarding</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://dannywillems.github.io/orchard/protocol-lineage"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Background: From Zerocoin to Orchard | Orchard onboarding"><meta data-rh="true" name="description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><meta data-rh="true" property="og:description" content="The Zerocoin (2013) and Zerocash (2014) protocols, how Zcash inherited the Zerocash note model, and how Sprout, Sapling, and Orchard each diverged from it. Defines the shielded-pool vocabulary used in every later chapter."><link data-rh="true" rel="icon" href="/orchard/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://dannywillems.github.io/orchard/protocol-lineage"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="en"><link data-rh="true" rel="alternate" href="https://dannywillems.github.io/orchard/protocol-lineage" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Background: From Zerocoin to Orchard","item":"https://dannywillems.github.io/orchard/protocol-lineage"}]}</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.17.0/dist/katex.min.css" integrity="sha384-vlBdW0r3AcZO/HboRPznQNowvexd3fY8qHOWkBi5q7KGgqJ+F48+DceybYmrVbmB" crossorigin="anonymous"><link rel="stylesheet" href="/orchard/assets/css/styles.777a5427.css">
-<script src="/orchard/assets/js/runtime~main.096d7b79.js" defer="defer"></script>
+<script src="/orchard/assets/js/runtime~main.e709ef6a.js" defer="defer"></script>
 <script src="/orchard/assets/js/main.f62544ea.js" defer="defer"></script>
 </head>
 <body>
@@ -823,6 +823,41 @@ mutates the shielded state.</p>
 <strong>anchor</strong> of that height. A spend declares the anchor it proves
 membership against; consensus accepts any recent anchor, which
 lets wallets be a few blocks behind without re-proving.</p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="where-both-structures-live-in-code">Where Both Structures Live in Code<a href="#where-both-structures-live-in-code" class="hash-link" aria-label="Direct link to Where Both Structures Live in Code" title="Direct link to Where Both Structures Live in Code" translate="no">​</a></h4>
+<p>The <code>orchard</code> crate provides the in-memory data types
+(<code>MerkleHashOrchard</code>, <code>Anchor</code>, <code>Nullifier</code>) but does not own the
+storage; the full-node implementation persists both structures.</p>
+<p><strong>Zebra (Rust full node).</strong> The commitment-tree type used by
+consensus is <code>zebra_chain::orchard::tree::NoteCommitmentTree</code> and
+its bundle, <code>zebra_chain::parallel::tree::NoteCommitmentTrees</code>.
+Persistence is handled by <code>zebra-state</code>. The on-disk state uses
+RocksDB column families declared in
+<a href="https://github.com/ZcashFoundation/zebra/blob/main/zebra-state/src/service/finalized_state.rs" target="_blank" rel="noopener noreferrer" class=""><code>zebra-state/src/service/finalized_state.rs</code></a>,
+named <code>orchard_note_commitment_tree</code>, <code>orchard_anchors</code>, and
+<code>orchard_nullifiers</code>. Browse the rustdoc at
+<a href="https://dannywillems.github.io/zebra" target="_blank" rel="noopener noreferrer" class="">dannywillems.github.io/zebra</a>
+starting at <code>zebra_chain::orchard::tree</code> and the <code>zebra_state</code>
+crate&#x27;s <code>service::finalized_state</code> module.</p>
+<p><strong>zcashd (C++, in maintenance).</strong> The commitment tree is
+<code>OrchardMerkleFrontier</code>, stored as <code>tree</code> inside
+<code>OrchardMerkleFrontierLegacySer</code> and accessed via
+<code>CCoinsView::GetOrchardAnchorAt</code> declared in
+<a href="https://github.com/zcash/zcash/blob/master/src/coins.h" target="_blank" rel="noopener noreferrer" class=""><code>src/coins.h</code></a>
+and persisted by
+<a href="https://github.com/zcash/zcash/blob/master/src/txdb.h" target="_blank" rel="noopener noreferrer" class=""><code>src/txdb.h</code></a>.
+The nullifier set lives in the same coins cache as a
+<code>CNullifiersMap mapOrchardNullifiers</code> /
+<code>cacheOrchardNullifiers</code> (also <code>src/coins.h</code>); duplicates are
+rejected by the <code>OrchardDuplicateNullifier</code> validation error
+inside <code>ConnectBlock</code>. Browse the doxygen at
+<a href="https://dannywillems.github.io/zcashd" target="_blank" rel="noopener noreferrer" class="">dannywillems.github.io/zcashd</a>
+starting at <code>OrchardMerkleFrontier</code>, <code>CCoinsViewCache</code>, and
+following the call sites of <code>mapOrchardNullifiers</code> and
+<code>GetOrchardAnchorAt</code>.</p>
+<p>The same structural pair (commitment tree plus nullifier set)
+exists for the Sapling and Sprout pools in both
+implementations, with <code>Sapling</code>/<code>Sprout</code> substituted for
+<code>Orchard</code> in every name.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="52-receiving-a-shielded-output">5.2 Receiving a Shielded Output<a href="#52-receiving-a-shielded-output" class="hash-link" aria-label="Direct link to 5.2 Receiving a Shielded Output" title="Direct link to 5.2 Receiving a Shielded Output" translate="no">​</a></h3>
 <p>Alice sends <code>v</code> zatoshis to Bob. The output flow is the only
 mechanism that <em>creates</em> notes; every shielded balance Bob ever
@@ -839,6 +874,43 @@ links <code>cm*_new</code> to Bob&#x27;s address or to Alice. Bob learns the
 note exists by trial-decrypting every output in every block; this
 is cheap because <code>ivk</code> is short and decryption fails fast on the
 authentication tag.</p>
+<h4 class="anchor anchorTargetStickyNavbar_Vzrq" id="where-the-value-comes-from">Where the Value Comes From<a href="#where-the-value-comes-from" class="hash-link" aria-label="Direct link to Where the Value Comes From" title="Direct link to Where the Value Comes From" translate="no">​</a></h4>
+<p>Bob&#x27;s note is by definition a shielded UTXO. For <code>cm*_new</code> to
+appear in the commitment tree the value <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal" style="margin-right:0.0359em">v</span></span></span></span> has to be <strong>inside
+the shielded pool</strong> at the moment the Action is verified;
+consensus enforces this by checking that every Action&#x27;s net
+value commitment <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="sans-serif">c</mi><msup><mi mathvariant="sans-serif">v</mi><mrow><mi mathvariant="sans-serif">n</mi><mi mathvariant="sans-serif">e</mi><mi mathvariant="sans-serif">t</mi></mrow></msup></mrow><annotation encoding="application/x-tex">\mathsf{cv^{\mathsf{net}}}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.763em"></span><span class="mord"><span class="mord mathsf">c</span><span class="mord"><span class="mord mathsf" style="margin-right:0.0139em">v</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.763em"><span style="top:-3.063em;margin-right:0.05em"><span class="pstrut" style="height:2.7em"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight"><span class="mord mathsf mtight">net</span></span></span></span></span></span></span></span></span></span></span></span></span></span> sums to zero
+against the transparent inputs and outputs of the same
+transaction, using the binding signature
+(see <a class="" href="/orchard/value-commitments">Chapter 13</a>).</p>
+<p>This does not mean Alice needs a prior shielded balance. A
+single Zcash transaction can mix three things at once:</p>
+<ul>
+<li class="">Transparent inputs and outputs (the t-side of the
+transaction).</li>
+<li class="">An Orchard <code>Bundle</code> with one or more Actions (each Action
+consumes one shielded input note and creates one shielded
+output note, with dummies allowed on either side).</li>
+<li class="">Analogous Sapling spend/output descriptions when the Sapling
+pool is involved.</li>
+</ul>
+<p>If Alice is paying Bob purely from a transparent address, the
+transaction has transparent inputs equal to <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal" style="margin-right:0.0359em">v</span></span></span></span> plus fee, no
+shielded inputs (the spend half of each Action is a dummy with
+value <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0</mn></mrow><annotation encoding="application/x-tex">0</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6444em"></span><span class="mord">0</span></span></span></span>), and an Orchard output containing Bob&#x27;s note. The
+<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>v</mi></mrow><annotation encoding="application/x-tex">v</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.4306em"></span><span class="mord mathnormal" style="margin-right:0.0359em">v</span></span></span></span> that lands in Bob&#x27;s note enters the Orchard pool inside that
+same transaction. From an external observer&#x27;s point of view this
+looks like a single payment; from the consensus point of view
+it is one shielding step glued onto one shielded output, both
+covered by the same Action proof and the same binding signature.</p>
+<p>If Alice already holds Orchard notes, the same Action shape is
+used with a real shielded input on the spend half. No
+transparent value is needed in that case.</p>
+<p>The Orchard protocol does not provide any other path: every
+shielded output&#x27;s value either consumed a shielded input note
+under the same Action or was shielded from transparent in the
+same transaction. There is no &quot;transparent direct deposit&quot; into
+the commitment tree that bypasses these checks.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="53-spending-a-shielded-note">5.3 Spending a Shielded Note<a href="#53-spending-a-shielded-note" class="hash-link" aria-label="Direct link to 5.3 Spending a Shielded Note" title="Direct link to 5.3 Spending a Shielded Note" translate="no">​</a></h3>
 <p>Some time later Bob spends the note. The deterministic nullifier
 <code>nf</code> is what consensus checks for double-spends; the proof
