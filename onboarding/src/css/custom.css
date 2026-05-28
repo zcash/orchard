@@ -15,7 +15,7 @@
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
 }
 
-[data-theme='dark'] {
+[data-theme="dark"] {
   --ifm-color-primary: #c084fc;
   --ifm-color-primary-dark: #ad6cf0;
   --ifm-color-primary-darker: #a05fea;
@@ -32,6 +32,13 @@
   padding: 0.25rem 0;
 }
 
-div[class^='announcementBar'] {
+div[class^="announcementBar"] {
   font-weight: 500;
+  position: sticky;
+  top: 0;
+  z-index: calc(var(--ifm-z-index-fixed) + 1);
+}
+
+.navbar {
+  top: var(--docusaurus-announcement-bar-height, 30px);
 }
