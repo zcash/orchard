@@ -108,3 +108,9 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+halo2_gadgets = { package = "halo2_gadgets", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "32a87582dfb0ad9364ef3ffe71751ceab2a502ea" }
+halo2_proofs = { package = "halo2_proofs", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "32a87582dfb0ad9364ef3ffe71751ceab2a502ea" }
+poseidon = { package = "halo2_poseidon", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "32a87582dfb0ad9364ef3ffe71751ceab2a502ea" }
+
