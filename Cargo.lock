@@ -954,7 +954,7 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "0.4.0"
-source = "git+https://github.com/zodl-inc/halo2-security-fixes.git?rev=32a87582dfb0ad9364ef3ffe71751ceab2a502ea#32a87582dfb0ad9364ef3ffe71751ceab2a502ea"
+source = "git+https://github.com/zodl-inc/halo2-security-fixes.git?rev=a101adb907869062593242a1946a7d6157d11899#a101adb907869062593242a1946a7d6157d11899"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -980,7 +980,7 @@ checksum = "47716fe1ae67969c5e0b2ef826f32db8c3be72be325e1aa3c1951d06b5575ec5"
 [[package]]
 name = "halo2_poseidon"
 version = "0.1.0"
-source = "git+https://github.com/zodl-inc/halo2-security-fixes.git?rev=32a87582dfb0ad9364ef3ffe71751ceab2a502ea#32a87582dfb0ad9364ef3ffe71751ceab2a502ea"
+source = "git+https://github.com/zodl-inc/halo2-security-fixes.git?rev=a101adb907869062593242a1946a7d6157d11899#a101adb907869062593242a1946a7d6157d11899"
 dependencies = [
  "bitvec",
  "ff",
@@ -991,7 +991,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.3.2"
-source = "git+https://github.com/zodl-inc/halo2-security-fixes.git?rev=32a87582dfb0ad9364ef3ffe71751ceab2a502ea#32a87582dfb0ad9364ef3ffe71751ceab2a502ea"
+source = "git+https://github.com/zodl-inc/halo2-security-fixes.git?rev=a101adb907869062593242a1946a7d6157d11899#a101adb907869062593242a1946a7d6157d11899"
 dependencies = [
  "blake2b_simd",
  "ff",

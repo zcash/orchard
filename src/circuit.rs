@@ -1,6 +1,7 @@
 //! The Orchard Action circuit implementation.
 
 use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
@@ -45,7 +46,8 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
+        CircuitVersion, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort,
+        ScalarVar,
     },
     poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
     sinsemilla::{
@@ -104,9 +106,40 @@ pub struct Config {
     new_note_commit_config: NoteCommitConfig,
 }
 
+/// Selects which version of the Orchard Action circuit to build.
+///
+/// The two versions produce different verifying keys: the fixed circuit anchors the
+/// variable-base scalar-multiplication base (see `halo2_gadgets`), the pre-NU6.2 one does
+/// not. [`FixedPostNu6_2`] is used for all proving and current verification;
+/// [`InsecurePreNu6_2`] reconstructs the historical (NU5..NU6.2) verifying key solely to
+/// verify proofs produced before NU6.2.
+pub trait OrchardCircuitVersion {
+    /// The corresponding `halo2_gadgets` variable-base scalar-mul circuit version.
+    const VERSION: CircuitVersion;
+}
+
+/// Marker for the fixed Orchard Action circuit, active from NU6.2 onward.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FixedPostNu6_2;
+impl OrchardCircuitVersion for FixedPostNu6_2 {
+    const VERSION: CircuitVersion = CircuitVersion::AnchoredBase;
+}
+
+/// Marker for the insecure pre-NU6.2 Orchard Action circuit. For reconstructing the
+/// historical verifying key only — never for proving or current verification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InsecurePreNu6_2;
+impl OrchardCircuitVersion for InsecurePreNu6_2 {
+    const VERSION: CircuitVersion = CircuitVersion::InsecureUnanchoredBase;
+}
+
 /// The Orchard Action circuit.
-#[derive(Clone, Debug, Default)]
-pub struct Circuit {
+///
+/// `V` selects the circuit version; it defaults to [`FixedPostNu6_2`], so a bare `Circuit`
+/// is the current (fixed) circuit and existing call sites are unaffected. The
+/// [`InsecurePreNu6_2`] instantiation exists only to rebuild the historical verifying key.
+#[derive(Clone, Debug)]
+pub struct Circuit<V: OrchardCircuitVersion = FixedPostNu6_2> {
     pub(crate) path: Value<[MerkleHashOrchard; MERKLE_DEPTH_ORCHARD]>,
     pub(crate) pos: Value<u32>,
     pub(crate) g_d_old: Value<NonIdentityPallasPoint>,
@@ -126,9 +159,41 @@ pub struct Circuit {
     pub(crate) psi_new: Value<pallas::Base>,
     pub(crate) rcm_new: Value<NoteCommitTrapdoor>,
     pub(crate) rcv: Value<ValueCommitTrapdoor>,
+    phantom: PhantomData<V>,
 }
 
-impl Circuit {
+// Hand-written rather than derived: `#[derive(Default)]` would bound the impl on `V: Default`
+// (its conservative per-type-parameter bound), forcing `OrchardCircuitVersion: Default`. The
+// only `V`-dependent field is `PhantomData<V>`, which is `Default` for every `V`, so this impl
+// is unconditional.
+impl<V: OrchardCircuitVersion> Default for Circuit<V> {
+    fn default() -> Self {
+        Circuit {
+            path: Value::default(),
+            pos: Value::default(),
+            g_d_old: Value::default(),
+            pk_d_old: Value::default(),
+            v_old: Value::default(),
+            rho_old: Value::default(),
+            psi_old: Value::default(),
+            rcm_old: Value::default(),
+            cm_old: Value::default(),
+            alpha: Value::default(),
+            ak: Value::default(),
+            nk: Value::default(),
+            rivk: Value::default(),
+            g_d_new: Value::default(),
+            pk_d_new: Value::default(),
+            v_new: Value::default(),
+            psi_new: Value::default(),
+            rcm_new: Value::default(),
+            rcv: Value::default(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl Circuit<FixedPostNu6_2> {
     /// This constructor is public to enable creation of custom builders.
     /// If you are not creating a custom builder, use [`Builder`] to compose
     /// and authorize a transaction.
@@ -189,11 +254,12 @@ impl Circuit {
             psi_new: Value::known(psi_new),
             rcm_new: Value::known(rcm_new),
             rcv: Value::known(rcv),
+            phantom: PhantomData,
         }
     }
 }
 
-impl plonk::Circuit<pallas::Base> for Circuit {
+impl<V: OrchardCircuitVersion> plonk::Circuit<pallas::Base> for Circuit<V> {
     type Config = Config;
     type FloorPlanner = floor_planner::V1;
 
@@ -400,7 +466,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         SinsemillaChip::load(config.sinsemilla_config_1.clone(), &mut layouter)?;
 
         // Construct the ECC chip.
-        let ecc_chip = config.ecc_chip();
+        let ecc_chip = config.ecc_chip(V::VERSION);
 
         // Witness private inputs that are used across multiple checks.
         let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new) = {
@@ -636,7 +702,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_1(),
-                config.ecc_chip(),
+                config.ecc_chip(V::VERSION),
                 config.note_commit_chip_old(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
@@ -694,7 +760,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_2(),
-                config.ecc_chip(),
+                config.ecc_chip(V::VERSION),
                 config.note_commit_chip_new(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
@@ -770,10 +836,10 @@ pub struct VerifyingKey {
 }
 
 impl VerifyingKey {
-    /// Builds the verifying key.
-    pub fn build() -> Self {
+    /// Builds the verifying key for the given circuit version.
+    pub fn build<V: OrchardCircuitVersion>() -> Self {
         let params = halo2_proofs::poly::commitment::Params::new(K);
-        let circuit: Circuit = Default::default();
+        let circuit: Circuit<V> = Default::default();
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
 
@@ -986,7 +1052,10 @@ mod tests {
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
-    use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
+    use super::{
+        Circuit, FixedPostNu6_2, InsecurePreNu6_2, Instance, PhantomData, Proof, ProvingKey,
+        VerifyingKey, K,
+    };
     use crate::{
         keys::SpendValidatingKey,
         note::{Note, Rho},
@@ -1018,6 +1087,7 @@ mod tests {
 
         (
             Circuit {
+                phantom: PhantomData,
                 path: Value::known(path.auth_path()),
                 pos: Value::known(path.position()),
                 g_d_old: Value::known(sender_address.g_d()),
@@ -1050,6 +1120,58 @@ mod tests {
         )
     }
 
+    fn write_test_case<W: std::io::Write>(
+        mut w: W,
+        instance: &Instance,
+        proof: &Proof,
+    ) -> std::io::Result<()> {
+        w.write_all(&instance.anchor().to_bytes())?;
+        w.write_all(&instance.cv_net().to_bytes())?;
+        w.write_all(&instance.nf_old().to_bytes())?;
+        w.write_all(&<[u8; 32]>::from(instance.rk()))?;
+        w.write_all(&instance.cmx().to_bytes())?;
+        w.write_all(&[
+            u8::from(instance.enable_spend()),
+            u8::from(instance.enable_output()),
+        ])?;
+        w.write_all(proof.as_ref())?;
+        Ok(())
+    }
+
+    fn read_test_case<R: std::io::Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
+        let read_32_bytes = |r: &mut R| {
+            let mut ret = [0u8; 32];
+            r.read_exact(&mut ret).unwrap();
+            ret
+        };
+        let read_bool = |r: &mut R| {
+            let mut byte = [0u8; 1];
+            r.read_exact(&mut byte).unwrap();
+            match byte {
+                [0] => false,
+                [1] => true,
+                _ => panic!("Unexpected non-boolean byte"),
+            }
+        };
+
+        let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
+        let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let rk = read_32_bytes(&mut r).try_into().unwrap();
+        let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let enable_spend = read_bool(&mut r);
+        let enable_output = read_bool(&mut r);
+        let instance =
+            Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output)
+                .expect("test vectors were generated with non-identity rk");
+
+        let mut proof_bytes = vec![];
+        r.read_to_end(&mut proof_bytes)?;
+        let proof = Proof::new(proof_bytes);
+
+        Ok((instance, proof))
+    }
+
     // TODO: recast as a proptest
     #[test]
     fn round_trip() {
@@ -1059,16 +1181,23 @@ mod tests {
             .map(|()| generate_circuit_instance(&mut rng))
             .unzip();
 
-        let vk = VerifyingKey::build();
+        let vk = VerifyingKey::build::<FixedPostNu6_2>();
 
-        // Test that the pinned verification key (representing the circuit)
-        // is as expected.
+        // Test that the pinned verification key (representing the circuit) is as expected.
+        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate it (and the proof below).
         {
-            // panic!("{:#?}", vk.vk.pinned());
-            assert_eq!(
-                format!("{:#?}\n", vk.vk.pinned()),
-                include_str!("circuit_description").replace("\r\n", "\n")
-            );
+            if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+                std::fs::write(
+                    "src/circuit_data/circuit_description_fixed",
+                    format!("{:#?}\n", vk.vk.pinned()),
+                )
+                .expect("should be able to write new circuit description");
+            } else {
+                assert_eq!(
+                    format!("{:#?}\n", vk.vk.pinned()),
+                    include_str!("circuit_data/circuit_description_fixed").replace("\r\n", "\n")
+                );
+            }
         }
 
         // Test that the proof size is as expected.
@@ -1116,62 +1245,7 @@ mod tests {
 
     #[test]
     fn serialized_proof_test_case() {
-        use std::io::{Read, Write};
-
-        let vk = VerifyingKey::build();
-
-        fn write_test_case<W: Write>(
-            mut w: W,
-            instance: &Instance,
-            proof: &Proof,
-        ) -> std::io::Result<()> {
-            w.write_all(&instance.anchor().to_bytes())?;
-            w.write_all(&instance.cv_net().to_bytes())?;
-            w.write_all(&instance.nf_old().to_bytes())?;
-            w.write_all(&<[u8; 32]>::from(instance.rk()))?;
-            w.write_all(&instance.cmx().to_bytes())?;
-            w.write_all(&[
-                u8::from(instance.enable_spend()),
-                u8::from(instance.enable_output()),
-            ])?;
-            w.write_all(proof.as_ref())?;
-            Ok(())
-        }
-
-        fn read_test_case<R: Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
-            let read_32_bytes = |r: &mut R| {
-                let mut ret = [0u8; 32];
-                r.read_exact(&mut ret).unwrap();
-                ret
-            };
-            let read_bool = |r: &mut R| {
-                let mut byte = [0u8; 1];
-                r.read_exact(&mut byte).unwrap();
-                match byte {
-                    [0] => false,
-                    [1] => true,
-                    _ => panic!("Unexpected non-boolean byte"),
-                }
-            };
-
-            let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
-            let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let rk = read_32_bytes(&mut r).try_into().unwrap();
-            let cmx =
-                crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let enable_spend = read_bool(&mut r);
-            let enable_output = read_bool(&mut r);
-            let instance =
-                Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output)
-                    .expect("test vectors were generated with non-identity rk");
-
-            let mut proof_bytes = vec![];
-            r.read_to_end(&mut proof_bytes)?;
-            let proof = Proof::new(proof_bytes);
-
-            Ok((instance, proof))
-        }
+        let vk = VerifyingKey::build::<FixedPostNu6_2>();
 
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
             let create_proof = || -> std::io::Result<()> {
@@ -1184,19 +1258,45 @@ mod tests {
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
-                let file = std::fs::File::create("circuit_proof_test_case.bin")?;
+                let file =
+                    std::fs::File::create("src/circuit_data/circuit_proof_test_case_fixed.bin")?;
                 write_test_case(file, &instance, &proof)
             };
             create_proof().expect("should be able to write new proof");
+            // Regeneration only writes the fixture; the non-generate run below embeds and
+            // verifies it.
+            return;
         }
 
         // Parse the hardcoded proof test case.
         let (instance, proof) = {
-            let test_case_bytes = include_bytes!("circuit_proof_test_case.bin");
+            let test_case_bytes = include_bytes!("circuit_data/circuit_proof_test_case_fixed.bin");
             read_test_case(&test_case_bytes[..]).expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
 
+        assert!(proof.verify(&vk, &[instance]).is_ok());
+    }
+
+    // The deployed (NU5..NU6.2) verifying key and a pre-fix proof. `InsecurePreNu6_2`
+    // reconstructs the historical circuit, so this checks that the deployed verifying key is
+    // reproduced exactly and that the old proof still verifies under it — the guarantee that
+    // lets a node sync from before the fix. These fixtures are frozen: there is no facility to
+    // prove the insecure circuit, so they are never regenerated.
+    #[test]
+    fn insecure_against_stored_circuit() {
+        let vk = VerifyingKey::build::<InsecurePreNu6_2>();
+        assert_eq!(
+            format!("{:#?}\n", vk.vk.pinned()),
+            include_str!("circuit_data/circuit_description_insecure").replace("\r\n", "\n")
+        );
+
+        let (instance, proof) = {
+            let test_case_bytes =
+                include_bytes!("circuit_data/circuit_proof_test_case_insecure.bin");
+            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
+        };
+        assert_eq!(proof.0.len(), 4992);
         assert!(proof.verify(&vk, &[instance]).is_ok());
     }
 
@@ -1211,7 +1311,7 @@ mod tests {
             .titled("Orchard Action Circuit", ("sans-serif", 60))
             .unwrap();
 
-        let circuit = Circuit {
+        let circuit: Circuit = Circuit {
             path: Value::unknown(),
             pos: Value::unknown(),
             g_d_old: Value::unknown(),
@@ -1231,6 +1331,7 @@ mod tests {
             psi_new: Value::unknown(),
             rcm_new: Value::unknown(),
             rcv: Value::unknown(),
+            phantom: PhantomData,
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)

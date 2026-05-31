@@ -4,7 +4,7 @@ use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
     bundle::{Authorized, Flags},
-    circuit::{ProvingKey, VerifyingKey},
+    circuit::{FixedPostNu6_2, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
     note_encryption::OrchardDomain,
@@ -33,7 +33,7 @@ fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
 fn bundle_chain() {
     let mut rng = OsRng;
     let pk = ProvingKey::build();
-    let vk = VerifyingKey::build();
+    let vk = VerifyingKey::build::<FixedPostNu6_2>();
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);

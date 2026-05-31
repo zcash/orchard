@@ -18,10 +18,16 @@ and this project adheres to Rust's notion of
   only way to construct a `Bundle<Authorized, _>`, so an authorized bundle can
   no longer hold a proof padded with arbitrary data.
 - `orchard::Bundle::<EffectsOnly, V>::from_parts`
+- `orchard::circuit::{OrchardCircuitVersion, InsecurePreNu6_2, FixedPostNu6_2}`
 
 ### Changed
 - `orchard::action::Action::from_parts` now returns
   `Result<Self, orchardaction::::ActionFromPartsError>` instead of `Option<Self>`.
+- `orchard::circuit`:
+  - `Circuit` now has a generic parameter that defaults to `FixedPostNu6_2`,
+    and thus is no longer compatible with previously-created proofs without
+    explicitly specifying the parameter as `InsecurePreNu6_2`.
+  - `VerifyingKey::build` now takes an `OrchardCircuitVersion` generic parameter.
 - `orchard::pczt::TxExtractorError` has added variants `InvalidEpk` and
   `NonCanonicalProofSize`. The Transaction Extractor role now rejects a PCZT
   whose `zkproof` is not the canonical size for its number of actions
