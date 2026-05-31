@@ -188,8 +188,9 @@ impl DynamicUsage for Action<redpallas::Signature<SpendAuth>> {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub(crate) mod testing {
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{rngs::StdRng, RngCore, SeedableRng};
     use reddsa::orchard::SpendAuth;
+    use zcash_note_encryption::Domain as _;
 
     use proptest::prelude::*;
 
@@ -198,11 +199,33 @@ pub(crate) mod testing {
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
             testing::arb_note, TransmittedNoteCiphertext,
         },
+        note_encryption::{OrchardDomain, OrchardNoteEncryption},
         primitives::redpallas::{self, testing::arb_valid_spendauth_keypair},
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
+        Note,
     };
 
     use super::Action;
+
+    /// Builds a real, decryptable `TransmittedNoteCiphertext` for `note`,
+    /// mirroring `OutputInfo::build`: the same encryptor yields a non-identity
+    /// ephemeral public key (satisfying the `Action::from_parts` epk invariant)
+    /// together with the note and outgoing ciphertexts. No outgoing viewing key
+    /// is used, so `out_ciphertext` is encrypted under a random key, as for a
+    /// real output sent without an `ovk`.
+    fn encrypted_note_for(
+        note: Note,
+        cv_net: &ValueCommitment,
+        cmx: &ExtractedNoteCommitment,
+        mut rng: impl RngCore,
+    ) -> TransmittedNoteCiphertext {
+        let encryptor = OrchardNoteEncryption::new(None, note, [0u8; 512]);
+        TransmittedNoteCiphertext {
+            epk_bytes: OrchardDomain::epk_bytes(encryptor.epk()).0,
+            enc_ciphertext: encryptor.encrypt_note_plaintext(),
+            out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, cmx, &mut rng),
+        }
+    }
 
     prop_compose! {
         /// Generate an action without authorization data.
@@ -210,18 +233,15 @@ pub(crate) mod testing {
             nf in arb_nullifier(),
             (_, rk) in arb_valid_spendauth_keypair(),
             note in arb_note(output_value),
+            rng_seed in prop::array::uniform32(prop::num::u8::ANY),
         ) -> Action<()> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
             let cv_net = ValueCommitment::derive(
                 spend_value - output_value,
                 ValueCommitTrapdoor::zero()
             );
-            // FIXME: make a real one from the note.
-            let encrypted_note = TransmittedNoteCiphertext {
-                epk_bytes: [0u8; 32],
-                enc_ciphertext: [0u8; 580],
-                out_ciphertext: [0u8; 80]
-            };
+            let encrypted_note =
+                encrypted_note_for(note, &cv_net, &cmx, StdRng::from_seed(rng_seed));
             Action {
                 nf,
                 rk,
@@ -239,6 +259,7 @@ pub(crate) mod testing {
             nf in arb_nullifier(),
             (rsk, rk) in arb_valid_spendauth_keypair(),
             note in arb_note(output_value),
+            enc_rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
         ) -> Action<redpallas::Signature<SpendAuth>> {
@@ -248,12 +269,8 @@ pub(crate) mod testing {
                 ValueCommitTrapdoor::zero()
             );
 
-            // FIXME: make a real one from the note.
-            let encrypted_note = TransmittedNoteCiphertext {
-                epk_bytes: [0u8; 32],
-                enc_ciphertext: [0u8; 580],
-                out_ciphertext: [0u8; 80]
-            };
+            let encrypted_note =
+                encrypted_note_for(note, &cv_net, &cmx, StdRng::from_seed(enc_rng_seed));
 
             let rng = StdRng::from_seed(rng_seed);
 
@@ -292,7 +309,7 @@ mod tests {
     /// The verification key derived from a signing key with scalar 1 is the
     /// SpendAuthSig basepoint G, which is not the identity.
     fn non_identity_rk() -> redpallas::VerificationKey<SpendAuth> {
-        let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr().into();
+        let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr();
         let ask =
             redpallas::SigningKey::<SpendAuth>::try_from(ask_bytes).expect("1 is a valid scalar");
         (&ask).into()
