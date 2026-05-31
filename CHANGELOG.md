@@ -9,11 +9,23 @@ and this project adheres to Rust's notion of
 
 ### Added
 - `orchard::action::ActionFromPartsError`
+- `orchard::Proof::expected_proof_size`, the canonical byte length of a proof
+  for a given number of actions.
+- `orchard::bundle::BundleError`
+- `orchard::Bundle::<Authorized, V>::try_from_parts`, which constructs an
+  authorized bundle while rejecting a proof whose length is not the canonical
+  size for the bundle's number of actions (GHSA-2x4w-pxqw-58v9). This is now the
+  only way to construct a `Bundle<Authorized, _>`, so an authorized bundle can
+  no longer hold a proof padded with arbitrary data.
+- `orchard::Bundle::<EffectsOnly, V>::from_parts`
 
 ### Changed
 - `orchard::action::Action::from_parts` now returns
   `Result<Self, orchardaction::::ActionFromPartsError>` instead of `Option<Self>`.
-- `orchard::pczt::TxExtractorError` has added variant `InvalidEpk`.
+- `orchard::pczt::TxExtractorError` has added variants `InvalidEpk` and
+  `NonCanonicalProofSize`. The Transaction Extractor role now rejects a PCZT
+  whose `zkproof` is not the canonical size for its number of actions
+  (GHSA-2x4w-pxqw-58v9).
 - `unstable-voting-circuits`-only:
   - `orchard::constants::OrchardFixedBases` is now a unit struct rather than a
     3-variant enum. It is a trait carrier for the halo2_gadgets `FixedPoints`
@@ -22,6 +34,9 @@ and this project adheres to Rust's notion of
     `OrchardShortScalarBases`, which are unchanged.
 
 ### Removed
+- `orchard::Bundle::from_parts`. Construct a bundle through the
+  authorization-specific constructor instead: `Bundle::<EffectsOnly, V>::from_parts`,
+  or `Bundle::<Authorized, V>::try_from_parts` for an authorized bundle.
 - `unstable-voting-circuits`-only:
   - The five dead `From<X> for OrchardFixedBases` conversions (from
     `OrchardFixedBasesFull`, `NullifierK`, `ValueCommitV`,
