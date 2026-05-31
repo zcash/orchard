@@ -7,7 +7,13 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::action::ActionFromPartsError`
+
 ### Changed
+- `orchard::action::Action::from_parts` now returns
+  `Result<Self, orchardaction::::ActionFromPartsError>` instead of `Option<Self>`.
+- `orchard::pczt::TxExtractorError` has added variant `InvalidEpk`.
 - `unstable-voting-circuits`-only:
   - `orchard::constants::OrchardFixedBases` is now a unit struct rather than a
     3-variant enum. It is a trait carrier for the halo2_gadgets `FixedPoints`

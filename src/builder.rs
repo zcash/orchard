@@ -461,7 +461,10 @@ impl ActionInfo {
                     parts: SigningParts { ak, alpha },
                 },
             )
-            .expect("α was generated randomly, so an identity rk is vanishingly unlikely"),
+            .expect(
+                "rk is non-identity (α was generated randomly) and epk is a \
+                 valid non-identity point by construction",
+            ),
             Circuit::from_action_context_unchecked(self.spend, note, alpha, self.rcv),
         )
     }

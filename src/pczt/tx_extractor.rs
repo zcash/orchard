@@ -80,7 +80,7 @@ impl super::Bundle {
                     action.cv_net.clone(),
                     authorization,
                 )
-                .ok_or_else(|| TxExtractorError::IdentityRk.into())
+                .map_err(|e| TxExtractorError::from(e).into())
             })
             .collect::<Result<_, E>>()?;
 
@@ -120,6 +120,17 @@ pub enum TxExtractorError {
     /// An action has an identity `rk`, which is forbidden by the consensus
     /// rule introduced in zcashd v6.12.1 and Zebra 4.3.1.
     IdentityRk,
+    /// An action has an `epk` that does not encode a non-identity Pallas point.
+    InvalidEpk,
+}
+
+impl From<crate::ActionFromPartsError> for TxExtractorError {
+    fn from(e: crate::ActionFromPartsError) -> Self {
+        match e {
+            crate::ActionFromPartsError::IdentityRk => TxExtractorError::IdentityRk,
+            crate::ActionFromPartsError::InvalidEpk => TxExtractorError::InvalidEpk,
+        }
+    }
 }
 
 impl fmt::Display for TxExtractorError {
@@ -142,6 +153,10 @@ impl fmt::Display for TxExtractorError {
             TxExtractorError::IdentityRk => {
                 write!(f, "an Orchard action with identity `rk` is not valid")
             }
+            TxExtractorError::InvalidEpk => write!(
+                f,
+                "an Orchard action's `epk` is not a valid non-identity Pallas point"
+            ),
         }
     }
 }
