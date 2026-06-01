@@ -1262,7 +1262,7 @@ mod tests {
         }
 
         fn non_identity_rk() -> redpallas::VerificationKey<SpendAuth> {
-            let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr().into();
+            let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr();
             let ask = redpallas::SigningKey::<SpendAuth>::try_from(ask_bytes)
                 .expect("1 is a valid scalar");
             (&ask).into()
