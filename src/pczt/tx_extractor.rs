@@ -30,7 +30,7 @@ impl super::Bundle {
     pub fn extract<V: TryFrom<i64>>(
         &self,
     ) -> Result<Option<crate::Bundle<Unbound, V>>, TxExtractorError> {
-        self.to_tx_data(
+        let bundle = self.to_tx_data(
             |action| {
                 action
                     .spend
@@ -50,7 +50,19 @@ impl super::Bundle {
                         .ok_or(TxExtractorError::MissingBindingSignatureSigningKey)?,
                 })
             },
-        )
+        )?;
+
+        // The proof comes straight from the (untrusted) PCZT, so reject it here if it is not
+        // the canonical size. This makes "an `Authorized` bundle always has a canonical proof"
+        // hold across the `Unbound` -> `Authorized` transition in `apply_binding_signature`.
+        if let Some(bundle) = &bundle {
+            crate::bundle::validate_proof_size(
+                &bundle.authorization().proof,
+                bundle.actions().len(),
+            )?;
+        }
+
+        Ok(bundle)
     }
 
     /// Converts this PCZT bundle into a regular bundle with the given authorizations.
@@ -92,7 +104,7 @@ impl super::Bundle {
 
             let authorization = bundle_auth(self)?;
 
-            Some(crate::Bundle::from_parts(
+            Some(crate::Bundle::from_parts_unchecked(
                 actions,
                 self.flags,
                 value_balance,
@@ -122,6 +134,13 @@ pub enum TxExtractorError {
     IdentityRk,
     /// An action has an `epk` that does not encode a non-identity Pallas point.
     InvalidEpk,
+    /// The `zkproof` does not have the canonical length for the bundle's number of actions.
+    NonCanonicalProofSize {
+        /// The canonical proof length for the bundle's number of actions.
+        expected: usize,
+        /// The length of the proof that was provided.
+        actual: usize,
+    },
 }
 
 impl From<crate::ActionFromPartsError> for TxExtractorError {
@@ -129,6 +148,16 @@ impl From<crate::ActionFromPartsError> for TxExtractorError {
         match e {
             crate::ActionFromPartsError::IdentityRk => TxExtractorError::IdentityRk,
             crate::ActionFromPartsError::InvalidEpk => TxExtractorError::InvalidEpk,
+        }
+    }
+}
+
+impl From<crate::bundle::BundleError> for TxExtractorError {
+    fn from(e: crate::bundle::BundleError) -> Self {
+        match e {
+            crate::bundle::BundleError::NonCanonicalProofSize { expected, actual } => {
+                TxExtractorError::NonCanonicalProofSize { expected, actual }
+            }
         }
     }
 }
@@ -156,6 +185,10 @@ impl fmt::Display for TxExtractorError {
             TxExtractorError::InvalidEpk => write!(
                 f,
                 "an Orchard action's `epk` is not a valid non-identity Pallas point"
+            ),
+            TxExtractorError::NonCanonicalProofSize { expected, actual } => write!(
+                f,
+                "Orchard `zkproof` has non-canonical length {actual}; expected {expected} bytes",
             ),
         }
     }

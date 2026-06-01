@@ -751,7 +751,7 @@ pub fn bundle<V: TryFrom<i64>>(
 
             Ok(NonEmpty::from_vec(actions).map(|actions| {
                 (
-                    Bundle::from_parts(
+                    Bundle::from_parts_unchecked(
                         actions,
                         flags,
                         result_value_balance,

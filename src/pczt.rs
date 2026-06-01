@@ -554,4 +554,28 @@ mod tests {
             Err(TxExtractorError::IdentityRk),
         ));
     }
+
+    #[test]
+    fn extract_rejects_non_canonical_proof() {
+        let pk = ProvingKey::build();
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+
+        // Pad the proof with a trailing byte after it was produced. Extraction must reject the
+        // non-canonical proof rather than carry it into the extracted (and later authorized)
+        // bundle.
+        let padded = {
+            let mut bytes = pczt_bundle.zkproof.as_ref().unwrap().as_ref().to_vec();
+            bytes.push(0);
+            crate::Proof::new(bytes)
+        };
+        pczt_bundle.zkproof = Some(padded);
+
+        assert!(matches!(
+            pczt_bundle.extract::<i64>(),
+            Err(TxExtractorError::NonCanonicalProofSize { .. }),
+        ));
+    }
 }
