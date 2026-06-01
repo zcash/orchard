@@ -12,11 +12,13 @@ and this project adheres to Rust's notion of
 - `orchard::Proof::expected_proof_size`, the canonical byte length of a proof
   for a given number of actions.
 - `orchard::bundle::BundleError`
+- `orchard::bundle::ProofSizeEnforcement`
 - `orchard::Bundle::<Authorized, V>::try_from_parts`, which constructs an
   authorized bundle while rejecting a proof whose length is not the canonical
   size for the bundle's number of actions (GHSA-2x4w-pxqw-58v9). This is now the
   only way to construct a `Bundle<Authorized, _>`, so an authorized bundle can
-  no longer hold a proof padded with arbitrary data.
+  no longer hold a proof padded with arbitrary data when proof size enforcement
+  is strict.
 - `orchard::Bundle::<EffectsOnly, V>::from_parts`
 - `orchard::circuit::{OrchardCircuitVersion, InsecurePreNu6_2, FixedPostNu6_2}`
 
