@@ -525,8 +525,7 @@ impl fmt::Display for BundleError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for BundleError {}
+impl core::error::Error for BundleError {}
 
 impl<V> Bundle<Authorized, V> {
     /// Constructs an authorized `Bundle` from its constituent parts, rejecting a proof whose

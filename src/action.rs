@@ -169,8 +169,7 @@ impl fmt::Display for ActionFromPartsError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for ActionFromPartsError {}
+impl core::error::Error for ActionFromPartsError {}
 
 impl DynamicUsage for Action<redpallas::Signature<SpendAuth>> {
     #[inline(always)]
