@@ -33,6 +33,11 @@ and this project adheres to Rust's notion of
 - `orchard::circuit::Circuit::from_action_context_for_version`, like
   `from_action_context` but building the circuit for a chosen
   `OrchardCircuitVersion`.
+- `orchard::builder::Builder::new_for_version` (requires the `circuit` feature),
+  which constructs a builder that produces proofs for a given
+  `OrchardCircuitVersion` (`Builder::new` uses `FixedPostNu6_2`).
+- `orchard::builder::bundle_for_version` (requires the `circuit` feature), like
+  `bundle` but building the Action circuits for a given `OrchardCircuitVersion`.
 
 ### Changed
 - `orchard::action::Action::from_parts` now returns
