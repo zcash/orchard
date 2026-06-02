@@ -38,6 +38,10 @@ and this project adheres to Rust's notion of
   `OrchardCircuitVersion` (`Builder::new` uses `FixedPostNu6_2`).
 - `orchard::builder::bundle_for_version` (requires the `circuit` feature), like
   `bundle` but building the Action circuits for a given `OrchardCircuitVersion`.
+- `orchard::Bundle::<InProgress<Unproven, S>, V>::circuit_version` (requires the
+  `circuit` feature), the `OrchardCircuitVersion` the bundle's actions were built
+  for, so a caller can select a matching `ProvingKey` without tracking it
+  separately.
 
 ### Changed
 - `orchard::action::Action::from_parts` now returns
