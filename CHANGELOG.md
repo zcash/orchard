@@ -20,16 +20,23 @@ and this project adheres to Rust's notion of
   no longer hold a proof padded with arbitrary data when proof size enforcement
   is strict.
 - `orchard::Bundle::<EffectsOnly, V>::from_parts`
-- `orchard::circuit::{OrchardCircuitVersion, InsecurePreNu6_2, FixedPostNu6_2}`
+- `orchard::circuit::OrchardCircuitVersion`, an enum selecting the Action circuit
+  version, with variants `InsecurePreNu6_2` and `FixedPostNu6_2`.
+- `orchard::circuit::ProvingKey::build_for_version` and
+  `orchard::circuit::VerifyingKey::build_for_version`, which build the key for a
+  given `OrchardCircuitVersion`; `build()` continues to build the fixed circuit.
+  `ProvingKey::build_for_version` can build the proving key for the pre-NU6.2
+  (insecure) circuit.
+- `orchard::circuit::ProvingKey::circuit_version`, the version the proving key
+  produces proofs for. `Proof::create` now returns an error if a circuit's
+  version does not match the proving key's.
+- `orchard::circuit::Circuit::from_action_context_for_version`, like
+  `from_action_context` but building the circuit for a chosen
+  `OrchardCircuitVersion`.
 
 ### Changed
 - `orchard::action::Action::from_parts` now returns
-  `Result<Self, orchardaction::::ActionFromPartsError>` instead of `Option<Self>`.
-- `orchard::circuit`:
-  - `Circuit` now has a generic parameter that defaults to `FixedPostNu6_2`,
-    and thus is no longer compatible with previously-created proofs without
-    explicitly specifying the parameter as `InsecurePreNu6_2`.
-  - `VerifyingKey::build` now takes an `OrchardCircuitVersion` generic parameter.
+  `Result<Self, orchard::action::ActionFromPartsError>` instead of `Option<Self>`.
 - `orchard::pczt::TxExtractorError` has added variants `InvalidEpk` and
   `NonCanonicalProofSize`. The Transaction Extractor role now rejects a PCZT
   whose `zkproof` is not the canonical size for its number of actions

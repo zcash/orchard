@@ -28,7 +28,7 @@ use crate::{
 use {
     crate::{
         action::Action,
-        circuit::{Circuit, Instance, ProvingKey},
+        circuit::{Circuit, Instance, OrchardCircuitVersion, ProvingKey},
     },
     nonempty::NonEmpty,
 };
@@ -465,7 +465,13 @@ impl ActionInfo {
                 "rk is non-identity (α was generated randomly) and epk is a \
                  valid non-identity point by construction",
             ),
-            Circuit::from_action_context_unchecked(self.spend, note, alpha, self.rcv),
+            Circuit::from_action_context_unchecked(
+                self.spend,
+                note,
+                alpha,
+                self.rcv,
+                OrchardCircuitVersion::FixedPostNu6_2,
+            ),
         )
     }
 
