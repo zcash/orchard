@@ -1,6 +1,6 @@
 [package]
 name = "orchard"
-version = "0.13.1"
+version = "0.14.0"
 authors = [
     "Sean Bowe <ewillbefull@gmail.com>",
     "Jack Grigg <thestr4d@gmail.com>",
@@ -49,7 +49,7 @@ zip32 = { version = "0.2.0", default-features = false }
 visibility = "0.1.1"
 
 # Circuit
-halo2_gadgets = { version = "0.4", optional = true, default-features = false }
+halo2_gadgets = { version = "0.5", optional = true, default-features = false }
 halo2_proofs = { version = "0.3", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 
 # Boilerplate
@@ -67,7 +67,7 @@ plotters = { version = "0.3.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
-halo2_gadgets = { version = "0.4", features = ["test-dependencies"] }
+halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
 zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
@@ -114,7 +114,7 @@ debug = true
 [patch.crates-io]
 # No released halo2_gadgets contains the variable-base scalar-mul base-anchoring fix yet, so
 # pin the fix commit. Drop this patch once a fixed release is available.
-halo2_gadgets = { package = "halo2_gadgets", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "a101adb907869062593242a1946a7d6157d11899" }
-halo2_proofs = { package = "halo2_proofs", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "a101adb907869062593242a1946a7d6157d11899" }
-poseidon = { package = "halo2_poseidon", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "a101adb907869062593242a1946a7d6157d11899" }
+halo2_gadgets = { package = "halo2_gadgets", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "d751768afe0d2105b349dd93f73fde7f2eade088" }
+halo2_proofs = { package = "halo2_proofs", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "d751768afe0d2105b349dd93f73fde7f2eade088" }
+poseidon = { package = "halo2_poseidon", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "d751768afe0d2105b349dd93f73fde7f2eade088" }
 

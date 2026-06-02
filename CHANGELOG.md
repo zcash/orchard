@@ -12,6 +12,8 @@ and this project adheres to Rust's notion of
 - `orchard::Proof::expected_proof_size`, the canonical byte length of a proof
   for a given number of actions.
 - `orchard::bundle::BundleError`
+- `impl From<orchard::action::ActionFromPartsError> for orchard::pczt::TxExtractorError`
+- `impl From<orchard::bundle::BundleError> for orchard::pczt::TxExtractorError`
 - `orchard::bundle::ProofSizeEnforcement`
 - `orchard::Bundle::<Authorized, V>::try_from_parts`, which constructs an
   authorized bundle while rejecting a proof whose length is not the canonical
@@ -44,6 +46,7 @@ and this project adheres to Rust's notion of
   separately.
 
 ### Changed
+- Updated to `halo2_gadgets 0.5.0`
 - `orchard::action::Action::from_parts` now returns
   `Result<Self, orchard::action::ActionFromPartsError>` instead of `Option<Self>`.
 - `orchard::pczt::TxExtractorError` has added variants `InvalidEpk` and
@@ -71,6 +74,17 @@ and this project adheres to Rust's notion of
     enum refactor, dispatch routes through `OrchardBaseFieldBases::NullifierK`
     and `OrchardShortScalarBases::ValueCommitV`, leaving the standalone
     unit-struct impls dead.
+
+### Fixed
+- The update to `halo2_gadgets 0.5.0` fixes a critical vulnerability related to
+  its use in the Orchard circuit. Please see the release notes for
+  `halo2_gadgets 0.5.0` for additional details.
+- An authorized `Bundle` or a PCZT can no longer carry a `zkproof` padded with
+  arbitrary trailing data, and an `Action` can no longer be constructed with an
+  `epk` that does not encode a non-identity Pallas point (GHSA-2x4w-pxqw-58v9).
+  See the `Bundle::<Authorized, V>::try_from_parts`,
+  `Proof::expected_proof_size`, `Action::from_parts`, and `TxExtractorError`
+  entries under `Added` and `Changed` above for the API surface of these checks.
 
 ## [0.13.1] - 2026-04-27
 
