@@ -851,7 +851,10 @@ pub fn bundle_for_version<V: TryFrom<i64>>(
                         result_value_balance,
                         anchor,
                         InProgress {
-                            proof: Unproven { circuits },
+                            proof: Unproven {
+                                circuits,
+                                circuit_version,
+                            },
                             sigs: Unauthorized { bsk },
                         },
                     ),
@@ -970,6 +973,7 @@ impl<P: fmt::Debug, S: InProgressSignatures> Authorization for InProgress<P, S> 
 #[derive(Clone, Debug)]
 pub struct Unproven {
     circuits: Vec<Circuit>,
+    circuit_version: OrchardCircuitVersion,
 }
 
 #[cfg(feature = "circuit")]
@@ -987,6 +991,12 @@ impl<S: InProgressSignatures> InProgress<Unproven, S> {
 
 #[cfg(feature = "circuit")]
 impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
+    /// The circuit version this bundle's actions were built for, and that its proof must
+    /// therefore be created against (with a matching [`ProvingKey`]).
+    pub fn circuit_version(&self) -> OrchardCircuitVersion {
+        self.authorization().proof.circuit_version
+    }
+
     /// Creates the proof for this bundle.
     pub fn create_proof(
         self,
