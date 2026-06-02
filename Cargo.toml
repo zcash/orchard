@@ -94,6 +94,7 @@ test-dependencies = ["proptest", "rand/std"]
 [[bench]]
 name = "note_decryption"
 harness = false
+required-features = ["circuit"]
 
 [[bench]]
 name = "small"
@@ -102,6 +103,7 @@ harness = false
 [[bench]]
 name = "circuit"
 harness = false
+required-features = ["circuit"]
 
 [profile.release]
 debug = true
