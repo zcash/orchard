@@ -51,7 +51,7 @@ pub mod zip32;
 #[cfg(test)]
 mod test_vectors;
 
-pub use action::Action;
+pub use action::{Action, ActionFromPartsError};
 pub use address::Address;
 pub use bundle::Bundle;
 pub use constants::MERKLE_DEPTH_ORCHARD as NOTE_COMMITMENT_TREE_DEPTH;
@@ -98,5 +98,22 @@ impl Proof {
     /// Constructs a new Proof value.
     pub fn new(bytes: Vec<u8>) -> Self {
         Proof(bytes)
+    }
+
+    /// The canonical byte length of a proof authorizing a bundle of `num_actions` actions.
+    ///
+    /// A valid Orchard proof always has exactly this length. The constants are fixed by the
+    /// halo2 action circuit; they are cross-checked against [`halo2_proofs::dev::CircuitCost`]
+    /// in the circuit tests. Use this to reject non-canonical (e.g. padded) proofs when
+    /// constructing a bundle from untrusted bytes; see [`Bundle::try_from_parts`].
+    ///
+    /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
+    pub const fn expected_proof_size(num_actions: usize) -> usize {
+        // The proof is a fixed base size plus a fixed contribution per action. These constants
+        // are determined by the halo2 action circuit; see the `circuit` module's `round_trip`
+        // test, which cross-checks them against `CircuitCost::proof_size`.
+        const BASE: usize = 2720;
+        const PER_ACTION: usize = 2272;
+        BASE + PER_ACTION * num_actions
     }
 }

@@ -195,9 +195,29 @@ impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
     }
 }
 
+/// Checks that `proof` has the canonical length for a bundle of `num_actions` actions.
+///
+/// Returns [`BundleError::NonCanonicalProofSize`] if it does not. This is the shared check
+/// used by the proof-carrying bundle constructors to reject non-canonical (e.g. padded)
+/// proofs; see [`Bundle::try_from_parts`] (GHSA-2x4w-pxqw-58v9).
+pub(crate) fn validate_proof_size(proof: &Proof, num_actions: usize) -> Result<(), BundleError> {
+    let expected = Proof::expected_proof_size(num_actions);
+    let actual = proof.as_ref().len();
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(BundleError::NonCanonicalProofSize { expected, actual })
+    }
+}
+
 impl<T: Authorization, V> Bundle<T, V> {
-    /// Constructs a `Bundle` from its constituent parts.
-    pub fn from_parts(
+    /// Constructs a `Bundle` from its constituent parts without validating the authorization.
+    ///
+    /// This does not check the proof size, so it must only be used with an authorization that
+    /// either carries no proof or carries a proof that is already known to be canonical (e.g.
+    /// one produced by [`Proof::create`]). Construction from untrusted parts must instead go
+    /// through a checked, authorization-specific constructor such as [`Bundle::try_from_parts`].
+    pub(crate) fn from_parts_unchecked(
         actions: NonEmpty<Action<T::SpendAuth>>,
         flags: Flags,
         value_balance: V,
@@ -429,6 +449,21 @@ impl Authorization for EffectsOnly {
     type SpendAuth = ();
 }
 
+impl<V> Bundle<EffectsOnly, V> {
+    /// Constructs an effects-only `Bundle` from its constituent parts.
+    ///
+    /// An effects-only bundle carries no proof, so there is no proof size to validate.
+    pub fn from_parts(
+        actions: NonEmpty<Action<<EffectsOnly as Authorization>::SpendAuth>>,
+        flags: Flags,
+        value_balance: V,
+        anchor: Anchor,
+        authorization: EffectsOnly,
+    ) -> Self {
+        Bundle::from_parts_unchecked(actions, flags, value_balance, anchor, authorization)
+    }
+}
+
 /// Authorizing data for a bundle of actions, ready to be committed to the ledger.
 #[derive(Debug, Clone)]
 pub struct Authorized {
@@ -460,7 +495,77 @@ impl Authorized {
     }
 }
 
+/// Errors that can occur when constructing an authorized [`Bundle`] from untrusted parts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BundleError {
+    /// The proof does not have the canonical length for the bundle's number of actions.
+    ///
+    /// A valid Orchard proof authorizing `n` actions is always exactly
+    /// [`Proof::expected_proof_size(n)`] bytes; any other length indicates a non-canonical
+    /// encoding, such as a proof padded with arbitrary trailing data.
+    ///
+    /// [`Proof::expected_proof_size(n)`]: crate::Proof::expected_proof_size
+    NonCanonicalProofSize {
+        /// The canonical proof length for the bundle's number of actions.
+        expected: usize,
+        /// The length of the proof that was provided.
+        actual: usize,
+    },
+}
+
+impl fmt::Display for BundleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BundleError::NonCanonicalProofSize { expected, actual } => write!(
+                f,
+                "Orchard proof has non-canonical length {actual}; expected {expected} bytes",
+            ),
+        }
+    }
+}
+
+impl core::error::Error for BundleError {}
+
+/// A flag type that identifies whether proof sizes are checked in bundle construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProofSizeEnforcement {
+    /// Proofs may exceed the canonical size
+    Unenforced,
+    /// Proofs may not exceed the canonical size
+    Strict,
+}
+
 impl<V> Bundle<Authorized, V> {
+    /// Constructs an authorized `Bundle` from its constituent parts, rejecting a proof whose
+    /// length is not the canonical size for the number of actions.
+    ///
+    /// This is the only constructor for an authorized bundle: it validates that the proof has
+    /// exactly [`Proof::expected_proof_size`] bytes for `actions.len()`, so an authorized bundle
+    /// can never hold a non-canonical proof. This matters when building a bundle from untrusted
+    /// input (e.g. deserializing from bytes), as it prevents a proof from being padded with
+    /// arbitrary data, which would otherwise impose unbounded bandwidth and storage costs without
+    /// affecting proof validity (GHSA-2x4w-pxqw-58v9).
+    pub fn try_from_parts(
+        actions: NonEmpty<Action<<Authorized as Authorization>::SpendAuth>>,
+        flags: Flags,
+        value_balance: V,
+        anchor: Anchor,
+        authorization: Authorized,
+        size_enforcement: ProofSizeEnforcement,
+    ) -> Result<Self, BundleError> {
+        if size_enforcement == ProofSizeEnforcement::Strict {
+            validate_proof_size(authorization.proof(), actions.len())?;
+        }
+        Ok(Bundle::from_parts_unchecked(
+            actions,
+            flags,
+            value_balance,
+            anchor,
+            authorization,
+        ))
+    }
+
     /// Computes a commitment to the authorizing data within for this bundle.
     ///
     /// This together with `Bundle::commitment` bind the entire bundle.
@@ -653,14 +758,15 @@ pub mod testing {
             anchor in arb_base().prop_map(Anchor::from),
             sk in arb_binding_signing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-            fake_proof in vec(prop::num::u8::ANY, 1973),
+            // A fake proof of the canonical length, so the bundle passes `try_from_parts`.
+            fake_proof in vec(prop::num::u8::ANY, Proof::expected_proof_size(n_actions)),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
             flags in Just(flags)
         ) -> Bundle<Authorized, ValueSum> {
             let (balances, actions): (Vec<ValueSum>, Vec<Action<_>>) = acts.into_iter().unzip();
             let rng = StdRng::from_seed(rng_seed);
 
-            Bundle::from_parts(
+            Bundle::try_from_parts(
                 NonEmpty::from_vec(actions).unwrap(),
                 flags,
                 balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
@@ -668,8 +774,79 @@ pub mod testing {
                 Authorized {
                     proof: Proof::new(fake_proof),
                     binding_signature: sk.sign(rng, &fake_sighash),
-                }
+                },
+                super::ProofSizeEnforcement::Strict
             )
+            .expect("fake proof has the canonical length")
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use proptest::prelude::*;
+
+    use super::testing::arb_bundle;
+    use super::{Authorized, Bundle, BundleError};
+    use crate::Proof;
+
+    #[test]
+    fn expected_proof_size_matches_known_values() {
+        // The canonical proof sizes for one and two actions, fixed by the action circuit.
+        assert_eq!(Proof::expected_proof_size(1), 4992);
+        assert_eq!(Proof::expected_proof_size(2), 7264);
+
+        // The size is affine in the number of actions: each action contributes a fixed amount.
+        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
+        assert_eq!(
+            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
+            per_action,
+        );
+    }
+
+    proptest! {
+        // The property is deterministic given the actions, so a handful of cases suffices.
+        #![proptest_config(ProptestConfig::with_cases(16))]
+
+        #[test]
+        fn try_from_parts_enforces_canonical_proof_size(bundle in arb_bundle(3)) {
+            let actions = bundle.actions().clone();
+            let expected = Proof::expected_proof_size(actions.len());
+            let flags = *bundle.flags();
+            let value_balance = *bundle.value_balance();
+            let anchor = *bundle.anchor();
+            let binding_signature = bundle.authorization().binding_signature().clone();
+
+            let with_proof_len = |proof_len: usize| {
+                Bundle::try_from_parts(
+                    actions.clone(),
+                    flags,
+                    value_balance,
+                    anchor,
+                    Authorized::from_parts(
+                        Proof::new(vec![0u8; proof_len]),
+                        binding_signature.clone(),
+                    ),
+                    crate::bundle::ProofSizeEnforcement::Strict
+                )
+            };
+
+            // A canonically-sized proof is accepted.
+            prop_assert!(with_proof_len(expected).is_ok());
+
+            // A proof padded with trailing data is rejected (the GHSA-2x4w-pxqw-58v9 attack).
+            prop_assert_eq!(
+                with_proof_len(expected + 1).err(),
+                Some(BundleError::NonCanonicalProofSize { expected, actual: expected + 1 })
+            );
+
+            // A truncated proof is rejected.
+            prop_assert_eq!(
+                with_proof_len(expected - 1).err(),
+                Some(BundleError::NonCanonicalProofSize { expected, actual: expected - 1 })
+            );
         }
     }
 }

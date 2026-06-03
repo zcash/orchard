@@ -690,7 +690,7 @@ mod tests {
     use group::ff::{Field, PrimeField, PrimeFieldBits};
     use halo2_gadgets::{
         ecc::{
-            chip::{EccChip, EccConfig},
+            chip::{CircuitVersion, EccChip, EccConfig},
             ScalarFixed,
         },
         sinsemilla::{
@@ -813,7 +813,7 @@ mod tests {
                 let sinsemilla_chip = SinsemillaChip::construct(sinsemilla_config);
 
                 // Construct an ECC chip
-                let ecc_chip = EccChip::construct(ecc_config);
+                let ecc_chip = EccChip::construct(ecc_config, CircuitVersion::AnchoredBase);
 
                 let commit_ivk_chip = CommitIvkChip::construct(commit_ivk_config.clone());
 

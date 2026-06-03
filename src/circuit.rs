@@ -45,7 +45,8 @@ use crate::{
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
-        FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort, ScalarVar,
+        CircuitVersion, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort,
+        ScalarVar,
     },
     poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
     sinsemilla::{
@@ -104,7 +105,48 @@ pub struct Config {
     new_note_commit_config: NoteCommitConfig,
 }
 
+/// Selects which version of the Orchard Action circuit to build.
+///
+/// The two versions produce different verifying keys: the fixed circuit anchors the
+/// variable-base scalar-multiplication base (see `halo2_gadgets`), the pre-NU6.2 one does
+/// not. [`FixedPostNu6_2`] is used for all proving and current verification;
+/// [`InsecurePreNu6_2`] reconstructs the historical (NU5..NU6.2) verifying key solely to
+/// verify proofs produced before NU6.2.
+///
+/// This is a runtime value rather than a type parameter: it is carried in [`Circuit`] and
+/// chosen when building a [`ProvingKey`] or [`VerifyingKey`], so the circuit version can be
+/// threaded dynamically (e.g. across an FFI boundary).
+///
+/// [`FixedPostNu6_2`]: OrchardCircuitVersion::FixedPostNu6_2
+/// [`InsecurePreNu6_2`]: OrchardCircuitVersion::InsecurePreNu6_2
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OrchardCircuitVersion {
+    /// The insecure pre-NU6.2 circuit, in which the variable-base scalar-multiplication base
+    /// is not anchored to the real base. For reconstructing the historical (NU5..NU6.2)
+    /// verifying key only — never for proving or current verification.
+    InsecurePreNu6_2,
+    /// The fixed circuit, active from NU6.2 onward. Used for all proving and current
+    /// verification.
+    #[default]
+    FixedPostNu6_2,
+}
+
+impl OrchardCircuitVersion {
+    /// The corresponding `halo2_gadgets` variable-base scalar-mul circuit version.
+    fn halo2_version(self) -> CircuitVersion {
+        match self {
+            OrchardCircuitVersion::InsecurePreNu6_2 => CircuitVersion::InsecureUnanchoredBase,
+            OrchardCircuitVersion::FixedPostNu6_2 => CircuitVersion::AnchoredBase,
+        }
+    }
+}
+
 /// The Orchard Action circuit.
+///
+/// The `circuit_version` field selects which circuit to build; it defaults to
+/// [`OrchardCircuitVersion::FixedPostNu6_2`], so a default `Circuit` is the current (fixed)
+/// circuit. [`OrchardCircuitVersion::InsecurePreNu6_2`] exists only to rebuild the historical
+/// verifying key.
 #[derive(Clone, Debug, Default)]
 pub struct Circuit {
     pub(crate) path: Value<[MerkleHashOrchard; MERKLE_DEPTH_ORCHARD]>,
@@ -126,6 +168,7 @@ pub struct Circuit {
     pub(crate) psi_new: Value<pallas::Base>,
     pub(crate) rcm_new: Value<NoteCommitTrapdoor>,
     pub(crate) rcv: Value<ValueCommitTrapdoor>,
+    pub(crate) circuit_version: OrchardCircuitVersion,
 }
 
 impl Circuit {
@@ -133,7 +176,8 @@ impl Circuit {
     /// If you are not creating a custom builder, use [`Builder`] to compose
     /// and authorize a transaction.
     ///
-    /// Constructs a `Circuit` from the following components:
+    /// Constructs a `Circuit` for the current (fixed) circuit version from the following
+    /// components:
     /// - `spend`: [`SpendInfo`] of the note spent in scope of the action
     /// - `output_note`: a note created in scope of the action
     /// - `alpha`: a scalar used for randomization of the action spend validating key
@@ -150,8 +194,29 @@ impl Circuit {
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
     ) -> Option<Circuit> {
-        (Rho::from_nf_old(spend.note.nullifier(&spend.fvk)) == output_note.rho())
-            .then(|| Self::from_action_context_unchecked(spend, output_note, alpha, rcv))
+        Self::from_action_context_for_version(
+            spend,
+            output_note,
+            alpha,
+            rcv,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        )
+    }
+
+    /// Like [`Circuit::from_action_context`], but builds the circuit for the given
+    /// `circuit_version`. Only [`OrchardCircuitVersion::FixedPostNu6_2`] should be used for
+    /// proving; [`OrchardCircuitVersion::InsecurePreNu6_2`] exists to reconstruct historical
+    /// proofs (e.g. for testing that pre-NU6.2 proofs still verify).
+    pub fn from_action_context_for_version(
+        spend: SpendInfo,
+        output_note: Note,
+        alpha: pallas::Scalar,
+        rcv: ValueCommitTrapdoor,
+        circuit_version: OrchardCircuitVersion,
+    ) -> Option<Circuit> {
+        (Rho::from_nf_old(spend.note.nullifier(&spend.fvk)) == output_note.rho()).then(|| {
+            Self::from_action_context_unchecked(spend, output_note, alpha, rcv, circuit_version)
+        })
     }
 
     pub(crate) fn from_action_context_unchecked(
@@ -159,6 +224,7 @@ impl Circuit {
         output_note: Note,
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
+        circuit_version: OrchardCircuitVersion,
     ) -> Circuit {
         let sender_address = spend.note.recipient();
         let rho_old = spend.note.rho();
@@ -189,6 +255,7 @@ impl Circuit {
             psi_new: Value::known(psi_new),
             rcm_new: Value::known(rcm_new),
             rcv: Value::known(rcv),
+            circuit_version,
         }
     }
 }
@@ -400,7 +467,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         SinsemillaChip::load(config.sinsemilla_config_1.clone(), &mut layouter)?;
 
         // Construct the ECC chip.
-        let ecc_chip = config.ecc_chip();
+        let ecc_chip = config.ecc_chip(self.circuit_version.halo2_version());
 
         // Witness private inputs that are used across multiple checks.
         let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new) = {
@@ -636,7 +703,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_1(),
-                config.ecc_chip(),
+                config.ecc_chip(self.circuit_version.halo2_version()),
                 config.note_commit_chip_old(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
@@ -694,7 +761,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_2(),
-                config.ecc_chip(),
+                config.ecc_chip(self.circuit_version.halo2_version()),
                 config.note_commit_chip_new(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
@@ -763,6 +830,10 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 }
 
 /// The verifying key for the Orchard Action circuit.
+///
+/// Build with [`VerifyingKey::build`] for the current (fixed) circuit, or
+/// [`VerifyingKey::build_for_version`] to reconstruct the historical verifying key. The key
+/// verifies only proofs created for the same circuit version.
 #[derive(Debug)]
 pub struct VerifyingKey {
     pub(crate) params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
@@ -770,10 +841,18 @@ pub struct VerifyingKey {
 }
 
 impl VerifyingKey {
-    /// Builds the verifying key.
+    /// Builds the verifying key for the current (fixed, NU6.2-onward) circuit.
     pub fn build() -> Self {
+        Self::build_for_version(OrchardCircuitVersion::FixedPostNu6_2)
+    }
+
+    /// Builds the verifying key for the given circuit version.
+    pub fn build_for_version(circuit_version: OrchardCircuitVersion) -> Self {
         let params = halo2_proofs::poly::commitment::Params::new(K);
-        let circuit: Circuit = Default::default();
+        let circuit = Circuit {
+            circuit_version,
+            ..Default::default()
+        };
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
 
@@ -782,22 +861,47 @@ impl VerifyingKey {
 }
 
 /// The proving key for the Orchard Action circuit.
+///
+/// Build with [`ProvingKey::build`] for the current (fixed) circuit. The resulting proofs
+/// verify only under a [`VerifyingKey`] for the same circuit version.
 #[derive(Debug)]
 pub struct ProvingKey {
     params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     pk: plonk::ProvingKey<vesta::Affine>,
+    circuit_version: OrchardCircuitVersion,
 }
 
 impl ProvingKey {
-    /// Builds the proving key.
+    /// Builds the proving key for the current (fixed, NU6.2-onward) circuit.
     pub fn build() -> Self {
+        Self::build_for_version(OrchardCircuitVersion::FixedPostNu6_2)
+    }
+
+    /// Builds the proving key for the given circuit version.
+    ///
+    /// Only [`OrchardCircuitVersion::FixedPostNu6_2`] should be used to prove transactions for
+    /// the network; [`OrchardCircuitVersion::InsecurePreNu6_2`] exists only to reproduce
+    /// historical proofs (e.g. for testing that pre-NU6.2 proofs still verify).
+    pub fn build_for_version(circuit_version: OrchardCircuitVersion) -> Self {
         let params = halo2_proofs::poly::commitment::Params::new(K);
-        let circuit: Circuit = Default::default();
+        let circuit = Circuit {
+            circuit_version,
+            ..Default::default()
+        };
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
         let pk = plonk::keygen_pk(&params, vk, &circuit).unwrap();
 
-        ProvingKey { params, pk }
+        ProvingKey {
+            params,
+            pk,
+            circuit_version,
+        }
+    }
+
+    /// The circuit version this proving key produces proofs for.
+    pub fn circuit_version(&self) -> OrchardCircuitVersion {
+        self.circuit_version
     }
 }
 
@@ -916,12 +1020,23 @@ impl Instance {
 
 impl Proof {
     /// Creates a proof for the given circuits and instances.
+    ///
+    /// The resulting proof verifies only under a [`VerifyingKey`] for the same circuit version
+    /// (see [`OrchardCircuitVersion`]). Returns an error if any circuit's version does not match
+    /// `pk`'s version, since `pk` could not produce a valid proof for it.
     pub fn create(
         pk: &ProvingKey,
         circuits: &[Circuit],
         instances: &[Instance],
         mut rng: impl RngCore,
     ) -> Result<Self, plonk::Error> {
+        if circuits
+            .iter()
+            .any(|c| c.circuit_version != pk.circuit_version)
+        {
+            return Err(plonk::Error::Synthesis);
+        }
+
         let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
         let instances: Vec<Vec<_>> = instances
             .iter()
@@ -986,7 +1101,7 @@ mod tests {
     use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
-    use super::{Circuit, Instance, Proof, ProvingKey, VerifyingKey, K};
+    use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
         keys::SpendValidatingKey,
         note::{Note, Rho},
@@ -994,7 +1109,10 @@ mod tests {
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
 
-    fn generate_circuit_instance<R: RngCore>(mut rng: R) -> (Circuit, Instance) {
+    fn generate_circuit_instance<R: RngCore>(
+        mut rng: R,
+        circuit_version: OrchardCircuitVersion,
+    ) -> (Circuit, Instance) {
         let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
 
         let sender_address = spent_note.recipient();
@@ -1018,6 +1136,7 @@ mod tests {
 
         (
             Circuit {
+                circuit_version,
                 path: Value::known(path.auth_path()),
                 pos: Value::known(path.position()),
                 g_d_old: Value::known(sender_address.g_d()),
@@ -1050,25 +1169,84 @@ mod tests {
         )
     }
 
+    fn write_test_case<W: std::io::Write>(
+        mut w: W,
+        instance: &Instance,
+        proof: &Proof,
+    ) -> std::io::Result<()> {
+        w.write_all(&instance.anchor().to_bytes())?;
+        w.write_all(&instance.cv_net().to_bytes())?;
+        w.write_all(&instance.nf_old().to_bytes())?;
+        w.write_all(&<[u8; 32]>::from(instance.rk()))?;
+        w.write_all(&instance.cmx().to_bytes())?;
+        w.write_all(&[
+            u8::from(instance.enable_spend()),
+            u8::from(instance.enable_output()),
+        ])?;
+        w.write_all(proof.as_ref())?;
+        Ok(())
+    }
+
+    fn read_test_case<R: std::io::Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
+        let read_32_bytes = |r: &mut R| {
+            let mut ret = [0u8; 32];
+            r.read_exact(&mut ret).unwrap();
+            ret
+        };
+        let read_bool = |r: &mut R| {
+            let mut byte = [0u8; 1];
+            r.read_exact(&mut byte).unwrap();
+            match byte {
+                [0] => false,
+                [1] => true,
+                _ => panic!("Unexpected non-boolean byte"),
+            }
+        };
+
+        let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
+        let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let rk = read_32_bytes(&mut r).try_into().unwrap();
+        let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let enable_spend = read_bool(&mut r);
+        let enable_output = read_bool(&mut r);
+        let instance =
+            Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output)
+                .expect("test vectors were generated with non-identity rk");
+
+        let mut proof_bytes = vec![];
+        r.read_to_end(&mut proof_bytes)?;
+        let proof = Proof::new(proof_bytes);
+
+        Ok((instance, proof))
+    }
+
     // TODO: recast as a proptest
     #[test]
     fn round_trip() {
         let mut rng = OsRng;
 
         let (circuits, instances): (Vec<_>, Vec<_>) = iter::once(())
-            .map(|()| generate_circuit_instance(&mut rng))
+            .map(|()| generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2))
             .unzip();
 
         let vk = VerifyingKey::build();
 
-        // Test that the pinned verification key (representing the circuit)
-        // is as expected.
+        // Test that the pinned verification key (representing the circuit) is as expected.
+        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate it (and the proof below).
         {
-            // panic!("{:#?}", vk.vk.pinned());
-            assert_eq!(
-                format!("{:#?}\n", vk.vk.pinned()),
-                include_str!("circuit_description").replace("\r\n", "\n")
-            );
+            if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+                std::fs::write(
+                    "src/circuit_data/circuit_description_fixed",
+                    format!("{:#?}\n", vk.vk.pinned()),
+                )
+                .expect("should be able to write new circuit description");
+            } else {
+                assert_eq!(
+                    format!("{:#?}\n", vk.vk.pinned()),
+                    include_str!("circuit_data/circuit_description_fixed").replace("\r\n", "\n")
+                );
+            }
         }
 
         // Test that the proof size is as expected.
@@ -1080,6 +1258,14 @@ mod tests {
                 );
             assert_eq!(usize::from(circuit_cost.proof_size(1)), 4992);
             assert_eq!(usize::from(circuit_cost.proof_size(2)), 7264);
+            // The constants in `Proof::expected_proof_size` must track the circuit's actual
+            // proof size; this guards them against drift if the circuit ever changes.
+            assert_eq!(Proof::expected_proof_size(1), 4992);
+            assert_eq!(Proof::expected_proof_size(2), 7264);
+            assert_eq!(
+                Proof::expected_proof_size(instances.len()),
+                usize::from(circuit_cost.proof_size(instances.len())),
+            );
             usize::from(circuit_cost.proof_size(instances.len()))
         };
 
@@ -1106,89 +1292,120 @@ mod tests {
         assert_eq!(proof.0.len(), expected_proof_size);
     }
 
+    // Proves with the proving key for `proving_version` and checks that the proof verifies
+    // under the verifying key for the same version, but not under the verifying key for
+    // `other_version`. The two circuit versions have different verifying keys, so a proof is
+    // bound to the version it was created with.
+    fn proof_is_bound_to_circuit_version(
+        proving_version: OrchardCircuitVersion,
+        other_version: OrchardCircuitVersion,
+    ) {
+        let mut rng = OsRng;
+
+        let (circuit, instance) = generate_circuit_instance(&mut rng, proving_version);
+        let instances = core::slice::from_ref(&instance);
+
+        let pk = ProvingKey::build_for_version(proving_version);
+        let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
+
+        // Verifies under the matching version's verifying key.
+        let vk_matching = VerifyingKey::build_for_version(proving_version);
+        assert!(proof.verify(&vk_matching, instances).is_ok());
+
+        // Does not verify under the other version's verifying key.
+        let vk_other = VerifyingKey::build_for_version(other_version);
+        assert!(proof.verify(&vk_other, instances).is_err());
+    }
+
+    #[test]
+    fn proof_verifies_against_matching_circuit_version() {
+        // Each prover's proof verifies under its own verifying key, and is rejected by the
+        // other version's verifying key.
+        proof_is_bound_to_circuit_version(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::InsecurePreNu6_2,
+        );
+        proof_is_bound_to_circuit_version(
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        );
+    }
+
+    // Proving a circuit with a proving key for a different circuit version is a misuse: the
+    // proving key and circuits must agree (see `Proof::create`). Confirm `create` rejects it
+    // with `plonk::Error::Synthesis` rather than emitting an unverifiable proof.
+    #[test]
+    fn create_rejects_mismatched_proving_key_version() {
+        let mut rng = OsRng;
+
+        // Circuits for the insecure version, but proved with the fixed proving key.
+        let (circuit, instance) =
+            generate_circuit_instance(&mut rng, OrchardCircuitVersion::InsecurePreNu6_2);
+        let instances = core::slice::from_ref(&instance);
+
+        let mismatched_pk = ProvingKey::build_for_version(OrchardCircuitVersion::FixedPostNu6_2);
+
+        assert!(matches!(
+            Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
+            Err(super::plonk::Error::Synthesis),
+        ));
+    }
+
     #[test]
     fn serialized_proof_test_case() {
-        use std::io::{Read, Write};
-
         let vk = VerifyingKey::build();
-
-        fn write_test_case<W: Write>(
-            mut w: W,
-            instance: &Instance,
-            proof: &Proof,
-        ) -> std::io::Result<()> {
-            w.write_all(&instance.anchor().to_bytes())?;
-            w.write_all(&instance.cv_net().to_bytes())?;
-            w.write_all(&instance.nf_old().to_bytes())?;
-            w.write_all(&<[u8; 32]>::from(instance.rk()))?;
-            w.write_all(&instance.cmx().to_bytes())?;
-            w.write_all(&[
-                u8::from(instance.enable_spend()),
-                u8::from(instance.enable_output()),
-            ])?;
-            w.write_all(proof.as_ref())?;
-            Ok(())
-        }
-
-        fn read_test_case<R: Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
-            let read_32_bytes = |r: &mut R| {
-                let mut ret = [0u8; 32];
-                r.read_exact(&mut ret).unwrap();
-                ret
-            };
-            let read_bool = |r: &mut R| {
-                let mut byte = [0u8; 1];
-                r.read_exact(&mut byte).unwrap();
-                match byte {
-                    [0] => false,
-                    [1] => true,
-                    _ => panic!("Unexpected non-boolean byte"),
-                }
-            };
-
-            let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
-            let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let rk = read_32_bytes(&mut r).try_into().unwrap();
-            let cmx =
-                crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let enable_spend = read_bool(&mut r);
-            let enable_output = read_bool(&mut r);
-            let instance =
-                Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output)
-                    .expect("test vectors were generated with non-identity rk");
-
-            let mut proof_bytes = vec![];
-            r.read_to_end(&mut proof_bytes)?;
-            let proof = Proof::new(proof_bytes);
-
-            Ok((instance, proof))
-        }
 
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
             let create_proof = || -> std::io::Result<()> {
                 let mut rng = OsRng;
 
-                let (circuit, instance) = generate_circuit_instance(OsRng);
+                let (circuit, instance) =
+                    generate_circuit_instance(OsRng, OrchardCircuitVersion::FixedPostNu6_2);
                 let instances = core::slice::from_ref(&instance);
 
                 let pk = ProvingKey::build();
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
-                let file = std::fs::File::create("circuit_proof_test_case.bin")?;
+                let file =
+                    std::fs::File::create("src/circuit_data/circuit_proof_test_case_fixed.bin")?;
                 write_test_case(file, &instance, &proof)
             };
             create_proof().expect("should be able to write new proof");
+            // Regeneration only writes the fixture; the non-generate run below embeds and
+            // verifies it.
+            return;
         }
 
         // Parse the hardcoded proof test case.
         let (instance, proof) = {
-            let test_case_bytes = include_bytes!("circuit_proof_test_case.bin");
+            let test_case_bytes = include_bytes!("circuit_data/circuit_proof_test_case_fixed.bin");
             read_test_case(&test_case_bytes[..]).expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
 
+        assert!(proof.verify(&vk, &[instance]).is_ok());
+    }
+
+    // The deployed (NU5..NU6.2) verifying key and a pre-fix proof. `InsecurePreNu6_2`
+    // reconstructs the historical circuit, so this checks that the deployed verifying key is
+    // reproduced exactly and that the old proof still verifies under it — the guarantee that
+    // lets a node sync from before the fix. These fixtures are frozen as the canonical
+    // pre-NU6.2 verifying key and a sample proof, so they are never regenerated.
+    #[test]
+    fn insecure_against_stored_circuit() {
+        let vk = VerifyingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
+        assert_eq!(
+            format!("{:#?}\n", vk.vk.pinned()),
+            include_str!("circuit_data/circuit_description_insecure").replace("\r\n", "\n")
+        );
+
+        let (instance, proof) = {
+            let test_case_bytes =
+                include_bytes!("circuit_data/circuit_proof_test_case_insecure.bin");
+            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
+        };
+        assert_eq!(proof.0.len(), 4992);
         assert!(proof.verify(&vk, &[instance]).is_ok());
     }
 
@@ -1203,7 +1420,7 @@ mod tests {
             .titled("Orchard Action Circuit", ("sans-serif", 60))
             .unwrap();
 
-        let circuit = Circuit {
+        let circuit: Circuit = Circuit {
             path: Value::unknown(),
             pos: Value::unknown(),
             g_d_old: Value::unknown(),
@@ -1223,6 +1440,7 @@ mod tests {
             psi_new: Value::unknown(),
             rcm_new: Value::unknown(),
             rcv: Value::unknown(),
+            circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
         };
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
@@ -1262,7 +1480,7 @@ mod tests {
         }
 
         fn non_identity_rk() -> redpallas::VerificationKey<SpendAuth> {
-            let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr().into();
+            let ask_bytes: [u8; 32] = pallas::Scalar::ONE.to_repr();
             let ask = redpallas::SigningKey::<SpendAuth>::try_from(ask_bytes)
                 .expect("1 is a valid scalar");
             (&ask).into()

@@ -953,9 +953,9 @@ dependencies = [
 
 [[package]]
 name = "halo2_gadgets"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45824ce0dd12e91ec0c68ebae2a7ed8ae19b70946624c849add59f1d1a62a143"
+checksum = "fb2a697cad929f706b7987fe804ad57d43622cd37463ba7e4d662a926fdcfea3"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -1432,7 +1432,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orchard"
-version = "0.13.1"
+version = "0.14.0"
 dependencies = [
  "aes",
  "bitvec",

@@ -10,8 +10,8 @@ use crate::constants::{
 };
 use halo2_gadgets::{
     ecc::{
-        chip::EccChip, EccInstructions, FixedPoint, FixedPointBaseField, FixedPointShort, Point,
-        ScalarFixed, ScalarFixedShort, X,
+        chip::EccChip, CircuitVersion, EccInstructions, FixedPoint, FixedPointBaseField,
+        FixedPointShort, Point, ScalarFixed, ScalarFixedShort, X,
     },
     poseidon::{
         primitives::{self as poseidon, ConstantLength},
@@ -39,8 +39,8 @@ impl super::Config {
         CommitIvkChip::construct(self.commit_ivk_config.clone())
     }
 
-    pub(super) fn ecc_chip(&self) -> EccChip<OrchardFixedBases> {
-        EccChip::construct(self.ecc_config.clone())
+    pub(super) fn ecc_chip(&self, circuit_version: CircuitVersion) -> EccChip<OrchardFixedBases> {
+        EccChip::construct(self.ecc_config.clone(), circuit_version)
     }
 
     pub(super) fn sinsemilla_chip_1(
