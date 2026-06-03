@@ -110,11 +110,3 @@ debug = true
 
 [profile.bench]
 debug = true
-
-[patch.crates-io]
-# No released halo2_gadgets contains the variable-base scalar-mul base-anchoring fix yet, so
-# pin the fix commit. Drop this patch once a fixed release is available.
-halo2_gadgets = { package = "halo2_gadgets", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "d751768afe0d2105b349dd93f73fde7f2eade088" }
-halo2_proofs = { package = "halo2_proofs", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "d751768afe0d2105b349dd93f73fde7f2eade088" }
-poseidon = { package = "halo2_poseidon", git = "https://github.com/zodl-inc/halo2-security-fixes.git", rev = "d751768afe0d2105b349dd93f73fde7f2eade088" }
-
