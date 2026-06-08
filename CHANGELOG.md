@@ -45,6 +45,25 @@ and this project adheres to Rust's notion of
   for, so a caller can select a matching `ProvingKey` without tracking it
   separately.
 
+### Added
+- `orchard::NoteVersion`, which identifies the Orchard note plaintext version
+  used to derive a note commitment.
+- `orchard::NoteVersion::DEFAULT`, the note version produced by constructors
+  that do not take an explicit note version.
+- Version-aware note and builder APIs:
+  - `orchard::Note::from_parts_with_version`
+  - `orchard::Note::version`
+  - `orchard::builder::OutputInfo::new_with_version`
+  - `orchard::builder::Builder::add_output_with_version`
+- `orchard::pczt::Output::note_version`, exposed via the existing PCZT output
+  getter pattern, so PCZT verifiers and provers can reconstruct output note
+  commitments with the intended note plaintext version.
+- `orchard::pczt::Spend::note_version`, exposed via the existing PCZT spend
+  getter pattern, so PCZT verifiers and provers can reconstruct spent note
+  commitments with the intended note plaintext version.
+- `orchard::builder::BundleProtocol`, which selects whether bundle
+  construction follows the non-QR Orchard rules or the QR Ironwood rules.
+
 ### Changed
 - Updated to `halo2_gadgets 0.5.0`
 - `orchard::action::Action::from_parts` now returns
@@ -53,6 +72,25 @@ and this project adheres to Rust's notion of
   `NonCanonicalProofSize`. The Transaction Extractor role now rejects a PCZT
   whose `zkproof` is not the canonical size for its number of actions
   (GHSA-2x4w-pxqw-58v9).
+- `orchard::builder::Builder::new` now takes an
+  `orchard::builder::BundleProtocol` argument. Pass
+  `BundleProtocol::Orchard` to preserve existing non-QR behavior, or
+  `BundleProtocol::Ironwood` for QR-only bundle construction.
+- `orchard::builder::OutputInfo::new` now takes an
+  `orchard::builder::BundleProtocol` argument and chooses the output note
+  version from that protocol.
+- `orchard::builder::bundle` now takes an
+  `orchard::builder::BundleProtocol` argument and rejects notes whose version
+  is not supported by that protocol.
+- `orchard::builder::BuildError`, `orchard::builder::SpendError`, and
+  `orchard::builder::OutputError` have added variant
+  `UnsupportedNoteVersion`.
+- `orchard::pczt::Output::parse` now takes an `orchard::NoteVersion` argument.
+  This is used by `orchard::pczt::Output::verify_note_commitment` and
+  `orchard::pczt::Bundle::create_proof` when reconstructing output notes.
+- `orchard::pczt::Spend::parse` now takes an `orchard::NoteVersion` argument.
+  This is used by `orchard::pczt::Spend::verify_nullifier` and
+  `orchard::pczt::Bundle::create_proof` when reconstructing spent notes.
 - `unstable-voting-circuits`-only:
   - `orchard::constants::OrchardFixedBases` is now a unit struct rather than a
     3-variant enum. It is a trait carrier for the halo2_gadgets `FixedPoints`

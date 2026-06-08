@@ -2,7 +2,7 @@
 
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
-    builder::{Builder, BundleType},
+    builder::{Builder, BundleProtocol, BundleType},
     bundle::{Authorized, Flags},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -45,6 +45,7 @@ fn bundle_chain() {
         let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
         let mut builder = Builder::new(
+            BundleProtocol::Orchard,
             BundleType::Transactional {
                 flags: Flags::SPENDS_DISABLED,
                 bundle_required: false,
@@ -111,7 +112,7 @@ fn bundle_chain() {
             .unwrap();
         assert_eq!(root, merkle_path.root(MerkleHashOrchard::from_cmx(&cmx)));
 
-        let mut builder = Builder::new(BundleType::DEFAULT, root.into());
+        let mut builder = Builder::new(BundleProtocol::Orchard, BundleType::DEFAULT, root.into());
         assert_eq!(builder.add_spend(fvk, note, merkle_path.into()), Ok(()));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
@@ -145,6 +146,7 @@ fn builder_builds_for_insecure_circuit_version() {
 
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
     let mut builder = Builder::new_for_version(
+        BundleProtocol::Orchard,
         BundleType::Transactional {
             flags: Flags::SPENDS_DISABLED,
             bundle_required: false,
