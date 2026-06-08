@@ -61,6 +61,8 @@ and this project adheres to Rust's notion of
 - `orchard::pczt::Spend::note_version`, exposed via the existing PCZT spend
   getter pattern, so PCZT verifiers and provers can reconstruct spent note
   commitments with the intended note plaintext version.
+- `orchard::builder::BundleProtocol`, which selects whether bundle
+  construction follows the non-QR Orchard rules or the QR Ironwood rules.
 
 ### Changed
 - Updated to `halo2_gadgets 0.5.0`
@@ -70,6 +72,19 @@ and this project adheres to Rust's notion of
   `NonCanonicalProofSize`. The Transaction Extractor role now rejects a PCZT
   whose `zkproof` is not the canonical size for its number of actions
   (GHSA-2x4w-pxqw-58v9).
+- `orchard::builder::Builder::new` now takes an
+  `orchard::builder::BundleProtocol` argument. Pass
+  `BundleProtocol::Orchard` to preserve existing non-QR behavior, or
+  `BundleProtocol::Ironwood` for QR-only bundle construction.
+- `orchard::builder::OutputInfo::new` now takes an
+  `orchard::builder::BundleProtocol` argument and chooses the output note
+  version from that protocol.
+- `orchard::builder::bundle` now takes an
+  `orchard::builder::BundleProtocol` argument and rejects notes whose version
+  is not supported by that protocol.
+- `orchard::builder::BuildError`, `orchard::builder::SpendError`, and
+  `orchard::builder::OutputError` have added variant
+  `UnsupportedNoteVersion`.
 - `orchard::pczt::Output::parse` now takes an `orchard::NoteVersion` argument.
   This is used by `orchard::pczt::Output::verify_note_commitment` and
   `orchard::pczt::Bundle::create_proof` when reconstructing output notes.

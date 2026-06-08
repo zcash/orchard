@@ -38,6 +38,8 @@ pub enum NoteVersion {
     /// The quantum-recoverable Orchard note plaintext version defined in
     /// [ZIP 2005].
     ///
+    /// Ironwood bundle creators use this note plaintext lead byte.
+    ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
     V3,
 }
@@ -46,8 +48,11 @@ impl NoteVersion {
     /// The note version produced by constructors that do not take an explicit
     /// [`NoteVersion`].
     ///
-    /// This is planned to be updated to [`Self::V3`] once V3 parsing is
-    /// sufficiently integrated into wallets.
+    /// This remains [`Self::V2`] for compatibility with note-local default
+    /// constructors. Bundle construction uses [`BundleProtocol`] to select the
+    /// note version for Orchard or Ironwood.
+    ///
+    /// [`BundleProtocol`]: crate::builder::BundleProtocol
     pub const DEFAULT: Self = Self::V2;
 
     /// Returns the note plaintext lead byte signaling this version.

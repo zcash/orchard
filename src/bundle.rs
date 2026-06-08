@@ -140,7 +140,6 @@ impl Flags {
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8) -> Option<Self> {
-        // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
         if value & FLAGS_EXPECTED_UNSET == 0 {
             Some(Self {
                 spends_enabled: value & FLAG_SPENDS_ENABLED != 0,

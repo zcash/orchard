@@ -59,8 +59,8 @@ where
 {
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
-    // Check note plaintext version; accept both original and
-    // quantum-recoverable versions.
+    // Check note plaintext version; accept both Orchard notes and Ironwood
+    // quantum-recoverable notes.
     let note_version = NoteVersion::from_lead_byte(plaintext[0])?;
 
     // The unwraps below are guaranteed to succeed by the assertion above

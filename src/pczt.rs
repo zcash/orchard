@@ -354,7 +354,7 @@ mod tests {
     use shardtree::{store::memory::MemoryShardStore, ShardTree};
 
     use crate::{
-        builder::{Builder, BundleType},
+        builder::{Builder, BundleProtocol, BundleType, OutputError},
         circuit::{ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -374,6 +374,7 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
+            BundleProtocol::Orchard,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
@@ -403,6 +404,7 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
+            BundleProtocol::Orchard,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
@@ -438,18 +440,36 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let mut builder = Builder::new(
-            BundleType::DEFAULT,
-            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
-        builder
-            .add_output_with_version(
+        let anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+        let mut orchard_builder =
+            Builder::new(BundleProtocol::Orchard, BundleType::DEFAULT, anchor);
+        assert_eq!(
+            orchard_builder.add_output_with_version(
                 None,
                 recipient,
                 NoteValue::from_raw(5000),
                 [0u8; 512],
                 NoteVersion::V3,
-            )
+            ),
+            Err(OutputError::UnsupportedNoteVersion)
+        );
+
+        let mut ironwood_builder =
+            Builder::new(BundleProtocol::Ironwood, BundleType::DEFAULT, anchor);
+        assert_eq!(
+            ironwood_builder.add_output_with_version(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                [0u8; 512],
+                NoteVersion::V2,
+            ),
+            Err(OutputError::UnsupportedNoteVersion)
+        );
+
+        let mut builder = Builder::new(BundleProtocol::Ironwood, BundleType::DEFAULT, anchor);
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
         let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
         let output_action_index = bundle_meta.output_action_index(0).unwrap();
@@ -459,17 +479,18 @@ mod tests {
         action
             .output
             .verify_note_commitment(&action.spend)
-            .expect("V3 output version verifies the QR note commitment");
+            .expect("Ironwood QR output version verifies the note commitment");
 
         let sighash = [0; 32];
         pczt_bundle.finalize_io(sighash, &mut rng).unwrap();
         pczt_bundle
             .create_proof(&pk, &mut rng)
-            .expect("V3 output version reconstructs the QR note for proving");
+            .expect("Ironwood QR output version reconstructs the note for proving");
 
         // Try mutating the note version and verify the proof fails.
         // Show that verifying the note commitment by the caller would fail.
-        // Also show that taking the V3 proof, and veifying it against the V2 note commitment would fail.
+        // Also show that taking the Ironwood QR proof, and verifying it
+        // against the Orchard note commitment would fail.
         let action = &mut pczt_bundle.actions_mut()[output_action_index];
         action.output.note_version = NoteVersion::V2;
         assert!(matches!(
@@ -536,7 +557,7 @@ mod tests {
             (root.into(), merkle_path)
         };
 
-        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(BundleProtocol::Ironwood, BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -551,12 +572,12 @@ mod tests {
         action
             .spend
             .verify_nullifier(None)
-            .expect("V3 spend version verifies the QR note nullifier");
+            .expect("Ironwood QR spend version verifies the note nullifier");
 
         pczt_bundle.finalize_io([0; 32], &mut rng).unwrap();
         pczt_bundle
             .create_proof(&pk, &mut rng)
-            .expect("V3 spend version reconstructs the QR note for proving");
+            .expect("Ironwood QR spend version reconstructs the note for proving");
 
         let action = &mut pczt_bundle.actions_mut()[spend_action_index];
         action.spend.note_version = NoteVersion::V2;
@@ -623,7 +644,7 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(BundleProtocol::Orchard, BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();

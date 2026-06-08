@@ -35,6 +35,31 @@ use {
 
 const MIN_ACTIONS: usize = 2;
 
+/// The shielded protocol rules used when constructing an Orchard bundle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BundleProtocol {
+    /// The pre-Ironwood Orchard protocol, which uses non-QR notes.
+    Orchard,
+    /// The Ironwood protocol, which uses quantum-recoverable notes.
+    Ironwood,
+}
+
+impl BundleProtocol {
+    fn default_output_note_version(self) -> NoteVersion {
+        match self {
+            Self::Orchard => NoteVersion::V2,
+            Self::Ironwood => NoteVersion::V3,
+        }
+    }
+
+    fn permits_note_version(self, note_version: NoteVersion) -> bool {
+        match self {
+            Self::Orchard => note_version == NoteVersion::V2,
+            Self::Ironwood => note_version == NoteVersion::V3,
+        }
+    }
+}
+
 /// An enumeration of rules for Orchard bundle construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BundleType {
@@ -127,6 +152,8 @@ pub enum BuildError {
     AnchorMismatch,
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
+    /// The note version is not supported by the selected protocol.
+    UnsupportedNoteVersion,
     /// An error occurred in the process of producing a proof for a bundle.
     #[cfg(feature = "circuit")]
     Proof(halo2_proofs::plonk::Error),
@@ -147,6 +174,9 @@ impl fmt::Display for BuildError {
         use BuildError::*;
         match self {
             MissingSignatures => f.write_str("Required signatures were missing during build"),
+            UnsupportedNoteVersion => {
+                f.write_str("The note version is not supported by the selected protocol")
+            }
             #[cfg(feature = "circuit")]
             Proof(e) => f.write_str(&format!("Could not create proof: {}", e)),
             ValueSum(_) => f.write_str("Overflow occurred during value construction"),
@@ -186,6 +216,8 @@ impl From<value::BalanceError> for BuildError {
 pub enum SpendError {
     /// Spends aren't enabled for this builder.
     SpendsDisabled,
+    /// The note version is not supported by this builder's protocol.
+    UnsupportedNoteVersion,
     /// The anchor provided to this builder doesn't match the merkle path used to add a spend.
     AnchorMismatch,
     /// The full viewing key provided didn't match the note provided
@@ -197,6 +229,9 @@ impl fmt::Display for SpendError {
         use SpendError::*;
         f.write_str(match self {
             SpendsDisabled => "Spends are not enabled for this builder",
+            UnsupportedNoteVersion => {
+                "The note version is not supported by this builder's protocol"
+            }
             AnchorMismatch => "All anchors must be equal.",
             FvkMismatch => "FullViewingKey does not correspond to the given note",
         })
@@ -212,6 +247,8 @@ impl std::error::Error for SpendError {}
 pub enum OutputError {
     /// Outputs aren't enabled for this builder.
     OutputsDisabled,
+    /// The note version is not supported by this builder's protocol.
+    UnsupportedNoteVersion,
 }
 
 impl fmt::Display for OutputError {
@@ -219,6 +256,9 @@ impl fmt::Display for OutputError {
         use OutputError::*;
         f.write_str(match self {
             OutputsDisabled => "Outputs are not enabled for this builder",
+            UnsupportedNoteVersion => {
+                "The note version is not supported by this builder's protocol"
+            }
         })
     }
 }
@@ -260,8 +300,17 @@ impl SpendInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(rng: &mut impl RngCore) -> Self {
-        let (sk, fvk, note) = Note::dummy(rng, None);
+    fn dummy(protocol: BundleProtocol, rng: &mut impl RngCore) -> Self {
+        let sk = SpendingKey::random(rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let note = Note::new_with_version(
+            recipient,
+            NoteValue::ZERO,
+            Rho::from_nf_old(Nullifier::dummy(rng)),
+            &mut *rng,
+            protocol.default_output_note_version(),
+        );
         let merkle_path = MerklePath::dummy(rng);
 
         SpendInfo {
@@ -342,8 +391,10 @@ pub struct OutputInfo {
 impl OutputInfo {
     /// Constructs a new OutputInfo from its constituent parts.
     ///
-    /// This uses [`NoteVersion::DEFAULT`].
+    /// This uses the default output note version for the selected
+    /// [`BundleProtocol`].
     pub fn new(
+        protocol: BundleProtocol,
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
@@ -354,7 +405,7 @@ impl OutputInfo {
             recipient,
             value,
             memo,
-            note_version: NoteVersion::DEFAULT,
+            note_version: protocol.default_output_note_version(),
         }
     }
 
@@ -378,11 +429,11 @@ impl OutputInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    pub fn dummy(rng: &mut impl RngCore) -> Self {
+    pub fn dummy(protocol: BundleProtocol, rng: &mut impl RngCore) -> Self {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        Self::new(None, recipient, NoteValue::ZERO, [0u8; 512])
+        Self::new(protocol, None, recipient, NoteValue::ZERO, [0u8; 512])
     }
 
     /// Builds the output half of an action.
@@ -589,6 +640,7 @@ impl BundleMetadata {
 /// to receive funds.
 #[derive(Debug)]
 pub struct Builder {
+    protocol: BundleProtocol,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     bundle_type: BundleType,
@@ -600,19 +652,26 @@ pub struct Builder {
 
 impl Builder {
     /// Constructs a new empty builder for an Orchard bundle.
+    ///
+    /// Migration: pass [`BundleProtocol::Orchard`] for the existing non-QR
+    /// behavior, or [`BundleProtocol::Ironwood`] to create QR outputs and
+    /// accept only QR spends.
     #[cfg_attr(
         feature = "circuit",
         doc = "",
         doc = "When proving, the circuit version defaults to `FixedPostNu6_2`, which should be used",
         doc = "for all new proofs; use [`Builder::new_for_version`] to choose another."
     )]
-    pub fn new(bundle_type: BundleType, anchor: Anchor) -> Self {
-        Self::new_internal(
+    pub fn new(protocol: BundleProtocol, bundle_type: BundleType, anchor: Anchor) -> Self {
+        Builder {
+            protocol,
+            spends: vec![],
+            outputs: vec![],
             bundle_type,
             anchor,
             #[cfg(feature = "circuit")]
-            OrchardCircuitVersion::FixedPostNu6_2,
-        )
+            circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
+        }
     }
 
     /// Constructs a new empty builder for an Orchard bundle with a given
@@ -627,19 +686,13 @@ impl Builder {
     /// [`ProvingKey::build_for_version`]: crate::circuit::ProvingKey::build_for_version
     #[cfg(feature = "circuit")]
     pub fn new_for_version(
+        protocol: BundleProtocol,
         bundle_type: BundleType,
         anchor: Anchor,
         circuit_version: OrchardCircuitVersion,
     ) -> Self {
-        Self::new_internal(bundle_type, anchor, circuit_version)
-    }
-
-    fn new_internal(
-        bundle_type: BundleType,
-        anchor: Anchor,
-        #[cfg(feature = "circuit")] circuit_version: OrchardCircuitVersion,
-    ) -> Self {
         Builder {
+            protocol,
             spends: vec![],
             outputs: vec![],
             bundle_type,
@@ -671,6 +724,9 @@ impl Builder {
         if !flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
+        if !self.protocol.permits_note_version(note.version()) {
+            return Err(SpendError::UnsupportedNoteVersion);
+        }
 
         let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
 
@@ -686,7 +742,8 @@ impl Builder {
 
     /// Adds an address which will receive funds in this transaction.
     ///
-    /// This uses [`NoteVersion::DEFAULT`].
+    /// This uses the default output note version for this builder's
+    /// [`BundleProtocol`].
     pub fn add_output(
         &mut self,
         ovk: Option<OutgoingViewingKey>,
@@ -694,7 +751,13 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        self.add_output_with_version(ovk, recipient, value, memo, NoteVersion::DEFAULT)
+        self.add_output_with_version(
+            ovk,
+            recipient,
+            value,
+            memo,
+            self.protocol.default_output_note_version(),
+        )
     }
 
     /// Adds an address which will receive funds in this transaction,
@@ -710,6 +773,9 @@ impl Builder {
         let flags = self.bundle_type.flags();
         if !flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
+        }
+        if !self.protocol.permits_note_version(note_version) {
+            return Err(OutputError::UnsupportedNoteVersion);
         }
 
         self.outputs.push(OutputInfo::new_with_version(
@@ -773,6 +839,7 @@ impl Builder {
         bundle_for_version(
             rng,
             self.anchor,
+            self.protocol,
             self.bundle_type,
             self.spends,
             self.outputs,
@@ -789,6 +856,7 @@ impl Builder {
         build_bundle(
             rng,
             self.anchor,
+            self.protocol,
             self.bundle_type,
             self.spends,
             self.outputs,
@@ -823,6 +891,7 @@ impl Builder {
 pub fn bundle<V: TryFrom<i64>>(
     rng: impl RngCore,
     anchor: Anchor,
+    protocol: BundleProtocol,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
@@ -830,6 +899,7 @@ pub fn bundle<V: TryFrom<i64>>(
     bundle_for_version(
         rng,
         anchor,
+        protocol,
         bundle_type,
         spends,
         outputs,
@@ -850,6 +920,7 @@ pub fn bundle<V: TryFrom<i64>>(
 pub fn bundle_for_version<V: TryFrom<i64>>(
     rng: impl RngCore,
     anchor: Anchor,
+    protocol: BundleProtocol,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
@@ -858,6 +929,7 @@ pub fn bundle_for_version<V: TryFrom<i64>>(
     build_bundle(
         rng,
         anchor,
+        protocol,
         bundle_type,
         spends,
         outputs,
@@ -912,6 +984,7 @@ pub fn bundle_for_version<V: TryFrom<i64>>(
 fn build_bundle<B, R: RngCore>(
     mut rng: R,
     anchor: Anchor,
+    protocol: BundleProtocol,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
@@ -925,6 +998,9 @@ fn build_bundle<B, R: RngCore>(
     }
 
     for spend in &spends {
+        if !protocol.permits_note_version(spend.note.version()) {
+            return Err(BuildError::UnsupportedNoteVersion);
+        }
         if !spend.has_matching_anchor(&anchor) {
             return Err(BuildError::AnchorMismatch);
         }
@@ -933,6 +1009,12 @@ fn build_bundle<B, R: RngCore>(
     let num_requested_outputs = outputs.len();
     if !flags.outputs_enabled() && num_requested_outputs > 0 {
         return Err(BuildError::OutputsDisabled);
+    }
+    if outputs
+        .iter()
+        .any(|output| !protocol.permits_note_version(output.note_version))
+    {
+        return Err(BuildError::UnsupportedNoteVersion);
     }
 
     let num_actions = bundle_type
@@ -943,14 +1025,14 @@ fn build_bundle<B, R: RngCore>(
     let (pre_actions, bundle_meta) = {
         let mut indexed_spends = spends
             .into_iter()
-            .chain(iter::repeat_with(|| SpendInfo::dummy(&mut rng)))
+            .chain(iter::repeat_with(|| SpendInfo::dummy(protocol, &mut rng)))
             .enumerate()
             .take(num_actions)
             .collect::<Vec<_>>();
 
         let mut indexed_outputs = outputs
             .into_iter()
-            .chain(iter::repeat_with(|| OutputInfo::dummy(&mut rng)))
+            .chain(iter::repeat_with(|| OutputInfo::dummy(protocol, &mut rng)))
             .enumerate()
             .take(num_actions)
             .collect::<Vec<_>>();
@@ -1316,7 +1398,7 @@ pub mod testing {
         Address, Note,
     };
 
-    use super::{Builder, BundleType};
+    use super::{Builder, BundleProtocol, BundleType};
 
     /// An intermediate type used for construction of arbitrary
     /// bundle values. This type is required because of a limitation
@@ -1339,7 +1421,8 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let mut builder = Builder::new(BundleType::DEFAULT, self.anchor);
+            let mut builder =
+                Builder::new(BundleProtocol::Orchard, BundleType::DEFAULT, self.anchor);
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -1437,7 +1520,7 @@ pub mod testing {
 mod tests {
     use rand::rngs::OsRng;
 
-    use super::Builder;
+    use super::{Builder, BundleProtocol};
     use crate::{
         builder::BundleType,
         bundle::{Authorized, Bundle},
@@ -1458,6 +1541,7 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
+            BundleProtocol::Orchard,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
