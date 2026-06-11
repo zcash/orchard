@@ -25,10 +25,10 @@ struct BundleSignature {
 pub struct BatchValidator {
     proofs: plonk::BatchVerifier<vesta::Affine>,
     signatures: Vec<BundleSignature>,
-    // TODO(ebfull): Once a circuit version supports `disableCrossAddress`, store whether
-    // any queued instance sets the flag and compare that with the verifying key's
-    // circuit-version support in `validate`.
-    unsupported_flags: bool,
+    /// Whether any queued instance disables cross-address transfers. Such statements can
+    /// only be validated with a verifying key whose circuit version constrains the
+    /// `disableCrossAddress` public input; the key is not known until [`Self::validate`].
+    restricted: bool,
 }
 
 impl BatchValidator {
@@ -37,21 +37,20 @@ impl BatchValidator {
         BatchValidator {
             proofs: plonk::BatchVerifier::new(),
             signatures: vec![],
-            unsupported_flags: false,
+            restricted: false,
         }
     }
 
     /// Adds the proof and RedPallas signatures from the given bundle to the validator.
     ///
-    /// If the bundle sets the `disableCrossAddress` flag, which no circuit version in
-    /// this crate supports, [`Self::validate`] will return `false` for the entire batch.
+    /// If the bundle sets `disableCrossAddress`, this records that [`Self::validate`]
+    /// must be called with a verifying key whose circuit version supports the
+    /// cross-address restriction.
     pub fn add_bundle<V: Copy + Into<i64>>(
         &mut self,
         bundle: &Bundle<Authorized, V>,
         sighash: [u8; 32],
     ) {
-        self.unsupported_flags |= bundle.flags().disable_cross_address();
-
         for action in bundle.actions().iter() {
             self.signatures.push(BundleSignature {
                 signature: action
@@ -66,24 +65,27 @@ impl BatchValidator {
                 .create_batch_item(bundle.authorization().binding_signature().clone(), &sighash),
         });
 
+        let instances = bundle.to_instances();
+        self.restricted |= instances.iter().any(|i| i.disable_cross_address());
         bundle
             .authorization()
             .proof()
-            .add_to_batch(&mut self.proofs, bundle.to_instances());
+            .add_to_batch(&mut self.proofs, instances);
     }
 
     /// Batch-validates the accumulated bundles.
     ///
     /// Returns `true` if every proof and signature in every bundle added to the batch
-    /// validator is valid, or `false` if one or more are invalid, or if any added bundle
-    /// set a flag that no circuit version in this crate supports (such as
-    /// `disableCrossAddress`). No attempt is made to figure out which of the accumulated
-    /// bundles might be invalid; if that information is desired, construct separate
-    /// [`BatchValidator`]s for sub-batches of the bundles.
+    /// validator is valid, and any `disableCrossAddress` instances are supported by
+    /// `vk`'s circuit version. Returns `false` if one or more proofs or signatures are
+    /// invalid, or if the batch contains a restricted instance and `vk` does not support
+    /// it. No attempt is made to figure out which of the accumulated bundles might be
+    /// invalid; if that information is desired, construct separate [`BatchValidator`]s
+    /// for sub-batches of the bundles.
     pub fn validate<R: RngCore + CryptoRng>(self, vk: &VerifyingKey, rng: R) -> bool {
         // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
 
-        if self.unsupported_flags {
+        if self.restricted && !vk.supports_cross_address_restriction() {
             return false;
         }
 
@@ -121,29 +123,29 @@ mod tests {
     };
 
     #[test]
-    fn add_bundle_records_unsupported_flags() {
+    fn add_bundle_records_restricted_instances() {
         let bundle = with_disable_cross_address(sample_authorized_bundle(1))
             .try_map_value_balance(i64::try_from)
             .expect("generated bundle value balance fits in i64");
 
         let mut validator = BatchValidator::new();
-        assert!(!validator.unsupported_flags);
+        assert!(!validator.restricted);
 
         validator.add_bundle(&bundle, [0; 32]);
-        assert!(validator.unsupported_flags);
+        assert!(validator.restricted);
     }
 
     // A bundle with fake authorizing data fails `validate` whether or not it sets
-    // unsupported flags, so instead check the short-circuit against an otherwise-empty
-    // batch, which is trivially valid.
+    // `disableCrossAddress`, so instead check the key-capability short-circuit against an
+    // otherwise-empty batch, which is trivially valid.
     #[test]
-    fn validate_rejects_unsupported_flags() {
+    fn validate_rejects_unsupported_disable_cross_address() {
         let vk = VerifyingKey::build();
 
         assert!(BatchValidator::new().validate(&vk, OsRng));
 
         let mut validator = BatchValidator::new();
-        validator.unsupported_flags = true;
+        validator.restricted = true;
         assert!(!validator.validate(&vk, OsRng));
     }
 }

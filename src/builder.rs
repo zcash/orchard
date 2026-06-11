@@ -128,8 +128,6 @@ pub enum BuildError {
     AnchorMismatch,
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
-    /// The `disableCrossAddress` flag is set, but the circuit does not support it.
-    DisableCrossAddressUnsupported,
     /// An error occurred in the process of producing a proof for a bundle.
     #[cfg(feature = "circuit")]
     Proof(halo2_proofs::plonk::Error),
@@ -150,11 +148,15 @@ impl fmt::Display for BuildError {
         use BuildError::*;
         match self {
             MissingSignatures => f.write_str("Required signatures were missing during build"),
-            DisableCrossAddressUnsupported => {
-                f.write_str("The `disableCrossAddress` flag is not supported by the circuit")
+            #[cfg(feature = "circuit")]
+            Proof(halo2_proofs::plonk::Error::InvalidInstances) => {
+                f.write_str(
+                    "Could not create proof: provided instances do not match the circuit, \
+                     or `disableCrossAddress` is not supported by the proving key's circuit version",
+                )
             }
             #[cfg(feature = "circuit")]
-            Proof(e) => f.write_str(&format!("Could not create proof: {}", e)),
+            Proof(e) => write!(f, "Could not create proof: {e}"),
             ValueSum(_) => f.write_str("Overflow occurred during value construction"),
             InvalidExternalSignature => f.write_str("External signature was invalid"),
             DuplicateSignature => f.write_str("Signature valid for more than one input"),
@@ -1009,12 +1011,6 @@ impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
         pk: &ProvingKey,
         mut rng: impl RngCore,
     ) -> Result<Bundle<InProgress<Proof, S>, V>, BuildError> {
-        // TODO(ebfull): Once a circuit version supports `disableCrossAddress`, reject
-        // only when the bundle flag is set and `pk` is for an unsupported circuit.
-        if self.flags().disable_cross_address() {
-            return Err(BuildError::DisableCrossAddressUnsupported);
-        }
-
         let instances: Vec<_> = self
             .actions()
             .iter()
@@ -1408,7 +1404,7 @@ mod tests {
     use super::{BuildError, Builder};
     use crate::{
         builder::BundleType,
-        bundle::{Authorized, Bundle, BundleFormat, Flags},
+        bundle::{Authorized, Bundle, Flags},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendingKey},
@@ -1453,7 +1449,7 @@ mod tests {
     fn create_proof_rejects_disable_cross_address() {
         let pk = ProvingKey::build();
         let mut rng = OsRng;
-        let flags = Flags::from_byte(0b0000_0111, BundleFormat::Nu6_3).unwrap();
+        let flags = Flags::CROSS_ADDRESS_DISABLED;
 
         let builder = Builder::new(
             BundleType::Transactional {
@@ -1467,7 +1463,9 @@ mod tests {
 
         assert!(matches!(
             bundle.create_proof(&pk, &mut rng),
-            Err(BuildError::DisableCrossAddressUnsupported),
+            Err(BuildError::Proof(
+                halo2_proofs::plonk::Error::InvalidInstances
+            )),
         ));
     }
 }

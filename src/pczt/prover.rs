@@ -26,12 +26,6 @@ impl super::Bundle {
             return Ok(());
         }
 
-        // TODO(ebfull): Once a circuit version supports `disableCrossAddress`, reject
-        // only when the bundle flag is set and `pk` is for an unsupported circuit.
-        if self.flags.disable_cross_address() {
-            return Err(ProverError::DisableCrossAddressUnsupported);
-        }
-
         let circuits = self
             .actions
             .iter()
@@ -99,8 +93,7 @@ impl super::Bundle {
                     action.spend.nullifier,
                     action.spend.rk.clone(),
                     action.output.cmx,
-                    self.flags.spends_enabled(),
-                    self.flags.outputs_enabled(),
+                    self.flags,
                 )
                 .ok_or(ProverError::IdentityRk)
             })
@@ -119,8 +112,6 @@ impl super::Bundle {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ProverError {
-    /// The `disableCrossAddress` flag is set, but the circuit does not support it.
-    DisableCrossAddressUnsupported,
     /// The output note's components do not produce a valid note commitment.
     InvalidOutputNote,
     /// The spent note's components do not produce a valid note commitment.
@@ -155,10 +146,6 @@ pub enum ProverError {
 impl fmt::Display for ProverError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProverError::DisableCrossAddressUnsupported => write!(
-                f,
-                "the `disableCrossAddress` flag is not supported by the circuit"
-            ),
             ProverError::InvalidOutputNote => write!(f, "output note is invalid"),
             ProverError::InvalidSpendNote => write!(f, "spent note is invalid"),
             ProverError::MissingFullViewingKey => {
@@ -181,6 +168,13 @@ impl fmt::Display for ProverError {
                 write!(f, "`rcv` must be set for the Prover role")
             }
             ProverError::MissingWitness => write!(f, "`witness` must be set for the Prover role"),
+            ProverError::ProofFailed(halo2_proofs::plonk::Error::InvalidInstances) => {
+                write!(
+                    f,
+                    "Failed to create proof: provided instances do not match the circuit, \
+                     or `disableCrossAddress` is not supported by the proving key's circuit version",
+                )
+            }
             ProverError::ProofFailed(e) => write!(f, "Failed to create proof: {e}"),
             ProverError::RhoMismatch => {
                 write!(f, "output's `rho` does not match spent note's nullifier")

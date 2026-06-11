@@ -13,11 +13,11 @@ and this project adheres to Rust's notion of
 - `orchard::bundle::Flags` APIs for the NU6.3 `disableCrossAddress` flag:
   - `Flags::CROSS_ADDRESS_DISABLED`
   - `Flags::disable_cross_address`
-- Unsupported-flag error variants for `disableCrossAddress`:
-  - `orchard::bundle::BundleError::DisableCrossAddressUnsupported`
-  - `orchard::builder::BuildError::DisableCrossAddressUnsupported`
-  - `orchard::pczt::ProverError::DisableCrossAddressUnsupported`
-  - `orchard::pczt::TxExtractorError::DisableCrossAddressUnsupported`
+- Circuit-version support introspection for the cross-address restriction:
+  - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
+  - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
+  - `orchard::circuit::VerifyingKey::circuit_version`
+  - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
 - `orchard::bundle::testing::arb_flags_nu6_3`, a strategy that generates flag
   sets under NU6.3 encoding rules, including `disableCrossAddress`.
   `arb_flags` is unchanged and only generates flag sets that are representable
@@ -29,32 +29,27 @@ and this project adheres to Rust's notion of
   `BundleFormat::Nu6_3`, bit 2 is parsed and serialized as
   `disableCrossAddress`; under `BundleFormat::PreNu6_3`, bit 2 remains
   reserved, and `Flags::to_byte` returns `None` if `disableCrossAddress` is set.
-- Public APIs that construct, prove, extract, or verify proof-bearing bundles
-  now reject the `disableCrossAddress` flag when set, because no circuit
-  version in this crate supports it:
-  - `orchard::bundle::Bundle::try_from_parts` returns
-    `BundleError::DisableCrossAddressUnsupported`.
-  - `orchard::bundle::Bundle::verify_proof` returns
-    `halo2_proofs::plonk::Error::InvalidInstances`.
-  - `orchard::bundle::BatchValidator::validate` returns `false` for the whole
-    batch if any added bundle sets the flag.
-  - `orchard::Bundle::create_proof` (for unproven bundles produced by
-    `orchard::builder::Builder`) returns
-    `BuildError::DisableCrossAddressUnsupported`.
-  - `orchard::pczt::Bundle::create_proof` returns
-    `ProverError::DisableCrossAddressUnsupported`.
-  - `orchard::pczt::Bundle::extract` returns
-    `TxExtractorError::DisableCrossAddressUnsupported`.
-
-  Note that the lower-level verification pipeline built from
-  `orchard::circuit::Instance::from_parts` and
-  `orchard::Proof::{verify, add_to_batch}` does not carry the flag and cannot
-  reject it; callers of those APIs must reject bundles that set
-  `disableCrossAddress` themselves.
+- `orchard::circuit::Instance::from_parts` now takes an
+  `orchard::bundle::Flags` argument instead of separate spend/output enable
+  booleans, so the `disableCrossAddress` flag is carried into the public
+  instances. `orchard::Proof::{create, verify}` reject instances that set this
+  flag unless the proving or verifying key's circuit version supports the
+  cross-address restriction, returning
+  `halo2_proofs::plonk::Error::InvalidInstances`. The current circuit versions
+  do not support that restriction.
 - `orchard::Bundle::commitment` hashes the raw Orchard flag byte, including
   the NU6.3 `disableCrossAddress` bit when set. This changes the ZIP-244
   Orchard digest, and therefore transaction IDs and sighashes, for bundles that
   set that flag.
+- `orchard::Bundle::<Authorized, V>::try_from_parts` and
+  `orchard::pczt::Bundle::extract` preserve `disableCrossAddress` when it is
+  set; support for proving or verifying that flag is checked by the proof APIs.
+  With current circuit keys, proving a bundle that sets the flag returns
+  `orchard::builder::BuildError::Proof` from builder-created bundles, and
+  `orchard::pczt::ProverError::ProofFailed` from PCZT bundles, each wrapping
+  `halo2_proofs::plonk::Error::InvalidInstances`; bundle verification returns
+  `InvalidInstances`, and `orchard::bundle::BatchValidator::validate` returns
+  `false`.
 
 ## [0.14.0] - 2026-06-02
 

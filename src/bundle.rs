@@ -45,8 +45,7 @@ impl<T> Action<T> {
             *self.nullifier(),
             self.rk().clone(),
             *self.cmx(),
-            flags.spends_enabled,
-            flags.outputs_enabled,
+            flags,
         )
         .expect("this Action's rk is non-identity by construction (Action::from_parts)")
     }
@@ -229,20 +228,6 @@ impl Flags {
         } else {
             None
         }
-    }
-}
-
-/// Checks that a flag set can be enforced by the circuit used by this crate.
-///
-/// The `disableCrossAddress` flag is parsed and serialized, but proof-bearing paths must
-/// reject it unless their circuit supports it.
-pub(crate) fn validate_flags_for_current_circuit(flags: Flags) -> Result<(), BundleError> {
-    // TODO(ebfull): Once a circuit version supports `disableCrossAddress`, replace this
-    // hard rejection with a check against the selected circuit version.
-    if flags.disable_cross_address() {
-        Err(BundleError::DisableCrossAddressUnsupported)
-    } else {
-        Ok(())
     }
 }
 
@@ -600,8 +585,6 @@ impl Authorized {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BundleError {
-    /// The `disableCrossAddress` flag is set, but the circuit does not support it.
-    DisableCrossAddressUnsupported,
     /// The proof does not have the canonical length for the bundle's number of actions.
     ///
     /// A valid Orchard proof authorizing `n` actions is always exactly
@@ -620,10 +603,6 @@ pub enum BundleError {
 impl fmt::Display for BundleError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BundleError::DisableCrossAddressUnsupported => write!(
-                f,
-                "Orchard `disableCrossAddress` flag is not supported by the circuit",
-            ),
             BundleError::NonCanonicalProofSize { expected, actual } => write!(
                 f,
                 "Orchard proof has non-canonical length {actual}; expected {expected} bytes",
@@ -651,8 +630,8 @@ impl<V> Bundle<Authorized, V> {
     /// can never hold a non-canonical proof. This matters when building a bundle from untrusted
     /// input (e.g. deserializing from bytes), as it prevents a proof from being padded with
     /// arbitrary data, which would otherwise impose unbounded bandwidth and storage costs without
-    /// affecting proof validity (GHSA-2x4w-pxqw-58v9). It also rejects flags unsupported by the
-    /// circuit.
+    /// affecting proof validity (GHSA-2x4w-pxqw-58v9). Circuit-key support for the bundle flags is
+    /// checked when proving or verifying the proof.
     pub fn try_from_parts(
         actions: NonEmpty<Action<<Authorized as Authorization>::SpendAuth>>,
         flags: Flags,
@@ -664,7 +643,6 @@ impl<V> Bundle<Authorized, V> {
         if size_enforcement == ProofSizeEnforcement::Strict {
             validate_proof_size(authorization.proof(), actions.len())?;
         }
-        validate_flags_for_current_circuit(flags)?;
         Ok(Bundle::from_parts_unchecked(
             actions,
             flags,
@@ -683,18 +661,11 @@ impl<V> Bundle<Authorized, V> {
 
     /// Verifies the proof for this bundle.
     ///
-    /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this bundle
-    /// sets the `disableCrossAddress` flag, which no circuit version in this crate
-    /// supports.
+    /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this
+    /// bundle sets `disableCrossAddress` and `vk`'s circuit version does not support
+    /// the cross-address restriction.
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
-        // TODO(ebfull): Once `Instance` carries `disableCrossAddress` and `VerifyingKey`
-        // exposes circuit-version support, move this check into `Proof::verify`
-        // as `flag is set && key does not support it`.
-        if self.flags().disable_cross_address() {
-            return Err(halo2_proofs::plonk::Error::InvalidInstances);
-        }
-
         self.authorization()
             .proof()
             .verify(vk, &self.to_instances())
@@ -1113,7 +1084,7 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_rejects_disable_cross_address(bundle in arb_bundle(3)) {
+        fn try_from_parts_preserves_disable_cross_address(bundle in arb_bundle(3)) {
             let actions = bundle.actions().clone();
             let mut flags = *bundle.flags();
             flags.disable_cross_address = true;
@@ -1121,8 +1092,7 @@ pub(crate) mod tests {
             let anchor = *bundle.anchor();
             let authorization = bundle.authorization().clone();
 
-            prop_assert_eq!(
-                Bundle::try_from_parts(
+            let bundle = Bundle::try_from_parts(
                     actions,
                     flags,
                     value_balance,
@@ -1130,13 +1100,12 @@ pub(crate) mod tests {
                     authorization,
                     crate::bundle::ProofSizeEnforcement::Strict,
                 )
-                .err(),
-                Some(BundleError::DisableCrossAddressUnsupported)
-            );
+                .expect("canonical proof size is accepted");
+            prop_assert!(bundle.flags().disable_cross_address());
         }
 
         #[test]
-        fn try_from_parts_checks_proof_size_before_disable_cross_address(bundle in arb_bundle(3)) {
+        fn try_from_parts_checks_proof_size_with_disable_cross_address(bundle in arb_bundle(3)) {
             let actions = bundle.actions().clone();
             let expected = Proof::expected_proof_size(actions.len());
             let mut flags = *bundle.flags();

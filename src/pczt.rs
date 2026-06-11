@@ -622,26 +622,30 @@ mod tests {
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
-        pczt_bundle.flags = Flags::from_byte(0b0000_0111, BundleFormat::Nu6_3).unwrap();
+        pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
 
         assert!(matches!(
             pczt_bundle.create_proof(&pk, rng),
-            Err(ProverError::DisableCrossAddressUnsupported),
+            Err(ProverError::ProofFailed(
+                halo2_proofs::plonk::Error::InvalidInstances
+            )),
         ));
     }
 
     #[test]
-    fn extract_rejects_disable_cross_address() {
-        let pk = ProvingKey::build();
+    fn extract_preserves_disable_cross_address() {
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
-        pczt_bundle.create_proof(&pk, rng).unwrap();
-        pczt_bundle.flags = Flags::from_byte(0b0000_0111, BundleFormat::Nu6_3).unwrap();
+        pczt_bundle.zkproof = Some(crate::Proof::new(vec![
+            0;
+            crate::Proof::expected_proof_size(
+                pczt_bundle.actions.len()
+            )
+        ]));
+        pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
 
-        assert!(matches!(
-            pczt_bundle.extract::<i64>(),
-            Err(TxExtractorError::DisableCrossAddressUnsupported),
-        ));
+        let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();
+        assert!(bundle.flags().disable_cross_address());
     }
 }
