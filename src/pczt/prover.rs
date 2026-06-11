@@ -29,6 +29,25 @@ impl super::Bundle {
             return Ok(());
         }
 
+        if self.flags.disable_cross_address() {
+            // Check the restriction structurally before synthesizing any circuit, for a
+            // clear error instead of an unsatisfiable-constraint failure.
+            for action in &self.actions {
+                let spend_recipient = action
+                    .spend
+                    .recipient
+                    .ok_or(ProverError::MissingRecipient)?;
+                let output_recipient = action
+                    .output
+                    .recipient
+                    .ok_or(ProverError::MissingRecipient)?;
+
+                if !spend_recipient.same_receiver(&output_recipient) {
+                    return Err(ProverError::DisallowedCrossAddressTransfer);
+                }
+            }
+        }
+
         let circuits = self
             .actions
             .iter()
@@ -115,6 +134,9 @@ impl super::Bundle {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ProverError {
+    /// An action's output is addressed differently than its spent note, but the bundle
+    /// disables cross-address transfers.
+    DisallowedCrossAddressTransfer,
     /// The output note's components do not produce a valid note commitment.
     InvalidOutputNote,
     /// The spent note's components do not produce a valid note commitment.
@@ -149,6 +171,11 @@ pub enum ProverError {
 impl fmt::Display for ProverError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProverError::DisallowedCrossAddressTransfer => write!(
+                f,
+                "an action outputs to a different receiver than it spends from, but the \
+                 bundle disables cross-address transfers"
+            ),
             ProverError::InvalidOutputNote => write!(f, "output note is invalid"),
             ProverError::InvalidSpendNote => write!(f, "spent note is invalid"),
             ProverError::MissingFullViewingKey => {

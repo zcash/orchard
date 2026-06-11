@@ -11,8 +11,12 @@ impl super::Action {
     /// Signs the Orchard spend with the given spend authorizing key.
     ///
     /// It is the caller's responsibility to perform any semantic validity checks on the
-    /// PCZT (for example, comfirming that the change amounts are correct) before calling
-    /// this method.
+    /// PCZT (for example, confirming that the change amounts are correct) before calling
+    /// this method. For bundles that disable cross-address transfers, callers should
+    /// verify the bundle with [`Bundle::verify_cross_address_restriction`] before
+    /// signing.
+    ///
+    /// [`Bundle::verify_cross_address_restriction`]: super::Bundle::verify_cross_address_restriction
     pub fn sign<R: RngCore + CryptoRng>(
         &mut self,
         sighash: [u8; 32],
@@ -38,8 +42,12 @@ impl super::Action {
     /// Applies the given signature to the Orchard spend, if valid.
     ///
     /// It is the caller's responsibility to perform any semantic validity checks on the
-    /// PCZT (for example, comfirming that the change amounts are correct) before calling
-    /// this method.
+    /// PCZT (for example, confirming that the change amounts are correct) before calling
+    /// this method. For bundles that disable cross-address transfers, callers should
+    /// verify the bundle with [`Bundle::verify_cross_address_restriction`] before
+    /// applying signatures.
+    ///
+    /// [`Bundle::verify_cross_address_restriction`]: super::Bundle::verify_cross_address_restriction
     pub fn apply_signature(
         &mut self,
         sighash: [u8; 32],

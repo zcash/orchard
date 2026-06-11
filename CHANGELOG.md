@@ -27,6 +27,20 @@ and this project adheres to Rust's notion of
   sets under NU6.3 encoding rules, including `disableCrossAddress`.
   `arb_flags` is unchanged and only generates flag sets that are representable
   before NU6.3.
+- Wallet-controlled change-output builder APIs for constructing bundles whose
+  actions preserve the same-receiver property required by `disableCrossAddress`:
+  - `orchard::builder::Builder::add_change_output`
+  - `orchard::builder::OutputInfo::change`
+- `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers
+  can check the `disableCrossAddress` same-receiver structural property before
+  signing.
+- Error variants for `disableCrossAddress` builder and PCZT checks:
+  - `orchard::builder::BuildError::CrossAddressDisabled`
+  - `orchard::builder::OutputError::CrossAddressDisabled`
+  - `orchard::builder::OutputError::FvkMismatch`
+  - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
+  - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`
+  - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
@@ -69,6 +83,27 @@ and this project adheres to Rust's notion of
 - `orchard::pczt::Bundle::create_proof` now builds circuits for the circuit
   version carried by the provided `ProvingKey`; previously these circuits were
   always built for `FixedPostNu6_2`.
+- `orchard::builder::Builder` now constructs `disableCrossAddress` bundles as
+  withdrawal/change bundles. Requested spends are each paired with a fabricated
+  zero-value output to the spent note's address (which the owning wallet will
+  trial-decrypt when scanning); requested wallet-controlled change outputs are
+  each paired with a fabricated zero-value spend at the change address; padding
+  actions pair a dummy spend with a zero-value output to the dummy's address.
+  `Builder::add_output` rejects ordinary outputs when `disableCrossAddress` is
+  set; use `Builder::add_change_output` for retained shielded value. For these
+  bundles, `orchard::builder::BundleType::num_actions` counts
+  `num_spends + num_outputs` requested actions (a requested spend and a
+  requested output never share an action), rather than the maximum of the two.
+- `orchard::pczt::Bundle::create_proof` now checks the `disableCrossAddress`
+  same-receiver structural property before building any circuits, returning
+  `orchard::pczt::ProverError::DisallowedCrossAddressTransfer` (or
+  `ProverError::MissingRecipient` if a `recipient` field is unset) when a
+  `disableCrossAddress` bundle violates it. Only structurally-conforming
+  bundles reach the proof APIs' circuit-version support check described above.
+- `orchard::pczt::Bundle::finalize_io` now verifies the `disableCrossAddress`
+  structural restriction before computing `bsk` or signing dummy spends,
+  returning `orchard::pczt::IoFinalizerError::CrossAddressRestriction` and
+  leaving the bundle unmodified when that check fails.
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`. Use the plain APIs listed
@@ -83,6 +118,11 @@ and this project adheres to Rust's notion of
   - `orchard::builder::bundle_for_version` (use `bundle`)
 - `Default` implementations for `orchard::circuit::OrchardCircuitVersion` and
   `orchard::circuit::Circuit`.
+
+### Fixed
+- The documentation and `Display` output of
+  `orchard::builder::BuildError::OutputsDisabled` previously described spends
+  rather than outputs.
 
 ## [0.14.0] - 2026-06-02
 
