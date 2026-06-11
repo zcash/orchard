@@ -139,10 +139,10 @@ mod tests {
     // `disableCrossAddress`, so instead check the key-capability short-circuit against an
     // otherwise-empty batch, which is trivially valid.
     #[test]
-    fn validate_rejects_unsupported_disable_cross_address() {
+    fn validate_requires_key_support_for_disable_cross_address() {
         for circuit_version in [
+            OrchardCircuitVersion::InsecurePreNu6_2,
             OrchardCircuitVersion::FixedPostNu6_2,
-            OrchardCircuitVersion::Ironwood,
         ] {
             let vk = VerifyingKey::build(circuit_version);
 
@@ -152,5 +152,10 @@ mod tests {
             validator.restricted = true;
             assert!(!validator.validate(&vk, OsRng));
         }
+
+        let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+        let mut validator = BatchValidator::new();
+        validator.restricted = true;
+        assert!(validator.validate(&vk, OsRng));
     }
 }

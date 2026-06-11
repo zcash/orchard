@@ -129,8 +129,8 @@ impl Flags {
 
     /// The flag set with spends and outputs enabled and cross-address transfers disabled.
     ///
-    /// No circuit version in this crate supports `disableCrossAddress`, so proof creation
-    /// and verification with current keys reject instances built with this flag set.
+    /// Proof creation and verification for instances built with this flag require an
+    /// Ironwood circuit key.
     pub const CROSS_ADDRESS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
@@ -1134,12 +1134,12 @@ pub(crate) mod tests {
 
     #[cfg(feature = "circuit")]
     #[test]
-    fn verify_proof_rejects_disable_cross_address() {
+    fn verify_proof_rejects_disable_cross_address_for_unsupported_keys() {
         let bundle = with_disable_cross_address(sample_authorized_bundle(1));
 
         for circuit_version in [
+            crate::circuit::OrchardCircuitVersion::InsecurePreNu6_2,
             crate::circuit::OrchardCircuitVersion::FixedPostNu6_2,
-            crate::circuit::OrchardCircuitVersion::Ironwood,
         ] {
             let vk = crate::circuit::VerifyingKey::build(circuit_version);
 

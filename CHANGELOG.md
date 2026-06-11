@@ -19,10 +19,8 @@ and this project adheres to Rust's notion of
   - `orchard::circuit::VerifyingKey::circuit_version`
   - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
 - `orchard::circuit::OrchardCircuitVersion::Ironwood`, an explicit circuit
-  version for the Ironwood circuit. It currently has the same verifying key as
-  `FixedPostNu6_2`, so proofs are interchangeable with `FixedPostNu6_2` for
-  now; this is provisional, and Ironwood's circuit and verifying key are
-  expected to change in a future release.
+  version for the Ironwood circuit. Ironwood has its own verifying key and
+  enforces the `disableCrossAddress` public input.
 - `orchard::bundle::testing::arb_flags_nu6_3`, a strategy that generates flag
   sets under NU6.3 encoding rules, including `disableCrossAddress`.
   `arb_flags` is unchanged and only generates flag sets that are representable
@@ -54,8 +52,15 @@ and this project adheres to Rust's notion of
   instances. `orchard::Proof::{create, verify}` reject instances that set this
   flag unless the proving or verifying key's circuit version supports the
   cross-address restriction, returning
-  `halo2_proofs::plonk::Error::InvalidInstances`. The current circuit versions
-  do not support that restriction.
+  `halo2_proofs::plonk::Error::InvalidInstances`. Ironwood supports that
+  restriction; older circuit versions do not.
+- Documentation: `orchard::builder::BundleType::Coinbase` now documents that
+  coinbase bundles never set `disableCrossAddress`, and that consensus rules
+  outside this crate determine where Orchard-format shielded coinbase is
+  permitted — in particular, a pool whose rules require
+  `disableCrossAddress = 1` on every bundle prohibits coinbase bundles
+  entirely. `orchard::Anchor::empty_tree` and `BundleType::flags`
+  documentation was corrected accordingly.
 - `orchard::Bundle::commitment` hashes the raw Orchard flag byte, including
   the NU6.3 `disableCrossAddress` bit when set. This changes the ZIP-244
   Orchard digest, and therefore transaction IDs and sighashes, for bundles that
@@ -63,12 +68,13 @@ and this project adheres to Rust's notion of
 - `orchard::Bundle::<Authorized, V>::try_from_parts` and
   `orchard::pczt::Bundle::extract` preserve `disableCrossAddress` when it is
   set; support for proving or verifying that flag is checked by the proof APIs.
-  With current circuit keys, proving a bundle that sets the flag returns
+  With pre-Ironwood circuit keys, proving a bundle that sets the flag returns
   `orchard::builder::BuildError::Proof` from builder-created bundles, and
   `orchard::pczt::ProverError::ProofFailed` from PCZT bundles, each wrapping
   `halo2_proofs::plonk::Error::InvalidInstances`; bundle verification returns
   `InvalidInstances`, and `orchard::bundle::BatchValidator::validate` returns
-  `false`.
+  `false`. Ironwood keys prove and verify structurally-conforming restricted
+  bundles.
 - Circuit-building APIs now require the intended `OrchardCircuitVersion` through
   their plain constructors instead of implicitly selecting the fixed circuit or
   using `_for_version` variants:

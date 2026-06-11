@@ -14,11 +14,11 @@ impl super::Bundle {
     ///
     /// When the restriction applies, this requires `spend.recipient` and
     /// `output.recipient` to be set on every action. Signers presented with such a
-    /// bundle should call this before signing. A proof created with a circuit version
-    /// that supports the restriction also enforces it; however, no circuit version in
-    /// this crate currently does (Ironwood support is provisional), so for now the
-    /// restriction is only enforced structurally: by this method, and by the
-    /// equivalent checks in [`Bundle::finalize_io`] and `Bundle::create_proof`.
+    /// bundle should call this before signing; the equivalent structural checks are
+    /// also performed by [`Bundle::finalize_io`] and `Bundle::create_proof`. A proof
+    /// created with a circuit version that supports the restriction also enforces it.
+    /// Ironwood supports the restriction; older circuit versions do not, so the proof
+    /// APIs reject restricted bundles for those keys.
     ///
     /// [`Bundle::finalize_io`]: super::Bundle::finalize_io
     pub fn verify_cross_address_restriction(&self) -> Result<(), VerifyError> {

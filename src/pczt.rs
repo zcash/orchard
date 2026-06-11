@@ -695,34 +695,61 @@ mod tests {
     }
 
     #[test]
-    fn create_proof_rejects_disable_cross_address() {
+    fn create_proof_supports_disable_cross_address_only_for_ironwood() {
+        let rng = OsRng;
+        let sighash = [0; 32];
+
+        // Structural same-receiver violations are rejected before any key-capability
+        // check, for every circuit version.
         for circuit_version in [
             OrchardCircuitVersion::FixedPostNu6_2,
             OrchardCircuitVersion::Ironwood,
         ] {
             let pk = ProvingKey::build(circuit_version);
 
-            let mut mismatched_pczt_bundle = minimal_finalized_pczt_bundle(OsRng);
+            let mut mismatched_pczt_bundle = minimal_finalized_pczt_bundle(rng);
             mismatched_pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
             assert!(matches!(
-                mismatched_pczt_bundle.create_proof(&pk, OsRng),
+                mismatched_pczt_bundle.create_proof(&pk, rng),
                 Err(ProverError::DisallowedCrossAddressTransfer),
             ));
-
-            let mut pczt_bundle = minimal_finalized_pczt_bundle(OsRng);
-            pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
-            for action in pczt_bundle.actions_mut() {
-                action.output.recipient = action.spend.recipient;
-            }
-            pczt_bundle.verify_cross_address_restriction().unwrap();
-
-            assert!(matches!(
-                pczt_bundle.create_proof(&pk, OsRng),
-                Err(ProverError::ProofFailed(
-                    halo2_proofs::plonk::Error::InvalidInstances
-                )),
-            ));
         }
+
+        let (mut pczt_bundle, bundle_meta, spend_ask, change_ask) = restricted_pczt_bundle(rng);
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
+
+        // A pre-Ironwood proving key rejects the structurally-conforming restricted
+        // statement at the instance check, leaving the bundle unmodified.
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        assert!(matches!(
+            pczt_bundle.create_proof(&pk, rng),
+            Err(ProverError::ProofFailed(
+                halo2_proofs::plonk::Error::InvalidInstances
+            )),
+        ));
+        assert!(pczt_bundle.zkproof.is_none());
+
+        // An Ironwood proving key proves the same statement, and the proof verifies
+        // in the extracted bundle under the Ironwood verifying key.
+        let pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+
+        pczt_bundle.actions_mut()[bundle_meta.spend_action_index(0).unwrap()]
+            .sign(sighash, &spend_ask, rng)
+            .unwrap();
+        pczt_bundle.actions_mut()[bundle_meta.output_action_index(0).unwrap()]
+            .sign(sighash, &change_ask, rng)
+            .unwrap();
+
+        let bundle = pczt_bundle
+            .extract::<i64>()
+            .unwrap()
+            .unwrap()
+            .apply_binding_signature(sighash, rng)
+            .unwrap();
+        bundle
+            .verify_proof(&VerifyingKey::build(OrchardCircuitVersion::Ironwood))
+            .unwrap();
     }
 
     #[test]
