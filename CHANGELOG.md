@@ -5,6 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+- `orchard::bundle::BatchValidatorError`
+
+### Changed
+- `orchard::bundle::BatchValidator::add_bundle` now returns
+  `Result<(), BatchValidatorError>` instead of panicking if an action's `rk` is
+  the identity.
+
 ## [0.14.0] - 2026-06-02
 
 ### Added
