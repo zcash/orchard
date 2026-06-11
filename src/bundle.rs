@@ -7,7 +7,7 @@ pub mod commitments;
 #[cfg(feature = "circuit")]
 mod batch;
 #[cfg(feature = "circuit")]
-pub use batch::BatchValidator;
+pub use batch::{BatchValidator, BatchValidatorError};
 
 use core::fmt;
 
@@ -38,7 +38,7 @@ use crate::circuit::{Instance, VerifyingKey};
 impl<T> Action<T> {
     /// Prepares the public instance for this action, for creating and verifying the
     /// bundle proof.
-    pub fn to_instance(&self, flags: Flags, anchor: Anchor) -> Instance {
+    pub(crate) fn try_to_instance(&self, flags: Flags, anchor: Anchor) -> Option<Instance> {
         Instance::from_parts(
             anchor,
             self.cv_net().clone(),
@@ -48,7 +48,13 @@ impl<T> Action<T> {
             flags.spends_enabled,
             flags.outputs_enabled,
         )
-        .expect("this Action's rk is non-identity by construction (Action::from_parts)")
+    }
+
+    /// Prepares the public instance for this action, for creating and verifying the
+    /// bundle proof.
+    pub fn to_instance(&self, flags: Flags, anchor: Anchor) -> Instance {
+        self.try_to_instance(flags, anchor)
+            .expect("this Action's rk is non-identity by construction (Action::from_parts)")
     }
 }
 
@@ -320,11 +326,17 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     #[cfg(feature = "circuit")]
-    pub(crate) fn to_instances(&self) -> Vec<Instance> {
+    pub(crate) fn try_to_instances(&self) -> Option<Vec<Instance>> {
         self.actions
             .iter()
-            .map(|a| a.to_instance(self.flags, self.anchor))
+            .map(|a| a.try_to_instance(self.flags, self.anchor))
             .collect()
+    }
+
+    #[cfg(feature = "circuit")]
+    pub(crate) fn to_instances(&self) -> Vec<Instance> {
+        self.try_to_instances()
+            .expect("this Bundle's actions are non-identity by construction")
     }
 
     /// Performs trial decryption of each action in the bundle with each of the

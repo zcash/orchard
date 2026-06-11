@@ -206,6 +206,20 @@ pub(crate) mod testing {
 
     use super::Action;
 
+    pub(crate) fn clone_with_rk_for_test<T: Clone>(
+        action: &Action<T>,
+        rk: redpallas::VerificationKey<SpendAuth>,
+    ) -> Action<T> {
+        Action {
+            nf: action.nf,
+            rk,
+            cmx: action.cmx,
+            encrypted_note: action.encrypted_note.clone(),
+            cv_net: action.cv_net.clone(),
+            authorization: action.authorization.clone(),
+        }
+    }
+
     /// Builds a real, decryptable `TransmittedNoteCiphertext` for `note`,
     /// mirroring `OutputInfo::build`: the same encryptor yields a non-identity
     /// ephemeral public key (satisfying the `Action::from_parts` epk invariant)
