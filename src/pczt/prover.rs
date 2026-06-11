@@ -14,6 +14,9 @@ use crate::{
 
 impl super::Bundle {
     /// Adds a proof to this PCZT bundle.
+    ///
+    /// The Action circuits are built for `pk`'s circuit version; the caller selects the
+    /// proving key matching the transaction format the PCZT targets.
     pub fn create_proof<R: RngCore + CryptoRng>(
         &mut self,
         pk: &ProvingKey,
@@ -78,8 +81,14 @@ impl super::Bundle {
                     .clone()
                     .ok_or(ProverError::MissingValueCommitTrapdoor)?;
 
-                Circuit::from_action_context(spend, output_note, alpha, rcv)
-                    .ok_or(ProverError::RhoMismatch)
+                Circuit::from_action_context_for_version(
+                    spend,
+                    output_note,
+                    alpha,
+                    rcv,
+                    pk.circuit_version(),
+                )
+                .ok_or(ProverError::RhoMismatch)
             })
             .collect::<Result<Vec<_>, ProverError>>()?;
 

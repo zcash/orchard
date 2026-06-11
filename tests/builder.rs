@@ -165,3 +165,40 @@ fn builder_builds_for_insecure_circuit_version() {
     assert!(matches!(bundle.verify_proof(&insecure_vk), Ok(())));
     assert!(bundle.verify_proof(&fixed_vk).is_err());
 }
+
+#[test]
+fn builder_builds_for_ironwood_circuit_version() {
+    let mut rng = OsRng;
+    let ironwood_pk = ProvingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+    let ironwood_vk = VerifyingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let recipient = fvk.address_at(0u32, Scope::External);
+
+    let anchor = MerkleHashOrchard::empty_root(32.into()).into();
+    let mut builder = Builder::new_for_version(
+        BundleType::Transactional {
+            flags: Flags::SPENDS_DISABLED,
+            bundle_required: false,
+        },
+        anchor,
+        OrchardCircuitVersion::Ironwood,
+    );
+    assert_eq!(
+        builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
+        Ok(())
+    );
+
+    let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    assert_eq!(
+        unauthorized.circuit_version(),
+        OrchardCircuitVersion::Ironwood
+    );
+
+    let sighash: [u8; 32] = unauthorized.commitment().into();
+    let proven = unauthorized.create_proof(&ironwood_pk, &mut rng).unwrap();
+    let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+    verify_bundle(&bundle, &ironwood_vk);
+}

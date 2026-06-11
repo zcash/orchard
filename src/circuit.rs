@@ -109,11 +109,11 @@ pub struct Config {
 
 /// Selects which version of the Orchard Action circuit to build.
 ///
-/// The two versions produce different verifying keys: the fixed circuit anchors the
-/// variable-base scalar-multiplication base (see `halo2_gadgets`), the pre-NU6.2 one does
-/// not. [`FixedPostNu6_2`] is used for all proving and current verification;
-/// [`InsecurePreNu6_2`] reconstructs the historical (NU5..NU6.2) verifying key solely to
-/// verify proofs produced before NU6.2.
+/// [`FixedPostNu6_2`] and [`InsecurePreNu6_2`] produce different verifying keys: the fixed
+/// circuit anchors the variable-base scalar-multiplication base (see `halo2_gadgets`), while
+/// the pre-NU6.2 one does not. [`Ironwood`] currently uses the same circuit and verifying key
+/// as [`FixedPostNu6_2`], but exists as a separate runtime version so callers can explicitly
+/// select the intended circuit-generation behavior before it diverges.
 ///
 /// This is a runtime value rather than a type parameter: it is carried in [`Circuit`] and
 /// chosen when building a [`ProvingKey`] or [`VerifyingKey`], so the circuit version can be
@@ -121,6 +121,7 @@ pub struct Config {
 ///
 /// [`FixedPostNu6_2`]: OrchardCircuitVersion::FixedPostNu6_2
 /// [`InsecurePreNu6_2`]: OrchardCircuitVersion::InsecurePreNu6_2
+/// [`Ironwood`]: OrchardCircuitVersion::Ironwood
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum OrchardCircuitVersion {
     /// The insecure pre-NU6.2 circuit, in which the variable-base scalar-multiplication base
@@ -131,6 +132,11 @@ pub enum OrchardCircuitVersion {
     /// verification.
     #[default]
     FixedPostNu6_2,
+    /// The Ironwood circuit. This currently has the same circuit and verifying key as
+    /// [`OrchardCircuitVersion::FixedPostNu6_2`], so proofs are currently interchangeable, but
+    /// this is provisional: a future release is expected to change Ironwood to enforce the
+    /// `disableCrossAddress` public input.
+    Ironwood,
 }
 
 impl OrchardCircuitVersion {
@@ -142,9 +148,9 @@ impl OrchardCircuitVersion {
     /// the restriction.
     pub fn supports_cross_address_restriction(self) -> bool {
         match self {
-            OrchardCircuitVersion::InsecurePreNu6_2 | OrchardCircuitVersion::FixedPostNu6_2 => {
-                false
-            }
+            OrchardCircuitVersion::InsecurePreNu6_2
+            | OrchardCircuitVersion::FixedPostNu6_2
+            | OrchardCircuitVersion::Ironwood => false,
         }
     }
 
@@ -152,7 +158,9 @@ impl OrchardCircuitVersion {
     fn halo2_version(self) -> CircuitVersion {
         match self {
             OrchardCircuitVersion::InsecurePreNu6_2 => CircuitVersion::InsecureUnanchoredBase,
-            OrchardCircuitVersion::FixedPostNu6_2 => CircuitVersion::AnchoredBase,
+            OrchardCircuitVersion::FixedPostNu6_2 | OrchardCircuitVersion::Ironwood => {
+                CircuitVersion::AnchoredBase
+            }
         }
     }
 }
@@ -1188,7 +1196,7 @@ mod tests {
 
     use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
-        bundle::Flags,
+        bundle::{BundleFormat, Flags},
         keys::SpendValidatingKey,
         note::{Note, Rho},
         tree::MerklePath,
@@ -1256,25 +1264,46 @@ mod tests {
         )
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ProofFixtureEncoding {
+        LegacyTwoFlags,
+        IronwoodThreeFlags,
+    }
+
     fn write_test_case<W: std::io::Write>(
         mut w: W,
         instance: &Instance,
         proof: &Proof,
+        encoding: ProofFixtureEncoding,
     ) -> std::io::Result<()> {
         w.write_all(&instance.anchor().to_bytes())?;
         w.write_all(&instance.cv_net().to_bytes())?;
         w.write_all(&instance.nf_old().to_bytes())?;
         w.write_all(&<[u8; 32]>::from(instance.rk()))?;
         w.write_all(&instance.cmx().to_bytes())?;
-        w.write_all(&[
-            u8::from(instance.enable_spend()),
-            u8::from(instance.enable_output()),
-        ])?;
+        match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => {
+                w.write_all(&[
+                    u8::from(instance.enable_spend()),
+                    u8::from(instance.enable_output()),
+                ])?;
+            }
+            ProofFixtureEncoding::IronwoodThreeFlags => {
+                w.write_all(&[
+                    u8::from(instance.enable_spend()),
+                    u8::from(instance.enable_output()),
+                    u8::from(instance.disable_cross_address()),
+                ])?;
+            }
+        }
         w.write_all(proof.as_ref())?;
         Ok(())
     }
 
-    fn read_test_case<R: std::io::Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
+    fn read_test_case<R: std::io::Read>(
+        mut r: R,
+        encoding: ProofFixtureEncoding,
+    ) -> std::io::Result<(Instance, Proof)> {
         let read_32_bytes = |r: &mut R| {
             let mut ret = [0u8; 32];
             r.read_exact(&mut ret).unwrap();
@@ -1297,15 +1326,27 @@ mod tests {
         let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let enable_spend = read_bool(&mut r);
         let enable_output = read_bool(&mut r);
-        let instance = Instance::from_parts(
-            anchor,
-            cv_net,
-            nf_old,
-            rk,
-            cmx,
-            Flags::from_parts(enable_spend, enable_output),
+        let (disable_cross_address, format) = match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => (false, BundleFormat::PreNu6_3),
+            ProofFixtureEncoding::IronwoodThreeFlags => {
+                let disable_cross_address = read_bool(&mut r);
+                assert!(
+                    !disable_cross_address,
+                    "the initial Ironwood fixture pins ordinary fixed-equivalent behavior"
+                );
+                (disable_cross_address, BundleFormat::Nu6_3)
+            }
+        };
+        let flags = Flags::from_byte(
+            u8::from(enable_spend)
+                | (u8::from(enable_output) << 1)
+                | (u8::from(disable_cross_address) << 2),
+            format,
         )
-        .expect("test vectors were generated with non-identity rk");
+        .expect("test vectors use canonical flag encodings");
+
+        let instance = Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, flags)
+            .expect("test vectors were generated with non-identity rk");
 
         let mut proof_bytes = vec![];
         r.read_to_end(&mut proof_bytes)?;
@@ -1464,6 +1505,43 @@ mod tests {
         assert_eq!(proof.0.len(), expected_proof_size);
     }
 
+    #[test]
+    fn round_trip_ironwood() {
+        let mut rng = OsRng;
+
+        let (circuits, instances): (Vec<_>, Vec<_>) = iter::once(())
+            .map(|()| generate_circuit_instance(&mut rng, OrchardCircuitVersion::Ironwood))
+            .unzip();
+
+        let vk = VerifyingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+        assert_eq!(
+            format!("{:#?}\n", vk.vk.pinned()),
+            include_str!("circuit_data/circuit_description_ironwood").replace("\r\n", "\n")
+        );
+
+        for (circuit, instance) in circuits.iter().zip(instances.iter()) {
+            assert_eq!(
+                MockProver::run(
+                    K,
+                    circuit,
+                    instance
+                        .to_halo2_instance()
+                        .iter()
+                        .map(|p| p.to_vec())
+                        .collect()
+                )
+                .unwrap()
+                .verify(),
+                Ok(())
+            );
+        }
+
+        let pk = ProvingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+        let proof = Proof::create(&pk, &circuits, &instances, &mut rng).unwrap();
+        assert!(proof.verify(&vk, &instances).is_ok());
+        assert_eq!(proof.0.len(), 4992);
+    }
+
     // Proves with the proving key for `proving_version` and checks that the proof verifies
     // under the verifying key for the same version, but not under the verifying key for
     // `other_version`. The two circuit versions have different verifying keys, so a proof is
@@ -1498,9 +1576,43 @@ mod tests {
             OrchardCircuitVersion::InsecurePreNu6_2,
         );
         proof_is_bound_to_circuit_version(
+            OrchardCircuitVersion::Ironwood,
+            OrchardCircuitVersion::InsecurePreNu6_2,
+        );
+        proof_is_bound_to_circuit_version(
             OrchardCircuitVersion::InsecurePreNu6_2,
             OrchardCircuitVersion::FixedPostNu6_2,
         );
+        proof_is_bound_to_circuit_version(
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::Ironwood,
+        );
+    }
+
+    #[test]
+    fn fixed_and_ironwood_currently_share_a_verifying_key() {
+        // This test pins the provisional Ironwood behavior. Delete or invert it when Ironwood's
+        // circuit diverges and proofs stop being interchangeable with FixedPostNu6_2.
+        for (proving_version, verifying_version) in [
+            (
+                OrchardCircuitVersion::FixedPostNu6_2,
+                OrchardCircuitVersion::Ironwood,
+            ),
+            (
+                OrchardCircuitVersion::Ironwood,
+                OrchardCircuitVersion::FixedPostNu6_2,
+            ),
+        ] {
+            let mut rng = OsRng;
+            let (circuit, instance) = generate_circuit_instance(&mut rng, proving_version);
+            let instances = core::slice::from_ref(&instance);
+
+            let pk = ProvingKey::build_for_version(proving_version);
+            let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
+
+            let vk = VerifyingKey::build_for_version(verifying_version);
+            assert!(proof.verify(&vk, instances).is_ok());
+        }
     }
 
     // Proving a circuit with a proving key for a different circuit version is a misuse: the
@@ -1510,17 +1622,28 @@ mod tests {
     fn create_rejects_mismatched_proving_key_version() {
         let mut rng = OsRng;
 
-        // Circuits for the insecure version, but proved with the fixed proving key.
-        let (circuit, instance) =
-            generate_circuit_instance(&mut rng, OrchardCircuitVersion::InsecurePreNu6_2);
-        let instances = core::slice::from_ref(&instance);
+        // The FixedPostNu6_2-circuit/Ironwood-key case is the canary for the explicit equality
+        // check: proving would otherwise succeed today because the proving keys are identical.
+        for (circuit_version, pk_version) in [
+            (
+                OrchardCircuitVersion::InsecurePreNu6_2,
+                OrchardCircuitVersion::FixedPostNu6_2,
+            ),
+            (
+                OrchardCircuitVersion::FixedPostNu6_2,
+                OrchardCircuitVersion::Ironwood,
+            ),
+        ] {
+            let (circuit, instance) = generate_circuit_instance(&mut rng, circuit_version);
+            let instances = core::slice::from_ref(&instance);
 
-        let mismatched_pk = ProvingKey::build_for_version(OrchardCircuitVersion::FixedPostNu6_2);
+            let mismatched_pk = ProvingKey::build_for_version(pk_version);
 
-        assert!(matches!(
-            Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
-            Err(super::plonk::Error::Synthesis),
-        ));
+            assert!(matches!(
+                Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
+                Err(super::plonk::Error::Synthesis),
+            ));
+        }
     }
 
     #[test]
@@ -1541,7 +1664,12 @@ mod tests {
 
                 let file =
                     std::fs::File::create("src/circuit_data/circuit_proof_test_case_fixed.bin")?;
-                write_test_case(file, &instance, &proof)
+                write_test_case(
+                    file,
+                    &instance,
+                    &proof,
+                    ProofFixtureEncoding::LegacyTwoFlags,
+                )
             };
             create_proof().expect("should be able to write new proof");
             // Regeneration only writes the fixture; the non-generate run below embeds and
@@ -1552,7 +1680,51 @@ mod tests {
         // Parse the hardcoded proof test case.
         let (instance, proof) = {
             let test_case_bytes = include_bytes!("circuit_data/circuit_proof_test_case_fixed.bin");
-            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
+            read_test_case(&test_case_bytes[..], ProofFixtureEncoding::LegacyTwoFlags)
+                .expect("proof must be valid")
+        };
+        assert_eq!(proof.0.len(), 4992);
+
+        assert!(proof.verify(&vk, &[instance]).is_ok());
+    }
+
+    #[test]
+    fn serialized_ironwood_proof_test_case() {
+        let vk = VerifyingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+
+        if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+            let create_proof = || -> std::io::Result<()> {
+                let mut rng = OsRng;
+
+                let (circuit, instance) =
+                    generate_circuit_instance(OsRng, OrchardCircuitVersion::Ironwood);
+                let instances = core::slice::from_ref(&instance);
+
+                let pk = ProvingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+                let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
+                assert!(proof.verify(&vk, instances).is_ok());
+
+                let file =
+                    std::fs::File::create("src/circuit_data/circuit_proof_test_case_ironwood.bin")?;
+                write_test_case(
+                    file,
+                    &instance,
+                    &proof,
+                    ProofFixtureEncoding::IronwoodThreeFlags,
+                )
+            };
+            create_proof().expect("should be able to write new proof");
+            return;
+        }
+
+        let (instance, proof) = {
+            let test_case_bytes =
+                include_bytes!("circuit_data/circuit_proof_test_case_ironwood.bin");
+            read_test_case(
+                &test_case_bytes[..],
+                ProofFixtureEncoding::IronwoodThreeFlags,
+            )
+            .expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
 
@@ -1575,7 +1747,8 @@ mod tests {
         let (instance, proof) = {
             let test_case_bytes =
                 include_bytes!("circuit_data/circuit_proof_test_case_insecure.bin");
-            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
+            read_test_case(&test_case_bytes[..], ProofFixtureEncoding::LegacyTwoFlags)
+                .expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
         assert!(proof.verify(&vk, &[instance]).is_ok());

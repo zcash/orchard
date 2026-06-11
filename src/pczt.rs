@@ -341,7 +341,7 @@ mod tests {
     use crate::{
         builder::{Builder, BundleType},
         bundle::{BundleFormat, Flags},
-        circuit::ProvingKey,
+        circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, RandomSeed, Rho},
@@ -352,8 +352,8 @@ mod tests {
         Note,
     };
 
-    /// Builds a minimal shielding-style pczt bundle, finalizes IO, and returns
-    /// it ready for `create_proof`. Used by identity-`rk` tests below.
+    /// Builds a minimal shielding-style pczt bundle, finalizes IO, and returns it ready for
+    /// tests that exercise `create_proof` and `extract`.
     fn minimal_finalized_pczt_bundle(mut rng: OsRng) -> super::Bundle {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
@@ -412,6 +412,28 @@ mod tests {
         assert_eq!(bundle.value_balance(), &(-5000));
         // We can successfully bind the bundle.
         bundle.apply_binding_signature(sighash, rng).unwrap();
+    }
+
+    #[test]
+    fn create_proof_uses_proving_key_circuit_version() {
+        let pk = ProvingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+        let vk = VerifyingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        let sighash = [0; 32];
+        // This is the load-bearing assertion: if PCZT proving still built FixedPostNu6_2
+        // circuits unconditionally, `Proof::create` would reject them for this Ironwood key.
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+
+        let bundle = pczt_bundle
+            .extract::<i64>()
+            .unwrap()
+            .unwrap()
+            .apply_binding_signature(sighash, rng)
+            .unwrap();
+
+        assert!(bundle.verify_proof(&vk).is_ok());
     }
 
     #[test]
