@@ -52,14 +52,16 @@ impl super::Bundle {
             },
         )?;
 
-        // The proof comes straight from the (untrusted) PCZT, so reject it here if it is not
-        // the canonical size. This makes "an `Authorized` bundle always has a canonical proof"
-        // hold across the `Unbound` -> `Authorized` transition in `apply_binding_signature`.
+        // The proof and flags come straight from the (untrusted) PCZT, so reject invalid
+        // proof-bearing state here. This makes "an `Authorized` bundle always has a canonical
+        // proof and circuit-supported flags" hold across the `Unbound` -> `Authorized`
+        // transition in `apply_binding_signature`.
         if let Some(bundle) = &bundle {
             crate::bundle::validate_proof_size(
                 &bundle.authorization().proof,
                 bundle.actions().len(),
             )?;
+            crate::bundle::validate_flags_for_current_circuit(*bundle.flags())?;
         }
 
         Ok(bundle)
@@ -121,6 +123,8 @@ impl super::Bundle {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum TxExtractorError {
+    /// The `disableCrossAddress` flag is set, but the circuit does not support it.
+    DisableCrossAddressUnsupported,
     /// The Transaction Extractor role requires `bsk` to be set.
     MissingBindingSignatureSigningKey,
     /// The Transaction Extractor role requires `zkproof` to be set.
@@ -155,6 +159,9 @@ impl From<crate::ActionFromPartsError> for TxExtractorError {
 impl From<crate::bundle::BundleError> for TxExtractorError {
     fn from(e: crate::bundle::BundleError) -> Self {
         match e {
+            crate::bundle::BundleError::DisableCrossAddressUnsupported => {
+                TxExtractorError::DisableCrossAddressUnsupported
+            }
             crate::bundle::BundleError::NonCanonicalProofSize { expected, actual } => {
                 TxExtractorError::NonCanonicalProofSize { expected, actual }
             }
@@ -165,6 +172,10 @@ impl From<crate::bundle::BundleError> for TxExtractorError {
 impl fmt::Display for TxExtractorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            TxExtractorError::DisableCrossAddressUnsupported => write!(
+                f,
+                "the `disableCrossAddress` flag is not supported by the circuit"
+            ),
             TxExtractorError::MissingBindingSignatureSigningKey => {
                 write!(f, "`bsk` must be set for the Transaction Extractor role")
             }

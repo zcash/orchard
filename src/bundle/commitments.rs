@@ -52,7 +52,9 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     h.update(ch.finalize().as_bytes());
     h.update(mh.finalize().as_bytes());
     h.update(nh.finalize().as_bytes());
-    h.update(&[bundle.flags().to_byte()]);
+    // Effects hashing commits to the raw Orchard flag byte. Transaction encoding must
+    // separately check whether that byte is representable in the target format.
+    h.update(&[bundle.flags().to_byte_internal()]);
     h.update(&(*bundle.value_balance()).into().to_le_bytes());
     h.update(&bundle.anchor().to_bytes());
     h.finalize()

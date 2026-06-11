@@ -41,7 +41,7 @@ pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
     /// irrespective of whether any genuine actions are required.
     Transactional {
-        /// The flags that control whether spends and/or outputs are enabled for the bundle.
+        /// The flags used for the bundle, including whether spends and outputs are enabled.
         flags: Flags,
         /// A flag that, when set to `true`, indicates that a bundle should be produced even if no
         /// spends or outputs have been added to the bundle; in such a circumstance, all of the
@@ -53,8 +53,9 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type has all flags enabled, and does not require a bundle to be produced
-    /// if no spends or outputs have been added to the bundle.
+    /// The default bundle type enables spends and outputs, leaves `disableCrossAddress` unset,
+    /// and does not require a bundle to be produced if no spends or outputs have been added to
+    /// the bundle.
     pub const DEFAULT: BundleType = BundleType::Transactional {
         flags: Flags::ENABLED,
         bundle_required: false,
@@ -127,6 +128,8 @@ pub enum BuildError {
     AnchorMismatch,
     /// A bundle could not be built because required signatures were missing.
     MissingSignatures,
+    /// The `disableCrossAddress` flag is set, but the circuit does not support it.
+    DisableCrossAddressUnsupported,
     /// An error occurred in the process of producing a proof for a bundle.
     #[cfg(feature = "circuit")]
     Proof(halo2_proofs::plonk::Error),
@@ -147,6 +150,9 @@ impl fmt::Display for BuildError {
         use BuildError::*;
         match self {
             MissingSignatures => f.write_str("Required signatures were missing during build"),
+            DisableCrossAddressUnsupported => {
+                f.write_str("The `disableCrossAddress` flag is not supported by the circuit")
+            }
             #[cfg(feature = "circuit")]
             Proof(e) => f.write_str(&format!("Could not create proof: {}", e)),
             ValueSum(_) => f.write_str("Overflow occurred during value construction"),
@@ -1003,6 +1009,12 @@ impl<S: InProgressSignatures, V> Bundle<InProgress<Unproven, S>, V> {
         pk: &ProvingKey,
         mut rng: impl RngCore,
     ) -> Result<Bundle<InProgress<Proof, S>, V>, BuildError> {
+        // TODO(ebfull): Once a circuit version supports `disableCrossAddress`, reject
+        // only when the bundle flag is set and `pk` is for an unsupported circuit.
+        if self.flags().disable_cross_address() {
+            return Err(BuildError::DisableCrossAddressUnsupported);
+        }
+
         let instances: Vec<_> = self
             .actions()
             .iter()
@@ -1393,10 +1405,10 @@ pub mod testing {
 mod tests {
     use rand::rngs::OsRng;
 
-    use super::Builder;
+    use super::{BuildError, Builder};
     use crate::{
         builder::BundleType,
-        bundle::{Authorized, Bundle},
+        bundle::{Authorized, Bundle, BundleFormat, Flags},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendingKey},
@@ -1435,5 +1447,27 @@ mod tests {
             .finalize()
             .unwrap();
         assert_eq!(bundle.value_balance(), &(-5000))
+    }
+
+    #[test]
+    fn create_proof_rejects_disable_cross_address() {
+        let pk = ProvingKey::build();
+        let mut rng = OsRng;
+        let flags = Flags::from_byte(0b0000_0111, BundleFormat::Nu6_3).unwrap();
+
+        let builder = Builder::new(
+            BundleType::Transactional {
+                flags,
+                bundle_required: true,
+            },
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+        );
+
+        let bundle = builder.build::<i64>(&mut rng).unwrap().unwrap().0;
+
+        assert!(matches!(
+            bundle.create_proof(&pk, &mut rng),
+            Err(BuildError::DisableCrossAddressUnsupported),
+        ));
     }
 }

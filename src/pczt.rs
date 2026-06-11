@@ -340,11 +340,12 @@ mod tests {
 
     use crate::{
         builder::{Builder, BundleType},
+        bundle::{BundleFormat, Flags},
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, RandomSeed, Rho},
-        pczt::{ProverError, TxExtractorError, Zip32Derivation},
+        pczt::{ParseError, ProverError, TxExtractorError, Zip32Derivation},
         primitives::redpallas::{self, SpendAuth},
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,
@@ -576,6 +577,71 @@ mod tests {
         assert!(matches!(
             pczt_bundle.extract::<i64>(),
             Err(TxExtractorError::NonCanonicalProofSize { .. }),
+        ));
+    }
+
+    #[test]
+    fn parse_uses_bundle_format_for_flags() {
+        let anchor: crate::Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+
+        assert!(matches!(
+            super::Bundle::parse(
+                vec![],
+                0b0000_0100,
+                BundleFormat::PreNu6_3,
+                (0, false),
+                anchor.to_bytes(),
+                None,
+                None,
+            ),
+            Err(ParseError::UnexpectedFlagBitsSet),
+        ));
+
+        let parsed = super::Bundle::parse(
+            vec![],
+            0b0000_0100,
+            BundleFormat::Nu6_3,
+            (0, false),
+            anchor.to_bytes(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(parsed.flags().disable_cross_address());
+        assert_eq!(
+            parsed.flags().to_byte(BundleFormat::Nu6_3),
+            Some(0b0000_0100)
+        );
+        assert_eq!(parsed.flags().to_byte(BundleFormat::PreNu6_3), None);
+    }
+
+    #[test]
+    fn create_proof_rejects_disable_cross_address() {
+        let pk = ProvingKey::build();
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        pczt_bundle.flags = Flags::from_byte(0b0000_0111, BundleFormat::Nu6_3).unwrap();
+
+        assert!(matches!(
+            pczt_bundle.create_proof(&pk, rng),
+            Err(ProverError::DisableCrossAddressUnsupported),
+        ));
+    }
+
+    #[test]
+    fn extract_rejects_disable_cross_address() {
+        let pk = ProvingKey::build();
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.flags = Flags::from_byte(0b0000_0111, BundleFormat::Nu6_3).unwrap();
+
+        assert!(matches!(
+            pczt_bundle.extract::<i64>(),
+            Err(TxExtractorError::DisableCrossAddressUnsupported),
         ));
     }
 }

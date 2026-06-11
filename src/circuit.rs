@@ -907,9 +907,15 @@ impl ProvingKey {
 
 /// Public inputs to the Orchard Action circuit.
 ///
+/// An `Instance` does not carry the bundle's `disableCrossAddress` flag, which no
+/// circuit version in this crate supports; see [`Instance::from_parts`].
+///
 /// # Invariants
 ///
 /// Every `Instance` has a non-identity `rk`.
+// TODO(ebfull): Once a circuit version supports `disableCrossAddress`, carry the flag
+// here so that `Proof::verify` and `Proof::add_to_batch` can enforce it against the
+// verifying key's circuit version, instead of requiring callers to reject it.
 #[derive(Clone, Debug)]
 pub struct Instance {
     anchor: Anchor,
@@ -928,6 +934,12 @@ impl Instance {
     /// pipelines for many proofs, where you don't want to pass around the full bundle.
     /// Use [`Bundle::verify_proof`] instead if you have the full bundle.
     ///
+    /// An `Instance` does not carry the bundle's `disableCrossAddress` flag, which no
+    /// circuit version in this crate supports, so verification pipelines built from
+    /// this API cannot reject bundles that set it. Such pipelines must separately
+    /// reject those bundles themselves, as [`Bundle::verify_proof`] and
+    /// [`BatchValidator`] do.
+    ///
     /// Returns `None` if `rk` is the identity [`pasta_curves::pallas::Point`].
     /// zcashd v6.12.1 and Zebra 4.3.1 both added a consensus rule rejecting
     /// transactions whose Orchard actions have an identity `rk`; the Zcash
@@ -939,6 +951,7 @@ impl Instance {
     /// - <https://zfnd.org/zebra-4-3-1-critical-security-fixes-dockerized-mining-and-ci-hardening/>
     ///
     /// [`Bundle::verify_proof`]: crate::Bundle::verify_proof
+    /// [`BatchValidator`]: crate::bundle::BatchValidator
     pub fn from_parts(
         anchor: Anchor,
         cv_net: ValueCommitment,
@@ -1057,6 +1070,13 @@ impl Proof {
     }
 
     /// Verifies this proof with the given instances.
+    ///
+    /// An [`Instance`] does not carry the bundle's `disableCrossAddress` flag, which no
+    /// circuit version in this crate supports, so this cannot reject proofs for bundles
+    /// that set it. Callers must reject such bundles themselves, as
+    /// [`Bundle::verify_proof`] does.
+    ///
+    /// [`Bundle::verify_proof`]: crate::Bundle::verify_proof
     pub fn verify(&self, vk: &VerifyingKey, instances: &[Instance]) -> Result<(), plonk::Error> {
         let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
         let instances: Vec<Vec<_>> = instances
@@ -1074,6 +1094,11 @@ impl Proof {
     ///
     /// Use this API if you want more control over how proof batches are processed. If you
     /// just want to batch-validate Orchard bundles, use [`bundle::BatchValidator`].
+    ///
+    /// An [`Instance`] does not carry the bundle's `disableCrossAddress` flag, which no
+    /// circuit version in this crate supports, so batches built with this API cannot
+    /// reject bundles that set it. Callers must reject such bundles themselves, as
+    /// [`bundle::BatchValidator`] does.
     ///
     /// [`bundle::BatchValidator`]: crate::bundle::BatchValidator
     pub fn add_to_batch(&self, batch: &mut BatchVerifier<vesta::Affine>, instances: Vec<Instance>) {
