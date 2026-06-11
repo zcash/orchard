@@ -380,7 +380,7 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -416,8 +416,8 @@ mod tests {
 
     #[test]
     fn create_proof_uses_proving_key_circuit_version() {
-        let pk = ProvingKey::build_for_version(OrchardCircuitVersion::Ironwood);
-        let vk = VerifyingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+        let pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
+        let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
@@ -438,7 +438,7 @@ mod tests {
 
     #[test]
     fn shielded_bundle() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let mut rng = OsRng;
 
         // Pretend we derived the spending key via ZIP 32.
@@ -547,7 +547,7 @@ mod tests {
 
     #[test]
     fn create_proof_rejects_identity_rk() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
@@ -561,7 +561,7 @@ mod tests {
 
     #[test]
     fn extract_rejects_identity_rk() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
@@ -580,7 +580,7 @@ mod tests {
 
     #[test]
     fn extract_rejects_non_canonical_proof() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
@@ -640,18 +640,23 @@ mod tests {
 
     #[test]
     fn create_proof_rejects_disable_cross_address() {
-        let pk = ProvingKey::build();
-        let rng = OsRng;
+        for circuit_version in [
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::Ironwood,
+        ] {
+            let pk = ProvingKey::build(circuit_version);
+            let rng = OsRng;
 
-        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
-        pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
+            let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+            pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
 
-        assert!(matches!(
-            pczt_bundle.create_proof(&pk, rng),
-            Err(ProverError::ProofFailed(
-                halo2_proofs::plonk::Error::InvalidInstances
-            )),
-        ));
+            assert!(matches!(
+                pczt_bundle.create_proof(&pk, rng),
+                Err(ProverError::ProofFailed(
+                    halo2_proofs::plonk::Error::InvalidInstances
+                )),
+            ));
+        }
     }
 
     #[test]

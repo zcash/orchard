@@ -119,7 +119,7 @@ mod tests {
     use super::BatchValidator;
     use crate::{
         bundle::tests::{sample_authorized_bundle, with_disable_cross_address},
-        circuit::VerifyingKey,
+        circuit::{OrchardCircuitVersion, VerifyingKey},
     };
 
     #[test]
@@ -140,12 +140,17 @@ mod tests {
     // otherwise-empty batch, which is trivially valid.
     #[test]
     fn validate_rejects_unsupported_disable_cross_address() {
-        let vk = VerifyingKey::build();
+        for circuit_version in [
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::Ironwood,
+        ] {
+            let vk = VerifyingKey::build(circuit_version);
 
-        assert!(BatchValidator::new().validate(&vk, OsRng));
+            assert!(BatchValidator::new().validate(&vk, OsRng));
 
-        let mut validator = BatchValidator::new();
-        validator.restricted = true;
-        assert!(!validator.validate(&vk, OsRng));
+            let mut validator = BatchValidator::new();
+            validator.restricted = true;
+            assert!(!validator.validate(&vk, OsRng));
+        }
     }
 }

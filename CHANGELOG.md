@@ -18,6 +18,11 @@ and this project adheres to Rust's notion of
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
   - `orchard::circuit::VerifyingKey::circuit_version`
   - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
+- `orchard::circuit::OrchardCircuitVersion::Ironwood`, an explicit circuit
+  version for the Ironwood circuit. It currently has the same verifying key as
+  `FixedPostNu6_2`, so proofs are interchangeable with `FixedPostNu6_2` for
+  now; this is provisional, and Ironwood's circuit and verifying key are
+  expected to change in a future release.
 - `orchard::bundle::testing::arb_flags_nu6_3`, a strategy that generates flag
   sets under NU6.3 encoding rules, including `disableCrossAddress`.
   `arb_flags` is unchanged and only generates flag sets that are representable
@@ -50,6 +55,34 @@ and this project adheres to Rust's notion of
   `halo2_proofs::plonk::Error::InvalidInstances`; bundle verification returns
   `InvalidInstances`, and `orchard::bundle::BatchValidator::validate` returns
   `false`.
+- Circuit-building APIs now require the intended `OrchardCircuitVersion` through
+  their plain constructors instead of implicitly selecting the fixed circuit or
+  using `_for_version` variants:
+  - `orchard::circuit::ProvingKey::build`
+  - `orchard::circuit::VerifyingKey::build`
+  - `orchard::circuit::Circuit::from_action_context`
+  - `orchard::builder::Builder::build`
+  - `orchard::builder::bundle`
+- `orchard::builder::Builder::new` no longer implicitly selects
+  `FixedPostNu6_2`; the circuit version is now passed to
+  `orchard::builder::Builder::build` instead.
+- `orchard::pczt::Bundle::create_proof` now builds circuits for the circuit
+  version carried by the provided `ProvingKey`; previously these circuits were
+  always built for `FixedPostNu6_2`.
+
+### Removed
+- The temporary `_for_version` APIs from `0.14.0`. Use the plain APIs listed
+  above and pass the intended `OrchardCircuitVersion`:
+  - `orchard::circuit::ProvingKey::build_for_version` (use `ProvingKey::build`)
+  - `orchard::circuit::VerifyingKey::build_for_version` (use
+    `VerifyingKey::build`)
+  - `orchard::circuit::Circuit::from_action_context_for_version` (use
+    `Circuit::from_action_context`)
+  - `orchard::builder::Builder::new_for_version` (use `Builder::new` and pass
+    the circuit version to `Builder::build`)
+  - `orchard::builder::bundle_for_version` (use `bundle`)
+- `Default` implementations for `orchard::circuit::OrchardCircuitVersion` and
+  `orchard::circuit::Circuit`.
 
 ## [0.14.0] - 2026-06-02
 

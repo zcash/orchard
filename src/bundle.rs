@@ -1136,11 +1136,17 @@ pub(crate) mod tests {
     #[test]
     fn verify_proof_rejects_disable_cross_address() {
         let bundle = with_disable_cross_address(sample_authorized_bundle(1));
-        let vk = crate::circuit::VerifyingKey::build();
 
-        assert!(matches!(
-            bundle.verify_proof(&vk),
-            Err(halo2_proofs::plonk::Error::InvalidInstances)
-        ));
+        for circuit_version in [
+            crate::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+            crate::circuit::OrchardCircuitVersion::Ironwood,
+        ] {
+            let vk = crate::circuit::VerifyingKey::build(circuit_version);
+
+            assert!(matches!(
+                bundle.verify_proof(&vk),
+                Err(halo2_proofs::plonk::Error::InvalidInstances)
+            ));
+        }
     }
 }

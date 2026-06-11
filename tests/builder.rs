@@ -32,8 +32,8 @@ fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
 #[test]
 fn bundle_chain() {
     let mut rng = OsRng;
-    let pk = ProvingKey::build();
-    let vk = VerifyingKey::build();
+    let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+    let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
@@ -56,7 +56,10 @@ fn bundle_chain() {
             builder.add_output(None, recipient, note_value, [0u8; 512]),
             Ok(())
         );
-        let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
+        let (unauthorized, bundle_meta) = builder
+            .build(&mut rng, OrchardCircuitVersion::FixedPostNu6_2)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(
             unauthorized
@@ -117,7 +120,10 @@ fn bundle_chain() {
             builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
             Ok(())
         );
-        let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
+        let (unauthorized, _) = builder
+            .build(&mut rng, OrchardCircuitVersion::FixedPostNu6_2)
+            .unwrap()
+            .unwrap();
         let sighash = unauthorized.commitment().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
@@ -135,29 +141,31 @@ fn bundle_chain() {
 #[test]
 fn builder_builds_for_insecure_circuit_version() {
     let mut rng = OsRng;
-    let insecure_pk = ProvingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
-    let insecure_vk = VerifyingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
-    let fixed_vk = VerifyingKey::build();
+    let insecure_pk = ProvingKey::build(OrchardCircuitVersion::InsecurePreNu6_2);
+    let insecure_vk = VerifyingKey::build(OrchardCircuitVersion::InsecurePreNu6_2);
+    let fixed_vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new_for_version(
+    let mut builder = Builder::new(
         BundleType::Transactional {
             flags: Flags::SPENDS_DISABLED,
             bundle_required: false,
         },
         anchor,
-        OrchardCircuitVersion::InsecurePreNu6_2,
     );
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
     );
 
-    let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let (unauthorized, _) = builder
+        .build::<i64>(&mut rng, OrchardCircuitVersion::InsecurePreNu6_2)
+        .unwrap()
+        .unwrap();
     let sighash: [u8; 32] = unauthorized.commitment().into();
     let proven = unauthorized.create_proof(&insecure_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
@@ -169,28 +177,30 @@ fn builder_builds_for_insecure_circuit_version() {
 #[test]
 fn builder_builds_for_ironwood_circuit_version() {
     let mut rng = OsRng;
-    let ironwood_pk = ProvingKey::build_for_version(OrchardCircuitVersion::Ironwood);
-    let ironwood_vk = VerifyingKey::build_for_version(OrchardCircuitVersion::Ironwood);
+    let ironwood_pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
+    let ironwood_vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new_for_version(
+    let mut builder = Builder::new(
         BundleType::Transactional {
             flags: Flags::SPENDS_DISABLED,
             bundle_required: false,
         },
         anchor,
-        OrchardCircuitVersion::Ironwood,
     );
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
     );
 
-    let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let (unauthorized, _) = builder
+        .build::<i64>(&mut rng, OrchardCircuitVersion::Ironwood)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         unauthorized.circuit_version(),
         OrchardCircuitVersion::Ironwood

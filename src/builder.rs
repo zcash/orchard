@@ -444,23 +444,14 @@ impl ActionInfo {
         self.spend.note.value() - self.output.value
     }
 
-    /// Builds the action.
+    /// Builds the action for a given circuit version.
     ///
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
-    ///
-    /// The circuit version defaults to [`OrchardCircuitVersion::FixedPostNu6_2`],
-    /// which should be used for all new proofs.
+    /// The circuit version must be consistent between actions in a bundle.
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     #[cfg(feature = "circuit")]
-    fn build(self, rng: impl RngCore) -> (Action<SigningMetadata>, Circuit) {
-        self.build_for_version(rng, OrchardCircuitVersion::FixedPostNu6_2)
-    }
-
-    /// Builds the action for a given circuit version. This must be consistent
-    /// between actions in a bundle.
-    #[cfg(feature = "circuit")]
-    fn build_for_version(
+    fn build(
         self,
         mut rng: impl RngCore,
         circuit_version: OrchardCircuitVersion,
@@ -519,12 +510,12 @@ impl ActionInfo {
 #[cfg(feature = "circuit")]
 pub type UnauthorizedBundle<V> = Bundle<InProgress<Unproven, Unauthorized>, V>;
 
-/// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not
-/// necessarily recoverable from the bundle itself.
+/// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not necessarily
+/// recoverable from the bundle itself.
 ///
 /// This includes information about how [`Action`]s within the bundle are ordered (after
-/// padding and randomization) relative to the order in which spends and outputs were
-/// provided (to [`bundle`]), or the order in which [`Builder`] mutations were performed.
+/// padding and randomization) relative to the order in which spends and outputs were provided
+/// (to [`bundle`]), or the order in which [`Builder`] mutations were performed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BundleMetadata {
     spend_indices: Vec<usize>,
@@ -577,59 +568,16 @@ pub struct Builder {
     outputs: Vec<OutputInfo>,
     bundle_type: BundleType,
     anchor: Anchor,
-    // Only proving (the `circuit` feature) consults the circuit version.
-    #[cfg(feature = "circuit")]
-    circuit_version: OrchardCircuitVersion,
 }
 
 impl Builder {
     /// Constructs a new empty builder for an Orchard bundle.
-    #[cfg_attr(
-        feature = "circuit",
-        doc = "",
-        doc = "When proving, the circuit version defaults to `FixedPostNu6_2`, which should be used",
-        doc = "for all new proofs; use [`Builder::new_for_version`] to choose another."
-    )]
     pub fn new(bundle_type: BundleType, anchor: Anchor) -> Self {
-        Self::new_internal(
-            bundle_type,
-            anchor,
-            #[cfg(feature = "circuit")]
-            OrchardCircuitVersion::FixedPostNu6_2,
-        )
-    }
-
-    /// Constructs a new empty builder for an Orchard bundle with a given
-    /// circuit version.
-    ///
-    /// Setting this to [`OrchardCircuitVersion::InsecurePreNu6_2`] produces a
-    /// bundle whose proof must be created with an insecure proving key (see
-    /// [`ProvingKey::build_for_version`]); this is intended only for
-    /// reproducing pre-NU6.2 proofs in tests, never for proving transactions
-    /// for the network.
-    ///
-    /// [`ProvingKey::build_for_version`]: crate::circuit::ProvingKey::build_for_version
-    #[cfg(feature = "circuit")]
-    pub fn new_for_version(
-        bundle_type: BundleType,
-        anchor: Anchor,
-        circuit_version: OrchardCircuitVersion,
-    ) -> Self {
-        Self::new_internal(bundle_type, anchor, circuit_version)
-    }
-
-    fn new_internal(
-        bundle_type: BundleType,
-        anchor: Anchor,
-        #[cfg(feature = "circuit")] circuit_version: OrchardCircuitVersion,
-    ) -> Self {
         Builder {
             spends: vec![],
             outputs: vec![],
             bundle_type,
             anchor,
-            #[cfg(feature = "circuit")]
-            circuit_version,
         }
     }
 
@@ -725,22 +673,24 @@ impl Builder {
             .and_then(|i| V::try_from(i).map_err(|_| value::BalanceError::Overflow))
     }
 
-    /// Builds a bundle containing the given spent notes and outputs.
+    /// Builds a bundle containing the given spent notes and outputs for a given circuit version.
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
+    /// See [`OrchardCircuitVersion`] for which version to use.
     #[cfg(feature = "circuit")]
     pub fn build<V: TryFrom<i64>>(
         self,
         rng: impl RngCore,
+        circuit_version: OrchardCircuitVersion,
     ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
-        bundle_for_version(
+        bundle(
             rng,
             self.anchor,
             self.bundle_type,
             self.spends,
             self.outputs,
-            self.circuit_version,
+            circuit_version,
         )
     }
 
@@ -779,39 +729,12 @@ impl Builder {
     }
 }
 
-/// Builds a bundle containing the given spent notes and outputs.
+/// Builds a bundle containing the given spent notes and outputs, with the Action circuits built
+/// for the given `circuit_version`.
 ///
-/// The returned bundle will have no proof or signatures; these can be applied with
-/// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively.
+/// See [`OrchardCircuitVersion`] for which version to use.
 #[cfg(feature = "circuit")]
 pub fn bundle<V: TryFrom<i64>>(
-    rng: impl RngCore,
-    anchor: Anchor,
-    bundle_type: BundleType,
-    spends: Vec<SpendInfo>,
-    outputs: Vec<OutputInfo>,
-) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
-    bundle_for_version(
-        rng,
-        anchor,
-        bundle_type,
-        spends,
-        outputs,
-        OrchardCircuitVersion::FixedPostNu6_2,
-    )
-}
-
-/// Builds a bundle containing the given spent notes and outputs, with the Action circuits
-/// built for the given `circuit_version`.
-///
-/// Only [`OrchardCircuitVersion::FixedPostNu6_2`] should be used to prove transactions for the
-/// network; [`OrchardCircuitVersion::InsecurePreNu6_2`] exists only to reproduce pre-NU6.2
-/// proofs in tests, and requires an insecure proving key (see
-/// [`ProvingKey::build_for_version`]) to create the proof.
-///
-/// [`ProvingKey::build_for_version`]: crate::circuit::ProvingKey::build_for_version
-#[cfg(feature = "circuit")]
-pub fn bundle_for_version<V: TryFrom<i64>>(
     rng: impl RngCore,
     anchor: Anchor,
     bundle_type: BundleType,
@@ -842,7 +765,7 @@ pub fn bundle_for_version<V: TryFrom<i64>>(
             // Create the actions.
             let (actions, circuits): (Vec<_>, Vec<_>) = pre_actions
                 .into_iter()
-                .map(|a| a.build_for_version(&mut rng, circuit_version))
+                .map(|a| a.build(&mut rng, circuit_version))
                 .unzip();
 
             // Verify that bsk and bvk are consistent.
@@ -1272,7 +1195,7 @@ pub mod testing {
     use crate::{
         address::testing::arb_address,
         bundle::{Authorized, Bundle},
-        circuit::ProvingKey,
+        circuit::{OrchardCircuitVersion, ProvingKey},
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
@@ -1318,9 +1241,9 @@ pub mod testing {
                     .unwrap();
             }
 
-            let pk = ProvingKey::build();
+            let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
             builder
-                .build(&mut self.rng)
+                .build(&mut self.rng, OrchardCircuitVersion::FixedPostNu6_2)
                 .unwrap()
                 .unwrap()
                 .0
@@ -1405,7 +1328,7 @@ mod tests {
     use crate::{
         builder::BundleType,
         bundle::{Authorized, Bundle, Flags},
-        circuit::ProvingKey,
+        circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendingKey},
         tree::EMPTY_ROOTS,
@@ -1414,7 +1337,7 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -1433,7 +1356,7 @@ mod tests {
         assert_eq!(balance, -5000);
 
         let bundle: Bundle<Authorized, i64> = builder
-            .build(&mut rng)
+            .build(&mut rng, OrchardCircuitVersion::FixedPostNu6_2)
             .unwrap()
             .unwrap()
             .0
@@ -1447,25 +1370,34 @@ mod tests {
 
     #[test]
     fn create_proof_rejects_disable_cross_address() {
-        let pk = ProvingKey::build();
-        let mut rng = OsRng;
-        let flags = Flags::CROSS_ADDRESS_DISABLED;
+        for circuit_version in [
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::Ironwood,
+        ] {
+            let pk = ProvingKey::build(circuit_version);
+            let mut rng = OsRng;
+            let flags = Flags::CROSS_ADDRESS_DISABLED;
 
-        let builder = Builder::new(
-            BundleType::Transactional {
-                flags,
-                bundle_required: true,
-            },
-            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+            let builder = Builder::new(
+                BundleType::Transactional {
+                    flags,
+                    bundle_required: true,
+                },
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+            );
 
-        let bundle = builder.build::<i64>(&mut rng).unwrap().unwrap().0;
+            let bundle = builder
+                .build::<i64>(&mut rng, circuit_version)
+                .unwrap()
+                .unwrap()
+                .0;
 
-        assert!(matches!(
-            bundle.create_proof(&pk, &mut rng),
-            Err(BuildError::Proof(
-                halo2_proofs::plonk::Error::InvalidInstances
-            )),
-        ));
+            assert!(matches!(
+                bundle.create_proof(&pk, &mut rng),
+                Err(BuildError::Proof(
+                    halo2_proofs::plonk::Error::InvalidInstances
+                )),
+            ));
+        }
     }
 }
