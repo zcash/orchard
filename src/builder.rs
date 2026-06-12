@@ -530,6 +530,7 @@ impl ActionInfo {
     fn build(
         self,
         mut rng: impl RngCore,
+        flags: Flags,
         circuit_version: OrchardCircuitVersion,
     ) -> (Action<SigningMetadata>, Circuit) {
         let v_net = self.value_sum();
@@ -559,6 +560,7 @@ impl ActionInfo {
                 note,
                 alpha,
                 self.rcv,
+                flags,
                 circuit_version,
             ),
         )
@@ -944,7 +946,7 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
     // Create the actions.
     let (actions, circuits): (Vec<_>, Vec<_>) = pre_actions
         .into_iter()
-        .map(|a| a.build(&mut rng, circuit_version))
+        .map(|a| a.build(&mut rng, flags, circuit_version))
         .unzip();
 
     // Verify that bsk and bvk are consistent.

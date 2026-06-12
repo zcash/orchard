@@ -100,8 +100,15 @@ impl super::Bundle {
                     .clone()
                     .ok_or(ProverError::MissingValueCommitTrapdoor)?;
 
-                Circuit::from_action_context(spend, output_note, alpha, rcv, pk.circuit_version())
-                    .ok_or(ProverError::RhoMismatch)
+                Circuit::from_action_context(
+                    spend,
+                    output_note,
+                    alpha,
+                    rcv,
+                    self.flags,
+                    pk.circuit_version(),
+                )
+                .ok_or(ProverError::RhoMismatch)
             })
             .collect::<Result<Vec<_>, ProverError>>()?;
 
