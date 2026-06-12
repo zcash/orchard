@@ -7,128 +7,127 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+All changes in this release support the NU6.3 `disableCrossAddress` bundle
+flag and the Ironwood Orchard Action circuit that enforces it. Existing
+callers keep the current behavior by passing
+`OrchardCircuitVersion::FixedPostNu6_2` to the APIs that now require a circuit
+version, and the `BundleFormat` of the transaction encoding they parse or
+serialize.
+
 ### Added
-- `orchard::bundle::BundleFormat`, selecting whether an Orchard bundle flag
-  byte is interpreted under pre-NU6.3 or NU6.3 transaction encoding rules.
 - `orchard::bundle::Flags` APIs for the NU6.3 `disableCrossAddress` flag:
   - `Flags::CROSS_ADDRESS_DISABLED`
   - `Flags::disable_cross_address`
+- `orchard::bundle::BundleFormat`, selecting whether an Orchard bundle flag
+  byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
+  reserved) or NU6.3 rules (bit 2 is `disableCrossAddress`).
+- `orchard::circuit::OrchardCircuitVersion::Ironwood`, the circuit version
+  that enforces the `disableCrossAddress` public input. Ironwood has its own
+  proving and verifying keys.
 - Circuit-version support introspection for the cross-address restriction:
   - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
   - `orchard::circuit::VerifyingKey::circuit_version`
   - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
-- `orchard::circuit::OrchardCircuitVersion::Ironwood`, an explicit circuit
-  version for the Ironwood circuit. Ironwood has its own verifying key and
-  enforces the `disableCrossAddress` public input.
-- `orchard::bundle::testing::arb_flags_nu6_3`, a strategy that generates flag
-  sets under NU6.3 encoding rules, including `disableCrossAddress`.
-  `arb_flags` is unchanged and only generates flag sets that are representable
-  before NU6.3.
-- Wallet-controlled change-output builder APIs for constructing bundles whose
-  actions preserve the same-receiver property required by `disableCrossAddress`:
+- Wallet-controlled change outputs, the only way to retain shielded value in
+  a bundle that disables cross-address transfers:
   - `orchard::builder::Builder::add_change_output`
   - `orchard::builder::OutputInfo::change`
 - `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers
   can check the `disableCrossAddress` same-receiver structural property before
-  signing.
-- Error variants for `disableCrossAddress` builder and PCZT checks:
+  signing. It is a no-op for bundles that permit cross-address transfers.
+- Error variants for the `disableCrossAddress` builder and PCZT checks:
   - `orchard::builder::BuildError::CrossAddressDisabled`
-  - `orchard::builder::OutputError::CrossAddressDisabled`
-  - `orchard::builder::OutputError::FvkMismatch`
-  - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
-  - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`
+  - `orchard::builder::OutputError::{CrossAddressDisabled, FvkMismatch}`
   - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
+  - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`
+  - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
+- `orchard::bundle::testing::arb_flags_nu6_3` (under the `test-dependencies`
+  feature), a strategy that generates flag sets under NU6.3 encoding rules,
+  including `disableCrossAddress`. `arb_flags` is unchanged and only generates
+  flag sets that are representable before NU6.3.
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
   `orchard::pczt::Bundle::parse` now take a `BundleFormat`. Under
   `BundleFormat::Nu6_3`, bit 2 is parsed and serialized as
   `disableCrossAddress`; under `BundleFormat::PreNu6_3`, bit 2 remains
-  reserved, and `Flags::to_byte` returns `None` if `disableCrossAddress` is set.
-- `orchard::circuit::Instance::from_parts` now takes an
-  `orchard::bundle::Flags` argument instead of separate spend/output enable
-  booleans, so the `disableCrossAddress` flag is carried into the public
-  instances. `orchard::Proof::{create, verify}` reject instances that set this
-  flag unless the proving or verifying key's circuit version supports the
-  cross-address restriction, returning
-  `halo2_proofs::plonk::Error::InvalidInstances`. Ironwood supports that
-  restriction; older circuit versions do not.
-- Documentation: `orchard::builder::BundleType::Coinbase` now documents that
-  coinbase bundles never set `disableCrossAddress`, and that consensus rules
-  outside this crate determine where Orchard-format shielded coinbase is
-  permitted — in particular, a pool whose rules require
-  `disableCrossAddress = 1` on every bundle prohibits coinbase bundles
-  entirely. `orchard::Anchor::empty_tree` and `BundleType::flags`
-  documentation was corrected accordingly.
-- `orchard::Bundle::commitment` hashes the raw Orchard flag byte, including
-  the NU6.3 `disableCrossAddress` bit when set. This changes the ZIP-244
-  Orchard digest, and therefore transaction IDs and sighashes, for bundles that
-  set that flag.
-- `orchard::Bundle::<Authorized, V>::try_from_parts` and
-  `orchard::pczt::Bundle::extract` preserve `disableCrossAddress` when it is
-  set; support for proving or verifying that flag is checked by the proof APIs.
-  With pre-Ironwood circuit keys, proving a bundle that sets the flag returns
-  `orchard::builder::BuildError::Proof` from builder-created bundles, and
-  `orchard::pczt::ProverError::ProofFailed` from PCZT bundles, each wrapping
-  `halo2_proofs::plonk::Error::InvalidInstances`; bundle verification returns
-  `InvalidInstances`, and `orchard::bundle::BatchValidator::validate` returns
-  `false`. Ironwood keys prove and verify structurally-conforming restricted
-  bundles.
-- Circuit-building APIs now require the intended `OrchardCircuitVersion` through
-  their plain constructors instead of implicitly selecting the fixed circuit or
-  using `_for_version` variants:
+  reserved, and `Flags::to_byte` (which now returns `Option<u8>`) returns
+  `None` if `disableCrossAddress` is set.
+- Circuit-building APIs now take the intended `OrchardCircuitVersion`
+  explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
+  `FixedPostNu6_2` for the previous behavior, or `Ironwood` for restricted
+  proofs:
   - `orchard::circuit::ProvingKey::build`
   - `orchard::circuit::VerifyingKey::build`
   - `orchard::circuit::Circuit::from_action_context`
-  - `orchard::builder::Builder::build`
+  - `orchard::builder::Builder::build` (`Builder::new` no longer selects a
+    circuit version)
   - `orchard::builder::bundle`
-- `orchard::builder::Builder::new` no longer implicitly selects
-  `FixedPostNu6_2`; the circuit version is now passed to
-  `orchard::builder::Builder::build` instead.
-- `orchard::pczt::Bundle::create_proof` now builds circuits for the circuit
-  version carried by the provided `ProvingKey`; previously these circuits were
-  always built for `FixedPostNu6_2`.
-- `orchard::builder::Builder` now constructs `disableCrossAddress` bundles as
-  withdrawal/change bundles. Requested spends are each paired with a fabricated
-  zero-value output to the spent note's address (which the owning wallet will
-  trial-decrypt when scanning); requested wallet-controlled change outputs are
-  each paired with a fabricated zero-value spend at the change address; padding
-  actions pair a dummy spend with a zero-value output to the dummy's address.
-  `Builder::add_output` rejects ordinary outputs when `disableCrossAddress` is
-  set; use `Builder::add_change_output` for retained shielded value. For these
-  bundles, `orchard::builder::BundleType::num_actions` counts
-  `num_spends + num_outputs` requested actions (a requested spend and a
-  requested output never share an action), rather than the maximum of the two.
-- `orchard::pczt::Bundle::create_proof` now checks the `disableCrossAddress`
-  same-receiver structural property before building any circuits, returning
-  `orchard::pczt::ProverError::DisallowedCrossAddressTransfer` (or
-  `ProverError::MissingRecipient` if a `recipient` field is unset) when a
-  `disableCrossAddress` bundle violates it. Only structurally-conforming
-  bundles reach the proof APIs' circuit-version support check described above.
-- `orchard::pczt::Bundle::finalize_io` now verifies the `disableCrossAddress`
-  structural restriction before computing `bsk` or signing dummy spends,
-  returning `orchard::pczt::IoFinalizerError::CrossAddressRestriction` and
-  leaving the bundle unmodified when that check fails.
+- `orchard::circuit::Instance::from_parts` now takes an
+  `orchard::bundle::Flags` argument instead of separate spend/output enable
+  booleans, so the `disableCrossAddress` flag is carried into the public
+  instances.
+- Proof APIs reject instances that set `disableCrossAddress` unless the key's
+  circuit version supports the cross-address restriction.
+  `orchard::Proof::{create, verify}` and `orchard::Bundle::verify_proof`
+  return `halo2_proofs::plonk::Error::InvalidInstances`; with pre-Ironwood
+  keys, proving a restricted builder-created bundle returns
+  `orchard::builder::BuildError::Proof`, PCZT proving returns
+  `orchard::pczt::ProverError::ProofFailed`, and
+  `orchard::bundle::BatchValidator::validate` returns `false`. Restricted
+  bundles can still be constructed and round-tripped —
+  `orchard::Bundle::<Authorized, V>::try_from_parts` and
+  `orchard::pczt::Bundle::extract` preserve the flag — with enforcement at
+  proving and verification.
+- `orchard::builder::Builder` constructs `disableCrossAddress` bundles as
+  withdrawal/change bundles in which every action's output is addressed to
+  the note it spends:
+  - Requested spends are each paired with a fabricated zero-value output to
+    the spent note's address (which the owning wallet will trial-decrypt when
+    scanning); requested change outputs are each paired with a fabricated
+    zero-value spend at the change address; padding actions pair a dummy
+    spend with a zero-value output to the dummy's address.
+  - `Builder::add_output` returns `OutputError::CrossAddressDisabled` for
+    these bundles; use `Builder::add_change_output` for retained value.
+  - `orchard::builder::BundleType::num_actions` counts
+    `num_spends + num_outputs` requested actions rather than the maximum of
+    the two (a requested spend and a requested output never share an action),
+    and `orchard::builder::BundleMetadata` maps them to distinct actions.
+    Wallets estimating fees (e.g. per ZIP 317) must account for the larger
+    action count.
+- `orchard::pczt::Bundle::create_proof` now builds the Action circuits for
+  the provided `ProvingKey`'s circuit version (previously always
+  `FixedPostNu6_2`), and checks the `disableCrossAddress` same-receiver
+  property before building any circuits, returning
+  `ProverError::DisallowedCrossAddressTransfer` (or
+  `ProverError::MissingRecipient` if a `recipient` field is unset).
+- `orchard::pczt::Bundle::finalize_io` verifies the `disableCrossAddress`
+  restriction before computing `bsk` or signing dummy spends, returning
+  `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
+  `VerifyError`) and leaving the bundle unmodified if the PCZT is missing
+  recipient data or violates the restriction.
+- `orchard::Bundle::commitment` hashes the raw Orchard flag byte, including
+  the NU6.3 `disableCrossAddress` bit when set. This changes the ZIP-244
+  Orchard digest, and therefore transaction IDs and sighashes, for bundles
+  that set that flag.
 
 ### Removed
-- The temporary `_for_version` APIs from `0.14.0`. Use the plain APIs listed
-  above and pass the intended `OrchardCircuitVersion`:
-  - `orchard::circuit::ProvingKey::build_for_version` (use `ProvingKey::build`)
-  - `orchard::circuit::VerifyingKey::build_for_version` (use
-    `VerifyingKey::build`)
-  - `orchard::circuit::Circuit::from_action_context_for_version` (use
-    `Circuit::from_action_context`)
+- The temporary `_for_version` APIs from `0.14.0`; pass the intended
+  `OrchardCircuitVersion` to the plain APIs listed above instead:
+  - `orchard::circuit::ProvingKey::build_for_version`
+  - `orchard::circuit::VerifyingKey::build_for_version`
+  - `orchard::circuit::Circuit::from_action_context_for_version`
   - `orchard::builder::Builder::new_for_version` (use `Builder::new` and pass
     the circuit version to `Builder::build`)
-  - `orchard::builder::bundle_for_version` (use `bundle`)
-- `Default` implementations for `orchard::circuit::OrchardCircuitVersion` and
-  `orchard::circuit::Circuit`.
+  - `orchard::builder::bundle_for_version`
+- The `Default` impls for `orchard::circuit::Circuit` and
+  `orchard::circuit::OrchardCircuitVersion`; callers must choose a circuit
+  version explicitly.
 
 ### Fixed
-- The documentation and `Display` output of
-  `orchard::builder::BuildError::OutputsDisabled` previously described spends
-  rather than outputs.
+- The `Display` output of `orchard::builder::BuildError::OutputsDisabled`
+  previously described spends rather than outputs.
 
 ## [0.14.0] - 2026-06-02
 
