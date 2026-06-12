@@ -22,7 +22,7 @@ impl super::Bundle {
     ///
     /// [`Bundle::finalize_io`]: super::Bundle::finalize_io
     pub fn verify_cross_address_restriction(&self) -> Result<(), VerifyError> {
-        if self.flags.disable_cross_address() {
+        if self.flags.cross_address_disabled() {
             for action in &self.actions {
                 let spend_recipient = action
                     .spend

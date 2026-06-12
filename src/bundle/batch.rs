@@ -66,7 +66,7 @@ impl BatchValidator {
         });
 
         let instances = bundle.to_instances();
-        self.restricted |= instances.iter().any(|i| i.disable_cross_address());
+        self.restricted |= instances.iter().any(|i| i.cross_address_disabled());
         bundle
             .authorization()
             .proof()
@@ -118,13 +118,13 @@ mod tests {
 
     use super::BatchValidator;
     use crate::{
-        bundle::tests::{sample_authorized_bundle, with_disable_cross_address},
+        bundle::tests::{sample_authorized_bundle, with_cross_address_disabled},
         circuit::{OrchardCircuitVersion, VerifyingKey},
     };
 
     #[test]
     fn add_bundle_records_restricted_instances() {
-        let bundle = with_disable_cross_address(sample_authorized_bundle(1))
+        let bundle = with_cross_address_disabled(sample_authorized_bundle(1))
             .try_map_value_balance(i64::try_from)
             .expect("generated bundle value balance fits in i64");
 
@@ -139,7 +139,7 @@ mod tests {
     // `disableCrossAddress`, so instead check the key-capability short-circuit against an
     // otherwise-empty batch, which is trivially valid.
     #[test]
-    fn validate_requires_key_support_for_disable_cross_address() {
+    fn validate_requires_key_support_for_cross_address_disabled() {
         for circuit_version in [
             OrchardCircuitVersion::InsecurePreNu6_2,
             OrchardCircuitVersion::FixedPostNu6_2,

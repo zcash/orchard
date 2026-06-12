@@ -105,7 +105,7 @@ impl BundleType {
                 // addressed to the note it spends, so a requested spend and a requested
                 // output can never share an action: each is paired with a fabricated
                 // zero-value counterpart instead.
-                let num_requested_actions = if flags.disable_cross_address() {
+                let num_requested_actions = if flags.cross_address_disabled() {
                     num_spends
                         .checked_add(num_outputs)
                         .ok_or("num_spends + num_outputs overflowed")?
@@ -719,7 +719,7 @@ impl Builder {
         if !flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
-        if flags.disable_cross_address() {
+        if flags.cross_address_disabled() {
             return Err(OutputError::CrossAddressDisabled);
         }
 
@@ -1003,7 +1003,7 @@ fn build_bundle<B, R: RngCore>(
         .num_actions(num_requested_spends, num_requested_outputs)
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
-    let (pre_actions, bundle_meta) = if flags.disable_cross_address() {
+    let (pre_actions, bundle_meta) = if flags.cross_address_disabled() {
         // Every action's output must be addressed to the note it spends, so the
         // spend/output pairing within each action is intentional:
         //
@@ -1668,13 +1668,13 @@ mod tests {
         assert_eq!(bundle.circuit_version(), OrchardCircuitVersion::Ironwood);
         assert!(!bundle.flags().spends_enabled());
         assert!(bundle.flags().outputs_enabled());
-        assert!(!bundle.flags().disable_cross_address());
+        assert!(!bundle.flags().cross_address_disabled());
     }
 
     #[test]
     fn coinbase_bundle_type_uses_spends_disabled_flags() {
         assert_eq!(BundleType::Coinbase.flags(), Flags::SPENDS_DISABLED);
-        assert!(!BundleType::Coinbase.flags().disable_cross_address());
+        assert!(!BundleType::Coinbase.flags().cross_address_disabled());
     }
 
     #[test]
@@ -1726,7 +1726,7 @@ mod tests {
         assert_eq!(balance, 10_000);
 
         let (pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
-        assert!(pczt_bundle.flags().disable_cross_address());
+        assert!(pczt_bundle.flags().cross_address_disabled());
         assert_eq!(pczt_bundle.actions().len(), 2);
         assert_eq!(i64::try_from(pczt_bundle.value_sum).unwrap(), 10_000);
         pczt_bundle.verify_cross_address_restriction().unwrap();
@@ -1839,7 +1839,7 @@ mod tests {
         .unwrap()
         .unwrap();
 
-        assert!(bundle.flags().disable_cross_address());
+        assert!(bundle.flags().cross_address_disabled());
         assert!(bundle_meta.output_action_index(0).is_some());
     }
 
@@ -1972,7 +1972,7 @@ mod tests {
     }
 
     #[test]
-    fn create_proof_supports_disable_cross_address_only_for_ironwood() {
+    fn create_proof_supports_cross_address_disabled_only_for_ironwood() {
         let build_bundle = |rng: &mut OsRng, circuit_version: OrchardCircuitVersion| {
             let flags = Flags::CROSS_ADDRESS_DISABLED;
 

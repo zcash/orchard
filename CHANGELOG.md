@@ -17,7 +17,7 @@ serialize.
 ### Added
 - `orchard::bundle::Flags` APIs for the NU6.3 `disableCrossAddress` flag:
   - `Flags::CROSS_ADDRESS_DISABLED`
-  - `Flags::disable_cross_address`
+  - `Flags::cross_address_disabled`
 - `orchard::bundle::BundleFormat`, selecting whether an Orchard bundle flag
   byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
   reserved) or NU6.3 rules (bit 2 is `disableCrossAddress`).

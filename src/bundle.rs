@@ -85,7 +85,7 @@ pub struct Flags {
     ///
     /// Proving and verification must reject this unless they use a circuit key
     /// that supports this flag.
-    disable_cross_address: bool,
+    cross_address_disabled: bool,
 }
 
 const FLAG_SPENDS_ENABLED: u8 = 0b0000_0001;
@@ -102,7 +102,7 @@ impl Flags {
         Flags {
             spends_enabled,
             outputs_enabled,
-            disable_cross_address: false,
+            cross_address_disabled: false,
         }
     }
 
@@ -110,21 +110,21 @@ impl Flags {
     pub const ENABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
-        disable_cross_address: false,
+        cross_address_disabled: false,
     };
 
     /// The flag set with spends disabled.
     pub const SPENDS_DISABLED: Flags = Flags {
         spends_enabled: false,
         outputs_enabled: true,
-        disable_cross_address: false,
+        cross_address_disabled: false,
     };
 
     /// The flag set with outputs disabled.
     pub const OUTPUTS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: false,
-        disable_cross_address: false,
+        cross_address_disabled: false,
     };
 
     /// The flag set with spends and outputs enabled and cross-address transfers disabled.
@@ -134,7 +134,7 @@ impl Flags {
     pub const CROSS_ADDRESS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
-        disable_cross_address: true,
+        cross_address_disabled: true,
     };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
@@ -160,8 +160,8 @@ impl Flags {
     ///
     /// Proving and verification must reject this unless they use a circuit key
     /// that supports this flag.
-    pub fn disable_cross_address(&self) -> bool {
-        self.disable_cross_address
+    pub fn cross_address_disabled(&self) -> bool {
+        self.cross_address_disabled
     }
 
     /// Serializes the flags to the raw Orchard flag byte without checking whether the
@@ -179,7 +179,7 @@ impl Flags {
         if self.outputs_enabled {
             value |= FLAG_OUTPUTS_ENABLED;
         }
-        if self.disable_cross_address {
+        if self.cross_address_disabled {
             value |= FLAG_DISABLE_CROSS_ADDRESS;
         }
         value
@@ -195,7 +195,7 @@ impl Flags {
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn to_byte(&self, format: BundleFormat) -> Option<u8> {
         match format {
-            BundleFormat::PreNu6_3 if self.disable_cross_address => None,
+            BundleFormat::PreNu6_3 if self.cross_address_disabled => None,
             BundleFormat::PreNu6_3 | BundleFormat::Nu6_3 => Some(self.to_byte_internal()),
         }
     }
@@ -220,7 +220,7 @@ impl Flags {
             Some(Self {
                 spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
                 outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
-                disable_cross_address: match format {
+                cross_address_disabled: match format {
                     BundleFormat::PreNu6_3 => false,
                     BundleFormat::Nu6_3 => value & FLAG_DISABLE_CROSS_ADDRESS != 0,
                 },
@@ -810,12 +810,12 @@ pub mod testing {
         pub fn arb_flags_nu6_3()(
             spends_enabled in prop::bool::ANY,
             outputs_enabled in prop::bool::ANY,
-            disable_cross_address in prop::bool::ANY,
+            cross_address_disabled in prop::bool::ANY,
         ) -> Flags {
             Flags {
                 spends_enabled,
                 outputs_enabled,
-                disable_cross_address,
+                cross_address_disabled,
             }
         }
     }
@@ -902,11 +902,11 @@ pub(crate) mod tests {
     use crate::Proof;
 
     #[cfg(feature = "circuit")]
-    pub(crate) fn with_disable_cross_address(
+    pub(crate) fn with_cross_address_disabled(
         bundle: Bundle<Authorized, crate::value::ValueSum>,
     ) -> Bundle<Authorized, crate::value::ValueSum> {
         let mut flags = *bundle.flags();
-        flags.disable_cross_address = true;
+        flags.cross_address_disabled = true;
 
         Bundle::from_parts_unchecked(
             bundle.actions().clone(),
@@ -951,13 +951,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn flags_parsing_is_era_uniform_when_disable_cross_address_is_clear() {
+    fn flags_parsing_is_era_uniform_when_cross_address_disabled_is_clear() {
         for value in 0b000..=0b011 {
             let pre_nu6_3_flags = Flags::from_byte(value, BundleFormat::PreNu6_3).unwrap();
             let nu6_3_flags = Flags::from_byte(value, BundleFormat::Nu6_3).unwrap();
 
             assert_eq!(pre_nu6_3_flags, nu6_3_flags);
-            assert!(!pre_nu6_3_flags.disable_cross_address());
+            assert!(!pre_nu6_3_flags.cross_address_disabled());
             assert_eq!(pre_nu6_3_flags.to_byte(BundleFormat::PreNu6_3), Some(value));
             assert_eq!(nu6_3_flags.to_byte(BundleFormat::Nu6_3), Some(value));
         }
@@ -971,11 +971,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn nu6_3_flags_parsing_recognizes_disable_cross_address() {
+    fn nu6_3_flags_parsing_recognizes_cross_address_disabled() {
         for value in 0b100..=0b111 {
             let flags = Flags::from_byte(value, BundleFormat::Nu6_3).unwrap();
 
-            assert!(flags.disable_cross_address());
+            assert!(flags.cross_address_disabled());
             assert_eq!(flags.to_byte(BundleFormat::Nu6_3), Some(value));
             // The parsed flag set is not representable in pre-NU6.3 formats.
             assert_eq!(flags.to_byte(BundleFormat::PreNu6_3), None);
@@ -1014,7 +1014,7 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn commitment_includes_disable_cross_address(bundle in arb_bundle(3)) {
+        fn commitment_includes_cross_address_disabled(bundle in arb_bundle(3)) {
             // Rebuild the bundle with `V = i64` so that `commitment()` is available.
             let bundle = Bundle::from_parts_unchecked(
                 bundle.actions().clone(),
@@ -1025,7 +1025,7 @@ pub(crate) mod tests {
             );
             let unrestricted_commitment: [u8; 32] = bundle.commitment().into();
             let mut flags = *bundle.flags();
-            flags.disable_cross_address = true;
+            flags.cross_address_disabled = true;
 
             let restricted = Bundle::from_parts_unchecked(
                 bundle.actions().clone(),
@@ -1084,10 +1084,10 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_preserves_disable_cross_address(bundle in arb_bundle(3)) {
+        fn try_from_parts_preserves_cross_address_disabled(bundle in arb_bundle(3)) {
             let actions = bundle.actions().clone();
             let mut flags = *bundle.flags();
-            flags.disable_cross_address = true;
+            flags.cross_address_disabled = true;
             let value_balance = *bundle.value_balance();
             let anchor = *bundle.anchor();
             let authorization = bundle.authorization().clone();
@@ -1101,15 +1101,15 @@ pub(crate) mod tests {
                     crate::bundle::ProofSizeEnforcement::Strict,
                 )
                 .expect("canonical proof size is accepted");
-            prop_assert!(bundle.flags().disable_cross_address());
+            prop_assert!(bundle.flags().cross_address_disabled());
         }
 
         #[test]
-        fn try_from_parts_checks_proof_size_with_disable_cross_address(bundle in arb_bundle(3)) {
+        fn try_from_parts_checks_proof_size_with_cross_address_disabled(bundle in arb_bundle(3)) {
             let actions = bundle.actions().clone();
             let expected = Proof::expected_proof_size(actions.len());
             let mut flags = *bundle.flags();
-            flags.disable_cross_address = true;
+            flags.cross_address_disabled = true;
             let value_balance = *bundle.value_balance();
             let anchor = *bundle.anchor();
             let binding_signature = bundle.authorization().binding_signature().clone();
@@ -1134,8 +1134,8 @@ pub(crate) mod tests {
 
     #[cfg(feature = "circuit")]
     #[test]
-    fn verify_proof_rejects_disable_cross_address_for_unsupported_keys() {
-        let bundle = with_disable_cross_address(sample_authorized_bundle(1));
+    fn verify_proof_rejects_cross_address_disabled_for_unsupported_keys() {
+        let bundle = with_cross_address_disabled(sample_authorized_bundle(1));
 
         for circuit_version in [
             crate::circuit::OrchardCircuitVersion::InsecurePreNu6_2,

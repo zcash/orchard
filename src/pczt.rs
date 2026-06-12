@@ -686,7 +686,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(parsed.flags().disable_cross_address());
+        assert!(parsed.flags().cross_address_disabled());
         assert_eq!(
             parsed.flags().to_byte(BundleFormat::Nu6_3),
             Some(0b0000_0100)
@@ -695,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn create_proof_supports_disable_cross_address_only_for_ironwood() {
+    fn create_proof_supports_cross_address_disabled_only_for_ironwood() {
         let rng = OsRng;
         let sighash = [0; 32];
 
@@ -883,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    fn extract_preserves_disable_cross_address() {
+    fn extract_preserves_cross_address_disabled() {
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
@@ -896,6 +896,6 @@ mod tests {
         pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
 
         let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();
-        assert!(bundle.flags().disable_cross_address());
+        assert!(bundle.flags().cross_address_disabled());
     }
 }

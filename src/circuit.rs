@@ -83,8 +83,8 @@ const NF_OLD: usize = 3;
 const RK_X: usize = 4;
 const RK_Y: usize = 5;
 const CMX: usize = 6;
-const ENABLE_SPEND: usize = 7;
-const ENABLE_OUTPUT: usize = 8;
+const ENABLE_SPENDS: usize = 7;
+const ENABLE_OUTPUTS: usize = 8;
 const DISABLE_CROSS_ADDRESS: usize = 9;
 
 /// Configuration needed to use the Orchard Action circuit.
@@ -846,7 +846,7 @@ impl Circuit {
                 region.assign_advice_from_instance(
                     || "enable spends",
                     config.primary,
-                    ENABLE_SPEND,
+                    ENABLE_SPENDS,
                     config.advices[6],
                     0,
                 )?;
@@ -854,7 +854,7 @@ impl Circuit {
                 region.assign_advice_from_instance(
                     || "enable outputs",
                     config.primary,
-                    ENABLE_OUTPUT,
+                    ENABLE_OUTPUTS,
                     config.advices[7],
                     0,
                 )?;
@@ -913,7 +913,7 @@ impl Circuit {
                 for (offset, (label, old_coord, new_coord)) in
                     coordinate_checks.into_iter().enumerate()
                 {
-                    let disable_cross_address = region.assign_advice_from_instance(
+                    let cross_address_disabled = region.assign_advice_from_instance(
                         || "disableCrossAddress",
                         config.primary,
                         DISABLE_CROSS_ADDRESS,
@@ -926,7 +926,7 @@ impl Circuit {
                         offset,
                         pallas::Base::zero(),
                     )?;
-                    disable_cross_address.copy_advice(
+                    cross_address_disabled.copy_advice(
                         || "disableCrossAddress magnitude",
                         &mut region,
                         config.advices[2],
@@ -968,13 +968,13 @@ impl Circuit {
                     // Occupy the otherwise-unused rightmost advice columns so the
                     // floor planner cannot lay out another region (and enable its
                     // gate) on these rows.
-                    disable_cross_address.copy_advice(
+                    cross_address_disabled.copy_advice(
                         || "disableCrossAddress padding",
                         &mut region,
                         config.advices[8],
                         offset,
                     )?;
-                    disable_cross_address.copy_advice(
+                    cross_address_disabled.copy_advice(
                         || "disableCrossAddress padding",
                         &mut region,
                         config.advices[9],
@@ -1107,9 +1107,9 @@ pub struct Instance {
     nf_old: Nullifier,
     rk: VerificationKey<SpendAuth>,
     cmx: ExtractedNoteCommitment,
-    enable_spend: bool,
-    enable_output: bool,
-    disable_cross_address: bool,
+    spends_enabled: bool,
+    outputs_enabled: bool,
+    cross_address_disabled: bool,
 }
 
 impl Instance {
@@ -1150,9 +1150,9 @@ impl Instance {
             nf_old,
             rk,
             cmx,
-            enable_spend: flags.spends_enabled(),
-            enable_output: flags.outputs_enabled(),
-            disable_cross_address: flags.disable_cross_address(),
+            spends_enabled: flags.spends_enabled(),
+            outputs_enabled: flags.outputs_enabled(),
+            cross_address_disabled: flags.cross_address_disabled(),
         })
     }
 
@@ -1182,18 +1182,18 @@ impl Instance {
     }
 
     /// Returns whether spends are enabled for this instance.
-    pub(crate) fn enable_spend(&self) -> bool {
-        self.enable_spend
+    pub(crate) fn spends_enabled(&self) -> bool {
+        self.spends_enabled
     }
 
     /// Returns whether outputs are enabled for this instance.
-    pub(crate) fn enable_output(&self) -> bool {
-        self.enable_output
+    pub(crate) fn outputs_enabled(&self) -> bool {
+        self.outputs_enabled
     }
 
     /// Returns whether cross-address transfers are disabled for this instance.
-    pub(crate) fn disable_cross_address(&self) -> bool {
-        self.disable_cross_address
+    pub(crate) fn cross_address_disabled(&self) -> bool {
+        self.cross_address_disabled
     }
 
     fn to_halo2_instance(&self) -> [[vesta::Scalar; 10]; 1] {
@@ -1213,15 +1213,15 @@ impl Instance {
         instance[RK_X] = *rk.x();
         instance[RK_Y] = *rk.y();
         instance[CMX] = self.cmx.inner();
-        instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(self.enable_spend));
-        instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
+        instance[ENABLE_SPENDS] = vesta::Scalar::from(u64::from(self.spends_enabled));
+        instance[ENABLE_OUTPUTS] = vesta::Scalar::from(u64::from(self.outputs_enabled));
         // Instance columns are zero-padded over the evaluation domain, so for statements
         // where this flag is false, this encoding is commitment-identical to the historical
         // nine-row encoding. Pre-Ironwood circuits leave this row unconstrained, which is why
         // restricted statements must never reach those keys (see `Proof::create` and
         // `Proof::verify`).
         instance[DISABLE_CROSS_ADDRESS] =
-            vesta::Scalar::from(u64::from(self.disable_cross_address));
+            vesta::Scalar::from(u64::from(self.cross_address_disabled));
 
         [instance]
     }
@@ -1254,7 +1254,7 @@ impl Proof {
         {
             return Err(plonk::Error::Synthesis);
         }
-        if instances.iter().any(Instance::disable_cross_address)
+        if instances.iter().any(Instance::cross_address_disabled)
             && !pk.supports_cross_address_restriction()
         {
             return Err(plonk::Error::InvalidInstances);
@@ -1286,7 +1286,7 @@ impl Proof {
     /// cannot enforce the restriction the instance claims, so a freshly created proof for
     /// it could satisfy the instance without the restriction holding.
     pub fn verify(&self, vk: &VerifyingKey, instances: &[Instance]) -> Result<(), plonk::Error> {
-        if instances.iter().any(Instance::disable_cross_address)
+        if instances.iter().any(Instance::cross_address_disabled)
             && !vk.supports_cross_address_restriction()
         {
             return Err(plonk::Error::InvalidInstances);
@@ -1433,9 +1433,9 @@ mod tests {
                 nf_old,
                 rk,
                 cmx,
-                enable_spend: true,
-                enable_output: true,
-                disable_cross_address: false,
+                spends_enabled: true,
+                outputs_enabled: true,
+                cross_address_disabled: false,
             },
         )
     }
@@ -1460,15 +1460,15 @@ mod tests {
         match encoding {
             ProofFixtureEncoding::LegacyTwoFlags => {
                 w.write_all(&[
-                    u8::from(instance.enable_spend()),
-                    u8::from(instance.enable_output()),
+                    u8::from(instance.spends_enabled()),
+                    u8::from(instance.outputs_enabled()),
                 ])?;
             }
             ProofFixtureEncoding::IronwoodThreeFlags => {
                 w.write_all(&[
-                    u8::from(instance.enable_spend()),
-                    u8::from(instance.enable_output()),
-                    u8::from(instance.disable_cross_address()),
+                    u8::from(instance.spends_enabled()),
+                    u8::from(instance.outputs_enabled()),
+                    u8::from(instance.cross_address_disabled()),
                 ])?;
             }
         }
@@ -1500,19 +1500,19 @@ mod tests {
         let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let rk = read_32_bytes(&mut r).try_into().unwrap();
         let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
-        let enable_spend = read_bool(&mut r);
-        let enable_output = read_bool(&mut r);
-        let (disable_cross_address, format) = match encoding {
+        let spends_enabled = read_bool(&mut r);
+        let outputs_enabled = read_bool(&mut r);
+        let (cross_address_disabled, format) = match encoding {
             ProofFixtureEncoding::LegacyTwoFlags => (false, BundleFormat::PreNu6_3),
             ProofFixtureEncoding::IronwoodThreeFlags => {
-                let disable_cross_address = read_bool(&mut r);
-                (disable_cross_address, BundleFormat::Nu6_3)
+                let cross_address_disabled = read_bool(&mut r);
+                (cross_address_disabled, BundleFormat::Nu6_3)
             }
         };
         let flags = Flags::from_byte(
-            u8::from(enable_spend)
-                | (u8::from(enable_output) << 1)
-                | (u8::from(disable_cross_address) << 2),
+            u8::from(spends_enabled)
+                | (u8::from(outputs_enabled) << 1)
+                | (u8::from(cross_address_disabled) << 2),
             format,
         )
         .expect("test vectors use canonical flag encodings");
@@ -1528,7 +1528,7 @@ mod tests {
     }
 
     #[test]
-    fn halo2_instance_includes_disable_cross_address_flag() {
+    fn halo2_instance_includes_cross_address_disabled_flag() {
         let (_, mut instance) =
             generate_circuit_instance(OsRng, OrchardCircuitVersion::FixedPostNu6_2);
 
@@ -1539,7 +1539,7 @@ mod tests {
             vesta::Scalar::zero()
         );
 
-        instance.disable_cross_address = true;
+        instance.cross_address_disabled = true;
         assert_eq!(
             instance.to_halo2_instance()[0][super::DISABLE_CROSS_ADDRESS],
             vesta::Scalar::one()
@@ -1575,13 +1575,13 @@ mod tests {
         assert_eq!(mock_verify(&circuit, &instance), Ok(()));
 
         // ...but setting `disableCrossAddress` makes it unsatisfiable...
-        instance.disable_cross_address = true;
+        instance.cross_address_disabled = true;
         assert!(mock_verify(&circuit, &instance).is_err());
 
         // ...while a restricted self-transfer statement is satisfiable.
         let (circuit, mut instance) =
             generate_self_transfer_circuit_instance(OsRng, OrchardCircuitVersion::Ironwood);
-        instance.disable_cross_address = true;
+        instance.cross_address_disabled = true;
         assert_eq!(mock_verify(&circuit, &instance), Ok(()));
     }
 
@@ -1590,7 +1590,7 @@ mod tests {
         let mut rng = OsRng;
         let (circuit, mut instance) =
             generate_self_transfer_circuit_instance(&mut rng, OrchardCircuitVersion::Ironwood);
-        instance.disable_cross_address = true;
+        instance.cross_address_disabled = true;
 
         let pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
         let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
@@ -1616,7 +1616,7 @@ mod tests {
         let mut rng = OsRng;
         let (circuit, mut instance) =
             generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2);
-        instance.disable_cross_address = true;
+        instance.cross_address_disabled = true;
 
         let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
@@ -1872,7 +1872,7 @@ mod tests {
                 } else {
                     generate_circuit_instance(&mut rng, circuit_version)
                 };
-                instance.disable_cross_address = restricted;
+                instance.cross_address_disabled = restricted;
                 let instances = core::slice::from_ref(&instance);
 
                 let pk = ProvingKey::build(circuit_version);
@@ -1891,7 +1891,7 @@ mod tests {
         // Parse the hardcoded proof test case.
         let (instance, proof) =
             read_test_case(test_case_bytes, encoding).expect("proof must be valid");
-        assert_eq!(instance.disable_cross_address(), restricted);
+        assert_eq!(instance.cross_address_disabled(), restricted);
         assert_eq!(proof.0.len(), expected_proof_size);
 
         assert!(proof.verify(&vk, &[instance]).is_ok());

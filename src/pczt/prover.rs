@@ -29,7 +29,7 @@ impl super::Bundle {
             return Ok(());
         }
 
-        if self.flags.disable_cross_address() {
+        if self.flags.cross_address_disabled() {
             // Check the restriction structurally before synthesizing any circuit, for a
             // clear error instead of an unsatisfiable-constraint failure.
             for action in &self.actions {

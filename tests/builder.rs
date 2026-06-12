@@ -225,7 +225,7 @@ fn ironwood_coinbase_bundle_proves_and_verifies() {
         .unwrap();
     assert_eq!(unauthorized.actions().len(), 1);
     assert!(!unauthorized.flags().spends_enabled());
-    assert!(!unauthorized.flags().disable_cross_address());
+    assert!(!unauthorized.flags().cross_address_disabled());
 
     let sighash: [u8; 32] = unauthorized.commitment().into();
     let proven = unauthorized.create_proof(&ironwood_pk, &mut rng).unwrap();
