@@ -7,6 +7,42 @@ use crate::{
     Note,
 };
 
+impl super::Bundle {
+    /// If this bundle disables cross-address transfers, verifies that every action's
+    /// output is addressed to the same `(g_d, pk_d)` as its spent note. This is a no-op
+    /// for bundles that permit cross-address transfers.
+    ///
+    /// When the restriction applies, this requires `spend.recipient` and
+    /// `output.recipient` to be set on every action. Signers presented with such a
+    /// bundle should call this before signing; the equivalent structural checks are
+    /// also performed by [`Bundle::finalize_io`] and `Bundle::create_proof`. A proof
+    /// created with a circuit version that supports the restriction also enforces it.
+    /// Ironwood supports the restriction; older circuit versions do not, so the proof
+    /// APIs reject restricted bundles for those keys.
+    ///
+    /// [`Bundle::finalize_io`]: super::Bundle::finalize_io
+    pub fn verify_cross_address_restriction(&self) -> Result<(), VerifyError> {
+        if !self.flags.cross_address_enabled() {
+            for action in &self.actions {
+                let spend_recipient = action
+                    .spend
+                    .recipient
+                    .ok_or(VerifyError::MissingRecipient)?;
+                let output_recipient = action
+                    .output
+                    .recipient
+                    .ok_or(VerifyError::MissingRecipient)?;
+
+                if !spend_recipient.same_receiver(&output_recipient) {
+                    return Err(VerifyError::DisallowedCrossAddressTransfer);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl super::Action {
     /// Verifies that the `cv_net` field is consistent with the note fields.
     ///
@@ -147,6 +183,9 @@ impl super::Output {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum VerifyError {
+    /// An action's output is addressed differently than its spent note, but the bundle
+    /// disables cross-address transfers.
+    DisallowedCrossAddressTransfer,
     /// The output note's components do not produce the expected `cmx`.
     InvalidExtractedNoteCommitment,
     /// The spent note's components do not produce the expected `nullifier`.
@@ -165,7 +204,7 @@ pub enum VerifyError {
     MissingFullViewingKey,
     /// `nullifier` verification requires `rseed` to be set.
     MissingRandomSeed,
-    /// `nullifier` verification requires `recipient` to be set.
+    /// Verification requires `recipient` to be set.
     MissingRecipient,
     /// `nullifier` verification requires `rho` to be set.
     MissingRho,
@@ -182,6 +221,11 @@ pub enum VerifyError {
 impl fmt::Display for VerifyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            VerifyError::DisallowedCrossAddressTransfer => write!(
+                f,
+                "an action outputs to a different receiver than it spends from, but the \
+                 bundle disables cross-address transfers"
+            ),
             VerifyError::InvalidExtractedNoteCommitment => {
                 write!(f, "output note doesn't match `cmx`")
             }
@@ -201,9 +245,7 @@ impl fmt::Display for VerifyError {
             VerifyError::MissingRandomSeed => {
                 write!(f, "`rseed` missing for `nullifier` verification")
             }
-            VerifyError::MissingRecipient => {
-                write!(f, "`recipient` missing for `nullifier` verification")
-            }
+            VerifyError::MissingRecipient => write!(f, "`recipient` missing for verification"),
             VerifyError::MissingRho => write!(f, "`rho` missing for `nullifier` verification"),
             VerifyError::MissingSpendAuthRandomizer => {
                 write!(f, "`alpha` missing for `rk` verification")

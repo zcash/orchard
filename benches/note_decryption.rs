@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
     builder::{Builder, BundleType},
-    circuit::ProvingKey,
+    circuit::{OrchardCircuitVersion, ProvingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note_encryption::{CompactAction, OrchardDomain},
     value::NoteValue,
@@ -15,7 +15,7 @@ use pprof::criterion::{Output, PProfProfiler};
 
 fn bench_note_decryption(c: &mut Criterion) {
     let rng = OsRng;
-    let pk = ProvingKey::build();
+    let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let fvk = FullViewingKey::from(&SpendingKey::from_bytes([7; 32]).unwrap());
     let valid_ivk = fvk.to_ivk(Scope::External);
@@ -53,7 +53,11 @@ fn bench_note_decryption(c: &mut Criterion) {
         builder
             .add_output(None, recipient, NoteValue::from_raw(10), [0; 512])
             .unwrap();
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;
+        let bundle: Bundle<_, i64> = builder
+            .build(rng, OrchardCircuitVersion::FixedPostNu6_2)
+            .unwrap()
+            .unwrap()
+            .0;
         bundle
             .create_proof(&pk, rng)
             .unwrap()
