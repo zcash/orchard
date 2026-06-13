@@ -285,8 +285,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
 
         // Constrain v_old - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
         // Either v_old = 0, or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
-        // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
-        // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
+        // Constrain v_old = 0 or enable_spend = 1       (https://p.z.cash/ZKS:action-enable-spend).
+        // Constrain v_new = 0 or enable_output = 1      (https://p.z.cash/ZKS:action-enable-output).
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -298,8 +298,8 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             let root = meta.query_advice(advices[4], Rotation::cur());
             let anchor = meta.query_advice(advices[5], Rotation::cur());
 
-            let enable_spends = meta.query_advice(advices[6], Rotation::cur());
-            let enable_outputs = meta.query_advice(advices[7], Rotation::cur());
+            let enable_spend = meta.query_advice(advices[6], Rotation::cur());
+            let enable_output = meta.query_advice(advices[7], Rotation::cur());
 
             let one = Expression::Constant(pallas::Base::one());
 
@@ -315,12 +315,12 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                         v_old.clone() * (root - anchor),
                     ),
                     (
-                        "v_old = 0 or enable_spends = 1",
-                        v_old * (one.clone() - enable_spends),
+                        "v_old = 0 or enable_spend = 1",
+                        v_old * (one.clone() - enable_spend),
                     ),
                     (
-                        "v_new = 0 or enable_outputs = 1",
-                        v_new * (one - enable_outputs),
+                        "v_new = 0 or enable_output = 1",
+                        v_new * (one - enable_output),
                     ),
                 ],
             )
@@ -806,7 +806,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 )?;
 
                 region.assign_advice_from_instance(
-                    || "enable spends",
+                    || "enable spend",
                     config.primary,
                     ENABLE_SPEND,
                     config.advices[6],
@@ -814,7 +814,7 @@ impl plonk::Circuit<pallas::Base> for Circuit {
                 )?;
 
                 region.assign_advice_from_instance(
-                    || "enable outputs",
+                    || "enable output",
                     config.primary,
                     ENABLE_OUTPUT,
                     config.advices[7],
@@ -984,12 +984,12 @@ impl Instance {
         &self.cmx
     }
 
-    /// Returns whether spends are enabled for this instance.
+    /// Returns whether the spend is enabled for this instance.
     pub(crate) fn enable_spend(&self) -> bool {
         self.enable_spend
     }
 
-    /// Returns whether outputs are enabled for this instance.
+    /// Returns whether the output is enabled for this instance.
     pub(crate) fn enable_output(&self) -> bool {
         self.enable_output
     }
