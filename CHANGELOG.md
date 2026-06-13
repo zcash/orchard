@@ -5,6 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The `Display` output of `orchard::builder::BuildError::OutputsDisabled`
+  previously described spends rather than outputs.
+
 ## [0.14.0] - 2026-06-02
 
 ### Added

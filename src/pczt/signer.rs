@@ -11,7 +11,7 @@ impl super::Action {
     /// Signs the Orchard spend with the given spend authorizing key.
     ///
     /// It is the caller's responsibility to perform any semantic validity checks on the
-    /// PCZT (for example, comfirming that the change amounts are correct) before calling
+    /// PCZT (for example, confirming that the change amounts are correct) before calling
     /// this method.
     pub fn sign<R: RngCore + CryptoRng>(
         &mut self,
@@ -38,7 +38,7 @@ impl super::Action {
     /// Applies the given signature to the Orchard spend, if valid.
     ///
     /// It is the caller's responsibility to perform any semantic validity checks on the
-    /// PCZT (for example, comfirming that the change amounts are correct) before calling
+    /// PCZT (for example, confirming that the change amounts are correct) before calling
     /// this method.
     pub fn apply_signature(
         &mut self,
