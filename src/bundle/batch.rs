@@ -20,19 +20,24 @@ struct BundleSignature {
 
 /// Batch validation context for Orchard.
 ///
-/// This batch-validates proofs and RedPallas signatures.
-#[derive(Debug, Default)]
-pub struct BatchValidator {
+/// This batch-validates proofs and RedPallas signatures. The verifying key is bound at
+/// construction: every bundle added to the batch is validated against it.
+#[derive(Debug)]
+pub struct BatchValidator<'a> {
     proofs: plonk::BatchVerifier<vesta::Affine>,
     signatures: Vec<BundleSignature>,
+    /// The verifying key every queued bundle is validated against, and which
+    /// [`Self::validate`] finalizes the proof batch with.
+    vk: &'a VerifyingKey,
 }
 
-impl BatchValidator {
-    /// Constructs a new batch validation context.
-    pub fn new() -> Self {
+impl<'a> BatchValidator<'a> {
+    /// Constructs a new batch validation context that validates against `vk`.
+    pub fn new(vk: &'a VerifyingKey) -> Self {
         BatchValidator {
             proofs: plonk::BatchVerifier::new(),
             signatures: vec![],
+            vk,
         }
     }
 
@@ -68,7 +73,7 @@ impl BatchValidator {
     /// validator is valid, or `false` if one or more are invalid. No attempt is made to
     /// figure out which of the accumulated bundles might be invalid; if that information
     /// is desired, construct separate [`BatchValidator`]s for sub-batches of the bundles.
-    pub fn validate<R: RngCore + CryptoRng>(self, vk: &VerifyingKey, rng: R) -> bool {
+    pub fn validate<R: RngCore + CryptoRng>(self, rng: R) -> bool {
         // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
 
         if self.signatures.is_empty() {
@@ -85,7 +90,7 @@ impl BatchValidator {
 
         match validator.verify(rng) {
             // If signatures are valid, check the proofs.
-            Ok(()) => self.proofs.finalize(&vk.params, &vk.vk),
+            Ok(()) => self.proofs.finalize(&self.vk.params, &self.vk.vk),
             Err(e) => {
                 debug!("RedPallas batch validation failed: {}", e);
                 false
