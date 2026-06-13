@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use core::fmt;
 
 use halo2_proofs::plonk;
 use pasta_curves::vesta;
@@ -18,10 +19,82 @@ struct BundleSignature {
     signature: redpallas::batch::Item<SpendAuth, Binding>,
 }
 
+/// Error returned by [`BatchValidator::add_bundle`] when a bundle's flags require a circuit
+/// capability the validator's verifying key does not provide.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BatchError {
+    /// The bundle disables cross-address transfers, but the validator's verifying key's
+    /// circuit version does not constrain the cross-address restriction (see
+    /// [`OrchardCircuitVersion::supports_cross_address_restriction`]).
+    ///
+    /// [`OrchardCircuitVersion::supports_cross_address_restriction`]: crate::circuit::OrchardCircuitVersion::supports_cross_address_restriction
+    CrossAddressUnsupported,
+}
+
+impl fmt::Display for BatchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BatchError::CrossAddressUnsupported => write!(
+                f,
+                "bundle disables cross-address transfers, but the verifying key's circuit \
+                 version does not constrain the cross-address restriction",
+            ),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::OsRng;
+
+    use super::{BatchError, BatchValidator};
+    use crate::{
+        bundle::tests::{sample_authorized_bundle, with_cross_address_disabled},
+        circuit::{OrchardCircuitVersion, VerifyingKey},
+    };
+
+    #[test]
+    fn add_bundle_rejects_unsupported_cross_address_restriction() {
+        let bundle = with_cross_address_disabled(sample_authorized_bundle(1))
+            .try_map_value_balance(i64::try_from)
+            .expect("generated bundle value balance fits in i64");
+
+        // Keys whose circuit version cannot constrain the cross-address restriction reject
+        // the bundle at insertion, so it never enters the batch.
+        for circuit_version in [
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        ] {
+            let vk = VerifyingKey::build(circuit_version);
+            let mut validator = BatchValidator::new(&vk);
+            assert_eq!(
+                validator.add_bundle(&bundle, [0; 32]),
+                Err(BatchError::CrossAddressUnsupported)
+            );
+        }
+    }
+
+    #[test]
+    fn empty_batch_validates() {
+        for circuit_version in [
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        ] {
+            let vk = VerifyingKey::build(circuit_version);
+            assert!(BatchValidator::new(&vk).validate(OsRng));
+        }
+    }
+}
+
+impl core::error::Error for BatchError {}
+
 /// Batch validation context for Orchard.
 ///
 /// This batch-validates proofs and RedPallas signatures. The verifying key is bound at
-/// construction: every bundle added to the batch is validated against it.
+/// construction: every bundle added to the batch is validated against it, and
+/// [`Self::add_bundle`] rejects up front any bundle whose flags the key's circuit version
+/// cannot enforce.
 #[derive(Debug)]
 pub struct BatchValidator<'a> {
     proofs: plonk::BatchVerifier<vesta::Affine>,
@@ -42,11 +115,20 @@ impl<'a> BatchValidator<'a> {
     }
 
     /// Adds the proof and RedPallas signatures from the given bundle to the validator.
+    ///
+    /// Returns [`BatchError::CrossAddressUnsupported`] if the bundle disables cross-address
+    /// transfers but the validator's verifying key's circuit version does not support the
+    /// cross-address restriction; in that case the bundle is not added to the batch.
     pub fn add_bundle<V: Copy + Into<i64>>(
         &mut self,
         bundle: &Bundle<Authorized, V>,
         sighash: [u8; 32],
-    ) {
+    ) -> Result<(), BatchError> {
+        if !bundle.flags().cross_address_enabled() && !self.vk.supports_cross_address_restriction()
+        {
+            return Err(BatchError::CrossAddressUnsupported);
+        }
+
         for action in bundle.actions().iter() {
             self.signatures.push(BundleSignature {
                 signature: action
@@ -65,6 +147,8 @@ impl<'a> BatchValidator<'a> {
             .authorization()
             .proof()
             .add_to_batch(&mut self.proofs, bundle.to_instances());
+
+        Ok(())
     }
 
     /// Batch-validates the accumulated bundles.
@@ -73,6 +157,9 @@ impl<'a> BatchValidator<'a> {
     /// validator is valid, or `false` if one or more are invalid. No attempt is made to
     /// figure out which of the accumulated bundles might be invalid; if that information
     /// is desired, construct separate [`BatchValidator`]s for sub-batches of the bundles.
+    ///
+    /// The cross-address-restriction capability is enforced when bundles are added (see
+    /// [`Self::add_bundle`]), so it is already guaranteed here.
     pub fn validate<R: RngCore + CryptoRng>(self, rng: R) -> bool {
         // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
 

@@ -16,6 +16,12 @@ and this project adheres to Rust's notion of
   byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
   reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
   (bit 2 is `enableCrossAddress`).
+- Circuit-version support introspection for the cross-address restriction:
+  - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
+  - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
+  - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
+- `orchard::bundle::BatchError::CrossAddressUnsupported`, returned by
+  `orchard::bundle::BatchValidator::add_bundle`.
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
@@ -27,9 +33,14 @@ and this project adheres to Rust's notion of
   cross-address transfers are disabled.
 - `orchard::Bundle::commitment` now takes the `BundleFormat` used by the
   transaction encoding.
+- `orchard::circuit::Instance::from_parts` now takes an
+  `orchard::bundle::Flags` argument instead of separate spend/output enable
+  booleans, so the cross-address restriction is carried into the public
+  instances.
 - `orchard::bundle::BatchValidator` now binds its verifying key at construction:
   `BatchValidator::new` takes a `&orchard::circuit::VerifyingKey`, and
-  `BatchValidator::validate` no longer takes one.
+  `BatchValidator::validate` no longer takes one. `BatchValidator::add_bundle`
+  now returns `Result<(), orchard::bundle::BatchError>`.
 - Circuit-building APIs now take the intended
   `orchard::circuit::OrchardCircuitVersion` explicitly on their plain method
   names; pass `FixedPostNu6_2` for the previous behavior.

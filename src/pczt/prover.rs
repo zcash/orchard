@@ -93,8 +93,7 @@ impl super::Bundle {
                     action.spend.nullifier,
                     action.spend.rk.clone(),
                     action.output.cmx,
-                    self.flags.spends_enabled(),
-                    self.flags.outputs_enabled(),
+                    self.flags,
                 )
                 .ok_or(ProverError::IdentityRk)
             })

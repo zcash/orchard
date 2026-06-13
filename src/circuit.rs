@@ -25,6 +25,7 @@ use self::{
 };
 use crate::{
     builder::SpendInfo,
+    bundle::Flags,
     constants::{
         OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
         MERKLE_DEPTH_ORCHARD,
@@ -84,6 +85,7 @@ const RK_Y: usize = 5;
 const CMX: usize = 6;
 const ENABLE_SPEND: usize = 7;
 const ENABLE_OUTPUT: usize = 8;
+const DISABLE_CROSS_ADDRESS: usize = 9;
 
 /// Configuration needed to use the Orchard Action circuit.
 #[derive(Clone, Debug)]
@@ -130,6 +132,15 @@ pub enum OrchardCircuitVersion {
 }
 
 impl OrchardCircuitVersion {
+    /// Whether this circuit version enforces the `disableCrossAddress` public input.
+    pub fn supports_cross_address_restriction(self) -> bool {
+        match self {
+            OrchardCircuitVersion::InsecurePreNu6_2 | OrchardCircuitVersion::FixedPostNu6_2 => {
+                false
+            }
+        }
+    }
+
     /// The corresponding `halo2_gadgets` variable-base scalar-mul circuit version.
     fn halo2_version(self) -> CircuitVersion {
         match self {
@@ -885,6 +896,11 @@ impl VerifyingKey {
     pub fn circuit_version(&self) -> OrchardCircuitVersion {
         self.circuit_version
     }
+
+    /// Returns whether this verifying key supports the cross-address restriction.
+    pub fn supports_cross_address_restriction(&self) -> bool {
+        self.circuit_version.supports_cross_address_restriction()
+    }
 }
 
 /// The proving key for the Orchard Action circuit.
@@ -920,6 +936,11 @@ impl ProvingKey {
     pub fn circuit_version(&self) -> OrchardCircuitVersion {
         self.circuit_version
     }
+
+    /// Returns whether this proving key supports the cross-address restriction.
+    pub fn supports_cross_address_restriction(&self) -> bool {
+        self.circuit_version.supports_cross_address_restriction()
+    }
 }
 
 /// Public inputs to the Orchard Action circuit.
@@ -936,6 +957,7 @@ pub struct Instance {
     cmx: ExtractedNoteCommitment,
     enable_spend: bool,
     enable_output: bool,
+    cross_address_disabled: bool,
 }
 
 impl Instance {
@@ -944,6 +966,13 @@ impl Instance {
     /// This API can be used in combination with [`Proof::verify`] to build verification
     /// pipelines for many proofs, where you don't want to pass around the full bundle.
     /// Use [`Bundle::verify_proof`] instead if you have the full bundle.
+    ///
+    /// The provided [`Flags`] are encoded into the spend/output enable public inputs and
+    /// the `disableCrossAddress` public input, which is set to the negation of
+    /// [`Flags::cross_address_enabled`]. If cross-address transfers are disabled,
+    /// callers must use a proving or verifying key whose circuit version supports the
+    /// cross-address restriction; [`Proof::create`], [`Proof::verify`], and
+    /// [`crate::bundle::BatchValidator`] enforce this.
     ///
     /// Returns `None` if `rk` is the identity [`pasta_curves::pallas::Point`].
     /// zcashd v6.12.1 and Zebra 4.3.1 both added a consensus rule rejecting
@@ -962,8 +991,7 @@ impl Instance {
         nf_old: Nullifier,
         rk: VerificationKey<SpendAuth>,
         cmx: ExtractedNoteCommitment,
-        enable_spend: bool,
-        enable_output: bool,
+        flags: Flags,
     ) -> Option<Self> {
         (!rk.is_identity()).then_some(Instance {
             anchor,
@@ -971,8 +999,9 @@ impl Instance {
             nf_old,
             rk,
             cmx,
-            enable_spend,
-            enable_output,
+            enable_spend: flags.spends_enabled(),
+            enable_output: flags.outputs_enabled(),
+            cross_address_disabled: !flags.cross_address_enabled(),
         })
     }
 
@@ -1011,8 +1040,13 @@ impl Instance {
         self.enable_output
     }
 
-    fn to_halo2_instance(&self) -> [[vesta::Scalar; 9]; 1] {
-        let mut instance = [vesta::Scalar::zero(); 9];
+    /// Returns whether cross-address transfers are disabled for this instance.
+    pub(crate) fn cross_address_disabled(&self) -> bool {
+        self.cross_address_disabled
+    }
+
+    fn to_halo2_instance(&self) -> [[vesta::Scalar; 10]; 1] {
+        let mut instance = [vesta::Scalar::zero(); 10];
 
         instance[ANCHOR] = self.anchor.inner();
         instance[CV_NET_X] = self.cv_net.x();
@@ -1030,6 +1064,13 @@ impl Instance {
         instance[CMX] = self.cmx.inner();
         instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(self.enable_spend));
         instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
+        // Instance columns are zero-padded over the evaluation domain, so for statements
+        // where this flag is false, this encoding is commitment-identical to the historical
+        // nine-row encoding. Existing circuits leave this row unconstrained, which is why
+        // restricted statements must never reach those keys (see `Proof::create` and
+        // `Proof::verify`).
+        instance[DISABLE_CROSS_ADDRESS] =
+            vesta::Scalar::from(u64::from(self.cross_address_disabled));
 
         [instance]
     }
@@ -1039,8 +1080,17 @@ impl Proof {
     /// Creates a proof for the given circuits and instances.
     ///
     /// The resulting proof verifies only under a [`VerifyingKey`] for the same circuit version
-    /// (see [`OrchardCircuitVersion`]). Returns an error if any circuit's version does not match
-    /// `pk`'s version, since `pk` could not produce a valid proof for it.
+    /// (see [`OrchardCircuitVersion`]).
+    ///
+    /// Returns [`plonk::Error::Synthesis`] if any circuit's version does not match `pk`'s
+    /// version, since `pk` could not produce a valid proof for it.
+    ///
+    /// Returns [`plonk::Error::InvalidInstances`] if any instance has
+    /// `disableCrossAddress = 1` and `pk`'s circuit version does not support the
+    /// cross-address restriction.
+    ///
+    /// All instances of a bundle carry the same `disableCrossAddress` value; that uniformity
+    /// is the bundle layer's invariant, and is not checked here.
     pub fn create(
         pk: &ProvingKey,
         circuits: &[Circuit],
@@ -1052,6 +1102,11 @@ impl Proof {
             .any(|c| c.circuit_version != pk.circuit_version)
         {
             return Err(plonk::Error::Synthesis);
+        }
+        if instances.iter().any(Instance::cross_address_disabled)
+            && !pk.supports_cross_address_restriction()
+        {
+            return Err(plonk::Error::InvalidInstances);
         }
 
         let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
@@ -1074,7 +1129,21 @@ impl Proof {
     }
 
     /// Verifies this proof with the given instances.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`plonk::Error::InvalidInstances`] if any instance has
+    /// `disableCrossAddress = 1` and `vk`'s circuit version does not support the
+    /// cross-address restriction.
+    ///
+    /// Also returns an error if proof verification fails.
     pub fn verify(&self, vk: &VerifyingKey, instances: &[Instance]) -> Result<(), plonk::Error> {
+        if instances.iter().any(Instance::cross_address_disabled)
+            && !vk.supports_cross_address_restriction()
+        {
+            return Err(plonk::Error::InvalidInstances);
+        }
+
         let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
         let instances: Vec<Vec<_>> = instances
             .iter()
@@ -1120,6 +1189,7 @@ mod tests {
 
     use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
+        bundle::Flags,
         keys::SpendValidatingKey,
         note::{Note, Rho},
         tree::MerklePath,
@@ -1182,6 +1252,7 @@ mod tests {
                 cmx,
                 enable_spend: true,
                 enable_output: true,
+                cross_address_disabled: false,
             },
         )
     }
@@ -1227,9 +1298,15 @@ mod tests {
         let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let enable_spend = read_bool(&mut r);
         let enable_output = read_bool(&mut r);
-        let instance =
-            Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, enable_spend, enable_output)
-                .expect("test vectors were generated with non-identity rk");
+        let instance = Instance::from_parts(
+            anchor,
+            cv_net,
+            nf_old,
+            rk,
+            cmx,
+            Flags::from_parts(enable_spend, enable_output),
+        )
+        .expect("test vectors were generated with non-identity rk");
 
         let mut proof_bytes = vec![];
         r.read_to_end(&mut proof_bytes)?;
@@ -1369,6 +1446,36 @@ mod tests {
     }
 
     #[test]
+    fn unsupported_cross_address_restriction_is_rejected() {
+        let mut rng = OsRng;
+
+        for circuit_version in [
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        ] {
+            assert!(!circuit_version.supports_cross_address_restriction());
+
+            let (circuit, mut instance) = generate_circuit_instance(&mut rng, circuit_version);
+            instance.cross_address_disabled = true;
+            let instances = core::slice::from_ref(&instance);
+
+            let pk = ProvingKey::build(circuit_version);
+            assert!(matches!(
+                Proof::create(&pk, &[circuit], instances, &mut rng),
+                Err(super::plonk::Error::InvalidInstances),
+            ));
+
+            let vk = VerifyingKey::build(circuit_version);
+            assert!(!pk.supports_cross_address_restriction());
+            assert!(!vk.supports_cross_address_restriction());
+            assert!(matches!(
+                Proof::new(vec![]).verify(&vk, instances),
+                Err(super::plonk::Error::InvalidInstances),
+            ));
+        }
+    }
+
+    #[test]
     fn serialized_proof_test_case() {
         let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
@@ -1451,6 +1558,7 @@ mod tests {
 
         use super::super::Instance;
         use crate::{
+            bundle::Flags,
             note::{ExtractedNoteCommitment, Nullifier},
             primitives::redpallas::{self, SpendAuth},
             tree::Anchor,
@@ -1486,7 +1594,7 @@ mod tests {
         fn rejects_identity_rk() {
             let (anchor, cv_net, nf_old, cmx) = dummy_other_fields();
             let result =
-                Instance::from_parts(anchor, cv_net, nf_old, identity_rk(), cmx, true, true);
+                Instance::from_parts(anchor, cv_net, nf_old, identity_rk(), cmx, Flags::ENABLED);
             assert!(result.is_none());
         }
 
@@ -1495,7 +1603,7 @@ mod tests {
             let (anchor, cv_net, nf_old, cmx) = dummy_other_fields();
             let rk = non_identity_rk();
             let instance =
-                Instance::from_parts(anchor, cv_net, nf_old, rk.clone(), cmx, true, true)
+                Instance::from_parts(anchor, cv_net, nf_old, rk.clone(), cmx, Flags::ENABLED)
                     .expect("non-identity rk must be accepted");
             assert_eq!(instance.rk(), &rk);
         }
