@@ -8,9 +8,9 @@ use orchard::{
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
     note_encryption::OrchardDomain,
-    tree::MerkleHashOrchard,
+    tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
-    Bundle,
+    Address, Bundle,
 };
 use rand::rngs::OsRng;
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
@@ -29,6 +29,48 @@ fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
     );
 }
 
+/// Builds a single-leaf note commitment tree containing `cmx`, returning the tree
+/// root and a witness for the leaf.
+fn single_leaf_witness(cmx: &ExtractedNoteCommitment) -> (MerkleHashOrchard, MerklePath) {
+    let leaf = MerkleHashOrchard::from_cmx(cmx);
+    let mut tree: ShardTree<MemoryShardStore<MerkleHashOrchard, u32>, 32, 16> =
+        ShardTree::new(MemoryShardStore::empty(), 100);
+    tree.append(
+        leaf,
+        Retention::Checkpoint {
+            id: 0,
+            marking: Marking::Marked,
+        },
+    )
+    .unwrap();
+    let root = tree.root_at_checkpoint_id(&0).unwrap().unwrap();
+    let position = tree.max_leaf_position(None).unwrap().unwrap();
+    let merkle_path = tree
+        .witness_at_checkpoint_id(position, &0)
+        .unwrap()
+        .unwrap();
+    assert_eq!(root, merkle_path.root(leaf));
+    (root, merkle_path.into())
+}
+
+/// The output-only bundle type used by the shielding steps of these tests.
+const SHIELDING: BundleType = BundleType::Transactional {
+    flags: Flags::SPENDS_DISABLED,
+    bundle_required: false,
+};
+
+/// Creates a builder of the given bundle type over the empty-tree anchor, with a
+/// single 5000-zat output to `recipient`.
+fn output_only_builder(bundle_type: BundleType, recipient: Address) -> Builder {
+    let anchor = MerkleHashOrchard::empty_root(32.into()).into();
+    let mut builder = Builder::new(bundle_type, anchor);
+    assert_eq!(
+        builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
+        Ok(())
+    );
+    builder
+}
+
 #[test]
 fn bundle_chain() {
     let mut rng = OsRng;
@@ -41,21 +83,7 @@ fn bundle_chain() {
 
     // Create a shielding bundle.
     let shielding_bundle: Bundle<_, i64> = {
-        // Use the empty tree.
-        let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-
-        let mut builder = Builder::new(
-            BundleType::Transactional {
-                flags: Flags::SPENDS_DISABLED,
-                bundle_required: false,
-            },
-            anchor,
-        );
-        let note_value = NoteValue::from_raw(5000);
-        assert_eq!(
-            builder.add_output(None, recipient, note_value, [0u8; 512]),
-            Ok(())
-        );
+        let builder = output_only_builder(SHIELDING, recipient);
         let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
 
         assert_eq!(
@@ -67,7 +95,7 @@ fn bundle_chain() {
                     &fvk.to_ivk(Scope::External)
                 )
                 .map(|(note, _, _)| note.value()),
-            Some(note_value)
+            Some(NoteValue::from_raw(5000))
         );
 
         let sighash = unauthorized.commitment().into();
@@ -92,27 +120,10 @@ fn bundle_chain() {
 
         // Use the tree with a single leaf.
         let cmx: ExtractedNoteCommitment = note.commitment().into();
-        let leaf = MerkleHashOrchard::from_cmx(&cmx);
-        let mut tree: ShardTree<MemoryShardStore<MerkleHashOrchard, u32>, 32, 16> =
-            ShardTree::new(MemoryShardStore::empty(), 100);
-        tree.append(
-            leaf,
-            Retention::Checkpoint {
-                id: 0,
-                marking: Marking::Marked,
-            },
-        )
-        .unwrap();
-        let root = tree.root_at_checkpoint_id(&0).unwrap().unwrap();
-        let position = tree.max_leaf_position(None).unwrap().unwrap();
-        let merkle_path = tree
-            .witness_at_checkpoint_id(position, &0)
-            .unwrap()
-            .unwrap();
-        assert_eq!(root, merkle_path.root(MerkleHashOrchard::from_cmx(&cmx)));
+        let (root, merkle_path) = single_leaf_witness(&cmx);
 
         let mut builder = Builder::new(BundleType::DEFAULT, root.into());
-        assert_eq!(builder.add_spend(fvk, note, merkle_path.into()), Ok(()));
+        assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
             Ok(())
@@ -144,14 +155,8 @@ fn builder_builds_for_insecure_circuit_version() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new_for_version(
-        BundleType::Transactional {
-            flags: Flags::SPENDS_DISABLED,
-            bundle_required: false,
-        },
-        anchor,
-        OrchardCircuitVersion::InsecurePreNu6_2,
-    );
+    let mut builder =
+        Builder::new_for_version(SHIELDING, anchor, OrchardCircuitVersion::InsecurePreNu6_2);
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
