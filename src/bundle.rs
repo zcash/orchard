@@ -7,7 +7,7 @@ pub mod commitments;
 #[cfg(feature = "circuit")]
 mod batch;
 #[cfg(feature = "circuit")]
-pub use batch::BatchValidator;
+pub use batch::{BatchError, BatchValidator};
 
 use core::fmt;
 
@@ -45,8 +45,7 @@ impl<T> Action<T> {
             *self.nullifier(),
             self.rk().clone(),
             *self.cmx(),
-            flags.spends_enabled,
-            flags.outputs_enabled,
+            flags,
         )
         .expect("this Action's rk is non-identity by construction (Action::from_parts)")
     }
@@ -559,7 +558,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     ///
     /// The flag byte is hashed as encoded under `format`, the transaction encoding the
     /// bundle appears in (see [`BundleFormat`]), so the digest depends on the encoding
-    /// era.
+    /// era. See [`BundleFormat`] for how to derive `format` and why getting it wrong matters.
     ///
     /// # Panics
     ///
@@ -722,6 +721,14 @@ impl<V> Bundle<Authorized, V> {
     }
 
     /// Verifies the proof for this bundle.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this
+    /// bundle disables cross-address transfers and `vk`'s circuit version does not
+    /// support the cross-address restriction.
+    ///
+    /// Also returns an error if proof verification fails.
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
         self.authorization()
@@ -950,7 +957,7 @@ pub mod testing {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use alloc::vec;
 
     use proptest::prelude::*;
@@ -958,6 +965,35 @@ mod tests {
     use super::testing::{arb_bundle, arb_flags_nu6_3};
     use super::{Authorized, Bundle, BundleError, BundleFormat, Flags};
     use crate::Proof;
+
+    #[cfg(feature = "circuit")]
+    pub(crate) fn with_cross_address_disabled(
+        bundle: Bundle<Authorized, crate::value::ValueSum>,
+    ) -> Bundle<Authorized, crate::value::ValueSum> {
+        let mut flags = *bundle.flags();
+        flags.cross_address_enabled = false;
+
+        Bundle::from_parts_unchecked(
+            bundle.actions().clone(),
+            flags,
+            *bundle.value_balance(),
+            *bundle.anchor(),
+            bundle.authorization().clone(),
+        )
+    }
+
+    #[cfg(feature = "circuit")]
+    pub(crate) fn sample_authorized_bundle(
+        n_actions: usize,
+    ) -> Bundle<Authorized, crate::value::ValueSum> {
+        use proptest::strategy::ValueTree;
+
+        let mut runner = proptest::test_runner::TestRunner::deterministic();
+        arb_bundle(n_actions)
+            .new_tree(&mut runner)
+            .expect("strategy can generate a bundle")
+            .current()
+    }
 
     #[test]
     fn expected_proof_size_matches_known_values() {
@@ -1136,6 +1172,83 @@ mod tests {
                 with_proof_len(expected - 1).err(),
                 Some(BundleError::NonCanonicalProofSize { expected, actual: expected - 1 })
             );
+        }
+
+        #[test]
+        fn try_from_parts_preserves_cross_address_disabled(bundle in arb_bundle(3)) {
+            let actions = bundle.actions().clone();
+            let mut flags = *bundle.flags();
+            flags.cross_address_enabled = false;
+            let value_balance = *bundle.value_balance();
+            let anchor = *bundle.anchor();
+            let authorization = bundle.authorization().clone();
+
+            let bundle = Bundle::try_from_parts(
+                    actions,
+                    flags,
+                    value_balance,
+                    anchor,
+                    authorization,
+                    crate::bundle::ProofSizeEnforcement::Strict,
+                )
+                .expect("canonical proof size is accepted");
+            prop_assert!(!bundle.flags().cross_address_enabled());
+        }
+
+        #[test]
+        fn try_from_parts_checks_proof_size_with_cross_address_disabled(bundle in arb_bundle(3)) {
+            let actions = bundle.actions().clone();
+            let expected = Proof::expected_proof_size(actions.len());
+            let mut flags = *bundle.flags();
+            flags.cross_address_enabled = false;
+            let value_balance = *bundle.value_balance();
+            let anchor = *bundle.anchor();
+            let binding_signature = bundle.authorization().binding_signature().clone();
+
+            prop_assert_eq!(
+                Bundle::try_from_parts(
+                    actions,
+                    flags,
+                    value_balance,
+                    anchor,
+                    Authorized::from_parts(
+                        Proof::new(vec![0u8; expected + 1]),
+                        binding_signature,
+                    ),
+                    crate::bundle::ProofSizeEnforcement::Strict,
+                )
+                .err(),
+                Some(BundleError::NonCanonicalProofSize { expected, actual: expected + 1 })
+            );
+        }
+    }
+
+    #[cfg(feature = "circuit")]
+    #[test]
+    #[should_panic(expected = "not representable in pre-NU6.3")]
+    fn commitment_panics_for_unrepresentable_flags() {
+        let bundle = with_cross_address_disabled(sample_authorized_bundle(1))
+            .try_map_value_balance(i64::try_from)
+            .expect("generated bundle value balance fits in i64");
+
+        bundle.commitment(BundleFormat::PreNu6_3);
+    }
+
+    #[cfg(feature = "circuit")]
+    #[test]
+    fn verify_proof_rejects_cross_address_disabled_for_unsupported_keys() {
+        let bundle = with_cross_address_disabled(sample_authorized_bundle(1));
+
+        for circuit_version in [
+            crate::circuit::OrchardCircuitVersion::InsecurePreNu6_2,
+            crate::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+        ] {
+            let vk = crate::circuit::VerifyingKey::build(circuit_version);
+
+            assert!(matches!(
+                bundle.verify_proof(&vk),
+                Err(halo2_proofs::plonk::Error::InvalidInstances)
+            ));
         }
     }
 }

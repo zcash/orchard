@@ -16,6 +16,13 @@ and this project adheres to Rust's notion of
   byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
   reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
   (bit 2 is `enableCrossAddress`).
+- Circuit-version support introspection for the cross-address restriction:
+  - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
+  - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
+  - `orchard::circuit::VerifyingKey::circuit_version`
+  - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
+- `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
+  returned by `orchard::bundle::BatchValidator::add_bundle`.
 - `orchard::bundle::testing::arb_flags_nu6_3` (under the `test-dependencies`
   feature), a strategy that generates flag sets under NU6.3 encoding rules,
   including flag sets that disable cross-address transfers. `arb_flags` is
@@ -42,9 +49,25 @@ and this project adheres to Rust's notion of
   - `orchard::builder::Builder::build` (`Builder::new` no longer selects a
     circuit version)
   - `orchard::builder::bundle`
+- `orchard::circuit::Instance::from_parts` now takes an
+  `orchard::bundle::Flags` argument instead of separate spend/output enable
+  booleans, so the cross-address restriction is carried into the public
+  instances.
+- Proof APIs reject instances that disable cross-address transfers unless the
+  key's circuit version supports the cross-address restriction.
+  `orchard::Proof::{create, verify}` and `orchard::Bundle::verify_proof`
+  return `halo2_proofs::plonk::Error::InvalidInstances`; with pre-Ironwood
+  keys, proving a restricted builder-created bundle returns
+  `orchard::builder::BuildError::Proof`, and PCZT proving returns
+  `orchard::pczt::ProverError::ProofFailed`. Restricted
+  bundles can still be constructed and round-tripped —
+  `orchard::Bundle::<Authorized, V>::try_from_parts` and
+  `orchard::pczt::Bundle::extract` preserve the flag — with enforcement at
+  proving and verification.
 - `orchard::bundle::BatchValidator` binds its verifying key at construction:
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
-  `BatchValidator::validate` no longer takes one.
+  `BatchValidator::validate` no longer takes one. `BatchValidator::add_bundle`
+  now returns `Result<(), orchard::bundle::BatchError>`.
 - `orchard::Bundle::commitment` now takes the `BundleFormat` of the
   transaction encoding the bundle appears in, and hashes that format's flag
   byte (via `Flags::to_byte`). The ZIP-244 Orchard digest — and therefore the
