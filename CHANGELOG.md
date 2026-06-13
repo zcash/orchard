@@ -8,10 +8,25 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
-- `orchard::bundle::Flags::cross_address_enabled`, which exposes the
-  pre-NU6.3 semantic that cross-address transfers are implicitly enabled.
+- `orchard::bundle::Flags` APIs for the NU6.3 `enableCrossAddress` flag:
+  - `Flags::CROSS_ADDRESS_DISABLED`, the restricted flag set. It cannot be
+    encoded in pre-NU6.3 formats.
+  - `Flags::cross_address_enabled`
+- `orchard::bundle::BundleFormat`, selecting whether an Orchard bundle flag
+  byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
+  reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
+  (bit 2 is `enableCrossAddress`).
 
 ### Changed
+- `orchard::bundle::Flags::{from_byte, to_byte}` and
+  `orchard::pczt::Bundle::parse` now take a `BundleFormat`. Under
+  `BundleFormat::Nu6_3`, bit 2 is parsed and serialized as
+  `enableCrossAddress`; under `BundleFormat::PreNu6_3`, bit 2 remains
+  reserved, parsing yields flags with cross-address transfers enabled, and
+  `Flags::to_byte` (which now returns `Option<u8>`) returns `None` if
+  cross-address transfers are disabled.
+- `orchard::Bundle::commitment` now takes the `BundleFormat` used by the
+  transaction encoding.
 - `orchard::bundle::BatchValidator` now binds its verifying key at construction:
   `BatchValidator::new` takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one.
