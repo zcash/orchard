@@ -109,9 +109,10 @@ pub struct Config {
 
 /// Selects which version of the Orchard Action circuit to build.
 ///
-/// [`FixedPostNu6_2`] and [`Ironwood`] use the fixed variable-base scalar-multiplication
-/// base (see `halo2_gadgets`), while [`InsecurePreNu6_2`] reconstructs the historical
-/// (NU5..NU6.2) verifying key solely to verify proofs produced before NU6.2.
+/// [`FixedPostNu6_2`] and [`InsecurePreNu6_2`] produce different verifying keys: the fixed
+/// circuit anchors the variable-base scalar-multiplication base (see `halo2_gadgets`), while
+/// the pre-NU6.2 one does not. [`Ironwood`] extends the fixed circuit by enforcing the
+/// `disableCrossAddress` public input.
 ///
 /// This is a runtime value rather than a type parameter: it is carried in [`Circuit`] and
 /// chosen when building a [`ProvingKey`] or [`VerifyingKey`], so the circuit version can be
@@ -126,21 +127,29 @@ pub enum OrchardCircuitVersion {
     /// is not anchored to the real base. For reconstructing the historical (NU5..NU6.2)
     /// verifying key only — never for proving or current verification.
     InsecurePreNu6_2,
-    /// The fixed circuit, active from NU6.2 onward. Used for all proving and current
+    /// The fixed circuit, active from NU6.2 onward. Used for all current network proving and
     /// verification.
     FixedPostNu6_2,
-    /// The Ironwood circuit. At this point it has the same constraints as the fixed
-    /// post-NU6.2 circuit; it does not yet enforce the `disableCrossAddress` public input.
+    /// The Ironwood circuit. This uses the fixed circuit with additional constraints enforcing
+    /// the `disableCrossAddress` public input.
     Ironwood,
 }
 
 impl OrchardCircuitVersion {
     /// Whether this circuit version enforces the `disableCrossAddress` public input.
+    ///
+    /// Statements with `disableCrossAddress = 1` can be proven and verified only with
+    /// keys for a circuit version that constrains the flag. [`Ironwood`] constrains it;
+    /// older circuit versions leave it unconstrained, so they cannot enforce — and must
+    /// not be asked to attest to — the restriction.
+    ///
+    /// [`Ironwood`]: OrchardCircuitVersion::Ironwood
     pub fn supports_cross_address_restriction(self) -> bool {
         match self {
-            OrchardCircuitVersion::InsecurePreNu6_2
-            | OrchardCircuitVersion::FixedPostNu6_2
-            | OrchardCircuitVersion::Ironwood => false,
+            OrchardCircuitVersion::InsecurePreNu6_2 | OrchardCircuitVersion::FixedPostNu6_2 => {
+                false
+            }
+            OrchardCircuitVersion::Ironwood => true,
         }
     }
 
@@ -474,14 +483,27 @@ impl Config {
     }
 }
 
+/// Cells carrying the addresses of an action's spent and newly created notes, returned
+/// from the shared synthesis logic so that circuit versions can impose additional
+/// constraints on them.
+struct AddressPoints {
+    g_d_old: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+    pk_d_old: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+    g_d_new: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+    pk_d_new: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+}
+
 impl Circuit {
-    /// Synthesizes the Orchard Action checks common to every circuit version.
+    /// Synthesizes the Orchard Action checks common to every circuit version,
+    /// parameterized by `self.circuit_version`, returning the cells carrying the old
+    /// and new note addresses so that circuit versions can impose additional
+    /// constraints on them.
     #[allow(non_snake_case)]
     fn synthesize_base(
         &self,
         config: &Config,
         layouter: &mut impl Layouter<pallas::Base>,
-    ) -> Result<(), plonk::Error> {
+    ) -> Result<AddressPoints, plonk::Error> {
         // Load the Sinsemilla generator lookup table used by the whole circuit.
         SinsemillaChip::load(config.sinsemilla_config_1.clone(), layouter)?;
 
@@ -736,28 +758,30 @@ impl Circuit {
             derived_cm_old.constrain_equal(layouter.namespace(|| "cm_old equality"), &cm_old)?;
         }
 
+        // Witness g_d_new, used in the new note commitment integrity check below and,
+        // for Ironwood, in the cross-address checks.
+        let g_d_new = {
+            let g_d_new = self.g_d_new.map(|g_d_new| g_d_new.to_affine());
+            NonIdentityPoint::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "witness g_d_new_star"),
+                g_d_new,
+            )?
+        };
+
+        // Witness pk_d_new, used in the new note commitment integrity check below and,
+        // for Ironwood, in the cross-address checks.
+        let pk_d_new = {
+            let pk_d_new = self.pk_d_new.map(|pk_d_new| pk_d_new.inner().to_affine());
+            NonIdentityPoint::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "witness pk_d_new"),
+                pk_d_new,
+            )?
+        };
+
         // New note commitment integrity (https://p.z.cash/ZKS:action-cmx-new-integrity?partial).
         {
-            // Witness g_d_new
-            let g_d_new = {
-                let g_d_new = self.g_d_new.map(|g_d_new| g_d_new.to_affine());
-                NonIdentityPoint::new(
-                    ecc_chip.clone(),
-                    layouter.namespace(|| "witness g_d_new_star"),
-                    g_d_new,
-                )?
-            };
-
-            // Witness pk_d_new
-            let pk_d_new = {
-                let pk_d_new = self.pk_d_new.map(|pk_d_new| pk_d_new.inner().to_affine());
-                NonIdentityPoint::new(
-                    ecc_chip.clone(),
-                    layouter.namespace(|| "witness pk_d_new"),
-                    pk_d_new,
-                )?
-            };
-
             // ρ^new = nf^old
             let rho_new = nf_old.inner().clone();
 
@@ -844,7 +868,165 @@ impl Circuit {
             },
         )?;
 
-        Ok(())
+        Ok(AddressPoints {
+            g_d_old,
+            pk_d_old,
+            g_d_new,
+            pk_d_new,
+        })
+    }
+
+    /// Enforces the Ironwood cross-address restriction for one action: when
+    /// `disableCrossAddress` is nonzero, the spent note and output note must be
+    /// addressed to the same receiver, meaning equal `(g_d, pk_d)`.
+    ///
+    /// This reuses the existing "Orchard circuit checks" gate instead of adding a
+    /// new gate. The gate already has a product constraint,
+    /// `v_old * (root - anchor) = 0`, with exactly the shape needed for
+    /// `disableCrossAddress * (old_coord - new_coord) = 0`.
+    ///
+    /// Ironwood enables that gate on four extra rows, one per affine coordinate of
+    /// `(g_d, pk_d)`, with each row wired as:
+    ///
+    /// ```text
+    /// v_old          <- disableCrossAddress
+    /// v_new          <- 0 (constant)
+    /// magnitude      <- disableCrossAddress
+    /// sign           <- 1 (constant)
+    /// root           <- old coordinate
+    /// anchor         <- new coordinate
+    /// enable_spend  <- 1 (constant)
+    /// enable_output <- 1 (constant)
+    /// ```
+    ///
+    /// With this layout, the gate constraints become:
+    ///
+    /// ```text
+    /// v_old - v_new = magnitude * sign  ->  disableCrossAddress - 0 = disableCrossAddress * 1
+    /// v_old * (root - anchor) = 0       ->  disableCrossAddress * (old_coord - new_coord) = 0
+    /// v_old * (1 - enable_spend) = 0   ->  disableCrossAddress * (1 - 1) = 0
+    /// v_new * (1 - enable_output) = 0  ->  0 * (1 - 1) = 0
+    /// ```
+    ///
+    /// The second line is the actual cross-address check. Any nonzero
+    /// `disableCrossAddress` value forces each old coordinate to equal the
+    /// corresponding new coordinate. The public API encodes `disableCrossAddress`
+    /// as 0 or 1, but this algebra does not rely on a boolean constraint.
+    ///
+    /// The two otherwise-unused advice columns are also filled with copies of
+    /// `disableCrossAddress` so these rows occupy every advice column; that prevents
+    /// the floor planner from overlapping another selector-enabled region with the
+    /// check rows.
+    fn synthesize_cross_address_checks(
+        config: &Config,
+        layouter: &mut impl Layouter<pallas::Base>,
+        addrs: &AddressPoints,
+    ) -> Result<(), plonk::Error> {
+        let AddressPoints {
+            g_d_old,
+            pk_d_old,
+            g_d_new,
+            pk_d_new,
+        } = addrs;
+
+        layouter.assign_region(
+            || "Ironwood cross-address checks",
+            |mut region| {
+                let coordinate_checks = [
+                    ("g_d x", g_d_old.inner().x(), g_d_new.inner().x()),
+                    ("g_d y", g_d_old.inner().y(), g_d_new.inner().y()),
+                    ("pk_d x", pk_d_old.inner().x(), pk_d_new.inner().x()),
+                    ("pk_d y", pk_d_old.inner().y(), pk_d_new.inner().y()),
+                ];
+
+                for (offset, (label, old_coord, new_coord)) in
+                    coordinate_checks.into_iter().enumerate()
+                {
+                    // Copy disableCrossAddress from the public input at
+                    // primary[DISABLE_CROSS_ADDRESS] into advices[0] for this
+                    // coordinate-check row.
+                    let cross_address_disabled = region.assign_advice_from_instance(
+                        || "disableCrossAddress",
+                        config.primary,
+                        DISABLE_CROSS_ADDRESS,
+                        config.advices[0],
+                        offset,
+                    )?;
+
+                    // Fill the v_new, magnitude, and sign cells so the reused
+                    // value-balance constraint reads:
+                    // disableCrossAddress - 0 = disableCrossAddress * 1.
+                    region.assign_advice_from_constant(
+                        || "zero",
+                        config.advices[1],
+                        offset,
+                        pallas::Base::zero(),
+                    )?;
+                    cross_address_disabled.copy_advice(
+                        || "disableCrossAddress magnitude",
+                        &mut region,
+                        config.advices[2],
+                        offset,
+                    )?;
+                    region.assign_advice_from_constant(
+                        || "positive sign",
+                        config.advices[3],
+                        offset,
+                        pallas::Base::one(),
+                    )?;
+
+                    // Copy the old coordinate into the gate's root cell and the
+                    // new coordinate into its anchor cell for the equality check.
+                    old_coord.copy_advice(
+                        || format!("old {label}"),
+                        &mut region,
+                        config.advices[4],
+                        offset,
+                    )?;
+                    new_coord.copy_advice(
+                        || format!("new {label}"),
+                        &mut region,
+                        config.advices[5],
+                        offset,
+                    )?;
+
+                    // Set both enable flags to one so the unrelated enable checks
+                    // in q_orchard are neutralized on these rows.
+                    region.assign_advice_from_constant(
+                        || "one (neutralize enable_spend check)",
+                        config.advices[6],
+                        offset,
+                        pallas::Base::one(),
+                    )?;
+                    region.assign_advice_from_constant(
+                        || "one (neutralize enable_output check)",
+                        config.advices[7],
+                        offset,
+                        pallas::Base::one(),
+                    )?;
+
+                    // Occupy the otherwise-unused rightmost advice columns so the
+                    // floor planner cannot lay out another region (and enable its
+                    // gate) on these rows.
+                    cross_address_disabled.copy_advice(
+                        || "disableCrossAddress padding",
+                        &mut region,
+                        config.advices[8],
+                        offset,
+                    )?;
+                    cross_address_disabled.copy_advice(
+                        || "disableCrossAddress padding",
+                        &mut region,
+                        config.advices[9],
+                        offset,
+                    )?;
+
+                    config.q_orchard.enable(&mut region, offset)?;
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 
@@ -865,14 +1047,19 @@ impl plonk::Circuit<pallas::Base> for Circuit {
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
-        self.synthesize_base(&config, &mut layouter)
+        let addrs = self.synthesize_base(&config, &mut layouter)?;
+
+        if self.circuit_version.supports_cross_address_restriction() {
+            Self::synthesize_cross_address_checks(&config, &mut layouter, &addrs)?;
+        }
+
+        Ok(())
     }
 }
 
 /// The verifying key for the Orchard Action circuit.
 ///
-/// Build with [`VerifyingKey::build`] for an explicit circuit version. The key
-/// verifies only proofs created for the same circuit version.
+/// Build with [`VerifyingKey::build`] for an explicit circuit version.
 #[derive(Debug)]
 pub struct VerifyingKey {
     pub(crate) params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
@@ -910,8 +1097,8 @@ impl VerifyingKey {
 
 /// The proving key for the Orchard Action circuit.
 ///
-/// Build with [`ProvingKey::build`] for an explicit circuit version. The resulting proofs
-/// verify only under a [`VerifyingKey`] for the same circuit version.
+/// Build with [`ProvingKey::build`] for an explicit circuit version.
+/// The resulting proofs verify only under a compatible [`VerifyingKey`].
 #[derive(Debug)]
 pub struct ProvingKey {
     params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
@@ -1071,7 +1258,7 @@ impl Instance {
         instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
         // Instance columns are zero-padded over the evaluation domain, so for statements
         // where this flag is false, this encoding is commitment-identical to the historical
-        // nine-row encoding. Existing circuits leave this row unconstrained, which is why
+        // nine-row encoding. Pre-Ironwood circuits leave this row unconstrained, which is why
         // restricted statements must never reach those keys (see `Proof::create` and
         // `Proof::verify`).
         instance[DISABLE_CROSS_ADDRESS] =
@@ -1084,15 +1271,15 @@ impl Instance {
 impl Proof {
     /// Creates a proof for the given circuits and instances.
     ///
-    /// The resulting proof verifies only under a [`VerifyingKey`] for the same circuit version
-    /// (see [`OrchardCircuitVersion`]).
+    /// The resulting proof verifies only under a compatible [`VerifyingKey`] (see
+    /// [`OrchardCircuitVersion`]).
     ///
     /// Returns [`plonk::Error::Synthesis`] if any circuit's version does not match `pk`'s
     /// version, since `pk` could not produce a valid proof for it.
     ///
     /// Returns [`plonk::Error::InvalidInstances`] if any instance has
-    /// `disableCrossAddress = 1` and `pk`'s circuit version does not support the
-    /// cross-address restriction.
+    /// `disableCrossAddress = 1` and `pk` is not an
+    /// [`OrchardCircuitVersion::Ironwood`] proving key.
     ///
     /// All instances of a bundle carry the same `disableCrossAddress` value; that uniformity
     /// is the bundle layer's invariant, and is not checked here.
@@ -1138,8 +1325,8 @@ impl Proof {
     /// # Errors
     ///
     /// Returns [`plonk::Error::InvalidInstances`] if any instance has
-    /// `disableCrossAddress = 1` and `vk`'s circuit version does not support the
-    /// cross-address restriction.
+    /// `disableCrossAddress = 1` and `vk` is not an
+    /// [`OrchardCircuitVersion::Ironwood`] verifying key.
     ///
     /// Also returns an error if proof verification fails.
     pub fn verify(&self, vk: &VerifyingKey, instances: &[Instance]) -> Result<(), plonk::Error> {
@@ -1166,6 +1353,13 @@ impl Proof {
     /// Use this API if you want more control over how proof batches are processed. If you
     /// just want to batch-validate Orchard bundles, use [`bundle::BatchValidator`].
     ///
+    /// The batch does not know which [`VerifyingKey`] it will be finalized with, so the
+    /// caller is responsible for the check that [`Proof::verify`] performs: instances that
+    /// disable cross-address transfers must only be finalized with a key whose circuit
+    /// version constrains the `disableCrossAddress` public input (see
+    /// [`OrchardCircuitVersion::supports_cross_address_restriction`]).
+    /// [`bundle::BatchValidator`] performs this check.
+    ///
     /// [`bundle::BatchValidator`]: crate::bundle::BatchValidator
     pub fn add_to_batch(&self, batch: &mut BatchVerifier<vesta::Affine>, instances: Vec<Instance>) {
         let instances = instances
@@ -1189,21 +1383,40 @@ mod tests {
 
     use ff::Field;
     use halo2_proofs::{circuit::Value, dev::MockProver};
-    use pasta_curves::pallas;
+    use pasta_curves::{pallas, vesta};
     use rand::{rngs::OsRng, RngCore};
 
     use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
-        bundle::Flags,
+        bundle::{BundleFormat, Flags},
         keys::SpendValidatingKey,
         note::{Note, Rho},
         tree::MerklePath,
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
 
+    /// Generates a circuit and instance whose output note is addressed to a receiver
+    /// distinct from the spent note's.
     fn generate_circuit_instance<R: RngCore>(
+        rng: R,
+        circuit_version: OrchardCircuitVersion,
+    ) -> (Circuit, Instance) {
+        generate_circuit_instance_inner(rng, circuit_version, false)
+    }
+
+    /// Generates a circuit and instance whose output note is addressed to the spent
+    /// note's receiver, as the cross-address restriction requires.
+    fn generate_self_transfer_circuit_instance<R: RngCore>(
+        rng: R,
+        circuit_version: OrchardCircuitVersion,
+    ) -> (Circuit, Instance) {
+        generate_circuit_instance_inner(rng, circuit_version, true)
+    }
+
+    fn generate_circuit_instance_inner<R: RngCore>(
         mut rng: R,
         circuit_version: OrchardCircuitVersion,
+        output_matches_spend: bool,
     ) -> (Circuit, Instance) {
         let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
 
@@ -1216,7 +1429,16 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
+        let output_note = if output_matches_spend {
+            Note::new(sender_address, spent_note.value(), rho, &mut rng)
+        } else {
+            loop {
+                let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
+                if !sender_address.same_receiver(&output_note.recipient()) {
+                    break output_note;
+                }
+            }
+        };
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
@@ -1262,25 +1484,46 @@ mod tests {
         )
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ProofFixtureEncoding {
+        LegacyTwoFlags,
+        IronwoodThreeFlags,
+    }
+
     fn write_test_case<W: std::io::Write>(
         mut w: W,
         instance: &Instance,
         proof: &Proof,
+        encoding: ProofFixtureEncoding,
     ) -> std::io::Result<()> {
         w.write_all(&instance.anchor().to_bytes())?;
         w.write_all(&instance.cv_net().to_bytes())?;
         w.write_all(&instance.nf_old().to_bytes())?;
         w.write_all(&<[u8; 32]>::from(instance.rk()))?;
         w.write_all(&instance.cmx().to_bytes())?;
-        w.write_all(&[
-            u8::from(instance.enable_spend()),
-            u8::from(instance.enable_output()),
-        ])?;
+        match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => {
+                w.write_all(&[
+                    u8::from(instance.enable_spend()),
+                    u8::from(instance.enable_output()),
+                ])?;
+            }
+            ProofFixtureEncoding::IronwoodThreeFlags => {
+                w.write_all(&[
+                    u8::from(instance.enable_spend()),
+                    u8::from(instance.enable_output()),
+                    u8::from(instance.cross_address_disabled()),
+                ])?;
+            }
+        }
         w.write_all(proof.as_ref())?;
         Ok(())
     }
 
-    fn read_test_case<R: std::io::Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
+    fn read_test_case<R: std::io::Read>(
+        mut r: R,
+        encoding: ProofFixtureEncoding,
+    ) -> std::io::Result<(Instance, Proof)> {
         let read_32_bytes = |r: &mut R| {
             let mut ret = [0u8; 32];
             r.read_exact(&mut ret).unwrap();
@@ -1303,15 +1546,23 @@ mod tests {
         let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let enable_spend = read_bool(&mut r);
         let enable_output = read_bool(&mut r);
-        let instance = Instance::from_parts(
-            anchor,
-            cv_net,
-            nf_old,
-            rk,
-            cmx,
-            Flags::from_parts(enable_spend, enable_output),
+        let (cross_address_bit, format) = match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => (0, BundleFormat::PreNu6_3),
+            ProofFixtureEncoding::IronwoodThreeFlags => {
+                // The fixture stores the instance-level *disable* bit; the NU6.3 flag
+                // byte carries the *enable* bit, so invert when reconstructing.
+                let cross_address_disabled = read_bool(&mut r);
+                (u8::from(!cross_address_disabled) << 2, BundleFormat::Nu6_3)
+            }
+        };
+        let flags = Flags::from_byte(
+            u8::from(enable_spend) | (u8::from(enable_output) << 1) | cross_address_bit,
+            format,
         )
-        .expect("test vectors were generated with non-identity rk");
+        .expect("test vectors use canonical flag encodings");
+
+        let instance = Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, flags)
+            .expect("test vectors were generated with non-identity rk");
 
         let mut proof_bytes = vec![];
         r.read_to_end(&mut proof_bytes)?;
@@ -1320,33 +1571,173 @@ mod tests {
         Ok((instance, proof))
     }
 
-    // TODO: recast as a proptest
     #[test]
-    fn round_trip() {
+    fn halo2_instance_includes_cross_address_disabled_flag() {
+        let (_, mut instance) =
+            generate_circuit_instance(OsRng, OrchardCircuitVersion::FixedPostNu6_2);
+
+        let halo2_instance = instance.to_halo2_instance();
+        assert_eq!(halo2_instance[0].len(), 10);
+        assert_eq!(
+            halo2_instance[0][super::DISABLE_CROSS_ADDRESS],
+            vesta::Scalar::zero()
+        );
+
+        instance.cross_address_disabled = true;
+        assert_eq!(
+            instance.to_halo2_instance()[0][super::DISABLE_CROSS_ADDRESS],
+            vesta::Scalar::one()
+        );
+    }
+
+    #[test]
+    fn cross_address_support_matches_circuit_version() {
+        assert!(!OrchardCircuitVersion::InsecurePreNu6_2.supports_cross_address_restriction());
+        assert!(!OrchardCircuitVersion::FixedPostNu6_2.supports_cross_address_restriction());
+        assert!(OrchardCircuitVersion::Ironwood.supports_cross_address_restriction());
+    }
+
+    #[test]
+    fn ironwood_cross_address_restriction_is_conditional() {
+        let mock_verify = |circuit: &Circuit, instance: &Instance| {
+            MockProver::run(
+                K,
+                circuit,
+                instance
+                    .to_halo2_instance()
+                    .iter()
+                    .map(|p| p.to_vec())
+                    .collect(),
+            )
+            .unwrap()
+            .verify()
+        };
+
+        // An unrestricted cross-address statement is satisfiable...
+        let (circuit, mut instance) =
+            generate_circuit_instance(OsRng, OrchardCircuitVersion::Ironwood);
+        assert_eq!(mock_verify(&circuit, &instance), Ok(()));
+
+        // ...but setting `disableCrossAddress` makes it unsatisfiable...
+        instance.cross_address_disabled = true;
+        assert!(mock_verify(&circuit, &instance).is_err());
+
+        // ...while a restricted self-transfer statement is satisfiable.
+        let (circuit, mut instance) =
+            generate_self_transfer_circuit_instance(OsRng, OrchardCircuitVersion::Ironwood);
+        instance.cross_address_disabled = true;
+        assert_eq!(mock_verify(&circuit, &instance), Ok(()));
+    }
+
+    #[test]
+    fn ironwood_restricted_statement_proves_and_verifies() {
+        let mut rng = OsRng;
+        let (circuit, mut instance) =
+            generate_self_transfer_circuit_instance(&mut rng, OrchardCircuitVersion::Ironwood);
+        instance.cross_address_disabled = true;
+
+        let pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
+        let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+
+        let proof = Proof::create(
+            &pk,
+            core::slice::from_ref(&circuit),
+            core::slice::from_ref(&instance),
+            &mut rng,
+        )
+        .unwrap();
+        assert!(proof.verify(&vk, core::slice::from_ref(&instance)).is_ok());
+    }
+
+    // FixedPostNu6_2 leaves instance row 9 (`disableCrossAddress`) unconstrained, so a
+    // freshly created proof can satisfy a restricted statement at the raw halo2 level
+    // without enforcing anything about addresses. This test documents that hazard and
+    // pins the API checks that close it.
+    #[test]
+    fn restricted_statement_requires_supporting_key() {
+        use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite};
+
+        let mut rng = OsRng;
+        let (circuit, mut instance) =
+            generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2);
+        instance.cross_address_disabled = true;
+
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+
+        let raw_instances = instance.to_halo2_instance();
+        let raw_instances: Vec<_> = raw_instances.iter().map(|i| &i[..]).collect();
+        let raw_instances = [&raw_instances[..]];
+
+        let mut transcript = Blake2bWrite::<_, vesta::Affine, _>::init(vec![]);
+        super::plonk::create_proof(
+            &pk.params,
+            &pk.pk,
+            core::slice::from_ref(&circuit),
+            &raw_instances,
+            &mut rng,
+            &mut transcript,
+        )
+        .unwrap();
+        let proof_bytes = transcript.finalize();
+
+        let strategy = super::SingleVerifier::new(&vk.params);
+        let mut transcript = Blake2bRead::init(&proof_bytes[..]);
+        assert!(super::plonk::verify_proof(
+            &vk.params,
+            &vk.vk,
+            strategy,
+            &raw_instances,
+            &mut transcript,
+        )
+        .is_ok());
+
+        assert!(matches!(
+            Proof::create(
+                &pk,
+                core::slice::from_ref(&circuit),
+                core::slice::from_ref(&instance),
+                &mut rng,
+            ),
+            Err(super::plonk::Error::InvalidInstances),
+        ));
+
+        let proof = Proof::new(proof_bytes);
+        assert!(matches!(
+            proof.verify(&vk, core::slice::from_ref(&instance)),
+            Err(super::plonk::Error::InvalidInstances),
+        ));
+    }
+
+    // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate the pinned circuit description
+    // for this version.
+    fn pinned_circuit_description(
+        circuit_version: OrchardCircuitVersion,
+        path: &str,
+        expected: &str,
+    ) -> VerifyingKey {
+        let vk = VerifyingKey::build(circuit_version);
+
+        if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+            std::fs::write(path, format!("{:#?}\n", vk.vk.pinned()))
+                .expect("should be able to write new circuit description");
+        } else {
+            assert_eq!(
+                format!("{:#?}\n", vk.vk.pinned()),
+                expected.replace("\r\n", "\n")
+            );
+        }
+
+        vk
+    }
+
+    // TODO: recast as a proptest
+    fn round_trip_for_version(circuit_version: OrchardCircuitVersion, vk: &VerifyingKey) {
         let mut rng = OsRng;
 
         let (circuits, instances): (Vec<_>, Vec<_>) = iter::once(())
-            .map(|()| generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2))
+            .map(|()| generate_circuit_instance(&mut rng, circuit_version))
             .unzip();
-
-        let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
-
-        // Test that the pinned verification key (representing the circuit) is as expected.
-        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate it (and the proof below).
-        {
-            if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
-                std::fs::write(
-                    "src/circuit_data/circuit_description_fixed",
-                    format!("{:#?}\n", vk.vk.pinned()),
-                )
-                .expect("should be able to write new circuit description");
-            } else {
-                assert_eq!(
-                    format!("{:#?}\n", vk.vk.pinned()),
-                    include_str!("circuit_data/circuit_description_fixed").replace("\r\n", "\n")
-                );
-            }
-        }
 
         // Test that the proof size is as expected.
         let expected_proof_size = {
@@ -1355,6 +1746,9 @@ mod tests {
                     K,
                     &circuits[0],
                 );
+            // These sizes are identical for every circuit version: Ironwood reuses the
+            // existing Orchard checks gate on spare rows and adds no columns or
+            // commitments, leaving the proof shape unchanged.
             assert_eq!(usize::from(circuit_cost.proof_size(1)), 4992);
             assert_eq!(usize::from(circuit_cost.proof_size(2)), 7264);
             // The constants in `Proof::expected_proof_size` must track the circuit's actual
@@ -1385,17 +1779,36 @@ mod tests {
             );
         }
 
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = ProvingKey::build(circuit_version);
         let proof = Proof::create(&pk, &circuits, &instances, &mut rng).unwrap();
-        assert!(proof.verify(&vk, &instances).is_ok());
+        assert!(proof.verify(vk, &instances).is_ok());
         assert_eq!(proof.0.len(), expected_proof_size);
     }
 
-    // Proves with the proving key for `proving_version` and checks that the proof verifies
-    // under the verifying key for the same version, but not under the verifying key for
-    // `other_version`. The two circuit versions have different verifying keys, so a proof is
-    // bound to the version it was created with.
-    fn proof_is_bound_to_circuit_version(
+    #[test]
+    fn round_trip_fixed() {
+        let vk = pinned_circuit_description(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            "src/circuit_data/circuit_description_fixed",
+            include_str!("circuit_data/circuit_description_fixed"),
+        );
+        round_trip_for_version(OrchardCircuitVersion::FixedPostNu6_2, &vk);
+    }
+
+    #[test]
+    fn round_trip_ironwood() {
+        let vk = pinned_circuit_description(
+            OrchardCircuitVersion::Ironwood,
+            "src/circuit_data/circuit_description_ironwood",
+            include_str!("circuit_data/circuit_description_ironwood"),
+        );
+        round_trip_for_version(OrchardCircuitVersion::Ironwood, &vk);
+    }
+
+    // Proves with the proving key for `proving_version` and checks that the proof verifies under
+    // the verifying key for the same version, but not under a version with a different verifying
+    // key.
+    fn proof_is_rejected_by_other_circuit_version(
         proving_version: OrchardCircuitVersion,
         other_version: OrchardCircuitVersion,
     ) {
@@ -1418,14 +1831,34 @@ mod tests {
 
     #[test]
     fn proof_verifies_against_matching_circuit_version() {
-        // Each prover's proof verifies under its own verifying key, and is rejected by the
-        // other version's verifying key.
-        proof_is_bound_to_circuit_version(
+        // Insecure proofs are rejected by the anchored circuit versions, and anchored proofs are
+        // rejected by the insecure verifying key.
+        proof_is_rejected_by_other_circuit_version(
             OrchardCircuitVersion::FixedPostNu6_2,
             OrchardCircuitVersion::InsecurePreNu6_2,
         );
-        proof_is_bound_to_circuit_version(
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::Ironwood,
             OrchardCircuitVersion::InsecurePreNu6_2,
+        );
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        );
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::Ironwood,
+        );
+    }
+
+    #[test]
+    fn fixed_and_ironwood_have_distinct_verifying_keys() {
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::Ironwood,
+        );
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::Ironwood,
             OrchardCircuitVersion::FixedPostNu6_2,
         );
     }
@@ -1437,68 +1870,61 @@ mod tests {
     fn create_rejects_mismatched_proving_key_version() {
         let mut rng = OsRng;
 
-        // Circuits for the insecure version, but proved with the fixed proving key.
-        let (circuit, instance) =
-            generate_circuit_instance(&mut rng, OrchardCircuitVersion::InsecurePreNu6_2);
-        let instances = core::slice::from_ref(&instance);
-
-        let mismatched_pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
-
-        assert!(matches!(
-            Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
-            Err(super::plonk::Error::Synthesis),
-        ));
-    }
-
-    #[test]
-    fn unsupported_cross_address_restriction_is_rejected() {
-        let mut rng = OsRng;
-
-        for circuit_version in [
-            OrchardCircuitVersion::InsecurePreNu6_2,
-            OrchardCircuitVersion::FixedPostNu6_2,
+        for (circuit_version, pk_version) in [
+            (
+                OrchardCircuitVersion::InsecurePreNu6_2,
+                OrchardCircuitVersion::FixedPostNu6_2,
+            ),
+            (
+                OrchardCircuitVersion::FixedPostNu6_2,
+                OrchardCircuitVersion::Ironwood,
+            ),
+            (
+                OrchardCircuitVersion::Ironwood,
+                OrchardCircuitVersion::FixedPostNu6_2,
+            ),
         ] {
-            assert!(!circuit_version.supports_cross_address_restriction());
-
-            let (circuit, mut instance) = generate_circuit_instance(&mut rng, circuit_version);
-            instance.cross_address_disabled = true;
+            let (circuit, instance) = generate_circuit_instance(&mut rng, circuit_version);
             let instances = core::slice::from_ref(&instance);
 
-            let pk = ProvingKey::build(circuit_version);
-            assert!(matches!(
-                Proof::create(&pk, &[circuit], instances, &mut rng),
-                Err(super::plonk::Error::InvalidInstances),
-            ));
+            let mismatched_pk = ProvingKey::build(pk_version);
 
-            let vk = VerifyingKey::build(circuit_version);
-            assert!(!pk.supports_cross_address_restriction());
-            assert!(!vk.supports_cross_address_restriction());
             assert!(matches!(
-                Proof::new(vec![]).verify(&vk, instances),
-                Err(super::plonk::Error::InvalidInstances),
+                Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
+                Err(super::plonk::Error::Synthesis),
             ));
         }
     }
 
-    #[test]
-    fn serialized_proof_test_case() {
-        let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
-
+    fn serialized_proof_test_case_for_version(
+        circuit_version: OrchardCircuitVersion,
+        proof_path: &str,
+        test_case_bytes: &[u8],
+        encoding: ProofFixtureEncoding,
+        expected_proof_size: usize,
+        restricted: bool,
+    ) {
+        let vk = VerifyingKey::build(circuit_version);
+        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate this serialized proof
+        // fixture. The non-regeneration path embeds and verifies the checked-in fixture.
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
             let create_proof = || -> std::io::Result<()> {
                 let mut rng = OsRng;
 
-                let (circuit, instance) =
-                    generate_circuit_instance(OsRng, OrchardCircuitVersion::FixedPostNu6_2);
+                let (circuit, mut instance) = if restricted {
+                    generate_self_transfer_circuit_instance(&mut rng, circuit_version)
+                } else {
+                    generate_circuit_instance(&mut rng, circuit_version)
+                };
+                instance.cross_address_disabled = restricted;
                 let instances = core::slice::from_ref(&instance);
 
-                let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+                let pk = ProvingKey::build(circuit_version);
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
-                let file =
-                    std::fs::File::create("src/circuit_data/circuit_proof_test_case_fixed.bin")?;
-                write_test_case(file, &instance, &proof)
+                let file = std::fs::File::create(proof_path)?;
+                write_test_case(file, &instance, &proof, encoding)
             };
             create_proof().expect("should be able to write new proof");
             // Regeneration only writes the fixture; the non-generate run below embeds and
@@ -1507,13 +1933,48 @@ mod tests {
         }
 
         // Parse the hardcoded proof test case.
-        let (instance, proof) = {
-            let test_case_bytes = include_bytes!("circuit_data/circuit_proof_test_case_fixed.bin");
-            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
-        };
-        assert_eq!(proof.0.len(), 4992);
+        let (instance, proof) =
+            read_test_case(test_case_bytes, encoding).expect("proof must be valid");
+        assert_eq!(instance.cross_address_disabled(), restricted);
+        assert_eq!(proof.0.len(), expected_proof_size);
 
         assert!(proof.verify(&vk, &[instance]).is_ok());
+    }
+
+    #[test]
+    fn serialized_fixed_proof_test_case() {
+        serialized_proof_test_case_for_version(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            "src/circuit_data/circuit_proof_test_case_fixed.bin",
+            include_bytes!("circuit_data/circuit_proof_test_case_fixed.bin"),
+            ProofFixtureEncoding::LegacyTwoFlags,
+            4992,
+            false,
+        );
+    }
+
+    #[test]
+    fn serialized_ironwood_proof_test_case() {
+        serialized_proof_test_case_for_version(
+            OrchardCircuitVersion::Ironwood,
+            "src/circuit_data/circuit_proof_test_case_ironwood.bin",
+            include_bytes!("circuit_data/circuit_proof_test_case_ironwood.bin"),
+            ProofFixtureEncoding::IronwoodThreeFlags,
+            4992,
+            false,
+        );
+    }
+
+    #[test]
+    fn serialized_ironwood_restricted_proof_test_case() {
+        serialized_proof_test_case_for_version(
+            OrchardCircuitVersion::Ironwood,
+            "src/circuit_data/circuit_proof_test_case_ironwood_restricted.bin",
+            include_bytes!("circuit_data/circuit_proof_test_case_ironwood_restricted.bin"),
+            ProofFixtureEncoding::IronwoodThreeFlags,
+            4992,
+            true,
+        );
     }
 
     // The deployed (NU5..NU6.2) verifying key and a pre-fix proof. `InsecurePreNu6_2`
@@ -1532,7 +1993,8 @@ mod tests {
         let (instance, proof) = {
             let test_case_bytes =
                 include_bytes!("circuit_data/circuit_proof_test_case_insecure.bin");
-            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
+            read_test_case(&test_case_bytes[..], ProofFixtureEncoding::LegacyTwoFlags)
+                .expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
         assert!(proof.verify(&vk, &[instance]).is_ok());

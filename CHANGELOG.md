@@ -20,8 +20,9 @@ and this project adheres to Rust's notion of
   - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
   - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
-- `orchard::circuit::OrchardCircuitVersion::Ironwood`, currently matching the
-  fixed post-NU6.2 circuit constraints.
+- `orchard::circuit::OrchardCircuitVersion::Ironwood`, the circuit version
+  that enforces the `disableCrossAddress` public input (the negation of the
+  bundle's `enableCrossAddress` flag).
 - `orchard::bundle::BatchError::CrossAddressUnsupported`, returned by
   `orchard::bundle::BatchValidator::add_bundle`.
 
