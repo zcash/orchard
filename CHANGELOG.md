@@ -8,11 +8,32 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Changed
+- Circuit-building APIs now take the intended `OrchardCircuitVersion`
+  explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
+  `FixedPostNu6_2` for the previous behavior, or `Ironwood` for restricted
+  proofs:
+  - `orchard::circuit::ProvingKey::build`
+  - `orchard::circuit::VerifyingKey::build`
+  - `orchard::circuit::Circuit::from_action_context`
+  - `orchard::builder::Builder::build` (`Builder::new` no longer selects a
+    circuit version)
+  - `orchard::builder::bundle`
 - `orchard::bundle::BatchValidator` binds its verifying key at construction:
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one.
 
 ### Removed
+- The temporary `_for_version` APIs from `0.14.0`; pass the intended
+  `OrchardCircuitVersion` to the plain APIs listed above instead:
+  - `orchard::circuit::ProvingKey::build_for_version`
+  - `orchard::circuit::VerifyingKey::build_for_version`
+  - `orchard::circuit::Circuit::from_action_context_for_version`
+  - `orchard::builder::Builder::new_for_version` (use `Builder::new` and pass
+    the circuit version to `Builder::build`)
+  - `orchard::builder::bundle_for_version`
+- The `Default` impls for `orchard::circuit::Circuit` and
+  `orchard::circuit::OrchardCircuitVersion`; callers must choose a circuit
+  version explicitly.
 - The `Default` impl for `orchard::bundle::BatchValidator`; construct it with
   `BatchValidator::new`, which now requires a verifying key.
 
