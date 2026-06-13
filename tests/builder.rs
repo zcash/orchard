@@ -3,7 +3,7 @@
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::{Authorized, Flags},
+    bundle::{Authorized, BundleFormat, Flags},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
@@ -18,7 +18,7 @@ use zcash_note_encryption::try_note_decryption;
 
 fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
     assert!(matches!(bundle.verify_proof(vk), Ok(())));
-    let sighash: [u8; 32] = bundle.commitment().into();
+    let sighash: [u8; 32] = bundle.commitment(BundleFormat::PreNu6_3).into();
     let bvk = bundle.binding_validating_key();
     for action in bundle.actions() {
         assert_eq!(action.rk().verify(&sighash, action.authorization()), Ok(()));
@@ -101,7 +101,7 @@ fn bundle_chain() {
             Some(NoteValue::from_raw(5000))
         );
 
-        let sighash = unauthorized.commitment().into();
+        let sighash = unauthorized.commitment(BundleFormat::PreNu6_3).into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
@@ -135,7 +135,7 @@ fn bundle_chain() {
             .build(&mut rng, OrchardCircuitVersion::FixedPostNu6_2)
             .unwrap()
             .unwrap();
-        let sighash = unauthorized.commitment().into();
+        let sighash = unauthorized.commitment(BundleFormat::PreNu6_3).into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
             .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
@@ -166,7 +166,7 @@ fn builder_builds_for_insecure_circuit_version() {
         .build::<i64>(&mut rng, OrchardCircuitVersion::InsecurePreNu6_2)
         .unwrap()
         .unwrap();
-    let sighash: [u8; 32] = unauthorized.commitment().into();
+    let sighash: [u8; 32] = unauthorized.commitment(BundleFormat::PreNu6_3).into();
     let proven = unauthorized.create_proof(&insecure_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 

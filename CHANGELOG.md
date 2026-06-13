@@ -8,10 +8,30 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
-- `orchard::bundle::Flags::cross_address_enabled`, which exposes the
-  pre-NU6.3 semantic that cross-address transfers are implicitly enabled.
+- `orchard::bundle::Flags` APIs for the NU6.3 `enableCrossAddress` flag:
+  - `Flags::CROSS_ADDRESS_DISABLED`, the restricted flag set. It cannot be
+    encoded in pre-NU6.3 formats.
+  - `Flags::cross_address_enabled`
+- `orchard::bundle::BundleFormat`, selecting whether an Orchard bundle flag
+  byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
+  reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
+  (bit 2 is `enableCrossAddress`).
+- `orchard::bundle::testing::arb_flags_nu6_3` (under the `test-dependencies`
+  feature), a strategy that generates flag sets under NU6.3 encoding rules,
+  including flag sets that disable cross-address transfers. `arb_flags` is
+  unchanged and only generates flag sets with cross-address transfers enabled,
+  which are representable in every transaction format.
 
 ### Changed
+- `orchard::bundle::Flags::{from_byte, to_byte}` and
+  `orchard::pczt::Bundle::parse` now take a `BundleFormat`. Under
+  `BundleFormat::Nu6_3`, bit 2 is parsed and serialized as
+  `enableCrossAddress`; under `BundleFormat::PreNu6_3`, bit 2 remains
+  reserved, parsing yields flags with cross-address transfers enabled, and
+  `Flags::to_byte` (which now returns `Option<u8>`) returns `None` if
+  cross-address transfers are disabled. The same flag byte is therefore
+  interpreted differently per era: a byte with bit 2 clear parses as an
+  unrestricted bundle before NU6.3 and a restricted bundle under NU6.3.
 - Circuit-building APIs now take the intended `OrchardCircuitVersion`
   explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
   `FixedPostNu6_2` for the previous behavior, or `Ironwood` for restricted
@@ -25,6 +45,15 @@ and this project adheres to Rust's notion of
 - `orchard::bundle::BatchValidator` binds its verifying key at construction:
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one.
+- `orchard::Bundle::commitment` now takes the `BundleFormat` of the
+  transaction encoding the bundle appears in, and hashes that format's flag
+  byte (via `Flags::to_byte`). The ZIP-244 Orchard digest — and therefore the
+  transaction ID and sighash — now depends on `BundleFormat`: under `Nu6_3` an
+  unrestricted bundle's flag byte sets bit 2. Callers computing transaction IDs
+  or sighashes (e.g. `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`)
+  must pass the `BundleFormat` matching the transaction's consensus branch. Panics
+  if the flags are unrepresentable in `format` (cross-address transfers disabled
+  under `PreNu6_3`).
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended

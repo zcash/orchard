@@ -12,7 +12,7 @@ use zip32::ChildIndex;
 
 use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
-    bundle::Flags,
+    bundle::{BundleFormat, Flags},
     keys::{FullViewingKey, SpendingKey},
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, SpendAuth},
@@ -23,16 +23,22 @@ use crate::{
 
 impl Bundle {
     /// Parses a PCZT bundle from its component parts.
+    ///
+    /// `format` is the transaction-format generation the PCZT's transaction targets;
+    /// it determines how the `flags` byte is interpreted. Passing the generation that does
+    /// not match the transaction silently mis-decodes the flags; see
+    /// [`BundleFormat`] for the consequences of choosing wrong.
     /// `value_sum` is represented as `(magnitude, is_negative)`.
     pub fn parse(
         actions: Vec<Action>,
         flags: u8,
+        format: BundleFormat,
         value_sum: (u64, bool),
         anchor: [u8; 32],
         zkproof: Option<Vec<u8>>,
         bsk: Option<[u8; 32]>,
     ) -> Result<Self, ParseError> {
-        let flags = Flags::from_byte(flags).ok_or(ParseError::UnexpectedFlagBitsSet)?;
+        let flags = Flags::from_byte(flags, format).ok_or(ParseError::UnexpectedFlagBitsSet)?;
 
         let value_sum = {
             let (magnitude, is_negative) = value_sum;
@@ -334,7 +340,7 @@ pub enum ParseError {
     InvalidZip32Derivation,
     /// `rho` must be provided whenever `rseed` is provided.
     MissingRho,
-    /// The provided `flags` field had unexpected bits set.
+    /// The provided `flags` field had unexpected bits set for the bundle format.
     UnexpectedFlagBitsSet,
 }
 
