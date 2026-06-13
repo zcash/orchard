@@ -130,7 +130,8 @@ impl Flags {
 
     /// The flag set with spends and outputs enabled and cross-address transfers disabled.
     ///
-    /// This flag set cannot be encoded in pre-NU6.3 formats.
+    /// This flag set cannot be encoded in pre-NU6.3 formats. Proof creation and
+    /// verification for instances built with this flag require an Ironwood circuit key.
     pub const CROSS_ADDRESS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
@@ -534,7 +535,9 @@ impl Authorization for EffectsOnly {
 impl<V> Bundle<EffectsOnly, V> {
     /// Constructs an effects-only `Bundle` from its constituent parts.
     ///
-    /// An effects-only bundle carries no proof, so there is no proof size to validate.
+    /// An effects-only bundle carries no proof, so there is no proof size to validate,
+    /// and flags are not checked against circuit support (there is no proof key to
+    /// check against).
     pub fn from_parts(
         actions: NonEmpty<Action<<EffectsOnly as Authorization>::SpendAuth>>,
         flags: Flags,
@@ -619,15 +622,15 @@ pub enum ProofSizeEnforcement {
 }
 
 impl<V> Bundle<Authorized, V> {
-    /// Constructs an authorized `Bundle` from its constituent parts, rejecting a proof whose
-    /// length is not the canonical size for the number of actions.
+    /// Constructs an authorized `Bundle` from its constituent parts.
     ///
     /// This is the only constructor for an authorized bundle: it validates that the proof has
     /// exactly [`Proof::expected_proof_size`] bytes for `actions.len()`, so an authorized bundle
     /// can never hold a non-canonical proof. This matters when building a bundle from untrusted
     /// input (e.g. deserializing from bytes), as it prevents a proof from being padded with
     /// arbitrary data, which would otherwise impose unbounded bandwidth and storage costs without
-    /// affecting proof validity (GHSA-2x4w-pxqw-58v9).
+    /// affecting proof validity (GHSA-2x4w-pxqw-58v9). Circuit-key support for the bundle flags is
+    /// checked when proving or verifying the proof.
     pub fn try_from_parts(
         actions: NonEmpty<Action<<Authorized as Authorization>::SpendAuth>>,
         flags: Flags,
@@ -660,10 +663,12 @@ impl<V> Bundle<Authorized, V> {
     /// # Errors
     ///
     /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this
-    /// bundle disables cross-address transfers and `vk`'s circuit version does not
-    /// support the cross-address restriction.
+    /// bundle disables cross-address transfers and `vk` is not an
+    /// [`OrchardCircuitVersion::Ironwood`] verifying key.
     ///
     /// Also returns an error if proof verification fails.
+    ///
+    /// [`OrchardCircuitVersion::Ironwood`]: crate::circuit::OrchardCircuitVersion::Ironwood
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
         self.authorization()
@@ -931,20 +936,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn expected_proof_size_matches_known_values() {
-        // The canonical proof sizes for one and two actions, fixed by the action circuit.
-        assert_eq!(Proof::expected_proof_size(1), 4992);
-        assert_eq!(Proof::expected_proof_size(2), 7264);
-
-        // The size is affine in the number of actions: each action contributes a fixed amount.
-        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
-        assert_eq!(
-            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
-            per_action,
-        );
-    }
-
-    #[test]
     fn flags_byte_encoding() {
         for (flags, pre_nu6_3, nu6_3) in [
             (Flags::ENABLED, Some(0b011), Some(0b111)),
@@ -1016,6 +1007,20 @@ pub(crate) mod tests {
         for value in 0b1000..=u8::MAX {
             assert_eq!(Flags::from_byte(value, BundleFormat::Nu6_3), None);
         }
+    }
+
+    #[test]
+    fn expected_proof_size_matches_known_values() {
+        // The canonical proof sizes for one and two actions, fixed by the action circuit.
+        assert_eq!(Proof::expected_proof_size(1), 4992);
+        assert_eq!(Proof::expected_proof_size(2), 7264);
+
+        // The size is affine in the number of actions: each action contributes a fixed amount.
+        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
+        assert_eq!(
+            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
+            per_action,
+        );
     }
 
     proptest! {
