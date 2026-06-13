@@ -7,6 +7,13 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+All changes in this release support the NU6.3 `enableCrossAddress` bundle flag
+and the Ironwood Orchard Action circuit that enforces the cross-address
+restriction. Existing callers keep the current behavior by passing
+`OrchardCircuitVersion::FixedPostNu6_2` to the APIs that now require a circuit
+version, and the `BundleFormat` of the transaction encoding they parse or
+serialize.
+
 ### Added
 - `orchard::bundle::Flags` APIs for the NU6.3 `enableCrossAddress` flag:
   - `Flags::CROSS_ADDRESS_DISABLED`, the restricted flag set. It cannot be
