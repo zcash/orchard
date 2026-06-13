@@ -47,6 +47,16 @@ impl Address {
         &self.pk_d
     }
 
+    /// Returns whether `self` and `other` correspond to the same receiver, i.e. have
+    /// equal `(g_d, pk_d)`.
+    ///
+    /// This matches the equality notion used by the `disableCrossAddress` circuit
+    /// constraint, and is intentionally distinct from `PartialEq` on `Address`, which
+    /// compares the raw diversifier encoding.
+    pub(crate) fn same_receiver(&self, other: &Self) -> bool {
+        self.g_d() == other.g_d() && self.pk_d() == other.pk_d()
+    }
+
     /// Serializes this address to its "raw" encoding as specified in [Zcash Protocol Spec § 5.6.4.2: Orchard Raw Payment Addresses][orchardpaymentaddrencoding]
     ///
     /// [orchardpaymentaddrencoding]: https://zips.z.cash/protocol/protocol.pdf#orchardpaymentaddrencoding
