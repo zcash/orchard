@@ -182,7 +182,8 @@ impl Flags {
 
     /// The flag set with spends and outputs enabled and cross-address transfers disabled.
     ///
-    /// This flag set cannot be encoded in pre-NU6.3 formats.
+    /// This flag set cannot be encoded in pre-NU6.3 formats. Proof creation and
+    /// verification for instances built with this flag require an Ironwood circuit key.
     pub const CROSS_ADDRESS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
@@ -560,13 +561,15 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// bundle appears in (see [`BundleFormat`]), so the digest depends on the encoding
     /// era. See [`BundleFormat`] for how to derive `format` and why getting it wrong matters.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the flags cannot be encoded in `format` (cross-address transfers
-    /// disabled under [`BundleFormat::PreNu6_3`]); such a bundle cannot appear in a
-    /// pre-NU6.3 transaction.
-    pub fn commitment(&self, format: BundleFormat) -> BundleCommitment {
-        BundleCommitment(hash_bundle_txid_data(self, format))
+    /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot be encoded
+    /// in `format` (cross-address transfers disabled under [`BundleFormat::PreNu6_3`]);
+    /// such a bundle cannot appear in a pre-NU6.3 transaction.
+    pub fn commitment(&self, format: BundleFormat) -> Result<BundleCommitment, CommitmentError> {
+        hash_bundle_txid_data(self, format)
+            .map(BundleCommitment)
+            .ok_or(CommitmentError::UnrepresentableFlags)
     }
 
     /// Returns the transaction binding validating key for this bundle.
@@ -599,7 +602,9 @@ impl Authorization for EffectsOnly {
 impl<V> Bundle<EffectsOnly, V> {
     /// Constructs an effects-only `Bundle` from its constituent parts.
     ///
-    /// An effects-only bundle carries no proof, so there is no proof size to validate.
+    /// An effects-only bundle carries no proof, so there is no proof size to validate,
+    /// and flags are not checked against circuit support (there is no proof key to
+    /// check against).
     pub fn from_parts(
         actions: NonEmpty<Action<<EffectsOnly as Authorization>::SpendAuth>>,
         flags: Flags,
@@ -674,6 +679,32 @@ impl fmt::Display for BundleError {
 
 impl core::error::Error for BundleError {}
 
+/// Errors that can occur when computing a [`Bundle`] commitment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CommitmentError {
+    /// The bundle's flags cannot be encoded in the requested [`BundleFormat`].
+    ///
+    /// Cross-address transfers are disabled and `format` is
+    /// [`BundleFormat::PreNu6_3`], where bit 2 is reserved; such a bundle cannot
+    /// appear in a pre-NU6.3 transaction.
+    UnrepresentableFlags,
+}
+
+impl fmt::Display for CommitmentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            CommitmentError::UnrepresentableFlags => write!(
+                f,
+                "bundle flags are not representable in the requested transaction \
+                 format (cross-address transfers disabled under pre-NU6.3 encoding)",
+            ),
+        }
+    }
+}
+
+impl core::error::Error for CommitmentError {}
+
 /// A flag type that identifies whether proof sizes are checked in bundle construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProofSizeEnforcement {
@@ -684,15 +715,15 @@ pub enum ProofSizeEnforcement {
 }
 
 impl<V> Bundle<Authorized, V> {
-    /// Constructs an authorized `Bundle` from its constituent parts, rejecting a proof whose
-    /// length is not the canonical size for the number of actions.
+    /// Constructs an authorized `Bundle` from its constituent parts.
     ///
     /// This is the only constructor for an authorized bundle: it validates that the proof has
     /// exactly [`Proof::expected_proof_size`] bytes for `actions.len()`, so an authorized bundle
     /// can never hold a non-canonical proof. This matters when building a bundle from untrusted
     /// input (e.g. deserializing from bytes), as it prevents a proof from being padded with
     /// arbitrary data, which would otherwise impose unbounded bandwidth and storage costs without
-    /// affecting proof validity (GHSA-2x4w-pxqw-58v9).
+    /// affecting proof validity (GHSA-2x4w-pxqw-58v9). Circuit-key support for the bundle flags is
+    /// checked when proving or verifying the proof.
     pub fn try_from_parts(
         actions: NonEmpty<Action<<Authorized as Authorization>::SpendAuth>>,
         flags: Flags,
@@ -725,10 +756,12 @@ impl<V> Bundle<Authorized, V> {
     /// # Errors
     ///
     /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this
-    /// bundle disables cross-address transfers and `vk`'s circuit version does not
-    /// support the cross-address restriction.
+    /// bundle disables cross-address transfers and `vk` is not an
+    /// [`OrchardCircuitVersion::Ironwood`] verifying key.
     ///
     /// Also returns an error if proof verification fails.
+    ///
+    /// [`OrchardCircuitVersion::Ironwood`]: crate::circuit::OrchardCircuitVersion::Ironwood
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
         self.authorization()
@@ -963,7 +996,7 @@ pub(crate) mod tests {
     use proptest::prelude::*;
 
     use super::testing::{arb_bundle, arb_flags_nu6_3};
-    use super::{Authorized, Bundle, BundleError, BundleFormat, Flags};
+    use super::{Authorized, Bundle, BundleError, BundleFormat, CommitmentError, Flags};
     use crate::Proof;
 
     #[cfg(feature = "circuit")]
@@ -993,20 +1026,6 @@ pub(crate) mod tests {
             .new_tree(&mut runner)
             .expect("strategy can generate a bundle")
             .current()
-    }
-
-    #[test]
-    fn expected_proof_size_matches_known_values() {
-        // The canonical proof sizes for one and two actions, fixed by the action circuit.
-        assert_eq!(Proof::expected_proof_size(1), 4992);
-        assert_eq!(Proof::expected_proof_size(2), 7264);
-
-        // The size is affine in the number of actions: each action contributes a fixed amount.
-        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
-        assert_eq!(
-            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
-            per_action,
-        );
     }
 
     #[test]
@@ -1083,6 +1102,20 @@ pub(crate) mod tests {
         }
     }
 
+    #[test]
+    fn expected_proof_size_matches_known_values() {
+        // The canonical proof sizes for one and two actions, fixed by the action circuit.
+        assert_eq!(Proof::expected_proof_size(1), 4992);
+        assert_eq!(Proof::expected_proof_size(2), 7264);
+
+        // The size is affine in the number of actions: each action contributes a fixed amount.
+        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
+        assert_eq!(
+            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
+            per_action,
+        );
+    }
+
     proptest! {
         // The property is deterministic given the actions, so a handful of cases suffices.
         #![proptest_config(ProptestConfig::with_cases(16))]
@@ -1123,16 +1156,29 @@ pub(crate) mod tests {
                 restricted.flags().to_byte(BundleFormat::Nu6_3),
                 bundle.flags().to_byte(BundleFormat::PreNu6_3)
             );
-            let restricted_commitment: [u8; 32] =
-                restricted.commitment(BundleFormat::Nu6_3).into();
-            let legacy_commitment: [u8; 32] = bundle.commitment(BundleFormat::PreNu6_3).into();
+            let restricted_commitment: [u8; 32] = restricted
+                .commitment(BundleFormat::Nu6_3)
+                .expect("restricted flags are representable under NU6.3")
+                .into();
+            let legacy_commitment: [u8; 32] = bundle
+                .commitment(BundleFormat::PreNu6_3)
+                .expect("unrestricted flags are representable pre-NU6.3")
+                .into();
             prop_assert_eq!(restricted_commitment, legacy_commitment);
 
             // The unrestricted NU6.3 encoding sets bit 2, producing a distinct digest.
-            let unrestricted_commitment: [u8; 32] = bundle.commitment(BundleFormat::Nu6_3).into();
+            let unrestricted_commitment: [u8; 32] = bundle
+                .commitment(BundleFormat::Nu6_3)
+                .expect("unrestricted flags are representable under NU6.3")
+                .into();
             prop_assert_ne!(unrestricted_commitment, restricted_commitment);
 
+            // The restricted flag set cannot be committed under pre-NU6.3 encoding.
             prop_assert_eq!(restricted.flags().to_byte(BundleFormat::PreNu6_3), None);
+            prop_assert!(matches!(
+                restricted.commitment(BundleFormat::PreNu6_3),
+                Err(CommitmentError::UnrepresentableFlags)
+            ));
         }
 
         #[test]
@@ -1225,13 +1271,15 @@ pub(crate) mod tests {
 
     #[cfg(feature = "circuit")]
     #[test]
-    #[should_panic(expected = "not representable in pre-NU6.3")]
-    fn commitment_panics_for_unrepresentable_flags() {
+    fn commitment_fails_for_unrepresentable_flags() {
         let bundle = with_cross_address_disabled(sample_authorized_bundle(1))
             .try_map_value_balance(i64::try_from)
             .expect("generated bundle value balance fits in i64");
 
-        bundle.commitment(BundleFormat::PreNu6_3);
+        assert!(matches!(
+            bundle.commitment(BundleFormat::PreNu6_3),
+            Err(CommitmentError::UnrepresentableFlags)
+        ));
     }
 
     #[cfg(feature = "circuit")]

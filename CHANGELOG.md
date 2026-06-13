@@ -45,6 +45,8 @@ and this project adheres to Rust's notion of
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.
+- `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
+  returned by `orchard::Bundle::commitment`.
 - `orchard::bundle::testing::arb_flags_nu6_3` (under the `test-dependencies`
   feature), a strategy that generates flag sets under NU6.3 encoding rules,
   including flag sets that disable cross-address transfers. `arb_flags` is
@@ -89,7 +91,11 @@ and this project adheres to Rust's notion of
 - `orchard::bundle::BatchValidator` binds its verifying key at construction:
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one. `BatchValidator::add_bundle`
-  now returns `Result<(), orchard::bundle::BatchError>`.
+  now returns `Result<(), orchard::bundle::BatchError>`, rejecting a bundle that
+  disables cross-address transfers — without adding it to the batch — when the
+  verifying key's circuit version does not support the cross-address
+  restriction. Other proof or signature failures still surface as
+  `validate` returning `false`.
 - `orchard::builder::Builder` constructs bundles that disable cross-address
   transfers as withdrawal/change bundles in which every action's output is
   addressed to the receiver of the note it spends. Fabricated zero-value
@@ -110,9 +116,10 @@ and this project adheres to Rust's notion of
     and `orchard::builder::BundleMetadata` maps them to distinct actions.
     Wallets estimating fees (e.g. per ZIP 317) must account for the larger
     action count.
-- `orchard::pczt::Bundle::create_proof` checks the cross-address restriction's
-  same-receiver property, returning
-  `ProverError::DisallowedCrossAddressTransfer` (or
+- `orchard::pczt::Bundle::create_proof` now builds the Action circuits for
+  the provided `ProvingKey`'s circuit version (previously always
+  `FixedPostNu6_2`), and checks the cross-address restriction's same-receiver
+  property, returning `ProverError::DisallowedCrossAddressTransfer` (or
   `ProverError::MissingRecipient` if a `recipient` field is unset).
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
   before modifying the bundle, returning
@@ -125,9 +132,10 @@ and this project adheres to Rust's notion of
   transaction ID and sighash — now depends on `BundleFormat`: under `Nu6_3` an
   unrestricted bundle's flag byte sets bit 2. Callers computing transaction IDs
   or sighashes (e.g. `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`)
-  must pass the `BundleFormat` matching the transaction's consensus branch. Panics
-  if the flags are unrepresentable in `format` (cross-address transfers disabled
-  under `PreNu6_3`).
+  must pass the `BundleFormat` matching the transaction's consensus branch. It
+  now returns `Result<BundleCommitment, CommitmentError>`, returning
+  `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
+  in `format` (cross-address transfers disabled under `PreNu6_3`).
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended

@@ -62,8 +62,9 @@ impl Anchor {
     /// The anchor of the empty Orchard note commitment tree.
     ///
     /// This anchor does not correspond to any valid anchor for a spend, so it
-    /// may only be used for bundles without real spends, or in circumstances
-    /// where Orchard functionality is not active.
+    /// may only be used for bundles without real spends — e.g. coinbase bundles,
+    /// where the pool's consensus rules permit them — or in circumstances where
+    /// Orchard functionality is not active.
     pub fn empty_tree() -> Anchor {
         Anchor(MerkleHashOrchard::empty_root(Level::from(MERKLE_DEPTH_ORCHARD as u8)).0)
     }

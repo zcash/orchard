@@ -44,55 +44,6 @@ impl fmt::Display for BatchError {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use rand::rngs::OsRng;
-
-    use super::{BatchError, BatchValidator};
-    use crate::{
-        bundle::tests::{sample_authorized_bundle, with_cross_address_disabled},
-        circuit::{OrchardCircuitVersion, VerifyingKey},
-    };
-
-    #[test]
-    fn add_bundle_rejects_unsupported_cross_address_restriction() {
-        let bundle = with_cross_address_disabled(sample_authorized_bundle(1))
-            .try_map_value_balance(i64::try_from)
-            .expect("generated bundle value balance fits in i64");
-
-        // Keys whose circuit version cannot constrain the cross-address restriction reject
-        // the bundle at insertion, so it never enters the batch.
-        for circuit_version in [
-            OrchardCircuitVersion::InsecurePreNu6_2,
-            OrchardCircuitVersion::FixedPostNu6_2,
-        ] {
-            let vk = VerifyingKey::build(circuit_version);
-            let mut validator = BatchValidator::new(&vk);
-            assert_eq!(
-                validator.add_bundle(&bundle, [0; 32]),
-                Err(BatchError::RestrictionUnsupportedByKey)
-            );
-        }
-
-        // The Ironwood key supports the restriction, so the bundle is accepted.
-        let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
-        let mut validator = BatchValidator::new(&vk);
-        assert_eq!(validator.add_bundle(&bundle, [0; 32]), Ok(()));
-    }
-
-    #[test]
-    fn empty_batch_validates() {
-        for circuit_version in [
-            OrchardCircuitVersion::InsecurePreNu6_2,
-            OrchardCircuitVersion::FixedPostNu6_2,
-            OrchardCircuitVersion::Ironwood,
-        ] {
-            let vk = VerifyingKey::build(circuit_version);
-            assert!(BatchValidator::new(&vk).validate(OsRng));
-        }
-    }
-}
-
 impl core::error::Error for BatchError {}
 
 /// Batch validation context for Orchard.
@@ -160,9 +111,10 @@ impl<'a> BatchValidator<'a> {
     /// Batch-validates the accumulated bundles.
     ///
     /// Returns `true` if every proof and signature in every bundle added to the batch
-    /// validator is valid, or `false` if one or more are invalid. No attempt is made to
-    /// figure out which of the accumulated bundles might be invalid; if that information
-    /// is desired, construct separate [`BatchValidator`]s for sub-batches of the bundles.
+    /// validator is valid. Returns `false` if one or more proofs or signatures are
+    /// invalid. No attempt is made to figure out which of the accumulated bundles might
+    /// be invalid; if that information is desired, construct separate [`BatchValidator`]s
+    /// for sub-batches of the bundles.
     ///
     /// The cross-address-restriction capability is enforced when bundles are added (see
     /// [`Self::add_bundle`]), so it is already guaranteed here.
@@ -188,6 +140,55 @@ impl<'a> BatchValidator<'a> {
                 debug!("RedPallas batch validation failed: {}", e);
                 false
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::rngs::OsRng;
+
+    use super::{BatchError, BatchValidator};
+    use crate::{
+        bundle::tests::{sample_authorized_bundle, with_cross_address_disabled},
+        circuit::{OrchardCircuitVersion, VerifyingKey},
+    };
+
+    #[test]
+    fn add_bundle_rejects_unsupported_cross_address_restriction() {
+        let bundle = with_cross_address_disabled(sample_authorized_bundle(1))
+            .try_map_value_balance(i64::try_from)
+            .expect("generated bundle value balance fits in i64");
+
+        // Keys whose circuit version cannot constrain the cross-address restriction reject
+        // the bundle at insertion, so it never enters the batch.
+        for circuit_version in [
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        ] {
+            let vk = VerifyingKey::build(circuit_version);
+            let mut validator = BatchValidator::new(&vk);
+            assert_eq!(
+                validator.add_bundle(&bundle, [0; 32]),
+                Err(BatchError::RestrictionUnsupportedByKey)
+            );
+        }
+
+        // The Ironwood key supports the restriction, so the bundle is accepted.
+        let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+        let mut validator = BatchValidator::new(&vk);
+        assert_eq!(validator.add_bundle(&bundle, [0; 32]), Ok(()));
+    }
+
+    #[test]
+    fn empty_batch_validates() {
+        for circuit_version in [
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::Ironwood,
+        ] {
+            let vk = VerifyingKey::build(circuit_version);
+            assert!(BatchValidator::new(&vk).validate(OsRng));
         }
     }
 }
