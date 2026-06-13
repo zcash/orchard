@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- `orchard::bundle::BatchValidator` now binds its verifying key at construction:
+  `BatchValidator::new` takes a `&orchard::circuit::VerifyingKey`, and
+  `BatchValidator::validate` no longer takes one.
+
 ### Fixed
 - The `Display` output of `orchard::builder::BuildError::OutputsDisabled`
   previously described spends rather than outputs.
