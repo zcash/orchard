@@ -172,6 +172,36 @@ pub struct Circuit {
 }
 
 impl Circuit {
+    /// Returns an empty circuit with all private witnesses unknown.
+    ///
+    /// This is used for circuit shape-dependent operations, such as generating keys
+    /// or rendering the circuit layout, where witness values are not required but the
+    /// selected circuit version still determines the configured constraints.
+    fn empty(circuit_version: OrchardCircuitVersion) -> Self {
+        Circuit {
+            path: Value::unknown(),
+            pos: Value::unknown(),
+            g_d_old: Value::unknown(),
+            pk_d_old: Value::unknown(),
+            v_old: Value::unknown(),
+            rho_old: Value::unknown(),
+            psi_old: Value::unknown(),
+            rcm_old: Value::unknown(),
+            cm_old: Value::unknown(),
+            alpha: Value::unknown(),
+            ak: Value::unknown(),
+            nk: Value::unknown(),
+            rivk: Value::unknown(),
+            g_d_new: Value::unknown(),
+            pk_d_new: Value::unknown(),
+            v_new: Value::unknown(),
+            psi_new: Value::unknown(),
+            rcm_new: Value::unknown(),
+            rcv: Value::unknown(),
+            circuit_version,
+        }
+    }
+
     /// This constructor is public to enable creation of custom builders.
     /// If you are not creating a custom builder, use [`Builder`] to compose
     /// and authorize a transaction.
@@ -260,15 +290,9 @@ impl Circuit {
     }
 }
 
-impl plonk::Circuit<pallas::Base> for Circuit {
-    type Config = Config;
-    type FloorPlanner = floor_planner::V1;
-
-    fn without_witnesses(&self) -> Self {
-        Self::default()
-    }
-
-    fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> Self::Config {
+impl Config {
+    /// Configures the Orchard Action constraint system shared by every circuit version.
+    fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> Self {
         // Advice columns used in the Orchard circuit.
         let advices = [
             meta.advice_column(),
@@ -456,15 +480,18 @@ impl plonk::Circuit<pallas::Base> for Circuit {
             new_note_commit_config,
         }
     }
+}
 
+impl Circuit {
+    /// Synthesizes the Orchard Action checks common to every circuit version.
     #[allow(non_snake_case)]
-    fn synthesize(
+    fn synthesize_base(
         &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<pallas::Base>,
+        config: &Config,
+        layouter: &mut impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
         // Load the Sinsemilla generator lookup table used by the whole circuit.
-        SinsemillaChip::load(config.sinsemilla_config_1.clone(), &mut layouter)?;
+        SinsemillaChip::load(config.sinsemilla_config_1.clone(), layouter)?;
 
         // Construct the ECC chip.
         let ecc_chip = config.ecc_chip(self.circuit_version.halo2_version());
@@ -829,6 +856,27 @@ impl plonk::Circuit<pallas::Base> for Circuit {
     }
 }
 
+impl plonk::Circuit<pallas::Base> for Circuit {
+    type Config = Config;
+    type FloorPlanner = floor_planner::V1;
+
+    fn without_witnesses(&self) -> Self {
+        Self::empty(self.circuit_version)
+    }
+
+    fn configure(meta: &mut plonk::ConstraintSystem<pallas::Base>) -> Self::Config {
+        Config::configure(meta)
+    }
+
+    fn synthesize(
+        &self,
+        config: Self::Config,
+        mut layouter: impl Layouter<pallas::Base>,
+    ) -> Result<(), plonk::Error> {
+        self.synthesize_base(&config, &mut layouter)
+    }
+}
+
 /// The verifying key for the Orchard Action circuit.
 ///
 /// Build with [`VerifyingKey::build`] for the current (fixed) circuit, or
@@ -849,10 +897,7 @@ impl VerifyingKey {
     /// Builds the verifying key for the given circuit version.
     pub fn build_for_version(circuit_version: OrchardCircuitVersion) -> Self {
         let params = halo2_proofs::poly::commitment::Params::new(K);
-        let circuit = Circuit {
-            circuit_version,
-            ..Default::default()
-        };
+        let circuit = Circuit::empty(circuit_version);
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
 
@@ -884,10 +929,7 @@ impl ProvingKey {
     /// historical proofs (e.g. for testing that pre-NU6.2 proofs still verify).
     pub fn build_for_version(circuit_version: OrchardCircuitVersion) -> Self {
         let params = halo2_proofs::poly::commitment::Params::new(K);
-        let circuit = Circuit {
-            circuit_version,
-            ..Default::default()
-        };
+        let circuit = Circuit::empty(circuit_version);
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
         let pk = plonk::keygen_pk(&params, vk, &circuit).unwrap();
@@ -1420,28 +1462,7 @@ mod tests {
             .titled("Orchard Action Circuit", ("sans-serif", 60))
             .unwrap();
 
-        let circuit: Circuit = Circuit {
-            path: Value::unknown(),
-            pos: Value::unknown(),
-            g_d_old: Value::unknown(),
-            pk_d_old: Value::unknown(),
-            v_old: Value::unknown(),
-            rho_old: Value::unknown(),
-            psi_old: Value::unknown(),
-            rcm_old: Value::unknown(),
-            cm_old: Value::unknown(),
-            alpha: Value::unknown(),
-            ak: Value::unknown(),
-            nk: Value::unknown(),
-            rivk: Value::unknown(),
-            g_d_new: Value::unknown(),
-            pk_d_new: Value::unknown(),
-            v_new: Value::unknown(),
-            psi_new: Value::unknown(),
-            rcm_new: Value::unknown(),
-            rcv: Value::unknown(),
-            circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
-        };
+        let circuit = Circuit::empty(OrchardCircuitVersion::FixedPostNu6_2);
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
             .view_height(0..(1 << 11))
