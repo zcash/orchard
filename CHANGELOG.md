@@ -25,6 +25,14 @@ and this project adheres to Rust's notion of
   bundle's `enableCrossAddress` flag).
 - `orchard::bundle::BatchError::CrossAddressUnsupported`, returned by
   `orchard::bundle::BatchValidator::add_bundle`.
+- `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers
+  can check the cross-address restriction's same-receiver structural property
+  before signing. It is a no-op for bundles that permit cross-address
+  transfers.
+- Error variants for PCZT cross-address structural checks:
+  - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
+  - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`
+  - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and

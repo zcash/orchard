@@ -52,9 +52,11 @@ impl super::Bundle {
             },
         )?;
 
-        // The proof comes straight from the (untrusted) PCZT, so reject it here if it is not
-        // the canonical size. This makes "an `Authorized` bundle always has a canonical proof"
-        // hold across the `Unbound` -> `Authorized` transition in `apply_binding_signature`.
+        // The proof comes straight from the (untrusted) PCZT, so reject
+        // non-canonical proof lengths here. This makes "an `Authorized` bundle
+        // always has a canonical proof" hold across the `Unbound` -> `Authorized`
+        // transition in `apply_binding_signature`. Circuit-key support for bundle
+        // flags is checked when proving or verifying.
         if let Some(bundle) = &bundle {
             crate::bundle::validate_proof_size(
                 &bundle.authorization().proof,
