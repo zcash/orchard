@@ -8,7 +8,7 @@ use pprof::criterion::{Output, PProfProfiler};
 
 use orchard::{
     builder::{Builder, BundleType},
-    circuit::{ProvingKey, VerifyingKey},
+    circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, Scope, SpendingKey},
     value::NoteValue,
     Anchor, Bundle,
@@ -21,8 +21,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     let sk = SpendingKey::from_bytes([7; 32]).unwrap();
     let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
 
-    let vk = VerifyingKey::build();
-    let pk = ProvingKey::build();
+    let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+    let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let create_bundle = |num_recipients| {
         let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
@@ -31,7 +31,11 @@ fn criterion_benchmark(c: &mut Criterion) {
                 .add_output(None, recipient, NoteValue::from_raw(10), [0; 512])
                 .unwrap();
         }
-        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;
+        let bundle: Bundle<_, i64> = builder
+            .build(rng, OrchardCircuitVersion::FixedPostNu6_2)
+            .unwrap()
+            .unwrap()
+            .0;
 
         let instances: Vec<_> = bundle
             .actions()

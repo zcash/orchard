@@ -11,6 +11,15 @@ and this project adheres to Rust's notion of
 - `orchard::bundle::BatchValidator` now binds its verifying key at construction:
   `BatchValidator::new` takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one.
+- Circuit-building APIs now take the intended
+  `orchard::circuit::OrchardCircuitVersion` explicitly on their plain method
+  names; pass `FixedPostNu6_2` for the previous behavior.
+
+### Removed
+- The temporary `_for_version` circuit-building APIs from `0.14.0`; pass the
+  intended `OrchardCircuitVersion` to the corresponding plain API instead.
+- The `Default` impls for `orchard::circuit::Circuit` and
+  `orchard::circuit::OrchardCircuitVersion`.
 
 ### Fixed
 - The `Display` output of `orchard::builder::BuildError::OutputsDisabled`
