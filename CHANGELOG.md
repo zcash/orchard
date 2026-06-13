@@ -7,6 +7,10 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::bundle::Flags::cross_address_enabled`, which exposes the
+  pre-NU6.3 semantic that cross-address transfers are implicitly enabled.
+
 ### Changed
 - Circuit-building APIs now take the intended `OrchardCircuitVersion`
   explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
