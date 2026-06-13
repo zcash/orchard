@@ -8,6 +8,8 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
+- `orchard::bundle::Flags::cross_address_enabled`, which exposes the
+  pre-NU6.3 semantic that cross-address transfers are implicitly enabled.
 - `orchard::bundle::BundleProtocol`, the `(pool, era)` selector for an Orchard
   bundle. It currently determines the Action circuit version
   (`BundleProtocol::circuit_version`). Variants: `OrchardPreNu6_2` and

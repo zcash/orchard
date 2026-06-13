@@ -103,6 +103,12 @@ pub struct Flags {
     /// guaranteed to be dummy notes. If `true`, the created notes may be either real or
     /// dummy notes.
     outputs_enabled: bool,
+    /// Flag denoting whether Orchard spends and outputs may use different expanded
+    /// receivers.
+    ///
+    /// In pre-NU6.3 transaction formats this semantic flag is implicitly enabled; the
+    /// flag byte reserves bit 2 as zero.
+    cross_address_enabled: bool,
 }
 
 const FLAG_SPENDS_ENABLED: u8 = 0b0000_0001;
@@ -110,11 +116,13 @@ const FLAG_OUTPUTS_ENABLED: u8 = 0b0000_0010;
 const FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED);
 
 impl Flags {
-    /// Construct a set of flags from its constituent parts
+    /// Construct a set of flags from its constituent parts, with cross-address
+    /// transfers enabled.
     pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
+            cross_address_enabled: true,
         }
     }
 
@@ -122,18 +130,21 @@ impl Flags {
     pub const ENABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
+        cross_address_enabled: true,
     };
 
     /// The flag set with spends disabled.
     pub const SPENDS_DISABLED: Flags = Flags {
         spends_enabled: false,
         outputs_enabled: true,
+        cross_address_enabled: true,
     };
 
     /// The flag set with outputs disabled.
     pub const OUTPUTS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: false,
+        cross_address_enabled: true,
     };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
@@ -152,6 +163,15 @@ impl Flags {
     /// dummy notes.
     pub fn outputs_enabled(&self) -> bool {
         self.outputs_enabled
+    }
+
+    /// Flag denoting whether Orchard spends and outputs may use different expanded
+    /// receivers.
+    ///
+    /// In pre-NU6.3 transaction formats this semantic flag is implicitly enabled; the
+    /// flag byte reserves bit 2 as zero.
+    pub fn cross_address_enabled(&self) -> bool {
+        self.cross_address_enabled
     }
 
     /// Serialize flags to a byte as defined in [Zcash Protocol Spec § 7.1: Transaction
@@ -181,6 +201,7 @@ impl Flags {
             Some(Self {
                 spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
                 outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
+                cross_address_enabled: true,
             })
         } else {
             None
@@ -825,7 +846,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::testing::arb_bundle;
-    use super::{Authorized, Bundle, BundleError};
+    use super::{Authorized, Bundle, BundleError, Flags};
     use crate::Proof;
 
     #[test]
@@ -840,6 +861,20 @@ mod tests {
             Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
             per_action,
         );
+    }
+
+    #[test]
+    fn flags_expose_implicit_cross_address_enabled_semantic() {
+        for (flags, encoded) in [
+            (Flags::ENABLED, 0b011),
+            (Flags::SPENDS_DISABLED, 0b010),
+            (Flags::OUTPUTS_DISABLED, 0b001),
+        ] {
+            assert!(flags.cross_address_enabled());
+            assert_eq!(flags.to_byte(), encoded);
+            assert_eq!(Flags::from_byte(encoded), Some(flags));
+            assert!(Flags::from_byte(encoded).unwrap().cross_address_enabled());
+        }
     }
 
     proptest! {
