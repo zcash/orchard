@@ -16,6 +16,8 @@ and this project adheres to Rust's notion of
   byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
   reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
   (bit 2 is `enableCrossAddress`).
+- `orchard::circuit::OrchardCircuitVersion::Ironwood`, currently matching the
+  fixed post-NU6.2 circuit constraints.
 - Circuit-version support introspection for the cross-address restriction:
   - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`

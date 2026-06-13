@@ -109,10 +109,9 @@ pub struct Config {
 
 /// Selects which version of the Orchard Action circuit to build.
 ///
-/// The two versions produce different verifying keys: the fixed circuit anchors the
-/// variable-base scalar-multiplication base (see `halo2_gadgets`), the pre-NU6.2 one does
-/// not. [`InsecurePreNu6_2`] reconstructs the historical (NU5..NU6.2) verifying key solely
-/// to verify proofs produced before NU6.2.
+/// [`FixedPostNu6_2`] and [`Ironwood`] use the fixed variable-base scalar-multiplication
+/// base (see `halo2_gadgets`), while [`InsecurePreNu6_2`] reconstructs the historical
+/// (NU5..NU6.2) verifying key solely to verify proofs produced before NU6.2.
 ///
 /// This is a runtime value rather than a type parameter: it is carried in [`Circuit`] and
 /// chosen when building a [`ProvingKey`] or [`VerifyingKey`], so the circuit version can be
@@ -120,6 +119,7 @@ pub struct Config {
 ///
 /// [`FixedPostNu6_2`]: OrchardCircuitVersion::FixedPostNu6_2
 /// [`InsecurePreNu6_2`]: OrchardCircuitVersion::InsecurePreNu6_2
+/// [`Ironwood`]: OrchardCircuitVersion::Ironwood
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrchardCircuitVersion {
     /// The insecure pre-NU6.2 circuit, in which the variable-base scalar-multiplication base
@@ -129,15 +129,18 @@ pub enum OrchardCircuitVersion {
     /// The fixed circuit, active from NU6.2 onward. Used for all proving and current
     /// verification.
     FixedPostNu6_2,
+    /// The Ironwood circuit. At this point it has the same constraints as the fixed
+    /// post-NU6.2 circuit; it does not yet enforce the `disableCrossAddress` public input.
+    Ironwood,
 }
 
 impl OrchardCircuitVersion {
     /// Whether this circuit version enforces the `disableCrossAddress` public input.
     pub fn supports_cross_address_restriction(self) -> bool {
         match self {
-            OrchardCircuitVersion::InsecurePreNu6_2 | OrchardCircuitVersion::FixedPostNu6_2 => {
-                false
-            }
+            OrchardCircuitVersion::InsecurePreNu6_2
+            | OrchardCircuitVersion::FixedPostNu6_2
+            | OrchardCircuitVersion::Ironwood => false,
         }
     }
 
@@ -145,7 +148,9 @@ impl OrchardCircuitVersion {
     fn halo2_version(self) -> CircuitVersion {
         match self {
             OrchardCircuitVersion::InsecurePreNu6_2 => CircuitVersion::InsecureUnanchoredBase,
-            OrchardCircuitVersion::FixedPostNu6_2 => CircuitVersion::AnchoredBase,
+            OrchardCircuitVersion::FixedPostNu6_2 | OrchardCircuitVersion::Ironwood => {
+                CircuitVersion::AnchoredBase
+            }
         }
     }
 }
