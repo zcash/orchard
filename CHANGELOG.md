@@ -33,6 +33,13 @@ and this project adheres to Rust's notion of
   - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
   - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
+- Wallet-controlled change outputs, the only way to retain shielded value in
+  a bundle that disables cross-address transfers:
+  - `orchard::builder::Builder::add_change_output`
+  - `orchard::builder::OutputInfo::change`
+- Error variants for cross-address builder checks:
+  - `orchard::builder::BuildError::CrossAddressDisabled`
+  - `orchard::builder::OutputError::{CrossAddressDisabled, FvkMismatch}`
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
