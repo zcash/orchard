@@ -7,6 +7,10 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::bundle::Flags::cross_address_enabled`, which exposes the
+  pre-NU6.3 semantic that cross-address transfers are implicitly enabled.
+
 ### Changed
 - `orchard::bundle::BatchValidator` now binds its verifying key at construction:
   `BatchValidator::new` takes a `&orchard::circuit::VerifyingKey`, and
