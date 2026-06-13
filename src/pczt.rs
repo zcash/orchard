@@ -340,19 +340,20 @@ mod tests {
 
     use crate::{
         builder::{Builder, BundleType},
-        circuit::{OrchardCircuitVersion, ProvingKey},
+        bundle::{BundleFormat, Flags},
+        circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, RandomSeed, Rho},
-        pczt::{ProverError, TxExtractorError, Zip32Derivation},
+        pczt::{ParseError, ProverError, TxExtractorError, VerifyError, Zip32Derivation},
         primitives::redpallas::{self, SpendAuth},
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,
         Note,
     };
 
-    /// Builds a minimal shielding-style pczt bundle, finalizes IO, and returns
-    /// it ready for `create_proof`. Used by identity-`rk` tests below.
+    /// Builds a minimal shielding-style pczt bundle, finalizes IO, and returns it ready for
+    /// tests that exercise `create_proof` and `extract`.
     fn minimal_finalized_pczt_bundle(mut rng: OsRng) -> super::Bundle {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
@@ -411,6 +412,28 @@ mod tests {
         assert_eq!(bundle.value_balance(), &(-5000));
         // We can successfully bind the bundle.
         bundle.apply_binding_signature(sighash, rng).unwrap();
+    }
+
+    #[test]
+    fn create_proof_uses_proving_key_circuit_version() {
+        let pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
+        let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        let sighash = [0; 32];
+        // This is the load-bearing assertion: if PCZT proving still built FixedPostNu6_2
+        // circuits unconditionally, `Proof::create` would reject them for this Ironwood key.
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+
+        let bundle = pczt_bundle
+            .extract::<i64>()
+            .unwrap()
+            .unwrap()
+            .apply_binding_signature(sighash, rng)
+            .unwrap();
+
+        assert!(bundle.verify_proof(&vk).is_ok());
     }
 
     #[test]
@@ -577,5 +600,103 @@ mod tests {
             pczt_bundle.extract::<i64>(),
             Err(TxExtractorError::NonCanonicalProofSize { .. }),
         ));
+    }
+
+    #[test]
+    fn parse_uses_bundle_format_for_flags() {
+        let anchor: crate::Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+
+        assert!(matches!(
+            super::Bundle::parse(
+                vec![],
+                0b0000_0100,
+                BundleFormat::PreNu6_3,
+                (0, false),
+                anchor.to_bytes(),
+                None,
+                None,
+            ),
+            Err(ParseError::UnexpectedFlagBitsSet),
+        ));
+
+        let parsed = super::Bundle::parse(
+            vec![],
+            0b0000_0100,
+            BundleFormat::Nu6_3,
+            (0, false),
+            anchor.to_bytes(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(parsed.flags().cross_address_enabled());
+        assert_eq!(
+            parsed.flags().to_byte(BundleFormat::Nu6_3),
+            Some(0b0000_0100)
+        );
+        assert_eq!(
+            parsed.flags().to_byte(BundleFormat::PreNu6_3),
+            Some(0b0000_0000)
+        );
+
+        let restricted = super::Bundle::parse(
+            vec![],
+            0b0000_0011,
+            BundleFormat::Nu6_3,
+            (0, false),
+            anchor.to_bytes(),
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert!(!restricted.flags().cross_address_enabled());
+        assert_eq!(
+            restricted.flags().to_byte(BundleFormat::Nu6_3),
+            Some(0b0000_0011)
+        );
+        assert_eq!(restricted.flags().to_byte(BundleFormat::PreNu6_3), None);
+    }
+
+    #[test]
+    fn verify_cross_address_restriction_requires_recipients() {
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(OsRng);
+        pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
+        for action in pczt_bundle.actions_mut() {
+            action.output.recipient = action.spend.recipient;
+        }
+        pczt_bundle.verify_cross_address_restriction().unwrap();
+
+        let original = pczt_bundle.actions()[0].spend.recipient;
+        pczt_bundle.actions_mut()[0].spend.recipient = None;
+        assert!(matches!(
+            pczt_bundle.verify_cross_address_restriction(),
+            Err(VerifyError::MissingRecipient),
+        ));
+
+        pczt_bundle.actions_mut()[0].spend.recipient = original;
+        pczt_bundle.actions_mut()[0].output.recipient = None;
+        assert!(matches!(
+            pczt_bundle.verify_cross_address_restriction(),
+            Err(VerifyError::MissingRecipient),
+        ));
+    }
+
+    #[test]
+    fn extract_preserves_cross_address_disabled() {
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        pczt_bundle.zkproof = Some(crate::Proof::new(vec![
+            0;
+            crate::Proof::expected_proof_size(
+                pczt_bundle.actions.len()
+            )
+        ]));
+        pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
+
+        let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();
+        assert!(!bundle.flags().cross_address_enabled());
     }
 }

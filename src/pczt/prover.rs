@@ -14,6 +14,15 @@ use crate::{
 
 impl super::Bundle {
     /// Adds a proof to this PCZT bundle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProverError::DisallowedCrossAddressTransfer`] if the bundle
+    /// disables cross-address transfers and any action's output is addressed
+    /// differently than its spent note.
+    ///
+    /// Also returns an error if required Prover-role fields are missing or invalid,
+    /// or if proof creation fails.
     pub fn create_proof<R: RngCore + CryptoRng>(
         &mut self,
         pk: &ProvingKey,
@@ -25,6 +34,20 @@ impl super::Bundle {
         if self.actions.is_empty() {
             return Ok(());
         }
+
+        // Check the restriction structurally before synthesizing any circuit, for a
+        // clear error instead of an unsatisfiable-constraint failure.
+        self.verify_cross_address_restriction()
+            .map_err(|e| match e {
+                super::VerifyError::DisallowedCrossAddressTransfer => {
+                    ProverError::DisallowedCrossAddressTransfer
+                }
+                super::VerifyError::MissingRecipient => ProverError::MissingRecipient,
+                // `verify_cross_address_restriction` only returns the two variants above,
+                // but `VerifyError` is `#[non_exhaustive]`; wrap anything else rather than
+                // panic in the proving path should that ever change.
+                e => ProverError::CrossAddressRestriction(e),
+            })?;
 
         let circuits = self
             .actions
@@ -112,6 +135,12 @@ impl super::Bundle {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ProverError {
+    /// An action's output is addressed differently than its spent note, but the bundle
+    /// disables cross-address transfers.
+    DisallowedCrossAddressTransfer,
+    /// The cross-address restriction pre-check failed for a reason other than a disallowed
+    /// transfer or a missing recipient.
+    CrossAddressRestriction(super::VerifyError),
     /// The output note's components do not produce a valid note commitment.
     InvalidOutputNote,
     /// The spent note's components do not produce a valid note commitment.
@@ -146,6 +175,14 @@ pub enum ProverError {
 impl fmt::Display for ProverError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProverError::DisallowedCrossAddressTransfer => write!(
+                f,
+                "an action outputs to a different receiver than it spends from, but the \
+                 bundle disables cross-address transfers"
+            ),
+            ProverError::CrossAddressRestriction(e) => {
+                write!(f, "cross-address restriction verification failed: {e}")
+            }
             ProverError::InvalidOutputNote => write!(f, "output note is invalid"),
             ProverError::InvalidSpendNote => write!(f, "spent note is invalid"),
             ProverError::MissingFullViewingKey => {
@@ -168,6 +205,14 @@ impl fmt::Display for ProverError {
                 write!(f, "`rcv` must be set for the Prover role")
             }
             ProverError::MissingWitness => write!(f, "`witness` must be set for the Prover role"),
+            ProverError::ProofFailed(halo2_proofs::plonk::Error::InvalidInstances) => {
+                write!(
+                    f,
+                    "Failed to create proof: provided instances do not match the circuit, or \
+                     the cross-address restriction is not supported by the proving key's \
+                     circuit version",
+                )
+            }
             ProverError::ProofFailed(e) => write!(f, "Failed to create proof: {e}"),
             ProverError::RhoMismatch => {
                 write!(f, "output's `rho` does not match spent note's nullifier")
