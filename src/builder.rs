@@ -819,52 +819,73 @@ pub fn bundle_for_version<V: TryFrom<i64>>(
         bundle_type,
         spends,
         outputs,
-        |pre_actions, flags, value_balance, bundle_meta, mut rng| {
-            let result_value_balance: V = i64::try_from(value_balance)
-                .map_err(BuildError::ValueSum)
-                .and_then(|i| {
-                    V::try_from(i).map_err(|_| BuildError::ValueSum(value::BalanceError::Overflow))
-                })?;
-
-            // Compute the transaction binding signing key.
-            let bsk = pre_actions
-                .iter()
-                .map(|a| &a.rcv)
-                .sum::<ValueCommitTrapdoor>()
-                .into_bsk();
-
-            // Create the actions.
-            let (actions, circuits): (Vec<_>, Vec<_>) = pre_actions
-                .into_iter()
-                .map(|a| a.build_for_version(&mut rng, circuit_version))
-                .unzip();
-
-            // Verify that bsk and bvk are consistent.
-            let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
-                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
-            .into_bvk();
-            assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
-
-            Ok(NonEmpty::from_vec(actions).map(|actions| {
-                (
-                    Bundle::from_parts_unchecked(
-                        actions,
-                        flags,
-                        result_value_balance,
-                        anchor,
-                        InProgress {
-                            proof: Unproven {
-                                circuits,
-                                circuit_version,
-                            },
-                            sigs: Unauthorized { bsk },
-                        },
-                    ),
-                    bundle_meta,
-                )
-            }))
+        |pre_actions, flags, value_balance, bundle_meta, rng| {
+            finish_unauthorized_bundle(
+                pre_actions,
+                flags,
+                value_balance,
+                bundle_meta,
+                rng,
+                anchor,
+                circuit_version,
+            )
         },
     )
+}
+
+#[cfg(feature = "circuit")]
+fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
+    pre_actions: Vec<ActionInfo>,
+    flags: Flags,
+    value_balance: ValueSum,
+    bundle_meta: BundleMetadata,
+    mut rng: R,
+    anchor: Anchor,
+    circuit_version: OrchardCircuitVersion,
+) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
+    let result_value_balance: V = i64::try_from(value_balance)
+        .map_err(BuildError::ValueSum)
+        .and_then(|i| {
+            V::try_from(i).map_err(|_| BuildError::ValueSum(value::BalanceError::Overflow))
+        })?;
+
+    // Compute the transaction binding signing key.
+    let bsk = pre_actions
+        .iter()
+        .map(|a| &a.rcv)
+        .sum::<ValueCommitTrapdoor>()
+        .into_bsk();
+
+    // Create the actions.
+    let (actions, circuits): (Vec<_>, Vec<_>) = pre_actions
+        .into_iter()
+        .map(|a| a.build_for_version(&mut rng, circuit_version))
+        .unzip();
+
+    // Verify that bsk and bvk are consistent.
+    let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
+        - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
+    .into_bvk();
+    assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+
+    Ok(NonEmpty::from_vec(actions).map(|actions| {
+        (
+            Bundle::from_parts_unchecked(
+                actions,
+                flags,
+                result_value_balance,
+                anchor,
+                InProgress {
+                    proof: Unproven {
+                        circuits,
+                        circuit_version,
+                    },
+                    sigs: Unauthorized { bsk },
+                },
+            ),
+            bundle_meta,
+        )
+    }))
 }
 
 fn build_bundle<B, R: RngCore>(
