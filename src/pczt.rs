@@ -346,11 +346,44 @@ mod tests {
         flavor::OrchardVanilla,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{AssetBase, ExtractedNoteCommitment, RandomSeed, Rho},
-        pczt::Zip32Derivation,
+        pczt::{ProverError, TxExtractorError, Zip32Derivation},
+        primitives::redpallas::{self, SpendAuth},
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
         value::NoteValue,
         Note,
     };
+
+    /// Builds a minimal shielding-style pczt bundle, finalizes IO, and returns
+    /// it ready for `create_proof`. Used by identity-`rk` tests below.
+    fn minimal_finalized_pczt_bundle(mut rng: OsRng) -> super::Bundle {
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+        );
+        builder
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
+            .unwrap();
+        let mut pczt_bundle = builder.build_for_pczt(&mut rng).unwrap().0;
+
+        let sighash = [0; 32];
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
+        pczt_bundle
+    }
+
+    fn identity_rk() -> redpallas::VerificationKey<SpendAuth> {
+        redpallas::VerificationKey::<SpendAuth>::try_from([0u8; 32])
+            .expect("plain redpallas accepts the identity encoding")
+    }
 
     #[test]
     fn shielding_bundle() {
@@ -513,5 +546,62 @@ mod tests {
         assert_eq!(bundle.value_balance(), &0);
         // We can successfully bind the bundle.
         bundle.apply_binding_signature(sighash, rng).unwrap();
+    }
+
+    #[test]
+    fn create_proof_rejects_identity_rk() {
+        let pk = ProvingKey::build::<OrchardVanilla>();
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        pczt_bundle.actions_mut()[0].spend.rk = identity_rk();
+
+        assert!(matches!(
+            pczt_bundle.create_proof(&pk, rng),
+            Err(ProverError::IdentityRk),
+        ));
+    }
+
+    #[test]
+    fn extract_rejects_identity_rk() {
+        let pk = ProvingKey::build::<OrchardVanilla>();
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+
+        // Inject identity rk after a valid proof has been produced. Extract
+        // should reject at the `Action::from_parts` step, before any proof or
+        // signature check.
+        pczt_bundle.actions_mut()[0].spend.rk = identity_rk();
+
+        assert!(matches!(
+            pczt_bundle.extract::<i64>(),
+            Err(TxExtractorError::IdentityRk),
+        ));
+    }
+
+    #[test]
+    fn extract_rejects_non_canonical_proof() {
+        let pk = ProvingKey::build::<OrchardVanilla>();
+        let rng = OsRng;
+
+        let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+
+        // Pad the proof with a trailing byte after it was produced. Extraction must reject the
+        // non-canonical proof rather than carry it into the extracted (and later authorized)
+        // bundle.
+        let padded = {
+            let mut bytes = pczt_bundle.zkproof.as_ref().unwrap().as_ref().to_vec();
+            bytes.push(0);
+            crate::Proof::new(bytes)
+        };
+        pczt_bundle.zkproof = Some(padded);
+
+        assert!(matches!(
+            pczt_bundle.extract::<i64>(),
+            Err(TxExtractorError::NonCanonicalProofSize { .. }),
+        ));
     }
 }

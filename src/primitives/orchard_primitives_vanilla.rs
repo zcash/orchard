@@ -249,7 +249,7 @@ mod tests {
             let action = Action::from_parts(
                 // nf_old is the nullifier revealed by the receiving Action.
                 nf_old,
-                // We don't need a valid rk for this test.
+                // We don't need a real rk for this test.
                 redpallas::VerificationKey::dummy(),
                 cmx,
                 TransmittedNoteCiphertext::<OrchardVanilla> {
@@ -259,7 +259,7 @@ mod tests {
                 },
                 cv_net.clone(),
                 (),
-            );
+            ).expect("a key returned by VerificationKey::dummy() is vanishingly unlikely to be the identity");
 
             //
             // Test decryption

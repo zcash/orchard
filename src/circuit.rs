@@ -15,6 +15,7 @@ use halo2_proofs::{
 };
 use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
 use rand::RngCore;
+use std::marker::PhantomData;
 
 use crate::{
     builder::SpendInfo,
@@ -39,7 +40,7 @@ use crate::{
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
 };
 use halo2_gadgets::{
-    ecc::chip::EccConfig,
+    ecc::{chip::EccConfig, CircuitVersion},
     poseidon::Pow5Config as PoseidonConfig,
     sinsemilla::{chip::SinsemillaConfig, merkle::chip::MerkleConfig},
     utilities::lookup_range_check::PallasLookupRangeCheck,
@@ -48,10 +49,16 @@ use halo2_gadgets::{
 mod circuit_vanilla;
 mod circuit_zsa;
 
+#[cfg(not(feature = "unstable-voting-circuits"))]
 pub(in crate::circuit) mod commit_ivk;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod commit_ivk;
 pub(in crate::circuit) mod derive_nullifier;
-pub(in crate::circuit) mod gadget;
+pub mod gadget;
+#[cfg(not(feature = "unstable-voting-circuits"))]
 pub(in crate::circuit) mod note_commit;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod note_commit;
 pub(in crate::circuit) mod orchard_sinsemilla_chip;
 pub(in crate::circuit) mod value_commit_orchard;
 
@@ -141,7 +148,48 @@ impl<C: OrchardCircuit> plonk::Circuit<pallas::Base> for Circuit<C> {
     }
 }
 
+/// Selects which version of the Orchard Action circuit to build.
+///
+/// The two versions produce different verifying keys: the fixed circuit anchors the
+/// variable-base scalar-multiplication base (see `halo2_gadgets`), the pre-NU6.2 one does
+/// not. [`FixedPostNu6_2`] is used for all proving and current verification;
+/// [`InsecurePreNu6_2`] reconstructs the historical (NU5..NU6.2) verifying key solely to
+/// verify proofs produced before NU6.2.
+///
+/// This is a runtime value rather than a type parameter: it is carried in [`Circuit`] and
+/// chosen when building a [`ProvingKey`] or [`VerifyingKey`], so the circuit version can be
+/// threaded dynamically (e.g. across an FFI boundary).
+///
+/// [`FixedPostNu6_2`]: OrchardCircuitVersion::FixedPostNu6_2
+/// [`InsecurePreNu6_2`]: OrchardCircuitVersion::InsecurePreNu6_2
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OrchardCircuitVersion {
+    /// The insecure pre-NU6.2 circuit, in which the variable-base scalar-multiplication base
+    /// is not anchored to the real base. For reconstructing the historical (NU5..NU6.2)
+    /// verifying key only — never for proving or current verification.
+    InsecurePreNu6_2,
+    /// The fixed circuit, active from NU6.2 onward. Used for all proving and current
+    /// verification.
+    #[default]
+    FixedPostNu6_2,
+}
+
+impl OrchardCircuitVersion {
+    /// The corresponding `halo2_gadgets` variable-base scalar-mul circuit version.
+    fn halo2_version(self) -> CircuitVersion {
+        match self {
+            OrchardCircuitVersion::InsecurePreNu6_2 => CircuitVersion::InsecureUnanchoredBase,
+            OrchardCircuitVersion::FixedPostNu6_2 => CircuitVersion::AnchoredBase,
+        }
+    }
+}
+
 /// The Orchard Action circuit.
+///
+/// The `circuit_version` field selects which circuit to build; it defaults to
+/// [`OrchardCircuitVersion::FixedPostNu6_2`], so a default `Circuit` is the current (fixed)
+/// circuit. [`OrchardCircuitVersion::InsecurePreNu6_2`] exists only to rebuild the historical
+/// verifying key.
 #[derive(Clone, Debug, Default)]
 pub struct Circuit<C: OrchardCircuit> {
     pub(crate) witnesses: Witnesses,
@@ -192,6 +240,7 @@ pub struct Witnesses {
     // The ZSA-specific witnesses.
     // For OrchardVanilla circuits, this field should be initialized to `Value::unknown()`.
     pub(crate) additional_zsa_witnesses: Value<AdditionalZsaWitnesses>,
+    pub(crate) circuit_version: OrchardCircuitVersion,
 }
 
 impl Witnesses {
@@ -199,7 +248,8 @@ impl Witnesses {
     /// If you are not creating a custom builder, use [`Builder`] to compose
     /// and authorize a transaction.
     ///
-    /// Constructs a `Circuit` from the following components:
+    /// Constructs a `Circuit` for the current (fixed) circuit version from the following
+    /// components:
     /// - `spend`: [`SpendInfo`] of the note spent in scope of the action
     /// - `output_note`: a note created in scope of the action
     /// - `alpha`: a scalar used for randomization of the action spend validating key
@@ -216,8 +266,35 @@ impl Witnesses {
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
     ) -> Option<Self> {
-        (Rho::from_nf_old(spend.note.nullifier(&spend.fvk)) == output_note.rho())
-            .then(|| Self::from_action_context_unchecked::<C>(spend, output_note, alpha, rcv))
+        Self::from_action_context_for_version::<C>(
+            spend,
+            output_note,
+            alpha,
+            rcv,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        )
+    }
+
+    /// Like [`Circuit::from_action_context`], but builds the circuit for the given
+    /// `circuit_version`. Only [`OrchardCircuitVersion::FixedPostNu6_2`] should be used for
+    /// proving; [`OrchardCircuitVersion::InsecurePreNu6_2`] exists to reconstruct historical
+    /// proofs (e.g. for testing that pre-NU6.2 proofs still verify).
+    pub fn from_action_context_for_version<C: OrchardCircuit>(
+        spend: SpendInfo,
+        output_note: Note,
+        alpha: pallas::Scalar,
+        rcv: ValueCommitTrapdoor,
+        circuit_version: OrchardCircuitVersion,
+    ) -> Option<Self> {
+        (Rho::from_nf_old(spend.note.nullifier(&spend.fvk)) == output_note.rho()).then(|| {
+            Self::from_action_context_unchecked::<C>(
+                spend,
+                output_note,
+                alpha,
+                rcv,
+                circuit_version,
+            )
+        })
     }
 
     pub(crate) fn from_action_context_unchecked<C: OrchardCircuit>(
@@ -225,6 +302,7 @@ impl Witnesses {
         output_note: Note,
         alpha: pallas::Scalar,
         rcv: ValueCommitTrapdoor,
+        circuit_version: OrchardCircuitVersion,
     ) -> Self {
         let sender_address = spend.note.recipient();
         let rho_old = spend.note.rho();
@@ -262,11 +340,16 @@ impl Witnesses {
             rcv: Value::known(rcv),
 
             additional_zsa_witnesses,
+            circuit_version,
         }
     }
 }
 
 /// The verifying key for the Orchard Action circuit.
+///
+/// Build with [`VerifyingKey::build`] for the current (fixed) circuit, or
+/// [`VerifyingKey::build_for_version`] to reconstruct the historical verifying key. The key
+/// verifies only proofs created for the same circuit version.
 ///
 /// In the current type system, this could be a verifying key for either
 /// the original Orchard Action circuit, or the OrchardZSA circuit.
@@ -277,10 +360,21 @@ pub struct VerifyingKey {
 }
 
 impl VerifyingKey {
-    /// Builds the verifying key.
+    /// Builds the verifying key for the current (fixed, NU6.2-onward) circuit.
     pub fn build<C: OrchardCircuit>() -> Self {
+        Self::build_for_version::<C>(OrchardCircuitVersion::FixedPostNu6_2)
+    }
+
+    /// Builds the verifying key for the given circuit version.
+    pub fn build_for_version<C: OrchardCircuit>(circuit_version: OrchardCircuitVersion) -> Self {
         let params = halo2_proofs::poly::commitment::Params::new(K);
-        let circuit: Circuit<C> = Default::default();
+        let circuit = Circuit::<C> {
+            witnesses: Witnesses {
+                circuit_version,
+                ..Default::default()
+            },
+            phantom: PhantomData,
+        };
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
 
@@ -290,24 +384,52 @@ impl VerifyingKey {
 
 /// The proving key for the Orchard Action circuit.
 ///
+/// Build with [`ProvingKey::build`] for the current (fixed) circuit. The resulting proofs
+/// verify only under a [`VerifyingKey`] for the same circuit version.
+///
 /// In the current type system, this could be a proving key for either
 /// the original Orchard Action circuit, or the OrchardZSA circuit.
 #[derive(Debug)]
 pub struct ProvingKey {
     params: halo2_proofs::poly::commitment::Params<vesta::Affine>,
     pk: plonk::ProvingKey<vesta::Affine>,
+    circuit_version: OrchardCircuitVersion,
 }
 
 impl ProvingKey {
-    /// Builds the proving key.
+    /// Builds the proving key for the current (fixed, NU6.2-onward) circuit.
     pub fn build<C: OrchardCircuit>() -> Self {
+        Self::build_for_version::<C>(OrchardCircuitVersion::FixedPostNu6_2)
+    }
+
+    /// Builds the proving key for the given circuit version.
+    ///
+    /// Only [`OrchardCircuitVersion::FixedPostNu6_2`] should be used to prove transactions for
+    /// the network; [`OrchardCircuitVersion::InsecurePreNu6_2`] exists only to reproduce
+    /// historical proofs (e.g. for testing that pre-NU6.2 proofs still verify).
+    pub fn build_for_version<C: OrchardCircuit>(circuit_version: OrchardCircuitVersion) -> Self {
         let params = halo2_proofs::poly::commitment::Params::new(K);
-        let circuit: Circuit<C> = Default::default();
+        let circuit = Circuit::<C> {
+            witnesses: Witnesses {
+                circuit_version,
+                ..Default::default()
+            },
+            phantom: PhantomData,
+        };
 
         let vk = plonk::keygen_vk(&params, &circuit).unwrap();
         let pk = plonk::keygen_pk(&params, vk, &circuit).unwrap();
 
-        ProvingKey { params, pk }
+        ProvingKey {
+            params,
+            pk,
+            circuit_version,
+        }
+    }
+
+    /// The circuit version this proving key produces proofs for.
+    pub fn circuit_version(&self) -> OrchardCircuitVersion {
+        self.circuit_version
     }
 }
 
@@ -317,16 +439,20 @@ impl ProvingKey {
 /// In vanilla Orchard, `enable_zsa` is always false, so this method always appends a zero to the
 /// instance vector. Since halo2_proofs pads instance values with zero, old proofs (without this
 /// extra entry) and new proofs behave identically.
+///
+/// # Invariants
+///
+/// Every `Instance` has a non-identity `rk`.
 #[derive(Clone, Debug)]
 pub struct Instance {
-    pub(crate) anchor: Anchor,
-    pub(crate) cv_net: ValueCommitment,
-    pub(crate) nf_old: Nullifier,
-    pub(crate) rk: VerificationKey<SpendAuth>,
-    pub(crate) cmx: ExtractedNoteCommitment,
-    pub(crate) enable_spend: bool,
-    pub(crate) enable_output: bool,
-    pub(crate) enable_zsa: bool,
+    anchor: Anchor,
+    cv_net: ValueCommitment,
+    nf_old: Nullifier,
+    rk: VerificationKey<SpendAuth>,
+    cmx: ExtractedNoteCommitment,
+    enable_spend: bool,
+    enable_output: bool,
+    enable_zsa: bool,
 }
 
 impl Instance {
@@ -336,6 +462,16 @@ impl Instance {
     /// pipelines for many proofs, where you don't want to pass around the full bundle.
     /// Use [`Bundle::verify_proof`] instead if you have the full bundle.
     ///
+    /// Returns `None` if `rk` is the identity [`pasta_curves::pallas::Point`].
+    /// zcashd v6.12.1 and Zebra 4.3.1 both added a consensus rule rejecting
+    /// transactions whose Orchard actions have an identity `rk`; the Zcash
+    /// protocol specification will be updated to match, and this crate
+    /// aligns with that rule.
+    ///
+    /// See:
+    /// - <https://zodl.com/zcashd-zebra-april-2026-disclosure/>
+    /// - <https://zfnd.org/zebra-4-3-1-critical-security-fixes-dockerized-mining-and-ci-hardening/>
+    ///
     /// [`Bundle::verify_proof`]: crate::Bundle::verify_proof
     pub fn from_parts(
         anchor: Anchor,
@@ -344,8 +480,8 @@ impl Instance {
         rk: VerificationKey<SpendAuth>,
         cmx: ExtractedNoteCommitment,
         flags: Flags,
-    ) -> Self {
-        Instance {
+    ) -> Option<Self> {
+        (!rk.is_identity()).then_some(Instance {
             anchor,
             cv_net,
             nf_old,
@@ -354,7 +490,47 @@ impl Instance {
             enable_spend: flags.spends_enabled(),
             enable_output: flags.outputs_enabled(),
             enable_zsa: flags.zsa_enabled(),
-        }
+        })
+    }
+
+    /// Returns the Merkle tree anchor of this instance.
+    pub(crate) fn anchor(&self) -> &Anchor {
+        &self.anchor
+    }
+
+    /// Returns the commitment to the net value of this instance.
+    pub(crate) fn cv_net(&self) -> &ValueCommitment {
+        &self.cv_net
+    }
+
+    /// Returns the nullifier of the note being spent by this instance.
+    pub(crate) fn nf_old(&self) -> &Nullifier {
+        &self.nf_old
+    }
+
+    /// Returns the randomized verification key of this instance.
+    pub(crate) fn rk(&self) -> &VerificationKey<SpendAuth> {
+        &self.rk
+    }
+
+    /// Returns the commitment to the new note being created by this instance.
+    pub(crate) fn cmx(&self) -> &ExtractedNoteCommitment {
+        &self.cmx
+    }
+
+    /// Returns whether spends are enabled for this instance.
+    pub(crate) fn enable_spend(&self) -> bool {
+        self.enable_spend
+    }
+
+    /// Returns whether outputs are enabled for this instance.
+    pub(crate) fn enable_output(&self) -> bool {
+        self.enable_output
+    }
+
+    /// Returns whether zsa are enabled for this instance.
+    pub(crate) fn enable_zsa(&self) -> bool {
+        self.enable_zsa
     }
 
     /// Note: Before the ZSA feature was introduced, this method returned a 9-element instance slice.
@@ -368,13 +544,13 @@ impl Instance {
         instance[ANCHOR] = self.anchor.inner();
         instance[CV_NET_X] = self.cv_net.x();
         instance[CV_NET_Y] = self.cv_net.y();
-        instance[NF_OLD] = self.nf_old.0;
+        instance[NF_OLD] = self.nf_old.inner();
 
         let rk = pallas::Point::from_bytes(&self.rk.clone().into())
-            .unwrap()
+            .expect("the cached byte encoding of a VerificationKey<_> is canonical")
             .to_affine()
             .coordinates()
-            .unwrap();
+            .expect("rk is non-identity by construction");
 
         instance[RK_X] = *rk.x();
         instance[RK_Y] = *rk.y();
@@ -389,12 +565,23 @@ impl Instance {
 
 impl Proof {
     /// Creates a proof for the given circuits and instances.
+    ///
+    /// The resulting proof verifies only under a [`VerifyingKey`] for the same circuit version
+    /// (see [`OrchardCircuitVersion`]). Returns an error if any circuit's version does not match
+    /// `pk`'s version, since `pk` could not produce a valid proof for it.
     pub fn create<C: OrchardCircuit>(
         pk: &ProvingKey,
         circuits: &[Circuit<C>],
         instances: &[Instance],
         mut rng: impl RngCore,
     ) -> Result<Self, plonk::Error> {
+        if circuits
+            .iter()
+            .any(|c| c.witnesses.circuit_version != pk.circuit_version)
+        {
+            return Err(plonk::Error::Synthesis);
+        }
+
         let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
         let instances: Vec<Vec<_>> = instances
             .iter()

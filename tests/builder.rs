@@ -4,7 +4,7 @@ use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
     bundle::{Authorized, Flags},
-    circuit::{ProvingKey, VerifyingKey},
+    circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::{AssetBase, ExtractedNoteCommitment},
@@ -246,4 +246,41 @@ fn bundle_chain_zsa() {
             123, 94, 240, 183, 227, 9, 245, 74, 51, 16, 12, 157, 60
         ]
     );
+}
+
+// A bundle built with the circuit version set to `InsecurePreNu6_2` produces a proof against
+// the historical (insecure) circuit, which verifies under the insecure verifying key but not
+// the fixed one. This is the path that lets tests reproduce pre-NU6.2 proofs.
+#[test]
+fn builder_builds_for_insecure_circuit_version() {
+    let mut rng = OsRng;
+    let insecure_pk = ProvingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
+    let insecure_vk = VerifyingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
+    let fixed_vk = VerifyingKey::build();
+
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let recipient = fvk.address_at(0u32, Scope::External);
+
+    let anchor = MerkleHashOrchard::empty_root(32.into()).into();
+    let mut builder = Builder::new_for_version(
+        BundleType::Transactional {
+            flags: Flags::SPENDS_DISABLED,
+            bundle_required: false,
+        },
+        anchor,
+        OrchardCircuitVersion::InsecurePreNu6_2,
+    );
+    assert_eq!(
+        builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
+        Ok(())
+    );
+
+    let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let sighash: [u8; 32] = unauthorized.commitment().into();
+    let proven = unauthorized.create_proof(&insecure_pk, &mut rng).unwrap();
+    let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+    assert!(matches!(bundle.verify_proof(&insecure_vk), Ok(())));
+    assert!(bundle.verify_proof(&fixed_vk).is_err());
 }

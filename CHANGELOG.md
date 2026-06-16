@@ -5,13 +5,156 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.14.0] - 2026-06-02
+
+### Added
+- `orchard::action::ActionFromPartsError`
+- `orchard::Proof::expected_proof_size`, the canonical byte length of a proof
+  for a given number of actions.
+- `orchard::bundle::BundleError`
+- `impl From<orchard::action::ActionFromPartsError> for orchard::pczt::TxExtractorError`
+- `impl From<orchard::bundle::BundleError> for orchard::pczt::TxExtractorError`
+- `orchard::bundle::ProofSizeEnforcement`
+- `orchard::Bundle::<Authorized, V>::try_from_parts`, which constructs an
+  authorized bundle while rejecting a proof whose length is not the canonical
+  size for the bundle's number of actions (GHSA-2x4w-pxqw-58v9). This is now the
+  only way to construct a `Bundle<Authorized, _>`, so an authorized bundle can
+  no longer hold a proof padded with arbitrary data when proof size enforcement
+  is strict.
+- `orchard::Bundle::<EffectsOnly, V>::from_parts`
+- `orchard::circuit::OrchardCircuitVersion`, an enum selecting the Action circuit
+  version, with variants `InsecurePreNu6_2` and `FixedPostNu6_2`.
+- `orchard::circuit::ProvingKey::build_for_version` and
+  `orchard::circuit::VerifyingKey::build_for_version`, which build the key for a
+  given `OrchardCircuitVersion`; `build()` continues to build the fixed circuit.
+  `ProvingKey::build_for_version` can build the proving key for the pre-NU6.2
+  (insecure) circuit.
+- `orchard::circuit::ProvingKey::circuit_version`, the version the proving key
+  produces proofs for. `Proof::create` now returns an error if a circuit's
+  version does not match the proving key's.
+- `orchard::circuit::Circuit::from_action_context_for_version`, like
+  `from_action_context` but building the circuit for a chosen
+  `OrchardCircuitVersion`.
+- `orchard::builder::Builder::new_for_version` (requires the `circuit` feature),
+  which constructs a builder that produces proofs for a given
+  `OrchardCircuitVersion` (`Builder::new` uses `FixedPostNu6_2`).
+- `orchard::builder::bundle_for_version` (requires the `circuit` feature), like
+  `bundle` but building the Action circuits for a given `OrchardCircuitVersion`.
+- `orchard::Bundle::<InProgress<Unproven, S>, V>::circuit_version` (requires the
+  `circuit` feature), the `OrchardCircuitVersion` the bundle's actions were built
+  for, so a caller can select a matching `ProvingKey` without tracking it
+  separately.
+
+### Changed
+- Updated to `halo2_gadgets 0.5.0`
+- `orchard::action::Action::from_parts` now returns
+  `Result<Self, orchard::action::ActionFromPartsError>` instead of `Option<Self>`.
+- `orchard::pczt::TxExtractorError` has added variants `InvalidEpk` and
+  `NonCanonicalProofSize`. The Transaction Extractor role now rejects a PCZT
+  whose `zkproof` is not the canonical size for its number of actions
+  (GHSA-2x4w-pxqw-58v9).
+- `unstable-voting-circuits`-only:
+  - `orchard::constants::OrchardFixedBases` is now a unit struct rather than a
+    3-variant enum. It is a trait carrier for the halo2_gadgets `FixedPoints`
+    impl and was never constructed as a value; the concrete fixed bases live
+    in `OrchardFixedBasesFull`, `OrchardBaseFieldBases`, and
+    `OrchardShortScalarBases`, which are unchanged.
+
+### Removed
+- `orchard::Bundle::from_parts`. Construct a bundle through the
+  authorization-specific constructor instead: `Bundle::<EffectsOnly, V>::from_parts`,
+  or `Bundle::<Authorized, V>::try_from_parts` for an authorized bundle.
+- `unstable-voting-circuits`-only:
+  - The five dead `From<X> for OrchardFixedBases` conversions (from
+    `OrchardFixedBasesFull`, `NullifierK`, `ValueCommitV`,
+    `OrchardBaseFieldBases`, `OrchardShortScalarBases`). None were reachable;
+    in-circuit dispatch goes through the per-slot enums.
+  - `impl FixedPoint<pallas::Affine> for NullifierK` and
+    `impl FixedPoint<pallas::Affine> for ValueCommitV`. After the 0.13.1
+    enum refactor, dispatch routes through `OrchardBaseFieldBases::NullifierK`
+    and `OrchardShortScalarBases::ValueCommitV`, leaving the standalone
+    unit-struct impls dead.
+
+### Fixed
+- The update to `halo2_gadgets 0.5.0` fixes a critical vulnerability related to
+  its use in the Orchard circuit. Please see the release notes for
+  `halo2_gadgets 0.5.0` for additional details.
+- An authorized `Bundle` or a PCZT can no longer carry a `zkproof` padded with
+  arbitrary trailing data, and an `Action` can no longer be constructed with an
+  `epk` that does not encode a non-identity Pallas point (GHSA-2x4w-pxqw-58v9).
+  See the `Bundle::<Authorized, V>::try_from_parts`,
+  `Proof::expected_proof_size`, `Action::from_parts`, and `TxExtractorError`
+  entries under `Added` and `Changed` above for the API surface of these checks.
+
+## [0.13.1] - 2026-04-27
+
+### Added
+- `orchard::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE}`, the bit-length
+  parameters of the Orchard base field, scalar field, and value encoding
+  as defined in the Zcash protocol specification.
+- `orchard::value::NoteValue::ZERO`, a `const NoteValue` equal to zero.
+- The following modules and APIs are available behind the
+  `unstable-voting-circuits` feature flag to support downstream
+  voting-circuit development. These temporary APIs are not covered by the
+  crate's semver stability guarantees and may change in any future release:
+  - Modules: `orchard::{constants, spec}`,
+    `orchard::circuit::{commit_ivk, commit_ivk::gadgets, note_commit,
+    note_commit::gadgets, gadget::add_chip}`,
+    `orchard::note::{commitment, nullifier}`.
+  - Address and circuit helpers: `Address::{g_d, pk_d}`,
+    `circuit::gadget::{AddInstruction, assign_free_advice, derive_nullifier,
+    commit_ivk, note_commit}`,
+    `circuit::gadget::add_chip::{AddConfig, AddChip}` and
+    `AddChip::{configure, construct}`,
+    `CommitIvkChip::{configure, construct}`,
+    `NoteCommitChip::{configure, construct}`.
+  - Fixed bases: `orchard::constants::OrchardFixedBases` has three
+    variants: `Full(OrchardFixedBasesFull)` for full-width scalar
+    multiplication, `Base(OrchardBaseFieldBases)` for base-field
+    scalars, and `Short(OrchardShortScalarBases)` for short signed
+    scalars. `OrchardBaseFieldBases` covers `NullifierK` and
+    `SpendAuthGBase`; `OrchardShortScalarBases` covers `ValueCommitV`
+    and `SpendAuthGShort`. `From<NullifierK>`, `From<ValueCommitV>`,
+    `From<OrchardFixedBasesFull>`, `From<OrchardBaseFieldBases>`, and
+    `From<OrchardShortScalarBases>` conversions to `OrchardFixedBases`
+    are provided.
+  - Key, note, tree, and value APIs: `SpendingKey::random`,
+    `SpendAuthorizingKey::derive_inner`, `NullifierDerivingKey` and
+    `CommitIvkRandomness` and their `inner` methods,
+    `FullViewingKey::{nk, rivk}`,
+    `DiversifiedTransmissionKey::{inner, to_bytes}`,
+    `orchard::note::NoteCommitTrapdoor` and `NoteCommitTrapdoor::inner`,
+    `Rho::{from_nf_old, into_inner}`, `RandomSeed::{psi, rcm}`,
+    `Note::{new, dummy}`, `NoteCommitment::inner`,
+    `ExtractedNoteCommitment::inner`, `Nullifier::{from_inner, inner}`,
+    `NonIdentityPallasPoint` and `NonIdentityPallasPoint::from_bytes`,
+    `MerklePath::dummy`, and `MerkleHashOrchard::inner`.
+
+## [0.13.0] - 2026-04-22
+
+### Added
+- `orchard::primitives::redpallas::VerificationKey<T>::is_identity`, which
+  returns `true` if the verification key is the identity `pallas::Point`.
+- `orchard::primitives::redpallas::testing::arb_valid_spendauth_keypair`
+  (under the `test-dependencies` feature): a uniformly-distributed valid
+  `(rsk, rk)` key pair with non-identity `rk`.
 
 ### Changed
 - MSRV is now 1.85.1
 - Migrated from yanked `core2` library to `corez`
 - `orchard::pczt::Bundle::extract` now takes its `self` argument by
   reference instead of by value.
+- `orchard::zip32::Error` has added variant `MaxDerivationDepth`
+- `orchard::Action::from_parts` and `orchard::circuit::Instance::from_parts`
+  now return `Option<Self>`, yielding `None` when `rk` is the identity
+  `pallas::Point`. Callers that previously treated the return as `Self`
+  must now handle the `None` case. This aligns the crate with the
+  consensus rule introduced in zcashd v6.12.1 and Zebra 4.3.1 (see
+  <https://zodl.com/zcashd-zebra-april-2026-disclosure/> and
+  <https://zfnd.org/zebra-4-3-1-critical-security-fixes-dockerized-mining-and-ci-hardening/>);
+  the Zcash protocol specification will be updated to match.
+- `orchard::pczt::TxExtractorError` has added variant `IdentityRk`.
+- `orchard::pczt::ProverError` has added variant `IdentityRk`.
 
 ## [0.12.0] - 2025-12-05
 
