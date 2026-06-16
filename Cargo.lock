@@ -954,14 +954,13 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb2a697cad929f706b7987fe804ad57d43622cd37463ba7e4d662a926fdcfea3"
+source = "git+https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2e9a513658f8d3d00294ddebd92cc649e"
 dependencies = [
  "arrayvec",
  "bitvec",
  "ff",
  "group",
- "halo2_poseidon",
+ "halo2_poseidon 0.1.0 (git+https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e)",
  "halo2_proofs",
  "lazy_static",
  "pasta_curves",
@@ -991,9 +990,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2_poseidon"
+version = "0.1.0"
+source = "git+https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2e9a513658f8d3d00294ddebd92cc649e"
+dependencies = [
+ "bitvec",
+ "ff",
+ "group",
+ "pasta_curves",
+]
+
+[[package]]
 name = "halo2_proofs"
 version = "0.3.2"
-source = "git+https://github.com/QED-it/halo2?rev=bbc42b6313936e164bb50c6fe3b627184e890af3#bbc42b6313936e164bb50c6fe3b627184e890af3"
+source = "git+https://github.com/QED-it/halo2?rev=ef3d0ba2e9a513658f8d3d00294ddebd92cc649e#ef3d0ba2e9a513658f8d3d00294ddebd92cc649e"
 dependencies = [
  "blake2b_simd",
  "ff",
@@ -1443,7 +1453,7 @@ dependencies = [
  "getset",
  "group",
  "halo2_gadgets",
- "halo2_poseidon",
+ "halo2_poseidon 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "halo2_proofs",
  "hex",
  "image",
@@ -2655,8 +2665,3 @@ checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
 dependencies = [
  "simd-adler32",
 ]
-
-[[patch.unused]]
-name = "halo2_gadgets"
-version = "0.4.0"
-source = "git+https://github.com/QED-it/halo2?rev=bbc42b6313936e164bb50c6fe3b627184e890af3#bbc42b6313936e164bb50c6fe3b627184e890af3"
