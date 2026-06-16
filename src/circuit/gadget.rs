@@ -157,8 +157,3 @@ where
         }),
     )
 }
-
-#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
-pub(in crate::circuit) use crate::circuit::commit_ivk::gadgets::commit_ivk;
-#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
-pub(in crate::circuit) use crate::circuit::note_commit::gadgets::note_commit;

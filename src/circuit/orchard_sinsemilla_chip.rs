@@ -19,6 +19,7 @@ use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomai
 type BaseSinsemillaChip =
     SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases>;
 
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(super) trait OrchardSinsemillaChip<Lookup: PallasLookupRangeCheck>:
     SinsemillaInstructions<
         pallas::Affine,

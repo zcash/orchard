@@ -14,6 +14,7 @@ use orchard::{
     value::NoteValue,
     Anchor, Bundle, Note,
 };
+use rand::rngs::OsRng;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
@@ -254,9 +255,11 @@ fn bundle_chain_zsa() {
 #[test]
 fn builder_builds_for_insecure_circuit_version() {
     let mut rng = OsRng;
-    let insecure_pk = ProvingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
-    let insecure_vk = VerifyingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
-    let fixed_vk = VerifyingKey::build();
+    let insecure_pk =
+        ProvingKey::build_for_version::<OrchardVanilla>(OrchardCircuitVersion::InsecurePreNu6_2);
+    let insecure_vk =
+        VerifyingKey::build_for_version::<OrchardVanilla>(OrchardCircuitVersion::InsecurePreNu6_2);
+    let fixed_vk = VerifyingKey::build::<OrchardVanilla>();
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
@@ -272,11 +275,20 @@ fn builder_builds_for_insecure_circuit_version() {
         OrchardCircuitVersion::InsecurePreNu6_2,
     );
     assert_eq!(
-        builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
+        builder.add_output(
+            None,
+            recipient,
+            NoteValue::from_raw(5000),
+            AssetBase::zatoshi(),
+            [0u8; 512]
+        ),
         Ok(())
     );
 
-    let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let (unauthorized, _) = builder
+        .build::<i64, OrchardVanilla>(&mut rng)
+        .unwrap()
+        .unwrap();
     let sighash: [u8; 32] = unauthorized.commitment().into();
     let proven = unauthorized.create_proof(&insecure_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();

@@ -1747,20 +1747,19 @@ pub struct NoteCommitConfig<Lookup: PallasLookupRangeCheck> {
     specific_config_for_circuit: SpecificConfigForCircuit<Lookup>,
 }
 
-/// A Halo 2 chip that proves correct evaluation of the `NoteCommit` gadget.
 #[derive(Clone, Debug)]
-pub enum SpecificConfigForCircuit<Lookup: PallasLookupRangeCheck> {
+pub(crate) enum SpecificConfigForCircuit<Lookup: PallasLookupRangeCheck> {
     Vanilla(NoteCommitConfigForVanillaCircuit<Lookup>),
     Zsa(NoteCommitConfigForZsaCircuit<Lookup>),
 }
 
 #[derive(Clone, Debug)]
-pub struct NoteCommitConfigForVanillaCircuit<Lookup: PallasLookupRangeCheck> {
+pub(crate) struct NoteCommitConfigForVanillaCircuit<Lookup: PallasLookupRangeCheck> {
     h_vanilla: DecomposeHVanilla<Lookup>,
 }
 
 #[derive(Clone, Debug)]
-pub struct NoteCommitConfigForZsaCircuit<Lookup: PallasLookupRangeCheck> {
+pub(crate) struct NoteCommitConfigForZsaCircuit<Lookup: PallasLookupRangeCheck> {
     h_zsa: DecomposeHZsa<Lookup>,
     j: DecomposeJ<Lookup>,
 }
@@ -1911,18 +1910,22 @@ impl<Lookup: PallasLookupRangeCheck> NoteCommitChip<Lookup> {
     }
 }
 
-pub struct ZsaNoteCommitParams {
-    pub cond_swap_chip: CondSwapChip<pallas::Base>,
-    pub asset: NonIdentityEccPoint,
-    pub is_zatoshi_asset: AssignedCell<pallas::Base, pallas::Base>,
+/// ZSA-specific inputs required by the `NoteCommit` gadget.
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+#[derive(Debug)]
+pub(crate) struct ZsaNoteCommitParams {
+    pub(crate) cond_swap_chip: CondSwapChip<pallas::Base>,
+    pub(crate) asset: NonIdentityEccPoint,
+    pub(crate) is_zatoshi_asset: AssignedCell<pallas::Base, pallas::Base>,
 }
-pub struct ZsaFinalDecomposition<Lookup: PallasLookupRangeCheck> {
-    pub h_zsa: NoteCommitPiece<Lookup>,
-    pub h_2_zsa: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    pub i: NoteCommitPiece<Lookup>,
-    pub j: NoteCommitPiece<Lookup>,
-    pub j_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
-    pub j_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+
+pub(crate) struct ZsaFinalDecomposition<Lookup: PallasLookupRangeCheck> {
+    pub(crate) h_zsa: NoteCommitPiece<Lookup>,
+    pub(crate) h_2_zsa: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    pub(crate) i: NoteCommitPiece<Lookup>,
+    pub(crate) j: NoteCommitPiece<Lookup>,
+    pub(crate) j_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
+    pub(crate) j_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
 }
 
 /// Gadget functions for `NoteCommit` operations.
