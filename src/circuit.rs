@@ -275,7 +275,7 @@ impl Witnesses {
         )
     }
 
-    /// Like [`Circuit::from_action_context`], but builds the circuit for the given
+    /// Like [`Witnesses::from_action_context`], but builds the circuit for the given
     /// `circuit_version`. Only [`OrchardCircuitVersion::FixedPostNu6_2`] should be used for
     /// proving; [`OrchardCircuitVersion::InsecurePreNu6_2`] exists to reconstruct historical
     /// proofs (e.g. for testing that pre-NU6.2 proofs still verify).
