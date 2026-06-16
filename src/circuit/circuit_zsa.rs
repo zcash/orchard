@@ -918,7 +918,7 @@ mod tests {
         (
             Circuit {
                 witnesses: Witnesses {
-                    circuit_version: OrchardCircuitVersion::InsecurePreNu6_2,
+                    circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
                     path: Value::known(path.auth_path()),
                     pos: Value::known(path.position()),
                     g_d_old: Value::known(sender_address.g_d()),
@@ -1026,7 +1026,7 @@ mod tests {
         {
             if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
                 std::fs::write(
-                    "src/circuit_data/circuit_description_zsa",
+                    "src/circuit/circuit_data/circuit_description_zsa",
                     format!("{:#?}\n", vk.vk.pinned()),
                 )
                 .expect("should be able to write new circuit description");
