@@ -803,10 +803,10 @@ mod tests {
             assert_eq!(usize::from(circuit_cost.proof_size(2)), 7264);
             // The constants in `Proof::expected_proof_size` must track the circuit's actual
             // proof size; this guards them against drift if the circuit ever changes.
-            assert_eq!(Proof::expected_proof_size(1), 4992);
-            assert_eq!(Proof::expected_proof_size(2), 7264);
+            assert_eq!(Proof::expected_proof_size::<OrchardVanilla>(1), 4992);
+            assert_eq!(Proof::expected_proof_size::<OrchardVanilla>(2), 7264);
             assert_eq!(
-                Proof::expected_proof_size(instances.len()),
+                Proof::expected_proof_size::<OrchardVanilla>(instances.len()),
                 usize::from(circuit_cost.proof_size(instances.len())),
             );
             usize::from(circuit_cost.proof_size(instances.len()))

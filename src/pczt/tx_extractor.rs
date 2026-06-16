@@ -58,7 +58,7 @@ impl super::Bundle {
         // the canonical size. This makes "an `Authorized` bundle always has a canonical proof"
         // hold across the `Unbound` -> `Authorized` transition in `apply_binding_signature`.
         if let Some(bundle) = &bundle {
-            crate::bundle::validate_proof_size(
+            crate::bundle::validate_proof_size::<OrchardVanilla>(
                 &bundle.authorization().proof,
                 bundle.actions().len(),
             )?;

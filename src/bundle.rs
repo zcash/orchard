@@ -251,8 +251,11 @@ impl<A: Authorization, V: fmt::Debug, Pr: OrchardPrimitives> fmt::Debug for Bund
 /// Returns [`BundleError::NonCanonicalProofSize`] if it does not. This is the shared check
 /// used by the proof-carrying bundle constructors to reject non-canonical (e.g. padded)
 /// proofs; see [`Bundle::try_from_parts`] (GHSA-2x4w-pxqw-58v9).
-pub(crate) fn validate_proof_size(proof: &Proof, num_actions: usize) -> Result<(), BundleError> {
-    let expected = Proof::expected_proof_size(num_actions);
+pub(crate) fn validate_proof_size<Pr: OrchardPrimitives>(
+    proof: &Proof,
+    num_actions: usize,
+) -> Result<(), BundleError> {
+    let expected = Proof::expected_proof_size::<Pr>(num_actions);
     let actual = proof.as_ref().len();
     if actual == expected {
         Ok(())
@@ -645,7 +648,7 @@ impl<V, Pr: OrchardPrimitives> Bundle<Authorized, V, Pr> {
         size_enforcement: ProofSizeEnforcement,
     ) -> Result<Self, BundleError> {
         if size_enforcement == ProofSizeEnforcement::Strict {
-            validate_proof_size(authorization.proof(), actions.len())?;
+            validate_proof_size::<Pr>(authorization.proof(), actions.len())?;
         }
         Ok(Bundle::from_parts_unchecked(
             actions,
@@ -887,7 +890,7 @@ pub mod testing {
                 sk in arb_binding_signing_key(),
                 rng_seed in prop::array::uniform32(prop::num::u8::ANY),
                 // A fake proof of the canonical length, so the bundle passes `try_from_parts`.
-                fake_proof in vec(prop::num::u8::ANY, Proof::expected_proof_size(n_actions)),
+                fake_proof in vec(prop::num::u8::ANY, Proof::expected_proof_size::<Pr>(n_actions)),
                 fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
                 flags in Just(flags),
                 burn in vec(Self::arb_asset_to_burn(), 1usize..10)
@@ -921,21 +924,89 @@ mod tests {
 
     use super::testing::BundleArb;
     use super::{Authorized, Bundle, BundleError};
-    use crate::flavor::OrchardVanilla;
-    use crate::Proof;
+    use crate::{
+        flavor::{OrchardVanilla, OrchardZSA},
+        primitives::OrchardPrimitives,
+        value::ValueSum,
+        Proof,
+    };
 
     #[test]
-    fn expected_proof_size_matches_known_values() {
+    fn expected_proof_size_matches_known_values_vanilla() {
         // The canonical proof sizes for one and two actions, fixed by the action circuit.
-        assert_eq!(Proof::expected_proof_size(1), 4992);
-        assert_eq!(Proof::expected_proof_size(2), 7264);
+        assert_eq!(Proof::expected_proof_size::<OrchardVanilla>(1), 4992);
+        assert_eq!(Proof::expected_proof_size::<OrchardVanilla>(2), 7264);
 
         // The size is affine in the number of actions: each action contributes a fixed amount.
-        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
+        let per_action = Proof::expected_proof_size::<OrchardVanilla>(2)
+            - Proof::expected_proof_size::<OrchardVanilla>(1);
         assert_eq!(
-            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
+            Proof::expected_proof_size::<OrchardVanilla>(3)
+                - Proof::expected_proof_size::<OrchardVanilla>(2),
             per_action,
         );
+    }
+
+    #[test]
+    fn expected_proof_size_matches_known_values_zsa() {
+        // The canonical proof sizes for one and two actions, fixed by the action circuit.
+        assert_eq!(Proof::expected_proof_size::<OrchardZSA>(1), 5120);
+        assert_eq!(Proof::expected_proof_size::<OrchardZSA>(2), 7392);
+
+        // The size is affine in the number of actions: each action contributes a fixed amount.
+        let per_action = Proof::expected_proof_size::<OrchardZSA>(2)
+            - Proof::expected_proof_size::<OrchardZSA>(1);
+        assert_eq!(
+            Proof::expected_proof_size::<OrchardZSA>(3)
+                - Proof::expected_proof_size::<OrchardZSA>(2),
+            per_action,
+        );
+    }
+
+    fn try_from_parts_enforces_canonical_proof_size_for<Pr: OrchardPrimitives>(
+        bundle: Bundle<Authorized, ValueSum, Pr>,
+    ) -> Result<(), TestCaseError> {
+        let actions = bundle.actions().clone();
+        let expected = Proof::expected_proof_size::<Pr>(actions.len());
+        let flags = *bundle.flags();
+        let value_balance = *bundle.value_balance();
+        let anchor = *bundle.anchor();
+        let binding_signature = bundle.authorization().binding_signature().clone();
+
+        let with_proof_len = |proof_len: usize| {
+            Bundle::try_from_parts(
+                actions.clone(),
+                flags,
+                value_balance,
+                bundle.burn().clone(),
+                anchor,
+                Authorized::from_parts(Proof::new(vec![0u8; proof_len]), binding_signature.clone()),
+                crate::bundle::ProofSizeEnforcement::Strict,
+            )
+        };
+
+        // A canonically-sized proof is accepted.
+        prop_assert!(with_proof_len(expected).is_ok());
+
+        // A proof padded with trailing data is rejected (the GHSA-2x4w-pxqw-58v9 attack).
+        prop_assert_eq!(
+            with_proof_len(expected + 1).err(),
+            Some(BundleError::NonCanonicalProofSize {
+                expected,
+                actual: expected + 1
+            })
+        );
+
+        // A truncated proof is rejected.
+        prop_assert_eq!(
+            with_proof_len(expected - 1).err(),
+            Some(BundleError::NonCanonicalProofSize {
+                expected,
+                actual: expected - 1
+            })
+        );
+
+        Ok(())
     }
 
     proptest! {
@@ -943,43 +1014,17 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(16))]
 
         #[test]
-        fn try_from_parts_enforces_canonical_proof_size(bundle in BundleArb::<OrchardVanilla>::arb_bundle(3)) {
-            let actions = bundle.actions().clone();
-            let expected = Proof::expected_proof_size(actions.len());
-            let flags = *bundle.flags();
-            let value_balance = *bundle.value_balance();
-            let anchor = *bundle.anchor();
-            let binding_signature = bundle.authorization().binding_signature().clone();
+        fn try_from_parts_enforces_canonical_proof_size_vanilla(
+            bundle in BundleArb::<OrchardVanilla>::arb_bundle(3)
+        ) {
+            try_from_parts_enforces_canonical_proof_size_for::<OrchardVanilla>(bundle)?;
+        }
 
-            let with_proof_len = |proof_len: usize| {
-                Bundle::try_from_parts(
-                    actions.clone(),
-                    flags,
-                    value_balance,
-                    bundle.burn().clone(),
-                    anchor,
-                    Authorized::from_parts(
-                        Proof::new(vec![0u8; proof_len]),
-                        binding_signature.clone(),
-                    ),
-                    crate::bundle::ProofSizeEnforcement::Strict
-                )
-            };
-
-            // A canonically-sized proof is accepted.
-            prop_assert!(with_proof_len(expected).is_ok());
-
-            // A proof padded with trailing data is rejected (the GHSA-2x4w-pxqw-58v9 attack).
-            prop_assert_eq!(
-                with_proof_len(expected + 1).err(),
-                Some(BundleError::NonCanonicalProofSize { expected, actual: expected + 1 })
-            );
-
-            // A truncated proof is rejected.
-            prop_assert_eq!(
-                with_proof_len(expected - 1).err(),
-                Some(BundleError::NonCanonicalProofSize { expected, actual: expected - 1 })
-            );
+        #[test]
+        fn try_from_parts_enforces_canonical_proof_size_zsa(
+            bundle in BundleArb::<OrchardZSA>::arb_bundle(3)
+        ) {
+            try_from_parts_enforces_canonical_proof_size_for::<OrchardZSA>(bundle)?;
         }
     }
 }

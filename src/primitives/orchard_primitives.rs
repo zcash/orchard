@@ -74,4 +74,14 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
     /// - 0x02 for V5 transactions (OrchardVanilla), or
     /// - 0x03 for V6 transactions (OrchardZSA).
     fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool;
+
+    /// The canonical byte length of a proof authorizing a bundle of `num_actions` actions.
+    ///
+    /// A valid Orchard proof always has exactly this length. The constants are fixed by the
+    /// halo2 action circuit; they are cross-checked against [`halo2_proofs::dev::CircuitCost`]
+    /// in the circuit tests. Use this to reject non-canonical (e.g. padded) proofs when
+    /// constructing a bundle from untrusted bytes; see [`Bundle::try_from_parts`].
+    ///
+    /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
+    fn expected_proof_size(num_actions: usize) -> usize;
 }

@@ -128,6 +128,16 @@ impl OrchardPrimitives for OrchardVanilla {
     fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool {
         plaintext.first() == Some(&NOTE_VERSION_BYTE_V2)
     }
+
+    /// Returns the expected proof size for OrchardVanilla proof.
+    fn expected_proof_size(num_actions: usize) -> usize {
+        // The proof is a fixed base size plus a fixed contribution per action. These constants
+        // are determined by the halo2 action circuit; see the `circuit` module's `round_trip`
+        // test, which cross-checks them against `CircuitCost::proof_size`.
+        const BASE: usize = 2720;
+        const PER_ACTION: usize = 2272;
+        BASE + PER_ACTION * num_actions
+    }
 }
 
 #[cfg(test)]
