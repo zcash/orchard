@@ -316,11 +316,16 @@ mod tests {
     use group::ff::{Field as _, PrimeField as _};
     use group::{Group as _, GroupEncoding as _};
     use pasta_curves::pallas;
+    use zcash_note_encryption::note_bytes::NoteBytes;
 
     use super::{Action, ActionFromPartsError};
     use crate::{
+        flavor::{OrchardVanilla, OrchardZSA},
         note::{AssetBase, ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
-        primitives::redpallas::{self, SpendAuth},
+        primitives::{
+            redpallas::{self, SpendAuth},
+            OrchardPrimitives,
+        },
         value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
     };
 
@@ -350,17 +355,21 @@ mod tests {
     /// encoding of the group generator. `cv_net` is an arbitrary value
     /// commitment; its own Pallas-point type check lives at deserialization in
     /// `ValueCommitment::from_bytes` (e.g. `src/pczt/parse.rs`).
-    fn dummy_other_fields() -> (
+    fn dummy_other_fields<Pr: OrchardPrimitives>() -> (
         Nullifier,
         ExtractedNoteCommitment,
-        TransmittedNoteCiphertext,
+        TransmittedNoteCiphertext<Pr>,
         ValueCommitment,
     ) {
         let nf = Nullifier::from_bytes(&[1u8; 32]).unwrap();
         let cmx = ExtractedNoteCommitment::from_bytes(&[2u8; 32]).unwrap();
-        let encrypted_note = TransmittedNoteCiphertext {
+        let encrypted_note = TransmittedNoteCiphertext::<Pr> {
             epk_bytes: pallas::Point::generator().to_bytes(),
-            enc_ciphertext: [4u8; 580],
+            enc_ciphertext: Pr::NoteCiphertextBytes::from_slice(&vec![
+                4u8;
+                Pr::ENC_CIPHERTEXT_SIZE
+            ])
+            .expect("correct size"),
             out_ciphertext: [5u8; 80],
         };
         let cv_net = ValueCommitment::derive(
@@ -381,16 +390,20 @@ mod tests {
         assert!(!non_identity_rk().is_identity());
     }
 
-    #[test]
-    fn from_parts_rejects_identity_rk() {
-        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields();
+    fn from_parts_rejects_identity_rk<Pr: OrchardPrimitives>() {
+        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields::<Pr>();
         let result = Action::from_parts(nf, identity_rk(), cmx, encrypted_note, cv_net, ());
         assert!(matches!(result, Err(ActionFromPartsError::IdentityRk)));
     }
 
     #[test]
-    fn from_parts_accepts_non_identity_rk() {
-        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields();
+    fn test_from_parts_rejects_identity_rk() {
+        from_parts_rejects_identity_rk::<OrchardVanilla>();
+        from_parts_rejects_identity_rk::<OrchardZSA>();
+    }
+
+    fn from_parts_accepts_non_identity_rk<Pr: OrchardPrimitives>() {
+        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields::<Pr>();
         let rk = non_identity_rk();
         let action = Action::from_parts(nf, rk.clone(), cmx, encrypted_note, cv_net, ())
             .expect("non-identity rk must be accepted");
@@ -398,24 +411,40 @@ mod tests {
     }
 
     #[test]
-    fn from_parts_rejects_identity_epk() {
+    fn test_from_parts_accepts_non_identity_rk() {
+        from_parts_accepts_non_identity_rk::<OrchardVanilla>();
+        from_parts_accepts_non_identity_rk::<OrchardZSA>();
+    }
+
+    fn from_parts_rejects_identity_epk<Pr: OrchardPrimitives>() {
         // The canonical Pallas encoding of the identity is `[0u8; 32]`; an
         // action whose `epk` decodes to the identity must be rejected even
         // when `rk` is valid.
-        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields();
+        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields::<Pr>();
         encrypted_note.epk_bytes = [0u8; 32];
         let result = Action::from_parts(nf, non_identity_rk(), cmx, encrypted_note, cv_net, ());
         assert!(matches!(result, Err(ActionFromPartsError::InvalidEpk)));
     }
 
     #[test]
-    fn from_parts_rejects_undecodable_epk() {
+    fn test_from_parts_rejects_identity_epk() {
+        from_parts_rejects_identity_epk::<OrchardVanilla>();
+        from_parts_rejects_identity_epk::<OrchardZSA>();
+    }
+
+    fn from_parts_rejects_undecodable_epk<Pr: OrchardPrimitives>() {
         // An `epk` that is not a valid Pallas point encoding is rejected: it
         // cannot be a `KA^{Orchard}` public key. `[0xff; 32]` is a non-canonical
         // (out-of-range) encoding.
-        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields();
+        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields::<Pr>();
         encrypted_note.epk_bytes = [0xff; 32];
         let result = Action::from_parts(nf, non_identity_rk(), cmx, encrypted_note, cv_net, ());
         assert!(matches!(result, Err(ActionFromPartsError::InvalidEpk)));
+    }
+
+    #[test]
+    fn test_from_parts_rejects_undecodable_epk() {
+        from_parts_rejects_undecodable_epk::<OrchardVanilla>();
+        from_parts_rejects_undecodable_epk::<OrchardZSA>();
     }
 }
