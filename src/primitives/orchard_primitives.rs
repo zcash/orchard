@@ -27,6 +27,17 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
     /// The size of an encrypted note ciphertext, accounting for additional AEAD tag space.
     const ENC_CIPHERTEXT_SIZE: usize = Self::NOTE_PLAINTEXT_SIZE + AEAD_TAG_SIZE;
 
+    /// Fixed base overhead (in bytes) of a proof, independent of the number of actions.
+    ///
+    /// Together with `PER_ACTION_PROOF_SIZE`, determines the canonical proof length via
+    /// BASE_PROOF_SIZE + PER_ACTION_PROOF_SIZE * num_actions.
+    const BASE_PROOF_SIZE: usize;
+
+    /// Per-action contribution (in bytes) to the proof size.
+    ///
+    /// See [`BASE_PROOF_SIZE`][Self::BASE_PROOF_SIZE].
+    const PER_ACTION_PROOF_SIZE: usize;
+
     /// The raw bytes of a note plaintext.
     type NotePlaintextBytes: NoteBytes;
     /// The raw bytes of an encrypted note plaintext.
@@ -74,14 +85,4 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
     /// - 0x02 for V5 transactions (OrchardVanilla), or
     /// - 0x03 for V6 transactions (OrchardZSA).
     fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool;
-
-    /// The canonical byte length of a proof authorizing a bundle of `num_actions` actions.
-    ///
-    /// A valid Orchard proof always has exactly this length. The constants are fixed by the
-    /// halo2 action circuit; they are cross-checked against [`halo2_proofs::dev::CircuitCost`]
-    /// in the circuit tests. Use this to reject non-canonical (e.g. padded) proofs when
-    /// constructing a bundle from untrusted bytes; see [`Bundle::try_from_parts`].
-    ///
-    /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
-    fn expected_proof_size(num_actions: usize) -> usize;
 }

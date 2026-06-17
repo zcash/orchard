@@ -34,6 +34,8 @@ use crate::{
 
 impl OrchardPrimitives for OrchardZSA {
     const COMPACT_NOTE_SIZE: usize = COMPACT_NOTE_SIZE_ZSA;
+    const BASE_PROOF_SIZE: usize = 2848;
+    const PER_ACTION_PROOF_SIZE: usize = 2272;
 
     type NotePlaintextBytes = NoteBytesData<{ Self::NOTE_PLAINTEXT_SIZE }>;
     type NoteCiphertextBytes = NoteBytesData<{ Self::ENC_CIPHERTEXT_SIZE }>;
@@ -157,16 +159,6 @@ impl OrchardPrimitives for OrchardZSA {
     /// Returns true if the note plaintext leadByte is equal to 0x03.
     fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool {
         plaintext.first() == Some(&NOTE_VERSION_BYTE_V3)
-    }
-
-    /// Returns the expected proof size for OrchardZSA proof.
-    fn expected_proof_size(num_actions: usize) -> usize {
-        // The proof is a fixed base size plus a fixed contribution per action. These constants
-        // are determined by the halo2 action circuit; see the `circuit` module's `round_trip`
-        // test, which cross-checks them against `CircuitCost::proof_size`.
-        const BASE: usize = 2848;
-        const PER_ACTION: usize = 2272;
-        BASE + PER_ACTION * num_actions
     }
 }
 

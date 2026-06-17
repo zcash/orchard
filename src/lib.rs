@@ -112,7 +112,7 @@ impl Proof {
     /// constructing a bundle from untrusted bytes; see [`Bundle::try_from_parts`].
     ///
     /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
-    pub fn expected_proof_size<Pr: OrchardPrimitives>(num_actions: usize) -> usize {
-        Pr::expected_proof_size(num_actions)
+    pub const fn expected_proof_size<Pr: OrchardPrimitives>(num_actions: usize) -> usize {
+        Pr::BASE_PROOF_SIZE + Pr::PER_ACTION_PROOF_SIZE * num_actions
     }
 }
