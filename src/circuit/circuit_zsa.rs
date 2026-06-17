@@ -1026,14 +1026,14 @@ mod tests {
         {
             if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
                 std::fs::write(
-                    "src/circuit/circuit_data/circuit_description_zsa",
+                    "src/circuit_data/circuit_description_zsa",
                     format!("{:#?}\n", vk.vk.pinned()),
                 )
                 .expect("should be able to write new circuit description");
             } else {
                 assert_eq!(
                     format!("{:#?}\n", vk.vk.pinned()),
-                    include_str!("circuit_data/circuit_description_zsa").replace("\r\n", "\n")
+                    include_str!("../circuit_data/circuit_description_zsa").replace("\r\n", "\n")
                 );
             }
         }
@@ -1096,9 +1096,8 @@ mod tests {
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
-                let file = std::fs::File::create(
-                    "src/circuit/circuit_data/circuit_proof_test_case_zsa.bin",
-                )?;
+                let file =
+                    std::fs::File::create("src/circuit_data/circuit_proof_test_case_zsa.bin")?;
                 write_test_case(file, &instance, &proof)
             };
             create_proof().expect("should be able to write new proof");
@@ -1109,7 +1108,7 @@ mod tests {
 
         // Parse the hardcoded proof test case.
         let (instance, proof) = {
-            let test_case_bytes = include_bytes!("circuit_data/circuit_proof_test_case_zsa.bin");
+            let test_case_bytes = include_bytes!("../circuit_data/circuit_proof_test_case_zsa.bin");
             read_test_case(&test_case_bytes[..]).expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 5120);
