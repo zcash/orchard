@@ -47,13 +47,13 @@ impl Address {
         &self.pk_d
     }
 
-    /// Returns whether `self` and `other` correspond to the same receiver, i.e. have
-    /// equal `(g_d, pk_d)`.
+    /// Returns whether `self` and `other` correspond to the same expanded receiver, i.e.
+    /// have equal `(g_d, pk_d)`.
     ///
     /// This matches the equality notion used by the `disableCrossAddress` circuit
     /// constraint, and is intentionally distinct from `PartialEq` on `Address`, which
     /// compares the raw diversifier encoding.
-    pub(crate) fn same_receiver(&self, other: &Self) -> bool {
+    pub(crate) fn same_expanded_receiver(&self, other: &Self) -> bool {
         self.g_d() == other.g_d() && self.pk_d() == other.pk_d()
     }
 

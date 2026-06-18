@@ -17,8 +17,8 @@ impl super::Bundle {
     /// bundle should call this before signing; the equivalent structural checks are
     /// also performed by [`Bundle::finalize_io`] and `Bundle::create_proof`. A proof
     /// created with a circuit version that supports the restriction also enforces it.
-    /// Ironwood supports the restriction; older circuit versions do not, so the proof
-    /// APIs reject restricted bundles for those keys.
+    /// The post-NU 6.3 circuit supports the restriction; older circuit versions do not, so the
+    /// proof APIs reject restricted bundles for those keys.
     ///
     /// [`Bundle::finalize_io`]: super::Bundle::finalize_io
     pub fn verify_cross_address_restriction(&self) -> Result<(), VerifyError> {
@@ -33,7 +33,7 @@ impl super::Bundle {
                     .recipient
                     .ok_or(VerifyError::MissingRecipient)?;
 
-                if !spend_recipient.same_receiver(&output_recipient) {
+                if !spend_recipient.same_expanded_receiver(&output_recipient) {
                     return Err(VerifyError::DisallowedCrossAddressTransfer);
                 }
             }
@@ -223,7 +223,7 @@ impl fmt::Display for VerifyError {
         match self {
             VerifyError::DisallowedCrossAddressTransfer => write!(
                 f,
-                "an action outputs to a different receiver than it spends from, but the \
+                "an action outputs to a different expanded receiver than it spends from, but the \
                  bundle disables cross-address transfers"
             ),
             VerifyError::InvalidExtractedNoteCommitment => {

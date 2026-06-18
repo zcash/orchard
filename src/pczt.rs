@@ -472,14 +472,14 @@ mod tests {
 
     #[test]
     fn create_proof_uses_proving_key_circuit_version() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
-        let vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
         let sighash = [0; 32];
         // This is the load-bearing assertion: if PCZT proving still built FixedPostNu6_2
-        // circuits unconditionally, `Proof::create` would reject them for this Ironwood key.
+        // circuits unconditionally, `Proof::create` would reject them for this post-NU 6.3 key.
         pczt_bundle.create_proof(&pk, rng).unwrap();
 
         let bundle = pczt_bundle
@@ -716,15 +716,15 @@ mod tests {
     }
 
     #[test]
-    fn create_proof_supports_cross_address_disabled_only_for_ironwood() {
+    fn create_proof_supports_cross_address_disabled_only_for_post_nu6_3() {
         let rng = OsRng;
         let sighash = [0; 32];
 
-        // Structural same-receiver violations are rejected before any key-capability
+        // Structural same-expanded-receiver violations are rejected before any key-capability
         // check, for every circuit version.
         for circuit_version in [
             OrchardCircuitVersion::FixedPostNu6_2,
-            OrchardCircuitVersion::Ironwood,
+            OrchardCircuitVersion::PostNu6_3,
         ] {
             let pk = ProvingKey::build(circuit_version);
 
@@ -739,7 +739,7 @@ mod tests {
         let (mut pczt_bundle, bundle_meta, spend_ask, change_ask) = restricted_pczt_bundle(rng);
         pczt_bundle.finalize_io(sighash, rng).unwrap();
 
-        // A pre-Ironwood proving key rejects the structurally-conforming restricted
+        // A pre-NU 6.3 proving key rejects the structurally-conforming restricted
         // statement at the instance check, leaving the bundle unmodified.
         let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         assert!(matches!(
@@ -750,9 +750,9 @@ mod tests {
         ));
         assert!(pczt_bundle.zkproof.is_none());
 
-        // An Ironwood proving key proves the same statement, and the proof verifies
-        // in the extracted bundle under the Ironwood verifying key.
-        let pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
+        // A post-NU 6.3 proving key proves the same statement, and the proof verifies
+        // in the extracted bundle under the post-NU 6.3 verifying key.
+        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
         pczt_bundle.create_proof(&pk, rng).unwrap();
 
         pczt_bundle.actions_mut()[bundle_meta.spend_action_index(0).unwrap()]
@@ -769,7 +769,7 @@ mod tests {
             .apply_binding_signature(sighash, rng)
             .unwrap();
         bundle
-            .verify_proof(&VerifyingKey::build(OrchardCircuitVersion::Ironwood))
+            .verify_proof(&VerifyingKey::build(OrchardCircuitVersion::PostNu6_3))
             .unwrap();
     }
 
@@ -863,7 +863,7 @@ mod tests {
         let other_recipient = loop {
             let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
             let recipient = fvk.address_at(0u32, Scope::External);
-            if !spend_recipient.same_receiver(&recipient) {
+            if !spend_recipient.same_expanded_receiver(&recipient) {
                 break recipient;
             }
         };

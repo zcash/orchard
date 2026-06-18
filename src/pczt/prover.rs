@@ -18,7 +18,7 @@ impl super::Bundle {
     /// The Action circuits are built for `pk`'s circuit version; the caller selects the
     /// proving key matching the transaction format the PCZT targets. If the PCZT
     /// bundle disables cross-address transfers, the key must be an
-    /// [`OrchardCircuitVersion::Ironwood`] proving key.
+    /// [`OrchardCircuitVersion::PostNu6_3`] proving key.
     ///
     /// # Errors
     ///
@@ -29,12 +29,12 @@ impl super::Bundle {
     /// Returns [`ProverError::ProofFailed`] containing
     /// [`plonk::Error::InvalidInstances`] if the bundle disables cross-address
     /// transfers and `pk` is not an
-    /// [`OrchardCircuitVersion::Ironwood`] proving key.
+    /// [`OrchardCircuitVersion::PostNu6_3`] proving key.
     ///
     /// Also returns an error if required Prover-role fields are missing or invalid,
     /// or if proof creation fails.
     ///
-    /// [`OrchardCircuitVersion::Ironwood`]: crate::circuit::OrchardCircuitVersion::Ironwood
+    /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit::OrchardCircuitVersion::PostNu6_3
     pub fn create_proof<R: RngCore + CryptoRng>(
         &mut self,
         pk: &ProvingKey,
@@ -189,7 +189,7 @@ impl fmt::Display for ProverError {
         match self {
             ProverError::DisallowedCrossAddressTransfer => write!(
                 f,
-                "an action outputs to a different receiver than it spends from, but the \
+                "an action outputs to a different expanded receiver than it spends from, but the \
                  bundle disables cross-address transfers"
             ),
             ProverError::CrossAddressRestriction(e) => {

@@ -187,10 +187,10 @@ fn builder_builds_for_insecure_circuit_version() {
 }
 
 #[test]
-fn builder_builds_for_ironwood_circuit_version() {
+fn builder_builds_for_post_nu6_3_circuit_version() {
     let mut rng = OsRng;
-    let ironwood_pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
-    let ironwood_vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+    let post_nu6_3_pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
@@ -199,36 +199,36 @@ fn builder_builds_for_ironwood_circuit_version() {
     let builder = output_only_builder(SHIELDING, recipient);
 
     let (unauthorized, _) = builder
-        .build::<i64>(&mut rng, OrchardCircuitVersion::Ironwood)
+        .build::<i64>(&mut rng, OrchardCircuitVersion::PostNu6_3)
         .unwrap()
         .unwrap();
     assert_eq!(
         unauthorized.circuit_version(),
-        OrchardCircuitVersion::Ironwood
+        OrchardCircuitVersion::PostNu6_3
     );
 
     let sighash: [u8; 32] = unauthorized
         .commitment(BundleFormat::Nu6_3)
         .expect("bundle flags are representable in this format")
         .into();
-    let proven = unauthorized.create_proof(&ironwood_pk, &mut rng).unwrap();
+    let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
-    verify_bundle(&bundle, &ironwood_vk, BundleFormat::Nu6_3);
+    verify_bundle(&bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
 }
 
 // Coinbase bundles disable nonzero Orchard spends, but each Orchard action still
 // has a zero-valued dummy/fabricated spend half. If cross-address transfers were
 // also disabled, each output would need to be addressed to that dummy spend's
-// receiver, which is not useful for shielded coinbase payments. Coinbase bundles
+// expanded receiver, which is not useful for shielded coinbase payments. Coinbase bundles
 // therefore use Flags::SPENDS_DISABLED, with cross-address transfers enabled; a
 // pool whose consensus rules require the cross-address restriction on every bundle
 // prohibits coinbase entirely, outside this crate.
 #[test]
-fn ironwood_coinbase_bundle_proves_and_verifies() {
+fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     let mut rng = OsRng;
-    let ironwood_pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
-    let ironwood_vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+    let post_nu6_3_pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
@@ -237,7 +237,7 @@ fn ironwood_coinbase_bundle_proves_and_verifies() {
     let builder = output_only_builder(BundleType::Coinbase, recipient);
 
     let (unauthorized, _) = builder
-        .build::<i64>(&mut rng, OrchardCircuitVersion::Ironwood)
+        .build::<i64>(&mut rng, OrchardCircuitVersion::PostNu6_3)
         .unwrap()
         .unwrap();
     assert_eq!(unauthorized.actions().len(), 1);
@@ -248,20 +248,20 @@ fn ironwood_coinbase_bundle_proves_and_verifies() {
         .commitment(BundleFormat::Nu6_3)
         .expect("bundle flags are representable in this format")
         .into();
-    let proven = unauthorized.create_proof(&ironwood_pk, &mut rng).unwrap();
+    let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
-    verify_bundle(&bundle, &ironwood_vk, BundleFormat::Nu6_3);
+    verify_bundle(&bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
 }
 
-// An Ironwood bundle chain: an ordinary shielding bundle, followed by a bundle
+// A post-NU 6.3 restricted bundle chain: an ordinary shielding bundle, followed by a bundle
 // that disables cross-address transfers, withdraws part of the shielded value,
 // and retains the rest as wallet-controlled change.
 #[test]
-fn ironwood_restricted_bundle_chain() {
+fn post_nu6_3_restricted_bundle_chain() {
     let mut rng = OsRng;
-    let ironwood_pk = ProvingKey::build(OrchardCircuitVersion::Ironwood);
-    let ironwood_vk = VerifyingKey::build(OrchardCircuitVersion::Ironwood);
+    let post_nu6_3_pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
     let fixed_vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
@@ -272,18 +272,18 @@ fn ironwood_restricted_bundle_chain() {
         let builder = output_only_builder(SHIELDING, recipient);
 
         let (unauthorized, _) = builder
-            .build(&mut rng, OrchardCircuitVersion::Ironwood)
+            .build(&mut rng, OrchardCircuitVersion::PostNu6_3)
             .unwrap()
             .unwrap();
         let sighash = unauthorized
             .commitment(BundleFormat::Nu6_3)
             .expect("bundle flags are representable in this format")
             .into();
-        let proven = unauthorized.create_proof(&ironwood_pk, &mut rng).unwrap();
+        let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
 
-    verify_bundle(&shielding_bundle, &ironwood_vk, BundleFormat::Nu6_3);
+    verify_bundle(&shielding_bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
     assert!(shielding_bundle.verify_proof(&fixed_vk).is_err());
 
     let change_addr = fvk.address_at(0u32, Scope::Internal);
@@ -320,7 +320,7 @@ fn ironwood_restricted_bundle_chain() {
             Ok(())
         );
         let (unauthorized, bundle_meta) = builder
-            .build(&mut rng, OrchardCircuitVersion::Ironwood)
+            .build(&mut rng, OrchardCircuitVersion::PostNu6_3)
             .unwrap()
             .unwrap();
 
@@ -345,17 +345,17 @@ fn ironwood_restricted_bundle_chain() {
             .commitment(BundleFormat::Nu6_3)
             .expect("bundle flags are representable in this format")
             .into();
-        let proven = unauthorized.create_proof(&ironwood_pk, &mut rng).unwrap();
+        let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
         proven
             .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
             .unwrap()
     };
 
     assert_eq!(restricted_bundle.value_balance(), &2000);
-    verify_bundle(&restricted_bundle, &ironwood_vk, BundleFormat::Nu6_3);
+    verify_bundle(&restricted_bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
     assert!(restricted_bundle.verify_proof(&fixed_vk).is_err());
 
-    let mut validator = BatchValidator::new(&ironwood_vk);
+    let mut validator = BatchValidator::new(&post_nu6_3_vk);
     validator
         .add_bundle(
             &restricted_bundle,

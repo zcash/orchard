@@ -8,7 +8,7 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 All changes in this release support the NU6.3 `enableCrossAddress` bundle flag
-and the Ironwood Orchard Action circuit that enforces the cross-address
+and the post-NU 6.3 Orchard Action circuit that enforces the cross-address
 restriction. Existing callers keep the current behavior by passing
 `OrchardCircuitVersion::FixedPostNu6_2` to the APIs that now require a circuit
 version, and the `BundleFormat` of the transaction encoding they parse or
@@ -23,10 +23,10 @@ serialize.
   byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
   reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
   (bit 2 is `enableCrossAddress`).
-- `orchard::circuit::OrchardCircuitVersion::Ironwood`, the circuit version
+- `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input (the negation of the
-  bundle's `enableCrossAddress` flag). Ironwood has its own proving and
-  verifying keys.
+  bundle's `enableCrossAddress` flag). The post-NU 6.3 circuit has its own
+  proving and verifying keys.
 - Circuit-version support introspection for the cross-address restriction:
   - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
@@ -39,9 +39,9 @@ serialize.
   - `orchard::builder::ChangeInfo` and `orchard::builder::ChangeInfo::new`, the
     change-output counterpart of `OutputInfo`, recording the full viewing key
     that owns the recipient (validated on construction) so the builder can
-    fabricate the paired same-receiver spend.
+    fabricate the paired same-expanded-receiver spend.
 - `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers
-  can check the cross-address restriction's same-receiver structural property
+  can check the cross-address restriction's same-expanded-receiver structural property
   before signing. It is a no-op for bundles that permit cross-address
   transfers.
 - Error variants for the cross-address builder and PCZT checks:
@@ -72,7 +72,7 @@ serialize.
   unrestricted bundle before NU6.3 and a restricted bundle under NU6.3.
 - Circuit-building APIs now take the intended `OrchardCircuitVersion`
   explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
-  `FixedPostNu6_2` for the previous behavior, or `Ironwood` for restricted
+  `FixedPostNu6_2` for the previous behavior, or `PostNu6_3` for restricted
   proofs:
   - `orchard::circuit::ProvingKey::build`
   - `orchard::circuit::VerifyingKey::build`
@@ -87,7 +87,7 @@ serialize.
 - Proof APIs reject instances that disable cross-address transfers unless the
   key's circuit version supports the cross-address restriction.
   `orchard::Proof::{create, verify}` and `orchard::Bundle::verify_proof`
-  return `halo2_proofs::plonk::Error::InvalidInstances`; with pre-Ironwood
+  return `halo2_proofs::plonk::Error::InvalidInstances`; with pre-NU 6.3
   keys, proving a restricted builder-created bundle returns
   `orchard::builder::BuildError::Proof`, and PCZT proving returns
   `orchard::pczt::ProverError::ProofFailed`. Restricted
@@ -105,7 +105,7 @@ serialize.
   `validate` returning `false`.
 - `orchard::builder::Builder` constructs bundles that disable cross-address
   transfers as withdrawal/change bundles in which every action's output is
-  addressed to the receiver of the note it spends. Fabricated zero-value
+  addressed to the expanded receiver of the note it spends. Fabricated zero-value
   outputs are addressed there too, so the owning wallet trial-decrypts them
   when scanning.
   - `Builder::add_output` returns `OutputError::CrossAddressDisabled` for
@@ -125,7 +125,7 @@ serialize.
     action count.
 - `orchard::pczt::Bundle::create_proof` now builds the Action circuits for
   the provided `ProvingKey`'s circuit version (previously always
-  `FixedPostNu6_2`), and checks the cross-address restriction's same-receiver
+  `FixedPostNu6_2`), and checks the cross-address restriction's same-expanded-receiver
   property, returning `ProverError::DisallowedCrossAddressTransfer` (or
   `ProverError::MissingRecipient` if a `recipient` field is unset).
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction

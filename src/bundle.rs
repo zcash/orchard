@@ -108,10 +108,11 @@ pub struct Flags {
     /// guaranteed to be dummy notes. If `true`, the created notes may be either real or
     /// dummy notes.
     outputs_enabled: bool,
-    /// Flag denoting whether Orchard spends and outputs may use different receivers.
+    /// Flag denoting whether Orchard spends and outputs may use different expanded
+    /// receivers.
     ///
     /// If `false`, every action's output is constrained to be addressed to the same
-    /// receiver as the note it spends; proving and verification must reject the
+    /// expanded receiver as the note it spends; proving and verification must reject the
     /// bundle unless they use a circuit key that supports the restriction.
     cross_address_enabled: bool,
 }
@@ -147,7 +148,7 @@ impl Flags {
 
     /// The flag set for an unrestricted bundle: spends and outputs are both
     /// enabled, so its actions may spend and create real notes addressed to any
-    /// receivers.
+    /// expanded receivers.
     ///
     /// Like [`Self::SPENDS_DISABLED`] and [`Self::OUTPUTS_DISABLED`], this leaves
     /// cross-address transfers enabled; see [`Self::CROSS_ADDRESS_DISABLED`] for
@@ -183,7 +184,7 @@ impl Flags {
     /// The flag set with spends and outputs enabled and cross-address transfers disabled.
     ///
     /// This flag set cannot be encoded in pre-NU6.3 formats. Proof creation and
-    /// verification for instances built with this flag require an Ironwood circuit key.
+    /// verification for instances built with this flag require a post-NU 6.3 circuit key.
     pub const CROSS_ADDRESS_DISABLED: Flags = Flags {
         spends_enabled: true,
         outputs_enabled: true,
@@ -208,10 +209,11 @@ impl Flags {
         self.outputs_enabled
     }
 
-    /// Flag denoting whether Orchard spends and outputs may use different receivers.
+    /// Flag denoting whether Orchard spends and outputs may use different expanded
+    /// receivers.
     ///
     /// If `false`, every action's output is constrained to be addressed to the same
-    /// receiver as the note it spends; proving and verification must reject the
+    /// expanded receiver as the note it spends; proving and verification must reject the
     /// bundle unless they use a circuit key that supports the restriction.
     pub fn cross_address_enabled(&self) -> bool {
         self.cross_address_enabled
@@ -757,11 +759,11 @@ impl<V> Bundle<Authorized, V> {
     ///
     /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this
     /// bundle disables cross-address transfers and `vk` is not an
-    /// [`OrchardCircuitVersion::Ironwood`] verifying key.
+    /// [`OrchardCircuitVersion::PostNu6_3`] verifying key.
     ///
     /// Also returns an error if proof verification fails.
     ///
-    /// [`OrchardCircuitVersion::Ironwood`]: crate::circuit::OrchardCircuitVersion::Ironwood
+    /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit::OrchardCircuitVersion::PostNu6_3
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
         self.authorization()
