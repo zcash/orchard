@@ -109,10 +109,9 @@ pub struct Config {
 
 /// Selects which version of the Orchard Action circuit to build.
 ///
-/// The two versions produce different verifying keys: the fixed circuit anchors the
-/// variable-base scalar-multiplication base (see `halo2_gadgets`), the pre-NU6.2 one does
-/// not. [`InsecurePreNu6_2`] reconstructs the historical (NU5..NU6.2) verifying key solely
-/// to verify proofs produced before NU6.2.
+/// [`FixedPostNu6_2`] and [`PostNu6_3`] use the fixed variable-base scalar-multiplication
+/// base (see `halo2_gadgets`), while [`InsecurePreNu6_2`] reconstructs the historical
+/// (NU5..NU6.2) verifying key solely to verify proofs produced before NU6.2.
 ///
 /// This is a runtime value rather than a type parameter: it is carried in [`Circuit`] and
 /// chosen when building a [`ProvingKey`] or [`VerifyingKey`], so the circuit version can be
@@ -120,6 +119,7 @@ pub struct Config {
 ///
 /// [`FixedPostNu6_2`]: OrchardCircuitVersion::FixedPostNu6_2
 /// [`InsecurePreNu6_2`]: OrchardCircuitVersion::InsecurePreNu6_2
+/// [`PostNu6_3`]: OrchardCircuitVersion::PostNu6_3
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrchardCircuitVersion {
     /// The insecure pre-NU6.2 circuit, in which the variable-base scalar-multiplication base
@@ -129,15 +129,18 @@ pub enum OrchardCircuitVersion {
     /// The fixed circuit, active from NU6.2 onward. Used for all proving and current
     /// verification.
     FixedPostNu6_2,
+    /// The post-NU 6.3 circuit. At this point it has the same constraints as the fixed
+    /// post-NU6.2 circuit; it does not yet enforce the `disableCrossAddress` public input.
+    PostNu6_3,
 }
 
 impl OrchardCircuitVersion {
     /// Whether this circuit version enforces the `disableCrossAddress` public input.
     pub fn supports_cross_address_restriction(self) -> bool {
         match self {
-            OrchardCircuitVersion::InsecurePreNu6_2 | OrchardCircuitVersion::FixedPostNu6_2 => {
-                false
-            }
+            OrchardCircuitVersion::InsecurePreNu6_2
+            | OrchardCircuitVersion::FixedPostNu6_2
+            | OrchardCircuitVersion::PostNu6_3 => false,
         }
     }
 
@@ -145,7 +148,9 @@ impl OrchardCircuitVersion {
     fn halo2_version(self) -> CircuitVersion {
         match self {
             OrchardCircuitVersion::InsecurePreNu6_2 => CircuitVersion::InsecureUnanchoredBase,
-            OrchardCircuitVersion::FixedPostNu6_2 => CircuitVersion::AnchoredBase,
+            OrchardCircuitVersion::FixedPostNu6_2 | OrchardCircuitVersion::PostNu6_3 => {
+                CircuitVersion::AnchoredBase
+            }
         }
     }
 }
@@ -1315,33 +1320,35 @@ mod tests {
         Ok((instance, proof))
     }
 
+    // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate the pinned circuit description
+    // for this version.
+    fn pinned_circuit_description(
+        circuit_version: OrchardCircuitVersion,
+        path: &str,
+        expected: &str,
+    ) -> VerifyingKey {
+        let vk = VerifyingKey::build(circuit_version);
+
+        if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+            std::fs::write(path, format!("{:#?}\n", vk.vk.pinned()))
+                .expect("should be able to write new circuit description");
+        } else {
+            assert_eq!(
+                format!("{:#?}\n", vk.vk.pinned()),
+                expected.replace("\r\n", "\n")
+            );
+        }
+
+        vk
+    }
+
     // TODO: recast as a proptest
-    #[test]
-    fn round_trip() {
+    fn round_trip_for_version(circuit_version: OrchardCircuitVersion, vk: &VerifyingKey) {
         let mut rng = OsRng;
 
         let (circuits, instances): (Vec<_>, Vec<_>) = iter::once(())
-            .map(|()| generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2))
+            .map(|()| generate_circuit_instance(&mut rng, circuit_version))
             .unzip();
-
-        let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
-
-        // Test that the pinned verification key (representing the circuit) is as expected.
-        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate it (and the proof below).
-        {
-            if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
-                std::fs::write(
-                    "src/circuit_data/circuit_description_fixed",
-                    format!("{:#?}\n", vk.vk.pinned()),
-                )
-                .expect("should be able to write new circuit description");
-            } else {
-                assert_eq!(
-                    format!("{:#?}\n", vk.vk.pinned()),
-                    include_str!("circuit_data/circuit_description_fixed").replace("\r\n", "\n")
-                );
-            }
-        }
 
         // Test that the proof size is as expected.
         let expected_proof_size = {
@@ -1380,10 +1387,30 @@ mod tests {
             );
         }
 
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = ProvingKey::build(circuit_version);
         let proof = Proof::create(&pk, &circuits, &instances, &mut rng).unwrap();
-        assert!(proof.verify(&vk, &instances).is_ok());
+        assert!(proof.verify(vk, &instances).is_ok());
         assert_eq!(proof.0.len(), expected_proof_size);
+    }
+
+    #[test]
+    fn round_trip_fixed() {
+        let vk = pinned_circuit_description(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            "src/circuit_data/circuit_description_fixed",
+            include_str!("circuit_data/circuit_description_fixed"),
+        );
+        round_trip_for_version(OrchardCircuitVersion::FixedPostNu6_2, &vk);
+    }
+
+    #[test]
+    fn round_trip_post_nu6_3() {
+        let vk = pinned_circuit_description(
+            OrchardCircuitVersion::PostNu6_3,
+            "src/circuit_data/circuit_description_post_nu6_3",
+            include_str!("circuit_data/circuit_description_post_nu6_3"),
+        );
+        round_trip_for_version(OrchardCircuitVersion::PostNu6_3, &vk);
     }
 
     // Proves with the proving key for `proving_version` and checks that the proof verifies

@@ -18,6 +18,8 @@ and this project adheres to Rust's notion of
   cross-address transfers are implicitly enabled, vs NU6.3 rules, where bit 2 is
   `enableCrossAddress`). Variants: `OrchardPreNu6_2`, `OrchardPreNu6_3`,
   `OrchardPostNu6_3`, and `IronwoodPostNu6_3`.
+- `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, currently matching the
+  fixed post-NU6.2 circuit constraints.
 - Circuit-version support introspection for the cross-address restriction:
   - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`

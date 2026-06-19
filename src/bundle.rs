@@ -88,13 +88,14 @@ pub enum BundleProtocol {
     OrchardPreNu6_3,
     /// The Orchard pool at NU6.3 and later.
     ///
-    /// Uses the NU6.3 flag-byte format, where bit 2 is `enableCrossAddress`. Its actions are
-    /// currently proved with the post-NU6.2 fixed circuit.
+    /// Uses the post-NU6.3 circuit and the NU6.3 flag-byte format, where bit 2 is
+    /// `enableCrossAddress`. The post-NU6.3 circuit currently shares the fixed post-NU6.2
+    /// circuit's constraints.
     OrchardPostNu6_3,
     /// The Ironwood pool at NU6.3 and later.
     ///
-    /// Uses the NU6.3 flag-byte format and shares a circuit with [`OrchardPostNu6_3`] (currently
-    /// the post-NU6.2 fixed circuit).
+    /// Uses the post-NU6.3 circuit (shared with [`OrchardPostNu6_3`]) and the NU6.3 flag-byte
+    /// format.
     ///
     /// [`OrchardPostNu6_3`]: BundleProtocol::OrchardPostNu6_3
     IronwoodPostNu6_3,
@@ -111,9 +112,10 @@ impl BundleProtocol {
     pub fn circuit_version(self) -> OrchardCircuitVersion {
         match self {
             BundleProtocol::OrchardPreNu6_2 => OrchardCircuitVersion::InsecurePreNu6_2,
-            BundleProtocol::OrchardPreNu6_3
-            | BundleProtocol::OrchardPostNu6_3
-            | BundleProtocol::IronwoodPostNu6_3 => OrchardCircuitVersion::FixedPostNu6_2,
+            BundleProtocol::OrchardPreNu6_3 => OrchardCircuitVersion::FixedPostNu6_2,
+            BundleProtocol::OrchardPostNu6_3 | BundleProtocol::IronwoodPostNu6_3 => {
+                OrchardCircuitVersion::PostNu6_3
+            }
         }
     }
 
