@@ -77,7 +77,8 @@ impl super::Bundle {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum IoFinalizerError {
-    /// The bundle violates the cross-address restriction.
+    /// The bundle does not satisfy the cross-address restriction, or is missing the
+    /// `recipient` fields needed to check it.
     CrossAddressRestriction(VerifyError),
     /// An error occurred while signing a dummy spend.
     DummySignature(SignerError),
@@ -92,7 +93,10 @@ impl fmt::Display for IoFinalizerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             IoFinalizerError::CrossAddressRestriction(e) => {
-                write!(f, "Cross-address restriction failed: {e}")
+                write!(
+                    f,
+                    "The bundle does not satisfy the cross-address restriction: {e}"
+                )
             }
             IoFinalizerError::DummySignature(e) => {
                 write!(f, "An error occurred while signing a dummy spend: {e}")

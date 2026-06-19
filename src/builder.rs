@@ -1758,7 +1758,7 @@ mod tests {
     use super::{bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo};
     use crate::{
         builder::BundleType,
-        bundle::{Authorized, Bundle, BundleProtocol},
+        bundle::{Authorized, Bundle, BundleProtocol, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -1867,6 +1867,58 @@ mod tests {
             .finalize()
             .unwrap();
         assert_eq!(bundle.value_balance(), &(-5000))
+    }
+
+    #[test]
+    fn coinbase_bundle_builds_for_post_nu6_3() {
+        let mut rng = OsRng;
+
+        // Coinbase bundles disable nonzero Orchard spends, but the action spend
+        // halves are still present as zero-valued dummy/fabricated spend data. A
+        // cross-address-restricted coinbase bundle would have to address each output
+        // to its dummy spend's expanded receiver, so coinbase always uses unrestricted
+        // cross-address semantics. A pool whose rules require the cross-address
+        // restriction on every bundle prohibits coinbase outside this crate.
+        let builder = output_only_builder(
+            &mut rng,
+            BundleProtocol::OrchardPostNu6_3,
+            BundleType::Coinbase,
+        );
+
+        let (bundle, _) = builder
+            .build::<i64>(&mut rng)
+            .expect("coinbase bundles build under the post-NU 6.3 circuit version")
+            .expect("a bundle is produced for the requested output");
+        assert_eq!(bundle.actions().len(), 1);
+        assert_eq!(bundle.circuit_version(), OrchardCircuitVersion::PostNu6_3);
+        assert!(!bundle.flags().spends_enabled());
+        assert!(bundle.flags().outputs_enabled());
+        assert!(bundle.flags().cross_address_enabled());
+    }
+
+    #[test]
+    fn coinbase_bundle_type_uses_spends_disabled_flags() {
+        assert_eq!(
+            BundleType::Coinbase.flags(BundleProtocol::OrchardPostNu6_3),
+            Flags::SPENDS_DISABLED
+        );
+        assert!(BundleType::Coinbase
+            .flags(BundleProtocol::OrchardPostNu6_3)
+            .cross_address_enabled());
+        // Post-NU6.3 coinbase bundles set bit 2 of the flag byte, so pre-NU6.3
+        // parsers reject them under the reserved-bits rule.
+        assert_eq!(
+            BundleType::Coinbase
+                .flags(BundleProtocol::OrchardPostNu6_3)
+                .to_byte(BundleProtocol::OrchardPostNu6_3),
+            Some(0b110)
+        );
+        assert_eq!(
+            BundleType::Coinbase
+                .flags(BundleProtocol::OrchardPostNu6_3)
+                .to_byte(BundleProtocol::OrchardPreNu6_3),
+            Some(0b010)
+        );
     }
 
     #[test]

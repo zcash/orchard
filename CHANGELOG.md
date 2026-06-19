@@ -13,11 +13,14 @@ and this project adheres to Rust's notion of
     encoded in pre-NU6.3 formats.
   - `Flags::cross_address_enabled`
 - `orchard::bundle::BundleProtocol`, the `(pool, era)` selector for an Orchard
-  bundle. It determines the circuit version (`BundleProtocol::circuit_version`)
-  and the flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and
+  bundle. It determines the circuit version (`BundleProtocol::circuit_version`),
+  the flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and
   cross-address transfers are implicitly enabled, vs NU6.3 rules, where bit 2 is
-  `enableCrossAddress`). Variants: `OrchardPreNu6_2`, `OrchardPreNu6_3`,
-  `OrchardPostNu6_3`, and `IronwoodPostNu6_3`.
+  `enableCrossAddress`), and whether consensus mandates the cross-address
+  restriction (the builder then chooses the value within that constraint).
+  Variants: `OrchardPreNu6_2`, `OrchardPreNu6_3`, `OrchardPostNu6_3`, and
+  `IronwoodPostNu6_3` (which shares the post-NU6.3 circuit; its V3 note plaintexts
+  are not yet implemented).
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input (the negation of the
   bundle's `enableCrossAddress` flag). The post-NU 6.3 circuit has its own
@@ -47,6 +50,8 @@ and this project adheres to Rust's notion of
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.
+- `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
+  returned by `orchard::Bundle::commitment`.
 - `orchard::bundle::testing::arb_flags_nu6_3` (under the `test-dependencies`
   feature), a strategy that generates flag sets under NU6.3 encoding rules,
   including flag sets that disable cross-address transfers. `arb_flags` is
@@ -63,16 +68,28 @@ and this project adheres to Rust's notion of
   flag byte is therefore interpreted differently per era: a byte with bit 2 clear
   parses as an unrestricted bundle before NU6.3 and a restricted bundle under NU6.3.
 - Key- and circuit-building APIs now take the intended `OrchardCircuitVersion`
-  explicitly instead of implicitly selecting `FixedPostNu6_2` (pass
-  `FixedPostNu6_2` for the previous behavior):
+  explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
+  `FixedPostNu6_2` for the previous behavior, or `PostNu6_3` for restricted
+  proofs:
   - `orchard::circuit::ProvingKey::build`
   - `orchard::circuit::VerifyingKey::build`
   - `orchard::circuit::Circuit::from_action_context`
-- Bundle construction now takes an `orchard::bundle::BundleProtocol` instead of
-  implicitly building the fixed circuit:
+- Bundle construction now takes a `BundleProtocol` instead of a circuit version:
   - `orchard::builder::Builder::new` takes the `BundleProtocol`, and
-    `Builder::build` derives the circuit version from it.
-  - `orchard::builder::bundle` takes the `BundleProtocol`.
+    `orchard::builder::Builder::build` no longer takes a circuit-version argument
+    (it derives the circuit version from the protocol).
+  - `orchard::builder::bundle` takes the `BundleProtocol` in place of the
+    circuit-version argument.
+- `orchard::builder::BundleType::Transactional` no longer embeds a full `Flags`;
+  it carries `{ spends_enabled, outputs_enabled, bundle_required }`, and
+  `BundleType::flags` and `BundleType::num_actions` now take the
+  `BundleProtocol`. The builder chooses the cross-address bit as a prover-side
+  default — the least-restrictive value consensus permits: enabled, except under
+  `OrchardPostNu6_3`, where consensus mandates the restriction. `BundleProtocol`
+  exposes only that consensus constraint; the default lives in builder logic. The
+  `Flags` codec still represents NU6.3 `enableCrossAddress = 0` flag sets, so a
+  future builder could expose the choice where consensus leaves it free (e.g.
+  Ironwood); this branch does not. `Coinbase` is unchanged.
 - `orchard::circuit::Instance::from_parts` now takes an
   `orchard::bundle::Flags` argument instead of separate spend/output enable
   booleans, so the cross-address restriction is carried into the public
@@ -91,7 +108,11 @@ and this project adheres to Rust's notion of
 - `orchard::bundle::BatchValidator` binds its verifying key at construction:
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one. `BatchValidator::add_bundle`
-  now returns `Result<(), orchard::bundle::BatchError>`.
+  now returns `Result<(), orchard::bundle::BatchError>`, rejecting a bundle that
+  disables cross-address transfers — without adding it to the batch — when the
+  verifying key's circuit version does not support the cross-address
+  restriction. Other proof or signature failures still surface as
+  `validate` returning `false`.
 - `orchard::builder::Builder` constructs bundles that disable cross-address
   transfers as withdrawal/change bundles in which every action's output is
   addressed to the expanded receiver of the note it spends. The fabricated
@@ -114,9 +135,10 @@ and this project adheres to Rust's notion of
     and `orchard::builder::BundleMetadata` maps them to distinct actions.
     Wallets estimating fees (e.g. per ZIP 317) must account for the larger
     action count.
-- `orchard::pczt::Bundle::create_proof` checks the cross-address restriction's
-  same-expanded-receiver property, returning
-  `ProverError::DisallowedCrossAddressTransfer` (or
+- `orchard::pczt::Bundle::create_proof` now builds the Action circuits for
+  the provided `ProvingKey`'s circuit version (previously always
+  `FixedPostNu6_2`), and checks the cross-address restriction's same-expanded-receiver
+  property, returning `ProverError::DisallowedCrossAddressTransfer` (or
   `ProverError::MissingRecipient` if a `recipient` field is unset).
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
   before modifying the bundle, returning
@@ -129,7 +151,9 @@ and this project adheres to Rust's notion of
   the `BundleProtocol`: under a NU6.3 protocol an unrestricted bundle's flag byte
   sets bit 2. Callers computing transaction IDs or sighashes (e.g.
   `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`) must pass the
-  protocol matching the transaction. Panics if the flags are unrepresentable
+  protocol matching the transaction. It now returns
+  `Result<BundleCommitment, CommitmentError>`, returning
+  `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
   under that protocol (cross-address transfers disabled under a pre-NU6.3 protocol).
 
 ### Removed

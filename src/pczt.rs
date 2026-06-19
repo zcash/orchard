@@ -343,18 +343,76 @@ mod tests {
     use shardtree::{store::memory::MemoryShardStore, ShardTree};
 
     use crate::{
-        builder::{Builder, BundleType},
+        builder::{Builder, BundleMetadata, BundleType},
         bundle::{BundleProtocol, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{ExtractedNoteCommitment, RandomSeed, Rho},
-        pczt::{ParseError, ProverError, TxExtractorError, VerifyError, Zip32Derivation},
+        note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho},
+        pczt::{
+            IoFinalizerError, ParseError, ProverError, SignerError, TxExtractorError, VerifyError,
+            Zip32Derivation,
+        },
         primitives::redpallas::{self, SpendAuth},
-        tree::{MerkleHashOrchard, EMPTY_ROOTS},
+        tree::{MerkleHashOrchard, MerklePath, EMPTY_ROOTS},
         value::NoteValue,
         Note,
     };
+
+    /// Builds a cross-address-restricted pczt bundle with one real spend (15_000 at an
+    /// external address) and one wallet-controlled change output (5_000 at a different
+    /// wallet's internal address), without finalizing IO.
+    ///
+    /// Returns the bundle, its metadata, and the spend authorizing keys for the spend
+    /// and the change output respectively.
+    fn restricted_pczt_bundle(
+        mut rng: OsRng,
+    ) -> (
+        super::Bundle,
+        BundleMetadata,
+        SpendAuthorizingKey,
+        SpendAuthorizingKey,
+    ) {
+        let spend_sk = SpendingKey::random(&mut rng);
+        let spend_fvk = FullViewingKey::from(&spend_sk);
+        let spend_recipient = spend_fvk.address_at(0u32, Scope::External);
+        let change_sk = SpendingKey::random(&mut rng);
+        let change_fvk = FullViewingKey::from(&change_sk);
+        let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
+
+        let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+        let note = Note::new(spend_recipient, NoteValue::from_raw(15_000), rho, &mut rng);
+        let merkle_path = MerklePath::dummy(&mut rng);
+        let anchor = merkle_path.root(note.commitment().into());
+
+        let mut builder = Builder::new(
+            BundleProtocol::OrchardPostNu6_3,
+            BundleType::Transactional {
+                spends_enabled: true,
+                outputs_enabled: true,
+                bundle_required: false,
+            },
+            anchor,
+        );
+        builder.add_spend(spend_fvk, note, merkle_path).unwrap();
+        builder
+            .add_change_output(
+                change_fvk,
+                None,
+                change_recipient,
+                NoteValue::from_raw(5_000),
+                [0u8; 512],
+            )
+            .unwrap();
+
+        let (pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        (
+            pczt_bundle,
+            bundle_meta,
+            SpendAuthorizingKey::from(&spend_sk),
+            SpendAuthorizingKey::from(&change_sk),
+        )
+    }
 
     /// Builds a minimal shielding-style pczt bundle, finalizes IO, and returns it ready for
     /// tests that exercise `create_proof` and `extract`.
@@ -667,6 +725,172 @@ mod tests {
             restricted.flags().to_byte(BundleProtocol::OrchardPreNu6_3),
             None
         );
+    }
+
+    #[test]
+    fn create_proof_supports_cross_address_disabled_only_for_post_nu6_3() {
+        let rng = OsRng;
+        let sighash = [0; 32];
+
+        // Structural same-expanded-receiver violations are rejected before any key-capability
+        // check, for every circuit version.
+        for circuit_version in [
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::PostNu6_3,
+        ] {
+            let pk = ProvingKey::build(circuit_version);
+
+            let mut mismatched_pczt_bundle = minimal_finalized_pczt_bundle(rng);
+            mismatched_pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
+            assert!(matches!(
+                mismatched_pczt_bundle.create_proof(&pk, rng),
+                Err(ProverError::DisallowedCrossAddressTransfer),
+            ));
+        }
+
+        let (mut pczt_bundle, bundle_meta, spend_ask, change_ask) = restricted_pczt_bundle(rng);
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
+
+        // A pre-NU 6.3 proving key rejects the structurally-conforming restricted
+        // statement at the instance check, leaving the bundle unmodified.
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        assert!(matches!(
+            pczt_bundle.create_proof(&pk, rng),
+            Err(ProverError::ProofFailed(
+                halo2_proofs::plonk::Error::InvalidInstances
+            )),
+        ));
+        assert!(pczt_bundle.zkproof.is_none());
+
+        // A post-NU 6.3 proving key proves the same statement, and the proof verifies
+        // in the extracted bundle under the post-NU 6.3 verifying key.
+        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+        pczt_bundle.create_proof(&pk, rng).unwrap();
+
+        pczt_bundle.actions_mut()[bundle_meta.spend_action_index(0).unwrap()]
+            .sign(sighash, &spend_ask, rng)
+            .unwrap();
+        pczt_bundle.actions_mut()[bundle_meta.output_action_index(0).unwrap()]
+            .sign(sighash, &change_ask, rng)
+            .unwrap();
+
+        let bundle = pczt_bundle
+            .extract::<i64>()
+            .unwrap()
+            .unwrap()
+            .apply_binding_signature(sighash, rng)
+            .unwrap();
+        bundle
+            .verify_proof(&VerifyingKey::build(OrchardCircuitVersion::PostNu6_3))
+            .unwrap();
+    }
+
+    #[test]
+    fn restricted_pczt_signing_flow() {
+        let rng = OsRng;
+        let (mut pczt_bundle, bundle_meta, spend_ask, change_ask) = restricted_pczt_bundle(rng);
+
+        let sighash = [0; 32];
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
+        pczt_bundle.verify_cross_address_restriction().unwrap();
+
+        let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
+        let change_action_index = bundle_meta.output_action_index(0).unwrap();
+        assert_ne!(spend_action_index, change_action_index);
+
+        // The fabricated change spend is wallet-controlled: it is signed through the
+        // normal Signer flow, and only by the matching spend authorizing key.
+        assert!(matches!(
+            pczt_bundle.actions_mut()[change_action_index].sign(sighash, &spend_ask, rng),
+            Err(SignerError::WrongSpendAuthorizingKey),
+        ));
+        pczt_bundle.actions_mut()[change_action_index]
+            .sign(sighash, &change_ask, rng)
+            .unwrap();
+        pczt_bundle.actions_mut()[spend_action_index]
+            .sign(sighash, &spend_ask, rng)
+            .unwrap();
+
+        for action in pczt_bundle.actions() {
+            assert!(action.spend.spend_auth_sig.is_some());
+            assert!(action.spend.dummy_sk.is_none());
+        }
+    }
+
+    #[test]
+    fn restricted_pczt_io_finalizer_signs_padding_dummy() {
+        let mut rng = OsRng;
+        let spend_sk = SpendingKey::random(&mut rng);
+        let spend_fvk = FullViewingKey::from(&spend_sk);
+        let spend_recipient = spend_fvk.address_at(0u32, Scope::External);
+
+        let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+        let note = Note::new(spend_recipient, NoteValue::from_raw(15_000), rho, &mut rng);
+        let merkle_path = MerklePath::dummy(&mut rng);
+        let anchor = merkle_path.root(note.commitment().into());
+
+        let mut builder = Builder::new(
+            BundleProtocol::OrchardPostNu6_3,
+            BundleType::Transactional {
+                spends_enabled: true,
+                outputs_enabled: true,
+                bundle_required: false,
+            },
+            anchor,
+        );
+        builder.add_spend(spend_fvk, note, merkle_path).unwrap();
+
+        let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        assert_eq!(pczt_bundle.actions().len(), 2);
+
+        let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
+        let padding_action_index = 1 - spend_action_index;
+        assert!(pczt_bundle.actions()[padding_action_index]
+            .spend
+            .dummy_sk
+            .is_some());
+
+        let sighash = [0; 32];
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
+
+        // The IO Finalizer signed the padding dummy spend and cleared its `dummy_sk`;
+        // the real spend still needs its signature.
+        let padding_action = &pczt_bundle.actions()[padding_action_index];
+        assert!(padding_action.spend.dummy_sk.is_none());
+        assert!(padding_action.spend.spend_auth_sig.is_some());
+        assert!(pczt_bundle.actions()[spend_action_index]
+            .spend
+            .spend_auth_sig
+            .is_none());
+
+        pczt_bundle.actions_mut()[spend_action_index]
+            .sign(sighash, &SpendAuthorizingKey::from(&spend_sk), rng)
+            .unwrap();
+    }
+
+    #[test]
+    fn finalize_io_rejects_cross_address_violation() {
+        let mut rng = OsRng;
+        let (mut pczt_bundle, _, _, _) = restricted_pczt_bundle(rng);
+
+        let spend_recipient = pczt_bundle.actions()[0].spend.recipient.unwrap();
+        let other_recipient = loop {
+            let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+            let recipient = fvk.address_at(0u32, Scope::External);
+            if !spend_recipient.same_expanded_receiver(&recipient) {
+                break recipient;
+            }
+        };
+        pczt_bundle.actions_mut()[0].output.recipient = Some(other_recipient);
+
+        assert!(matches!(
+            pczt_bundle.finalize_io([0; 32], rng),
+            Err(IoFinalizerError::CrossAddressRestriction(
+                VerifyError::DisallowedCrossAddressTransfer
+            )),
+        ));
+        // The failed call left the bundle unmodified.
+        assert!(pczt_bundle.bsk.is_none());
     }
 
     #[test]
