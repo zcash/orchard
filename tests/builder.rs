@@ -2,8 +2,8 @@
 
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
-    builder::Builder,
-    bundle::{Authorized, BatchValidator, BundleFormat, BundleKind, BundleProtocol},
+    builder::{Builder, BundleType},
+    bundle::{Authorized, BatchValidator, BundleFormat, BundleProtocol},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
@@ -60,7 +60,7 @@ fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, format: Bu
 /// single 5000-zat output to `recipient`.
 fn output_only_builder(protocol: BundleProtocol, recipient: Address) -> Builder {
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new(BundleKind::Transaction, protocol, anchor);
+    let mut builder = Builder::new(protocol, BundleType::DEFAULT, anchor);
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
@@ -72,7 +72,7 @@ fn output_only_builder(protocol: BundleProtocol, recipient: Address) -> Builder 
 /// output to `recipient`.
 fn coinbase_output_only_builder(protocol: BundleProtocol, recipient: Address) -> Builder {
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new_coinbase(protocol, anchor);
+    let mut builder = Builder::new(protocol, BundleType::Coinbase, anchor);
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
@@ -135,8 +135,8 @@ fn bundle_chain() {
         let (root, merkle_path) = single_leaf_witness(&cmx);
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPreNu6_3,
+            BundleType::DEFAULT,
             root.into(),
         );
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
@@ -264,8 +264,8 @@ fn post_nu6_3_restricted_bundle_chain() {
 
     let shielding_bundle: Bundle<_, i64> = {
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             MerkleHashOrchard::empty_root(32.into()).into(),
         );
         assert_eq!(
@@ -309,8 +309,8 @@ fn post_nu6_3_restricted_bundle_chain() {
         let (root, merkle_path) = single_leaf_witness(&cmx);
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             root.into(),
         );
         assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));

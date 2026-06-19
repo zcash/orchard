@@ -12,10 +12,7 @@ use zcash_note_encryption::ENC_CIPHERTEXT_SIZE;
 
 use crate::{
     address::Address,
-    bundle::{
-        Authorization, Authorized, Bundle, BundleActionCountError, BundleKind, BundleProtocol,
-        Flags,
-    },
+    bundle::{Authorization, Authorized, Bundle, BundleProtocol, Flags},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
@@ -45,8 +42,10 @@ pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
     /// irrespective of whether any genuine actions are required.
     Transactional {
-        /// The flags used for the bundle, including whether spends and outputs are enabled.
-        flags: Flags,
+        /// Whether Orchard spends are enabled for the bundle.
+        spends_enabled: bool,
+        /// Whether Orchard outputs are enabled for the bundle.
+        outputs_enabled: bool,
         /// A flag that, when set to `true`, indicates that a bundle should be produced even if no
         /// spends or outputs have been added to the bundle; in such a circumstance, all of the
         /// actions in the resulting bundle will be dummies.
@@ -74,28 +73,31 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type enables spends, outputs, and cross-address transfers,
-    /// and does not require a bundle to be produced if no spends or outputs have been
-    /// added to the bundle.
+    /// The default bundle type enables spends and outputs, and does not require a bundle to be
+    /// produced if no spends or outputs have been added to the bundle. The builder defaults the
+    /// cross-address bit to the least-restrictive value the protocol's consensus rules permit:
+    /// enabled, unless consensus mandates the restriction.
     pub const DEFAULT: BundleType = BundleType::Transactional {
-        flags: Flags::ENABLED,
+        spends_enabled: true,
+        outputs_enabled: true,
         bundle_required: false,
     };
 
     /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
     /// builder will prevent any spends or outputs from being added.
     pub const DISABLED: BundleType = BundleType::Transactional {
-        flags: Flags::from_parts(false, false),
+        spends_enabled: false,
+        outputs_enabled: false,
         bundle_required: false,
     };
 
     /// Returns the number of logical actions that builder will produce in constructing a bundle
     /// of this type, given the specified numbers of spends and outputs.
     ///
-    /// For [`BundleType::Transactional`] bundles whose flags disable cross-address
-    /// transfers, a requested spend and a requested output never share an action (each
-    /// is paired with a fabricated zero-value counterpart), so the number of requested
-    /// actions is `num_spends + num_outputs` rather than `max(num_spends, num_outputs)`.
+    /// For [`BundleType::Transactional`] bundles that disable cross-address transfers, a
+    /// requested spend and a requested output never share an
+    /// action (each is paired with a fabricated zero-value counterpart), so the number of
+    /// requested actions is `num_spends + num_outputs` rather than `max(num_spends, num_outputs)`.
     /// Wallets estimating fees (e.g. per [ZIP 317]) must account for this larger action
     /// count.
     ///
@@ -107,28 +109,31 @@ impl BundleType {
         &self,
         num_spends: usize,
         num_outputs: usize,
-    ) -> Result<usize, BundleActionCountError> {
+        protocol: BundleProtocol,
+    ) -> Result<usize, &'static str> {
         match self {
             BundleType::Transactional {
-                flags,
+                spends_enabled,
+                outputs_enabled,
                 bundle_required,
             } => {
+                let cross_address_enabled = default_cross_address_enabled(protocol);
                 // When cross-address transfers are disabled, every action's output is
                 // addressed to the note it spends, so a requested spend and a requested
                 // output can never share an action: each is paired with a fabricated
                 // zero-value counterpart instead.
-                let num_requested_actions = if !flags.cross_address_enabled() {
+                let num_requested_actions = if !cross_address_enabled {
                     num_spends
                         .checked_add(num_outputs)
-                        .ok_or(BundleActionCountError::InputCountOverflow)?
+                        .ok_or("num_spends + num_outputs overflowed")?
                 } else {
                     core::cmp::max(num_spends, num_outputs)
                 };
 
-                if !flags.spends_enabled() && num_spends > 0 {
-                    Err(BundleActionCountError::SpendsDisabled)
-                } else if !flags.outputs_enabled() && num_outputs > 0 {
-                    Err(BundleActionCountError::OutputsDisabled)
+                if !*spends_enabled && num_spends > 0 {
+                    Err("Spends are disabled, so num_spends must be zero")
+                } else if !*outputs_enabled && num_outputs > 0 {
+                    Err("Outputs are disabled, so num_outputs must be zero")
                 } else {
                     Ok(if *bundle_required || num_requested_actions > 0 {
                         core::cmp::max(num_requested_actions, MIN_ACTIONS)
@@ -139,7 +144,7 @@ impl BundleType {
             }
             BundleType::Coinbase => {
                 if num_spends > 0 {
-                    Err(BundleActionCountError::SpendsDisabled)
+                    Err("Coinbase bundles have spends disabled, so num_spends must be zero")
                 } else {
                     Ok(num_outputs)
                 }
@@ -147,13 +152,32 @@ impl BundleType {
         }
     }
 
-    /// Returns the set of flags that will be used for bundle construction.
-    pub fn flags(&self) -> Flags {
+    /// Returns the set of flags that will be used for bundle construction under `protocol`.
+    pub fn flags(&self, protocol: BundleProtocol) -> Flags {
         match self {
-            BundleType::Transactional { flags, .. } => *flags,
+            BundleType::Transactional {
+                spends_enabled,
+                outputs_enabled,
+                ..
+            } => Flags::from_parts_with_cross_address(
+                *spends_enabled,
+                *outputs_enabled,
+                default_cross_address_enabled(protocol),
+            ),
             BundleType::Coinbase => Flags::SPENDS_DISABLED,
         }
     }
+}
+
+/// The builder's prover-side default for `enableCrossAddress` under `protocol`.
+///
+/// Within what consensus permits, this crate emits the least-restrictive bundle: cross-address
+/// transfers stay enabled unless consensus mandates the restriction (see
+/// [`BundleProtocol::requires_cross_address_restriction`]). This is builder policy, not a protocol
+/// attribute; a future builder could expose the choice where consensus leaves it free (e.g.
+/// Ironwood). Coinbase handles its own flags (see [`BundleType::flags`]).
+fn default_cross_address_enabled(protocol: BundleProtocol) -> bool {
+    !protocol.requires_cross_address_restriction()
 }
 
 /// An error type for the kinds of errors that can occur during bundle construction.
@@ -738,49 +762,31 @@ pub struct Builder {
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     changes: Vec<ChangeInfo>,
+    protocol: BundleProtocol,
     bundle_type: BundleType,
     anchor: Anchor,
-    protocol: BundleProtocol,
 }
 
 impl Builder {
-    /// Constructs a new empty builder for the given bundle kind and protocol.
-    pub fn new(kind: BundleKind, protocol: BundleProtocol, anchor: Anchor) -> Self {
+    /// Constructs a new empty builder for an Orchard bundle following `protocol`.
+    ///
+    /// `protocol` is the bundle's `(pool, era)` context; it determines the circuit version,
+    /// the flag-byte format, and the cross-address policy, and is threaded into building,
+    /// committing, and parsing. See [`BundleProtocol`].
+    pub fn new(protocol: BundleProtocol, bundle_type: BundleType, anchor: Anchor) -> Self {
         Builder {
             spends: vec![],
             outputs: vec![],
             changes: vec![],
-            bundle_type: kind.bundle_type(protocol),
-            anchor,
             protocol,
+            bundle_type,
+            anchor,
         }
-    }
-
-    /// Constructs a new coinbase builder for the given bundle protocol.
-    pub fn new_coinbase(protocol: BundleProtocol, anchor: Anchor) -> Self {
-        Builder::new(BundleKind::Coinbase, protocol, anchor)
     }
 
     /// Returns the protocol currently used by this builder.
     pub fn protocol(&self) -> BundleProtocol {
         self.protocol
-    }
-
-    /// Returns whether this builder constructs a transaction or coinbase bundle.
-    pub fn kind(&self) -> BundleKind {
-        match self.bundle_type {
-            BundleType::Transactional { .. } => BundleKind::Transaction,
-            BundleType::Coinbase => BundleKind::Coinbase,
-        }
-    }
-
-    /// Updates the protocol used by this builder.
-    pub fn set_protocol(&mut self, protocol: BundleProtocol) {
-        if let BundleType::Transactional { flags, .. } = &mut self.bundle_type {
-            *flags = protocol.transaction_flags();
-        }
-
-        self.protocol = protocol;
     }
 
     fn default_note_version(&self) -> NoteVersion {
@@ -812,7 +818,7 @@ impl Builder {
         note: Note,
         merkle_path: MerklePath,
     ) -> Result<(), SpendError> {
-        let flags = self.bundle_type.flags();
+        let flags = self.bundle_type.flags(self.protocol);
         if !flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
@@ -841,7 +847,7 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        let flags = self.bundle_type.flags();
+        let flags = self.bundle_type.flags(self.protocol);
         if !flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
@@ -891,7 +897,7 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        let flags = self.bundle_type.flags();
+        let flags = self.bundle_type.flags(self.protocol);
         if !flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
@@ -981,6 +987,7 @@ impl Builder {
             rng,
             BundlePlan {
                 anchor,
+                protocol: self.protocol,
                 bundle_type: self.bundle_type,
                 spends: self.spends,
                 outputs: self.outputs,
@@ -1013,6 +1020,7 @@ impl Builder {
             rng,
             BundlePlan {
                 anchor,
+                protocol: self.protocol,
                 bundle_type: self.bundle_type,
                 spends: self.spends,
                 outputs: self.outputs,
@@ -1062,7 +1070,8 @@ pub fn bundle<V: TryFrom<i64>>(
         rng,
         BundlePlan {
             anchor,
-            bundle_type: BundleKind::Transaction.bundle_type(protocol),
+            protocol,
+            bundle_type: BundleType::DEFAULT,
             spends,
             outputs,
             changes,
@@ -1100,6 +1109,7 @@ pub fn coinbase_bundle<V: TryFrom<i64>>(
         rng,
         BundlePlan {
             anchor,
+            protocol,
             bundle_type: BundleType::Coinbase,
             spends: vec![],
             outputs,
@@ -1177,6 +1187,7 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
 
 struct BundlePlan {
     anchor: Anchor,
+    protocol: BundleProtocol,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
@@ -1191,6 +1202,7 @@ fn build_bundle<B, R: RngCore>(
 ) -> Result<B, BuildError> {
     let BundlePlan {
         anchor,
+        protocol,
         bundle_type,
         spends,
         outputs,
@@ -1198,7 +1210,7 @@ fn build_bundle<B, R: RngCore>(
         note_version,
     } = plan;
 
-    let flags = bundle_type.flags();
+    let flags = bundle_type.flags(protocol);
 
     let num_requested_spends = spends.len();
     if !flags.spends_enabled() && num_requested_spends > 0 {
@@ -1230,7 +1242,7 @@ fn build_bundle<B, R: RngCore>(
     }
 
     let num_actions = bundle_type
-        .num_actions(num_requested_spends, num_requested_outputs)
+        .num_actions(num_requested_spends, num_requested_outputs, protocol)
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
     let (pre_actions, bundle_meta) = if !flags.cross_address_enabled() {
@@ -1727,7 +1739,7 @@ pub mod testing {
 
     use crate::{
         address::testing::arb_address,
-        bundle::{Authorized, Bundle, BundleKind, BundleProtocol},
+        bundle::{Authorized, Bundle, BundleProtocol},
         circuit::{OrchardCircuitVersion, ProvingKey},
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
@@ -1736,7 +1748,7 @@ pub mod testing {
         Address, Note,
     };
 
-    use super::Builder;
+    use super::{Builder, BundleType};
 
     /// An intermediate type used for construction of arbitrary
     /// bundle values. This type is required because of a limitation
@@ -1760,8 +1772,8 @@ pub mod testing {
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
             let mut builder = Builder::new(
-                BundleKind::Transaction,
                 BundleProtocol::OrchardPreNu6_3,
+                BundleType::DEFAULT,
                 self.anchor,
             );
 
@@ -1867,7 +1879,7 @@ mod tests {
         OutputError, OutputInfo,
     };
     use crate::{
-        bundle::{Authorized, Bundle, BundleFormat, BundleKind, BundleProtocol, Flags},
+        bundle::{Authorized, Bundle, BundleFormat, BundleProtocol, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -1908,7 +1920,8 @@ mod tests {
 
     fn restricted_bundle_type(bundle_required: bool) -> BundleType {
         BundleType::Transactional {
-            flags: Flags::CROSS_ADDRESS_DISABLED,
+            spends_enabled: true,
+            outputs_enabled: true,
             bundle_required,
         }
     }
@@ -1921,8 +1934,8 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             protocol,
+            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
@@ -1936,7 +1949,11 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        let mut builder = Builder::new_coinbase(protocol, EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into());
+        let mut builder = Builder::new(
+            protocol,
+            BundleType::Coinbase,
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+        );
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .expect("coinbase output builders accept ordinary outputs");
@@ -1990,18 +2007,13 @@ mod tests {
 
     #[test]
     fn coinbase_bundle_type_uses_spends_disabled_flags() {
-        assert_eq!(BundleType::Coinbase.flags(), Flags::SPENDS_DISABLED);
-        assert!(BundleType::Coinbase.flags().cross_address_enabled());
+        let flags = BundleType::Coinbase.flags(BundleProtocol::IronwoodPostNu6_3);
+        assert_eq!(flags, Flags::SPENDS_DISABLED);
+        assert!(flags.cross_address_enabled());
         // Post-NU6.3 coinbase bundles set bit 2 of the flag byte, so pre-NU6.3
         // parsers reject them under the reserved-bits rule.
-        assert_eq!(
-            BundleType::Coinbase.flags().to_byte(BundleFormat::Nu6_3),
-            Some(0b110)
-        );
-        assert_eq!(
-            BundleType::Coinbase.flags().to_byte(BundleFormat::PreNu6_3),
-            Some(0b010)
-        );
+        assert_eq!(flags.to_byte(BundleFormat::Nu6_3), Some(0b110));
+        assert_eq!(flags.to_byte(BundleFormat::PreNu6_3), Some(0b010));
     }
 
     #[test]
@@ -2017,8 +2029,8 @@ mod tests {
             note_with_path(&mut rng, spend_recipient, NoteValue::from_raw(15_000));
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             anchor,
         );
         assert_eq!(
@@ -2199,13 +2211,9 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::Internal);
-        let flags = Flags::from_byte(0b010, BundleFormat::Nu6_3).unwrap();
-        assert!(!flags.spends_enabled());
-        assert!(flags.outputs_enabled());
-        assert!(!flags.cross_address_enabled());
-
         let bundle_type = BundleType::Transactional {
-            flags,
+            spends_enabled: false,
+            outputs_enabled: true,
             bundle_required: false,
         };
         let change_output = ChangeInfo::new(
@@ -2223,6 +2231,7 @@ mod tests {
                 &mut rng,
                 BundlePlan {
                     anchor: EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+                    protocol: BundleProtocol::OrchardPostNu6_3,
                     bundle_type,
                     spends: vec![],
                     outputs: vec![],
@@ -2244,8 +2253,8 @@ mod tests {
             FullViewingKey::from(&SpendingKey::random(&mut rng)).address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPreNu6_3,
+            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
 
@@ -2276,12 +2285,10 @@ mod tests {
 
         // A restricted bundle with spends disabled cannot fabricate the paired spend, so the
         // change output is rejected eagerly rather than deferring to `build`.
-        let flags = Flags::from_byte(0b010, BundleFormat::Nu6_3).unwrap();
-        assert!(!flags.spends_enabled());
-        assert!(!flags.cross_address_enabled());
         let mut builder = builder_with_type(
             BundleType::Transactional {
-                flags,
+                spends_enabled: false,
+                outputs_enabled: true,
                 bundle_required: false,
             },
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
@@ -2307,8 +2314,8 @@ mod tests {
             note_with_path(&mut rng, spend_recipient, NoteValue::from_raw(15_000));
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             anchor,
         );
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
@@ -2347,8 +2354,8 @@ mod tests {
         // A change-only bundle: the padding dummy spend is signed during `prepare`, so
         // a single `sign` call with the change key completes the actions.
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
@@ -2388,8 +2395,8 @@ mod tests {
             note_with_path(&mut rng, spend_recipient, NoteValue::from_raw(15_000));
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             anchor,
         );
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();

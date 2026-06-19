@@ -141,7 +141,8 @@ serialize.
   transaction ID and sighash — now depends on `BundleFormat`: under `Nu6_3` an
   unrestricted bundle's flag byte sets bit 2. Callers computing transaction IDs
   or sighashes (e.g. `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`)
-  must pass the `BundleFormat` matching the transaction's consensus branch. It
+  must pass the `BundleFormat` matching the concrete transaction or PCZT encoding
+  version. It
   now returns `Result<BundleCommitment, CommitmentError>`, returning
   `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
   in `format` (cross-address transfers disabled under `PreNu6_3`).
