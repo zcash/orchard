@@ -9,25 +9,20 @@ and this project adheres to Rust's notion of
 
 All changes in this release support the NU6.3 `enableCrossAddress` bundle flag
 and the post-NU 6.3 Orchard Action circuit that enforces the cross-address
-restriction. Construction and wire encoding are now selected by a single
-`orchard::bundle::BundleProtocol` (a `(pool, era)` value); existing callers keep
-the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
-`OrchardCircuitVersion::FixedPostNu6_2` when building proving/verifying keys).
+restriction. Existing callers keep the current behavior by passing
+`OrchardCircuitVersion::FixedPostNu6_2` to the APIs that now require a circuit
+version, and the `BundleFormat` of the transaction encoding they parse or
+serialize.
 
 ### Added
 - `orchard::bundle::Flags` APIs for the NU6.3 `enableCrossAddress` flag:
   - `Flags::CROSS_ADDRESS_DISABLED`, the restricted flag set. It cannot be
     encoded in pre-NU6.3 formats.
   - `Flags::cross_address_enabled`
-- `orchard::bundle::BundleProtocol`, the `(pool, era)` selector for an Orchard
-  bundle. It determines the circuit version (`BundleProtocol::circuit_version`),
-  the flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and
-  cross-address transfers are implicitly enabled, vs NU6.3 rules, where bit 2 is
-  `enableCrossAddress`), and whether consensus mandates the cross-address
-  restriction (the builder then chooses the value within that constraint).
-  Variants: `OrchardPreNu6_2`, `OrchardPreNu6_3`, `OrchardPostNu6_3`, and
-  `IronwoodPostNu6_3` (which shares the post-NU6.3 circuit; its V3 note plaintexts
-  are not yet implemented).
+- `orchard::bundle::BundleFormat`, selecting whether an Orchard bundle flag
+  byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
+  reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
+  (bit 2 is `enableCrossAddress`).
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input (the negation of the
   bundle's `enableCrossAddress` flag). The post-NU 6.3 circuit has its own
@@ -67,36 +62,24 @@ the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
-  `orchard::pczt::Bundle::parse` now take a `BundleProtocol`. Under a NU6.3
-  protocol, bit 2 is parsed and serialized as `enableCrossAddress`; under a
-  pre-NU6.3 protocol, bit 2 remains reserved, parsing yields flags with
-  cross-address transfers enabled, and `Flags::to_byte` (which now returns
-  `Option<u8>`) returns `None` if cross-address transfers are disabled. The same
-  flag byte is therefore interpreted differently per era: a byte with bit 2 clear
-  parses as an unrestricted bundle before NU6.3 and a restricted bundle under NU6.3.
-- Key- and circuit-building APIs now take the intended `OrchardCircuitVersion`
+  `orchard::pczt::Bundle::parse` now take a `BundleFormat`. Under
+  `BundleFormat::Nu6_3`, bit 2 is parsed and serialized as
+  `enableCrossAddress`; under `BundleFormat::PreNu6_3`, bit 2 remains
+  reserved, parsing yields flags with cross-address transfers enabled, and
+  `Flags::to_byte` (which now returns `Option<u8>`) returns `None` if
+  cross-address transfers are disabled. The same flag byte is therefore
+  interpreted differently per era: a byte with bit 2 clear parses as an
+  unrestricted bundle before NU6.3 and a restricted bundle under NU6.3.
+- Circuit-building APIs now take the intended `OrchardCircuitVersion`
   explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
   `FixedPostNu6_2` for the previous behavior, or `PostNu6_3` for restricted
   proofs:
   - `orchard::circuit::ProvingKey::build`
   - `orchard::circuit::VerifyingKey::build`
   - `orchard::circuit::Circuit::from_action_context`
-- Bundle construction now takes a `BundleProtocol` instead of a circuit version:
-  - `orchard::builder::Builder::new` takes the `BundleProtocol`, and
-    `orchard::builder::Builder::build` no longer takes a circuit-version argument
-    (it derives the circuit version from the protocol).
-  - `orchard::builder::bundle` takes the `BundleProtocol` in place of the
-    circuit-version argument.
-- `orchard::builder::BundleType::Transactional` no longer embeds a full `Flags`;
-  it carries `{ spends_enabled, outputs_enabled, bundle_required }`, and
-  `BundleType::flags` and `BundleType::num_actions` now take the
-  `BundleProtocol`. The builder chooses the cross-address bit as a prover-side
-  default — the least-restrictive value consensus permits: enabled, except under
-  `OrchardPostNu6_3`, where consensus mandates the restriction. `BundleProtocol`
-  exposes only that consensus constraint; the default lives in builder logic. The
-  `Flags` codec still represents NU6.3 `enableCrossAddress = 0` flag sets, so a
-  future builder could expose the choice where consensus leaves it free (e.g.
-  Ironwood); this branch does not. `Coinbase` is unchanged.
+  - `orchard::builder::Builder::build` (`Builder::new` no longer selects a
+    circuit version)
+  - `orchard::builder::bundle`
 - `orchard::circuit::Instance::from_parts` now takes an
   `orchard::bundle::Flags` argument instead of separate spend/output enable
   booleans, so the cross-address restriction is carried into the public
@@ -152,26 +135,25 @@ the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
   `VerifyError`) and leaving the bundle unmodified if the PCZT is missing
   recipient data or violates the restriction.
-- `orchard::Bundle::commitment` now takes the `BundleProtocol` the bundle
-  follows, and hashes that era's flag byte (via `Flags::to_byte`). The ZIP-244
-  Orchard digest — and therefore the transaction ID and sighash — now depends on
-  the `BundleProtocol`: under a NU6.3 protocol an unrestricted bundle's flag byte
-  sets bit 2. Callers computing transaction IDs or sighashes (e.g.
-  `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`) must pass the
-  protocol matching the transaction. It now returns
-  `Result<BundleCommitment, CommitmentError>`, returning
+- `orchard::Bundle::commitment` now takes the `BundleFormat` of the
+  transaction encoding the bundle appears in, and hashes that format's flag
+  byte (via `Flags::to_byte`). The ZIP-244 Orchard digest — and therefore the
+  transaction ID and sighash — now depends on `BundleFormat`: under `Nu6_3` an
+  unrestricted bundle's flag byte sets bit 2. Callers computing transaction IDs
+  or sighashes (e.g. `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`)
+  must pass the `BundleFormat` matching the transaction's consensus branch. It
+  now returns `Result<BundleCommitment, CommitmentError>`, returning
   `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
-  under that protocol (cross-address transfers disabled under a pre-NU6.3 protocol).
+  in `format` (cross-address transfers disabled under `PreNu6_3`).
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended
-  `OrchardCircuitVersion` (keys/circuit) or `BundleProtocol` (construction) to
-  the plain APIs listed above instead:
+  `OrchardCircuitVersion` to the plain APIs listed above instead:
   - `orchard::circuit::ProvingKey::build_for_version`
   - `orchard::circuit::VerifyingKey::build_for_version`
   - `orchard::circuit::Circuit::from_action_context_for_version`
-  - `orchard::builder::Builder::new_for_version` (use `Builder::new`, which now
-    takes the `BundleProtocol`)
+  - `orchard::builder::Builder::new_for_version` (use `Builder::new` and pass
+    the circuit version to `Builder::build`)
   - `orchard::builder::bundle_for_version`
 - The `Default` impls for `orchard::circuit::Circuit` and
   `orchard::circuit::OrchardCircuitVersion`; callers must choose a circuit

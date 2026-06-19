@@ -989,7 +989,7 @@ mod tests {
         *,
     };
     use crate::{
-        note::{ExtractedNoteCommitment, RandomSeed, Rho},
+        note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
         value::NoteValue,
         Note,
     };
@@ -1075,6 +1075,7 @@ mod tests {
                 NoteValue::from_raw(tv.note_v),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
+                NoteVersion::DEFAULT,
             )
             .unwrap();
 

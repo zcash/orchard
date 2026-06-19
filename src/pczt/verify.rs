@@ -109,6 +109,7 @@ impl super::Spend {
             self.value.ok_or(VerifyError::MissingValue)?,
             self.rho.ok_or(VerifyError::MissingRho)?,
             self.rseed.ok_or(VerifyError::MissingRandomSeed)?,
+            self.note_version,
         )
         .into_option()
         .ok_or(VerifyError::InvalidSpendNote)?;
@@ -167,6 +168,7 @@ impl super::Output {
             self.value.ok_or(VerifyError::MissingValue)?,
             Rho::from_nf_old(spend.nullifier),
             self.rseed.ok_or(VerifyError::MissingRandomSeed)?,
+            self.note_version,
         )
         .into_option()
         .ok_or(VerifyError::InvalidOutputNote)?;

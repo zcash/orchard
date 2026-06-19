@@ -13,7 +13,9 @@ use zip32::ChildIndex;
 use crate::{
     bundle::Flags,
     keys::{FullViewingKey, SpendingKey},
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
+    note::{
+        ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
+    },
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::MerklePath,
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -176,6 +178,9 @@ pub struct Spend {
     /// - This is required by the Prover.
     pub(crate) rseed: Option<RandomSeed>,
 
+    /// The note plaintext version for the note being spent.
+    pub(crate) note_version: NoteVersion,
+
     /// The full viewing key that received the note being spent.
     ///
     /// - This is set by the Updater.
@@ -257,6 +262,9 @@ pub struct Output {
     ///   `enc_ciphertext` is deliberately randomized; its note commitment remains verifiable.
     pub(crate) rseed: Option<RandomSeed>,
 
+    /// The note plaintext version for the output.
+    pub(crate) note_version: NoteVersion,
+
     /// The `ock` value used to encrypt `out_ciphertext`.
     ///
     /// This enables Signers to verify that `out_ciphertext` is correctly encrypted.
@@ -287,6 +295,7 @@ impl fmt::Debug for Output {
             .field("recipient", &self.recipient)
             .field("value", &self.value)
             .field("rseed", &self.rseed)
+            .field("note_version", &self.note_version)
             .field("zip32_derivation", &self.zip32_derivation)
             .field("user_address", &self.user_address)
             .field("proprietary", &self.proprietary)
@@ -343,12 +352,12 @@ mod tests {
     use shardtree::{store::memory::MemoryShardStore, ShardTree};
 
     use crate::{
-        builder::{Builder, BundleMetadata, BundleType},
-        bundle::{BundleProtocol, Flags},
+        builder::{Builder, BundleMetadata},
+        bundle::{BundleFormat, BundleKind, BundleProtocol, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho},
+        note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
         pczt::{
             IoFinalizerError, ParseError, ProverError, SignerError, TxExtractorError, VerifyError,
             Zip32Derivation,
@@ -381,17 +390,19 @@ mod tests {
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
 
         let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
-        let note = Note::new(spend_recipient, NoteValue::from_raw(15_000), rho, &mut rng);
+        let note = Note::new(
+            spend_recipient,
+            NoteValue::from_raw(15_000),
+            rho,
+            &mut rng,
+            NoteVersion::DEFAULT,
+        );
         let merkle_path = MerklePath::dummy(&mut rng);
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
+            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
             anchor,
         );
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
@@ -422,8 +433,8 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
+            BundleKind::Transaction,
             BundleProtocol::OrchardPreNu6_3,
-            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
@@ -452,8 +463,8 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
+            BundleKind::Transaction,
             BundleProtocol::OrchardPreNu6_3,
-            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
@@ -517,9 +528,14 @@ mod tests {
         let note = {
             let rho = Rho::from_bytes(&pallas::Base::random(&mut rng).to_repr()).unwrap();
             loop {
-                if let Some(note) =
-                    Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho))
-                        .into_option()
+                if let Some(note) = Note::from_parts(
+                    recipient,
+                    value,
+                    rho,
+                    RandomSeed::random(&mut rng, &rho),
+                    NoteVersion::DEFAULT,
+                )
+                .into_option()
                 {
                     break note;
                 }
@@ -551,8 +567,11 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let mut builder =
-            Builder::new(BundleProtocol::OrchardPreNu6_3, BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(
+            BundleKind::Transaction,
+            BundleProtocol::OrchardPreNu6_3,
+            anchor,
+        );
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -675,7 +694,7 @@ mod tests {
             super::Bundle::parse(
                 vec![],
                 0b0000_0100,
-                BundleProtocol::OrchardPreNu6_3,
+                BundleFormat::PreNu6_3,
                 (0, false),
                 anchor.to_bytes(),
                 None,
@@ -687,7 +706,7 @@ mod tests {
         let parsed = super::Bundle::parse(
             vec![],
             0b0000_0100,
-            BundleProtocol::OrchardPostNu6_3,
+            BundleFormat::Nu6_3,
             (0, false),
             anchor.to_bytes(),
             None,
@@ -697,18 +716,18 @@ mod tests {
 
         assert!(parsed.flags().cross_address_enabled());
         assert_eq!(
-            parsed.flags().to_byte(BundleProtocol::OrchardPostNu6_3),
+            parsed.flags().to_byte(BundleFormat::Nu6_3),
             Some(0b0000_0100)
         );
         assert_eq!(
-            parsed.flags().to_byte(BundleProtocol::OrchardPreNu6_3),
+            parsed.flags().to_byte(BundleFormat::PreNu6_3),
             Some(0b0000_0000)
         );
 
         let restricted = super::Bundle::parse(
             vec![],
             0b0000_0011,
-            BundleProtocol::OrchardPostNu6_3,
+            BundleFormat::Nu6_3,
             (0, false),
             anchor.to_bytes(),
             None,
@@ -718,13 +737,10 @@ mod tests {
 
         assert!(!restricted.flags().cross_address_enabled());
         assert_eq!(
-            restricted.flags().to_byte(BundleProtocol::OrchardPostNu6_3),
+            restricted.flags().to_byte(BundleFormat::Nu6_3),
             Some(0b0000_0011)
         );
-        assert_eq!(
-            restricted.flags().to_byte(BundleProtocol::OrchardPreNu6_3),
-            None
-        );
+        assert_eq!(restricted.flags().to_byte(BundleFormat::PreNu6_3), None);
     }
 
     #[test]
@@ -825,17 +841,19 @@ mod tests {
         let spend_recipient = spend_fvk.address_at(0u32, Scope::External);
 
         let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
-        let note = Note::new(spend_recipient, NoteValue::from_raw(15_000), rho, &mut rng);
+        let note = Note::new(
+            spend_recipient,
+            NoteValue::from_raw(15_000),
+            rho,
+            &mut rng,
+            NoteVersion::DEFAULT,
+        );
         let merkle_path = MerklePath::dummy(&mut rng);
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
+            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
             anchor,
         );
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();

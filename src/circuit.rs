@@ -260,11 +260,11 @@ impl Circuit {
         let sender_address = spend.note.recipient();
         let rho_old = spend.note.rho();
         let psi_old = spend.note.rseed().psi(&rho_old);
-        let rcm_old = spend.note.rseed().rcm(&rho_old);
+        let rcm_old = spend.note.rcm();
 
         let rho_new = output_note.rho();
         let psi_new = output_note.rseed().psi(&rho_new);
-        let rcm_new = output_note.rseed().rcm(&rho_new);
+        let rcm_new = output_note.rcm();
 
         Circuit {
             path: Value::known(spend.merkle_path.auth_path()),
@@ -1289,16 +1289,16 @@ impl Proof {
         instances: &[Instance],
         mut rng: impl RngCore,
     ) -> Result<Self, plonk::Error> {
+        if instances.iter().any(Instance::cross_address_disabled)
+            && !pk.supports_cross_address_restriction()
+        {
+            return Err(plonk::Error::InvalidInstances);
+        }
         if circuits
             .iter()
             .any(|c| c.circuit_version != pk.circuit_version)
         {
             return Err(plonk::Error::Synthesis);
-        }
-        if instances.iter().any(Instance::cross_address_disabled)
-            && !pk.supports_cross_address_restriction()
-        {
-            return Err(plonk::Error::InvalidInstances);
         }
 
         let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
@@ -1392,9 +1392,9 @@ mod tests {
 
     use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
-        bundle::{BundleProtocol, Flags},
+        bundle::{BundleFormat, Flags},
         keys::SpendValidatingKey,
-        note::{Note, Rho},
+        note::{Note, NoteVersion, Rho},
         tree::MerklePath,
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
@@ -1422,7 +1422,7 @@ mod tests {
         circuit_version: OrchardCircuitVersion,
         output_matches_spend: bool,
     ) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, NoteVersion::DEFAULT);
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -1434,10 +1434,16 @@ mod tests {
         let rk = ak.randomize(&alpha);
 
         let output_note = if output_matches_spend {
-            Note::new(sender_address, spent_note.value(), rho, &mut rng)
+            Note::new(
+                sender_address,
+                spent_note.value(),
+                rho,
+                &mut rng,
+                NoteVersion::DEFAULT,
+            )
         } else {
             loop {
-                let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
+                let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), NoteVersion::DEFAULT);
                 if !sender_address.same_expanded_receiver(&output_note.recipient()) {
                     break output_note;
                 }
@@ -1550,21 +1556,18 @@ mod tests {
         let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let enable_spend = read_bool(&mut r);
         let enable_output = read_bool(&mut r);
-        let (cross_address_bit, protocol) = match encoding {
-            ProofFixtureEncoding::LegacyTwoFlags => (0, BundleProtocol::OrchardPreNu6_3),
+        let (cross_address_bit, format) = match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => (0, BundleFormat::PreNu6_3),
             ProofFixtureEncoding::PostNu6_3ThreeFlags => {
                 // The fixture stores the instance-level *disable* bit; the NU6.3 flag
                 // byte carries the *enable* bit, so invert when reconstructing.
                 let cross_address_disabled = read_bool(&mut r);
-                (
-                    u8::from(!cross_address_disabled) << 2,
-                    BundleProtocol::OrchardPostNu6_3,
-                )
+                (u8::from(!cross_address_disabled) << 2, BundleFormat::Nu6_3)
             }
         };
         let flags = Flags::from_byte(
             u8::from(enable_spend) | (u8::from(enable_output) << 1) | cross_address_bit,
-            protocol,
+            format,
         )
         .expect("test vectors use canonical flag encodings");
 
