@@ -340,7 +340,7 @@ mod tests {
 
     use crate::{
         builder::{Builder, BundleMetadata, BundleType},
-        bundle::{BundleFormat, Flags},
+        bundle::{BundleProtocol, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -382,8 +382,10 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
+            BundleProtocol::OrchardPostNu6_3,
             BundleType::Transactional {
-                flags: Flags::CROSS_ADDRESS_DISABLED,
+                spends_enabled: true,
+                outputs_enabled: true,
                 bundle_required: false,
             },
             anchor,
@@ -416,6 +418,7 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
+            BundleProtocol::OrchardPreNu6_3,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
@@ -445,6 +448,7 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
+            BundleProtocol::OrchardPreNu6_3,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
@@ -543,7 +547,8 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let mut builder = Builder::new(BundleType::DEFAULT, anchor);
+        let mut builder =
+            Builder::new(BundleProtocol::OrchardPreNu6_3, BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -666,7 +671,7 @@ mod tests {
             super::Bundle::parse(
                 vec![],
                 0b0000_0100,
-                BundleFormat::PreNu6_3,
+                BundleProtocol::OrchardPreNu6_3,
                 (0, false),
                 anchor.to_bytes(),
                 None,
@@ -678,7 +683,7 @@ mod tests {
         let parsed = super::Bundle::parse(
             vec![],
             0b0000_0100,
-            BundleFormat::Nu6_3,
+            BundleProtocol::OrchardPostNu6_3,
             (0, false),
             anchor.to_bytes(),
             None,
@@ -688,18 +693,18 @@ mod tests {
 
         assert!(parsed.flags().cross_address_enabled());
         assert_eq!(
-            parsed.flags().to_byte(BundleFormat::Nu6_3),
+            parsed.flags().to_byte(BundleProtocol::OrchardPostNu6_3),
             Some(0b0000_0100)
         );
         assert_eq!(
-            parsed.flags().to_byte(BundleFormat::PreNu6_3),
+            parsed.flags().to_byte(BundleProtocol::OrchardPreNu6_3),
             Some(0b0000_0000)
         );
 
         let restricted = super::Bundle::parse(
             vec![],
             0b0000_0011,
-            BundleFormat::Nu6_3,
+            BundleProtocol::OrchardPostNu6_3,
             (0, false),
             anchor.to_bytes(),
             None,
@@ -709,10 +714,13 @@ mod tests {
 
         assert!(!restricted.flags().cross_address_enabled());
         assert_eq!(
-            restricted.flags().to_byte(BundleFormat::Nu6_3),
+            restricted.flags().to_byte(BundleProtocol::OrchardPostNu6_3),
             Some(0b0000_0011)
         );
-        assert_eq!(restricted.flags().to_byte(BundleFormat::PreNu6_3), None);
+        assert_eq!(
+            restricted.flags().to_byte(BundleProtocol::OrchardPreNu6_3),
+            None
+        );
     }
 
     #[test]
@@ -818,8 +826,10 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
+            BundleProtocol::OrchardPostNu6_3,
             BundleType::Transactional {
-                flags: Flags::CROSS_ADDRESS_DISABLED,
+                spends_enabled: true,
+                outputs_enabled: true,
                 bundle_required: false,
             },
             anchor,
