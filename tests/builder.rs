@@ -3,7 +3,7 @@
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::{Authorized, Flags},
+    bundle::{Authorized, BundleProtocol, Flags},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
@@ -61,9 +61,13 @@ const SHIELDING: BundleType = BundleType::Transactional {
 
 /// Creates a builder of the given bundle type over the empty-tree anchor, with a
 /// single 5000-zat output to `recipient`.
-fn output_only_builder(bundle_type: BundleType, recipient: Address) -> Builder {
+fn output_only_builder(
+    protocol: BundleProtocol,
+    bundle_type: BundleType,
+    recipient: Address,
+) -> Builder {
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new(bundle_type, anchor);
+    let mut builder = Builder::new(protocol, bundle_type, anchor);
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
@@ -83,7 +87,7 @@ fn bundle_chain() {
 
     // Create a shielding bundle.
     let shielding_bundle: Bundle<_, i64> = {
-        let builder = output_only_builder(SHIELDING, recipient);
+        let builder = output_only_builder(BundleProtocol::OrchardPreNu6_3, SHIELDING, recipient);
         let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
 
         assert_eq!(
@@ -122,7 +126,11 @@ fn bundle_chain() {
         let cmx: ExtractedNoteCommitment = note.commitment().into();
         let (root, merkle_path) = single_leaf_witness(&cmx);
 
-        let mut builder = Builder::new(BundleType::DEFAULT, root.into());
+        let mut builder = Builder::new(
+            BundleProtocol::OrchardPreNu6_3,
+            BundleType::DEFAULT,
+            root.into(),
+        );
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
@@ -154,13 +162,7 @@ fn builder_builds_for_insecure_circuit_version() {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder =
-        Builder::new_for_version(SHIELDING, anchor, OrchardCircuitVersion::InsecurePreNu6_2);
-    assert_eq!(
-        builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
-        Ok(())
-    );
+    let builder = output_only_builder(BundleProtocol::OrchardPreNu6_2, SHIELDING, recipient);
 
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let sighash: [u8; 32] = unauthorized.commitment().into();

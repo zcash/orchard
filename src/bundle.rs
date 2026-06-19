@@ -32,7 +32,7 @@ use crate::{
 };
 
 #[cfg(feature = "circuit")]
-use crate::circuit::{Instance, VerifyingKey};
+use crate::circuit::{Instance, OrchardCircuitVersion, VerifyingKey};
 
 #[cfg(feature = "circuit")]
 impl<T> Action<T> {
@@ -49,6 +49,42 @@ impl<T> Action<T> {
             flags.outputs_enabled,
         )
         .expect("this Action's rk is non-identity by construction (Action::from_parts)")
+    }
+}
+
+/// Selects the protocol a bundle follows: a `(pool, era)` pair.
+///
+/// This is the single selector threaded through bundle construction. It currently pins the
+/// Action circuit version ([`circuit_version`](BundleProtocol::circuit_version)) used to build
+/// and verify the bundle's actions. The integration layer derives one `BundleProtocol` from the
+/// pool and the transaction's consensus branch and threads that single value into construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BundleProtocol {
+    /// The Orchard pool before NU6.2.
+    ///
+    /// Uses the insecure historical Orchard circuit. Used to reconstruct the historical
+    /// verifying key and to build/verify bundles against it (e.g. to reproduce pre-NU6.2 proofs
+    /// in tests), never to prove transactions for the network.
+    OrchardPreNu6_2,
+    /// The Orchard pool from NU6.2 until NU6.3.
+    ///
+    /// Uses the post-NU6.2 fixed Orchard circuit, used for all current proving and verification.
+    OrchardPreNu6_3,
+}
+
+impl BundleProtocol {
+    /// The circuit version whose proving and verifying keys prove and verify this protocol's
+    /// actions.
+    ///
+    /// Build a key with `ProvingKey::build(protocol.circuit_version())` /
+    /// `VerifyingKey::build(protocol.circuit_version())`.
+    #[cfg(feature = "circuit")]
+    pub fn circuit_version(self) -> OrchardCircuitVersion {
+        match self {
+            BundleProtocol::OrchardPreNu6_2 => OrchardCircuitVersion::InsecurePreNu6_2,
+            BundleProtocol::OrchardPreNu6_3 => OrchardCircuitVersion::FixedPostNu6_2,
+        }
     }
 }
 

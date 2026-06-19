@@ -7,6 +7,12 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::bundle::BundleProtocol`, the `(pool, era)` selector for an Orchard
+  bundle. It currently determines the Action circuit version
+  (`BundleProtocol::circuit_version`). Variants: `OrchardPreNu6_2` and
+  `OrchardPreNu6_3`.
+
 ### Changed
 - Key- and circuit-building APIs now take the intended `OrchardCircuitVersion`
   explicitly instead of implicitly selecting `FixedPostNu6_2` (pass
@@ -14,16 +20,25 @@ and this project adheres to Rust's notion of
   - `orchard::circuit::ProvingKey::build`
   - `orchard::circuit::VerifyingKey::build`
   - `orchard::circuit::Circuit::from_action_context`
+- Bundle construction now takes an `orchard::bundle::BundleProtocol` instead of
+  implicitly building the fixed circuit:
+  - `orchard::builder::Builder::new` takes the `BundleProtocol`, and
+    `Builder::build` derives the circuit version from it.
+  - `orchard::builder::bundle` takes the `BundleProtocol`.
 - `orchard::bundle::BatchValidator` binds its verifying key at construction:
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one.
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended
-  `OrchardCircuitVersion` to the plain APIs listed above instead:
+  `OrchardCircuitVersion` (keys/circuit) or `BundleProtocol` (construction) to
+  the plain APIs listed above instead:
   - `orchard::circuit::ProvingKey::build_for_version`
   - `orchard::circuit::VerifyingKey::build_for_version`
   - `orchard::circuit::Circuit::from_action_context_for_version`
+  - `orchard::builder::Builder::new_for_version` (use `Builder::new`, which now
+    takes the `BundleProtocol`)
+  - `orchard::builder::bundle_for_version`
 - The `Default` impls for `orchard::circuit::Circuit` and
   `orchard::circuit::OrchardCircuitVersion`; callers must choose a circuit
   version explicitly.
