@@ -41,52 +41,97 @@ pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
     /// irrespective of whether any genuine actions are required.
     Transactional {
-        /// The flags that control whether spends and/or outputs are enabled for the bundle.
-        flags: Flags,
+        /// Whether Orchard spends are enabled for the bundle.
+        spends_enabled: bool,
+        /// Whether Orchard outputs are enabled for the bundle.
+        outputs_enabled: bool,
         /// A flag that, when set to `true`, indicates that a bundle should be produced even if no
         /// spends or outputs have been added to the bundle; in such a circumstance, all of the
         /// actions in the resulting bundle will be dummies.
         bundle_required: bool,
     },
-    /// A coinbase bundle is required to have no non-dummy spends. No padding is performed.
+    /// A coinbase bundle disables nonzero Orchard spends, and is built with
+    /// [`Flags::SPENDS_DISABLED`]: spends disabled, outputs enabled, and
+    /// cross-address transfers enabled. No padding is performed.
+    ///
+    /// The cross-address restriction is not a useful way to express coinbase. An
+    /// Orchard action always has a spend half and an output half; with spends disabled,
+    /// the spend half is zero-valued dummy/fabricated spend data. If cross-address
+    /// transfers were also disabled, every output would need to be addressed to the
+    /// same expanded receiver as that dummy spend, so a coinbase bundle could not pay an
+    /// arbitrary recipient.
+    ///
+    /// Therefore coinbase bundles always enable cross-address transfers. Under NU6.3
+    /// encoding this sets bit 2; if the same flag byte is interpreted by a pre-NU6.3
+    /// parser, it is rejected as a nonzero reserved bit. Whether an Orchard-format
+    /// shielded coinbase bundle is permitted at all is a consensus rule outside this
+    /// crate, decided per pool: a pool may allow unrestricted bundles, while a pool
+    /// whose rules require the cross-address restriction on every bundle thereby
+    /// prohibits coinbase bundles entirely.
     Coinbase,
 }
 
 impl BundleType {
-    /// The default bundle type has all flags enabled, and does not require a bundle to be produced
-    /// if no spends or outputs have been added to the bundle.
+    /// The default bundle type enables spends and outputs, and does not require a bundle to be
+    /// produced if no spends or outputs have been added to the bundle. The builder defaults the
+    /// cross-address bit to the least-restrictive value the protocol's consensus rules permit:
+    /// enabled, unless consensus mandates the restriction.
     pub const DEFAULT: BundleType = BundleType::Transactional {
-        flags: Flags::ENABLED,
+        spends_enabled: true,
+        outputs_enabled: true,
         bundle_required: false,
     };
 
     /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
     /// builder will prevent any spends or outputs from being added.
     pub const DISABLED: BundleType = BundleType::Transactional {
-        flags: Flags::from_parts(false, false),
+        spends_enabled: false,
+        outputs_enabled: false,
         bundle_required: false,
     };
 
     /// Returns the number of logical actions that builder will produce in constructing a bundle
     /// of this type, given the specified numbers of spends and outputs.
     ///
+    /// For [`BundleType::Transactional`] bundles that disable cross-address transfers, a
+    /// requested spend and a requested output never share an
+    /// action (each is paired with a fabricated zero-value counterpart), so the number of
+    /// requested actions is `num_spends + num_outputs` rather than `max(num_spends, num_outputs)`.
+    /// Wallets estimating fees (e.g. per [ZIP 317]) must account for this larger action
+    /// count.
+    ///
     /// Returns an error if the specified number of spends and outputs is incompatible with
     /// this bundle type.
+    ///
+    /// [ZIP 317]: https://zips.z.cash/zip-0317
     pub fn num_actions(
         &self,
         num_spends: usize,
         num_outputs: usize,
+        protocol: BundleProtocol,
     ) -> Result<usize, &'static str> {
-        let num_requested_actions = core::cmp::max(num_spends, num_outputs);
-
         match self {
             BundleType::Transactional {
-                flags,
+                spends_enabled,
+                outputs_enabled,
                 bundle_required,
             } => {
-                if !flags.spends_enabled() && num_spends > 0 {
+                let cross_address_enabled = default_cross_address_enabled(protocol);
+                // When cross-address transfers are disabled, every action's output is
+                // addressed to the note it spends, so a requested spend and a requested
+                // output can never share an action: each is paired with a fabricated
+                // zero-value counterpart instead.
+                let num_requested_actions = if !cross_address_enabled {
+                    num_spends
+                        .checked_add(num_outputs)
+                        .ok_or("num_spends + num_outputs overflowed")?
+                } else {
+                    core::cmp::max(num_spends, num_outputs)
+                };
+
+                if !*spends_enabled && num_spends > 0 {
                     Err("Spends are disabled, so num_spends must be zero")
-                } else if !flags.outputs_enabled() && num_outputs > 0 {
+                } else if !*outputs_enabled && num_outputs > 0 {
                     Err("Outputs are disabled, so num_outputs must be zero")
                 } else {
                     Ok(if *bundle_required || num_requested_actions > 0 {
@@ -106,13 +151,32 @@ impl BundleType {
         }
     }
 
-    /// Returns the set of flags and the anchor that will be used for bundle construction.
-    pub fn flags(&self) -> Flags {
+    /// Returns the set of flags that will be used for bundle construction under `protocol`.
+    pub fn flags(&self, protocol: BundleProtocol) -> Flags {
         match self {
-            BundleType::Transactional { flags, .. } => *flags,
+            BundleType::Transactional {
+                spends_enabled,
+                outputs_enabled,
+                ..
+            } => Flags::from_parts_with_cross_address(
+                *spends_enabled,
+                *outputs_enabled,
+                default_cross_address_enabled(protocol),
+            ),
             BundleType::Coinbase => Flags::SPENDS_DISABLED,
         }
     }
+}
+
+/// The builder's prover-side default for `enableCrossAddress` under `protocol`.
+///
+/// Within what consensus permits, this crate emits the least-restrictive bundle: cross-address
+/// transfers stay enabled unless consensus mandates the restriction (see
+/// [`BundleProtocol::requires_cross_address_restriction`]). This is builder policy, not a protocol
+/// attribute; a future builder could expose the choice where consensus leaves it free (e.g.
+/// Ironwood). Coinbase handles its own flags (see [`BundleType::flags`]).
+fn default_cross_address_enabled(protocol: BundleProtocol) -> bool {
+    !protocol.requires_cross_address_restriction()
 }
 
 /// An error type for the kinds of errors that can occur during bundle construction.
@@ -600,7 +664,7 @@ impl Builder {
         note: Note,
         merkle_path: MerklePath,
     ) -> Result<(), SpendError> {
-        let flags = self.bundle_type.flags();
+        let flags = self.bundle_type.flags(self.protocol);
         if !flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
@@ -625,7 +689,7 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        let flags = self.bundle_type.flags();
+        let flags = self.bundle_type.flags(self.protocol);
         if !flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
@@ -701,6 +765,7 @@ impl Builder {
     ) -> Result<(crate::pczt::Bundle, BundleMetadata), BuildError> {
         build_bundle(
             rng,
+            self.protocol,
             self.anchor,
             self.bundle_type,
             self.spends,
@@ -746,6 +811,7 @@ pub fn bundle<V: TryFrom<i64>>(
     let circuit_version = protocol.circuit_version();
     build_bundle(
         rng,
+        protocol,
         anchor,
         bundle_type,
         spends,
@@ -821,13 +887,14 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
 
 fn build_bundle<B, R: RngCore>(
     mut rng: R,
+    protocol: BundleProtocol,
     anchor: Anchor,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     finisher: impl FnOnce(Vec<ActionInfo>, Flags, ValueSum, BundleMetadata, R) -> Result<B, BuildError>,
 ) -> Result<B, BuildError> {
-    let flags = bundle_type.flags();
+    let flags = bundle_type.flags(protocol);
 
     let num_requested_spends = spends.len();
     if !flags.spends_enabled() && num_requested_spends > 0 {
@@ -846,7 +913,7 @@ fn build_bundle<B, R: RngCore>(
     }
 
     let num_actions = bundle_type
-        .num_actions(num_requested_spends, num_requested_outputs)
+        .num_actions(num_requested_spends, num_requested_outputs, protocol)
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
     // Pair up the spends and outputs, extending with dummy values as necessary.

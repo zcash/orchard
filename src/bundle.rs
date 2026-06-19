@@ -130,6 +130,20 @@ impl BundleProtocol {
             }
         }
     }
+
+    /// Whether consensus *requires* transactional bundles under this protocol to disable
+    /// cross-address transfers (`enableCrossAddress = 0`).
+    ///
+    /// This is a verifier-side fact about the `(pool, era)`: `OrchardPostNu6_3` mandates the
+    /// restriction; every other protocol leaves the value free (consensus accepts either). It is
+    /// *not* the value the builder emits — that is a prover-side default chosen within this
+    /// constraint (see [`Builder`](crate::builder::Builder)). Coinbase bundles always keep
+    /// cross-address transfers enabled regardless of protocol (see [`BundleType::Coinbase`]).
+    ///
+    /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
+    pub(crate) fn requires_cross_address_restriction(self) -> bool {
+        matches!(self, BundleProtocol::OrchardPostNu6_3)
+    }
 }
 
 /// The transaction-format generation an Orchard bundle is encoded in: the era projection of
@@ -192,10 +206,19 @@ impl Flags {
     ///
     /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
     pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
+        Flags::from_parts_with_cross_address(spends_enabled, outputs_enabled, true)
+    }
+
+    /// Construct a set of flags from its constituent parts, including the cross-address bit.
+    pub(crate) const fn from_parts_with_cross_address(
+        spends_enabled: bool,
+        outputs_enabled: bool,
+        cross_address_enabled: bool,
+    ) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
-            cross_address_enabled: true,
+            cross_address_enabled,
         }
     }
 
@@ -1126,6 +1149,20 @@ pub(crate) mod tests {
             Flags::from_byte(0b011, BundleProtocol::IronwoodPostNu6_3),
             Some(Flags::CROSS_ADDRESS_DISABLED)
         );
+    }
+
+    #[test]
+    fn only_orchard_post_nu6_3_requires_the_cross_address_restriction() {
+        // Consensus mandates the restriction only for the Orchard pool at NU6.3; every other
+        // protocol leaves the choice free (the builder then applies its prover-side default).
+        assert!(BundleProtocol::OrchardPostNu6_3.requires_cross_address_restriction());
+        for protocol in [
+            BundleProtocol::OrchardPreNu6_2,
+            BundleProtocol::OrchardPreNu6_3,
+            BundleProtocol::IronwoodPostNu6_3,
+        ] {
+            assert!(!protocol.requires_cross_address_restriction());
+        }
     }
 
     #[test]

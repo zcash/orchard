@@ -3,7 +3,7 @@
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::{Authorized, BundleProtocol, Flags},
+    bundle::{Authorized, BundleProtocol},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
@@ -55,7 +55,8 @@ fn single_leaf_witness(cmx: &ExtractedNoteCommitment) -> (MerkleHashOrchard, Mer
 
 /// The output-only bundle type used by the shielding steps of these tests.
 const SHIELDING: BundleType = BundleType::Transactional {
-    flags: Flags::SPENDS_DISABLED,
+    spends_enabled: false,
+    outputs_enabled: true,
     bundle_required: false,
 };
 
