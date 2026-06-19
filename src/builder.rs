@@ -8,6 +8,7 @@ use core::iter;
 use ff::Field;
 use pasta_curves::pallas;
 use rand::{prelude::SliceRandom, CryptoRng, RngCore};
+use zcash_note_encryption::ENC_CIPHERTEXT_SIZE;
 
 use crate::{
     address::Address,
@@ -434,6 +435,14 @@ pub struct OutputInfo {
     value: NoteValue,
     memo: [u8; 512],
     note_version: NoteVersion,
+    /// When set, `build` fills `enc_ciphertext` with random bytes instead of encrypting the
+    /// note to `recipient`. This is used only for the zero-value output the restricted
+    /// (cross-address-disabled) builder pairs with a real spend, which is addressed to the
+    /// spent note's own receiver. A real ciphertext there would trial-decrypt under that
+    /// receiver's incoming viewing key in the same action that carries the spend's nullifier,
+    /// letting anyone who holds the ivk -- including a quantum adversary who recovered it from
+    /// the published address -- detect the spend. The note and its commitment are unchanged.
+    randomized_ciphertext: bool,
 }
 
 impl OutputInfo {
@@ -451,6 +460,22 @@ impl OutputInfo {
             value,
             memo,
             note_version,
+            randomized_ciphertext: false,
+        }
+    }
+
+    /// Constructs the zero-value output the restricted builder pairs with a real spend.
+    ///
+    /// `recipient` is the spent note's own receiver, so the output's `enc_ciphertext` is
+    /// randomized rather than encrypted to it (see the `randomized_ciphertext` field).
+    fn fabricated_for_spend(recipient: Address, note_version: NoteVersion) -> Self {
+        Self {
+            ovk: None,
+            recipient,
+            value: NoteValue::ZERO,
+            memo: [0u8; 512],
+            note_version,
+            randomized_ciphertext: true,
         }
     }
 
@@ -482,9 +507,24 @@ impl OutputInfo {
 
         let encryptor = OrchardNoteEncryption::new(self.ovk.clone(), note, self.memo);
 
+        // `encryptor` still supplies a valid non-identity `epk` and, because these outputs use
+        // `ovk = None`, a random `out_ciphertext`. Only `enc_ciphertext` is replaced.
+        let enc_ciphertext = if self.randomized_ciphertext {
+            assert_eq!(
+                self.value,
+                NoteValue::ZERO,
+                "a randomized note ciphertext must never stand in for a nonzero-value note",
+            );
+            let mut enc_ciphertext = [0u8; ENC_CIPHERTEXT_SIZE];
+            rng.fill_bytes(&mut enc_ciphertext);
+            enc_ciphertext
+        } else {
+            encryptor.encrypt_note_plaintext()
+        };
+
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: encryptor.epk().to_bytes().0,
-            enc_ciphertext: encryptor.encrypt_note_plaintext(),
+            enc_ciphertext,
             out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, &cmx, &mut rng),
         };
 
@@ -759,10 +799,11 @@ impl Builder {
     /// the given note.
     ///
     /// In a bundle that disables cross-address transfers, each spend is paired with a
-    /// fabricated zero-value output encrypted to the spent note's own address. The
-    /// wallet that owns the spent note **will** trial-decrypt that output when scanning
-    /// the chain, as a zero-value note with an all-zero memo field; wallets should
-    /// expect and tolerate these notes.
+    /// fabricated zero-value output addressed to the spent note's own receiver. That output's
+    /// note ciphertext is randomized rather than encrypted to the receiver, so it is
+    /// undecryptable: the owning wallet does not see it when scanning, and no holder of the
+    /// receiver's incoming viewing key -- including a quantum adversary who recovered it from
+    /// the published address -- can use it to detect the spend.
     ///
     /// [`OrchardDomain`]: crate::note_encryption::OrchardDomain
     /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
@@ -1219,13 +1260,7 @@ fn build_bundle<B, R: RngCore>(
         let mut pairs = Vec::with_capacity(num_actions);
 
         for (spend_idx, spend) in spends.into_iter().enumerate() {
-            let output = OutputInfo::new(
-                None,
-                spend.note.recipient(),
-                NoteValue::ZERO,
-                [0u8; 512],
-                note_version,
-            );
+            let output = OutputInfo::fabricated_for_spend(spend.note.recipient(), note_version);
             pairs.push((Some(spend_idx), None, spend, output));
         }
 

@@ -105,9 +105,11 @@ serialize.
   `validate` returning `false`.
 - `orchard::builder::Builder` constructs bundles that disable cross-address
   transfers as withdrawal/change bundles in which every action's output is
-  addressed to the expanded receiver of the note it spends. Fabricated zero-value
-  outputs are addressed there too, so the owning wallet trial-decrypts them
-  when scanning.
+  addressed to the expanded receiver of the note it spends. The fabricated
+  zero-value output paired with each real spend carries a randomized,
+  undecryptable note ciphertext rather than one encrypted to the spent note's
+  receiver, so neither the owning wallet nor a holder of that receiver's
+  incoming viewing key can use it to detect the spend.
   - `Builder::add_output` returns `OutputError::CrossAddressDisabled` for
     these bundles; use `Builder::add_change_output` for retained value, which
     rejects a recipient not owned by the full viewing key

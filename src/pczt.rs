@@ -237,7 +237,9 @@ pub struct Output {
     /// - This is required by the Prover.
     /// - The Signer can use `recipient` and `rseed` (if present) to verify that
     ///   `enc_ciphertext` is correctly encrypted (and contains a note plaintext matching
-    ///   the public commitments), and to confirm the value of the memo.
+    ///   the public commitments), and to confirm the value of the memo. This does not apply
+    ///   to the restricted builder's zero-value output paired with a real spend, whose
+    ///   `enc_ciphertext` is deliberately randomized; its note commitment remains verifiable.
     pub(crate) recipient: Option<Address>,
 
     /// The value of the output.
@@ -255,7 +257,9 @@ pub struct Output {
     /// - This is required by the Prover.
     /// - The Signer can use `recipient` and `rseed` (if present) to verify that
     ///   `enc_ciphertext` is correctly encrypted (and contains a note plaintext matching
-    ///   the public commitments), and to confirm the value of the memo.
+    ///   the public commitments), and to confirm the value of the memo. This does not apply
+    ///   to the restricted builder's zero-value output paired with a real spend, whose
+    ///   `enc_ciphertext` is deliberately randomized; its note commitment remains verifiable.
     pub(crate) rseed: Option<RandomSeed>,
 
     /// The note plaintext version for the output.
