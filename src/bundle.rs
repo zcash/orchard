@@ -79,9 +79,9 @@ impl<T> Action<T> {
 /// the correct format itself — the disambiguating fact lives in the caller. The safe discipline
 /// is therefore:
 ///
-/// - Derive the `BundleFormat` **once**, from the transaction's consensus branch, at the
-///   boundary where this crate is integrated (e.g. in `zcash_primitives`): transactions before
-///   NU6.3 use [`PreNu6_3`], NU6.3 and later use [`Nu6_3`].
+/// - Derive the `BundleFormat` **once**, from the concrete transaction or PCZT encoding
+///   version at the boundary where this crate is integrated (e.g. in `zcash_primitives`).
+///   Legacy v5 encodings use [`PreNu6_3`], while v6 encodings use [`Nu6_3`].
 /// - Thread that single value into every format-taking method for the bundle, rather than
 ///   recomputing or hardcoding it per call site.
 ///
@@ -94,21 +94,6 @@ pub enum BundleFormat {
     PreNu6_3,
     /// NU6.3 transaction formats, where bit 2 is `enableCrossAddress`.
     Nu6_3,
-}
-
-/// Selects whether a builder creates a transaction bundle or a coinbase bundle.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BundleKind {
-    /// A normal transaction bundle.
-    ///
-    /// Transaction bundles use the flags implied by the selected protocol and
-    /// are padded to at least two actions when nonempty.
-    Transaction,
-    /// A shielded coinbase bundle.
-    ///
-    /// Coinbase bundles disable spends, contain exactly the outputs added, and
-    /// are not padded to the transaction minimum action count.
-    Coinbase,
 }
 
 /// Selects the valid protocol and pool combination for a bundle.
@@ -168,7 +153,7 @@ impl BundleProtocol {
 
 impl BundleProtocol {
     /// Returns the [`BundleFormat`] for this protocol.
-    pub const fn bundle_format(self) -> BundleFormat {
+    pub(crate) const fn bundle_format(self) -> BundleFormat {
         match self {
             BundleProtocol::OrchardPreNu6_2 | BundleProtocol::OrchardPreNu6_3 => {
                 BundleFormat::PreNu6_3
@@ -176,16 +161,6 @@ impl BundleProtocol {
             BundleProtocol::OrchardPostNu6_3 | BundleProtocol::IronwoodPostNu6_3 => {
                 BundleFormat::Nu6_3
             }
-        }
-    }
-
-    /// Returns the transaction [`Flags`] for this protocol.
-    pub fn transaction_flags(self) -> Flags {
-        match self {
-            BundleProtocol::OrchardPostNu6_3 => Flags::CROSS_ADDRESS_DISABLED,
-            BundleProtocol::OrchardPreNu6_2
-            | BundleProtocol::OrchardPreNu6_3
-            | BundleProtocol::IronwoodPostNu6_3 => Flags::ENABLED,
         }
     }
 
@@ -201,104 +176,12 @@ impl BundleProtocol {
         }
     }
 
-    /// Returns the number of actions that [`Builder::new`] will produce for the
-    /// selected bundle kind with the specified numbers of spends and outputs.
-    ///
-    /// For [`BundleKind::Coinbase`], `num_spends` must be zero and the returned
-    /// count is exactly `num_outputs`.
-    ///
-    /// [`Builder::new`]: crate::builder::Builder::new
-    pub fn action_count(
-        self,
-        kind: BundleKind,
-        num_spends: usize,
-        num_outputs: usize,
-    ) -> Result<usize, BundleActionCountError> {
-        kind.bundle_type(self).num_actions(num_spends, num_outputs)
-    }
-
-    /// Compatibility alias for [`BundleProtocol::action_count`].
-    pub fn num_actions(
-        self,
-        kind: BundleKind,
-        num_spends: usize,
-        num_outputs: usize,
-    ) -> Result<usize, BundleActionCountError> {
-        self.action_count(kind, num_spends, num_outputs)
-    }
-
-    /// Returns the number of actions that [`Builder::new`] will produce for a
-    /// transactional bundle with the specified numbers of spends and outputs.
-    ///
-    /// [`Builder::new`]: crate::builder::Builder::new
-    pub fn transactional_action_count(
-        self,
-        num_spends: usize,
-        num_outputs: usize,
-    ) -> Result<usize, BundleActionCountError> {
-        crate::builder::BundleType::Transactional {
-            flags: self.transaction_flags(),
-            bundle_required: false,
-        }
-        .num_actions(num_spends, num_outputs)
-    }
-
-    /// Returns the number of actions that [`Builder::new_coinbase`] will produce
-    /// after adding `num_outputs` outputs.
-    ///
-    /// [`Builder::new_coinbase`]: crate::builder::Builder::new_coinbase
-    pub fn coinbase_action_count(self, num_outputs: usize) -> usize {
-        let _ = self;
-        num_outputs
+    /// Whether consensus requires transactional bundles under this protocol to disable
+    /// cross-address transfers (`enableCrossAddress = 0`).
+    pub(crate) fn requires_cross_address_restriction(self) -> bool {
+        matches!(self, BundleProtocol::OrchardPostNu6_3)
     }
 }
-
-impl BundleKind {
-    pub(crate) fn bundle_type(self, protocol: BundleProtocol) -> crate::builder::BundleType {
-        match self {
-            BundleKind::Transaction => crate::builder::BundleType::Transactional {
-                flags: protocol.transaction_flags(),
-                bundle_required: false,
-            },
-            BundleKind::Coinbase => crate::builder::BundleType::Coinbase,
-        }
-    }
-}
-
-/// Errors that can occur when computing the number of actions for a bundle.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BundleActionCountError {
-    /// The requested spend and output counts overflowed `usize`.
-    InputCountOverflow,
-    /// Spends are disabled, so `num_spends` must be zero.
-    SpendsDisabled,
-    /// Outputs are disabled, so `num_outputs` must be zero.
-    OutputsDisabled,
-}
-
-impl BundleActionCountError {
-    /// Returns a stable message for this error.
-    pub const fn as_static_str(self) -> &'static str {
-        match self {
-            BundleActionCountError::InputCountOverflow => "num_spends + num_outputs overflowed",
-            BundleActionCountError::SpendsDisabled => {
-                "Spends are disabled, so num_spends must be zero"
-            }
-            BundleActionCountError::OutputsDisabled => {
-                "Outputs are disabled, so num_outputs must be zero"
-            }
-        }
-    }
-}
-
-impl fmt::Display for BundleActionCountError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_static_str())
-    }
-}
-
-#[cfg(feature = "std")]
-impl std::error::Error for BundleActionCountError {}
 
 /// Orchard-specific flags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -350,6 +233,18 @@ impl Flags {
             spends_enabled,
             outputs_enabled,
             cross_address_enabled: true,
+        }
+    }
+
+    pub(crate) const fn from_parts_with_cross_address(
+        spends_enabled: bool,
+        outputs_enabled: bool,
+        cross_address_enabled: bool,
+    ) -> Self {
+        Flags {
+            spends_enabled,
+            outputs_enabled,
+            cross_address_enabled,
         }
     }
 
@@ -781,15 +676,6 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
             .ok_or(CommitmentError::UnrepresentableFlags)
     }
 
-    /// Computes a transaction commitment to the effects of this bundle for the
-    /// specified [`BundleProtocol`].
-    pub fn commitment_for_protocol(
-        &self,
-        protocol: BundleProtocol,
-    ) -> Result<BundleCommitment, CommitmentError> {
-        self.commitment_for_domain(BundleCommitmentDomain::transaction(protocol))
-    }
-
     /// Computes a commitment to the effects of this bundle under the specified
     /// bundle commitment domain.
     pub fn commitment_for_domain(
@@ -978,15 +864,6 @@ impl<V> Bundle<Authorized, V> {
     /// This together with `Bundle::commitment` bind the entire bundle.
     pub fn authorizing_commitment(&self) -> BundleAuthorizingCommitment {
         BundleAuthorizingCommitment(hash_bundle_auth_data(self))
-    }
-
-    /// Computes a transaction commitment to the authorizing data within this
-    /// bundle for the specified [`BundleProtocol`].
-    pub fn authorizing_commitment_for_protocol(
-        &self,
-        protocol: BundleProtocol,
-    ) -> BundleAuthorizingCommitment {
-        self.authorizing_commitment_for_domain(BundleCommitmentDomain::transaction(protocol))
     }
 
     /// Computes a commitment to the authorizing data within this bundle under
@@ -1244,8 +1121,7 @@ pub(crate) mod tests {
 
     use super::testing::{arb_bundle, arb_flags_nu6_3};
     use super::{
-        Authorized, Bundle, BundleActionCountError, BundleError, BundleFormat, BundleKind,
-        BundleProtocol, CommitmentError, Flags,
+        Authorized, Bundle, BundleError, BundleFormat, BundleProtocol, CommitmentError, Flags,
     };
     use crate::Proof;
 
@@ -1332,14 +1208,8 @@ pub(crate) mod tests {
             BundleFormat::Nu6_3
         );
 
-        assert_eq!(
-            BundleProtocol::OrchardPostNu6_3.transaction_flags(),
-            Flags::CROSS_ADDRESS_DISABLED
-        );
-        assert_eq!(
-            BundleProtocol::IronwoodPostNu6_3.transaction_flags(),
-            Flags::ENABLED
-        );
+        assert!(BundleProtocol::OrchardPostNu6_3.requires_cross_address_restriction());
+        assert!(!BundleProtocol::IronwoodPostNu6_3.requires_cross_address_restriction());
 
         assert_eq!(
             BundleProtocol::OrchardPostNu6_3.default_note_version(),
@@ -1348,26 +1218,6 @@ pub(crate) mod tests {
         assert_eq!(
             BundleProtocol::IronwoodPostNu6_3.default_note_version(),
             crate::note::NoteVersion::V3
-        );
-    }
-
-    #[test]
-    fn protocol_action_count_respects_bundle_kind() {
-        assert_eq!(
-            BundleProtocol::OrchardPostNu6_3.action_count(BundleKind::Transaction, 2, 1),
-            Ok(3)
-        );
-        assert_eq!(
-            BundleProtocol::IronwoodPostNu6_3.action_count(BundleKind::Transaction, 3, 2),
-            Ok(3)
-        );
-        assert_eq!(
-            BundleProtocol::IronwoodPostNu6_3.action_count(BundleKind::Coinbase, 0, 1),
-            Ok(1)
-        );
-        assert_eq!(
-            BundleProtocol::IronwoodPostNu6_3.action_count(BundleKind::Coinbase, 1, 1),
-            Err(BundleActionCountError::SpendsDisabled)
         );
     }
 

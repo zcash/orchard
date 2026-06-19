@@ -348,8 +348,8 @@ mod tests {
     use shardtree::{store::memory::MemoryShardStore, ShardTree};
 
     use crate::{
-        builder::{Builder, BundleMetadata},
-        bundle::{BundleFormat, BundleKind, BundleProtocol, Flags},
+        builder::{Builder, BundleMetadata, BundleType},
+        bundle::{BundleFormat, BundleProtocol, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -397,8 +397,8 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             anchor,
         );
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
@@ -429,8 +429,8 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPreNu6_3,
+            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
@@ -459,8 +459,8 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPreNu6_3,
+            BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
         builder
@@ -563,11 +563,8 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let mut builder = Builder::new(
-            BundleKind::Transaction,
-            BundleProtocol::OrchardPreNu6_3,
-            anchor,
-        );
+        let mut builder =
+            Builder::new(BundleProtocol::OrchardPreNu6_3, BundleType::DEFAULT, anchor);
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -848,8 +845,8 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
-            BundleKind::Transaction,
             BundleProtocol::OrchardPostNu6_3,
+            BundleType::DEFAULT,
             anchor,
         );
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();

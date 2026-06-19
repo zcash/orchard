@@ -2,7 +2,7 @@
 
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
 
-use crate::bundle::{Authorization, Authorized, Bundle, BundleFormat, BundleProtocol};
+use crate::bundle::{Authorization, Authorized, Bundle, BundleFormat};
 
 const ZCASH_ORCHARD_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrchardHash";
 const ZCASH_ORCHARD_V6_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrchardH_v6";
@@ -109,22 +109,6 @@ impl BundleCommitmentDomain {
         effects_anchor: AnchorCommitment::Omit,
         auth_anchor: AnchorCommitment::Include,
     };
-
-    /// Constructs the transaction commitment domain for the provided
-    /// [`BundleProtocol`].
-    ///
-    /// This selects the personalization strings, flag-byte format, and anchor
-    /// placement used by the transaction identifier and authorizing digest for
-    /// `protocol`.
-    pub const fn transaction(protocol: BundleProtocol) -> Self {
-        match protocol {
-            BundleProtocol::OrchardPreNu6_2 | BundleProtocol::OrchardPreNu6_3 => {
-                Self::ORCHARD_V5_PRE_NU6_3
-            }
-            BundleProtocol::OrchardPostNu6_3 => Self::ORCHARD_V6,
-            BundleProtocol::IronwoodPostNu6_3 => Self::IRONWOOD_V6,
-        }
-    }
 }
 
 fn hasher(personal: &[u8; 16]) -> State {
