@@ -27,11 +27,21 @@ and this project adheres to Rust's notion of
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
   - `orchard::circuit::VerifyingKey::circuit_version`
   - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
+- Wallet-controlled change outputs, the only way to retain shielded value in
+  a bundle that disables cross-address transfers:
+  - `orchard::builder::Builder::add_change_output`
+  - `orchard::builder::Builder::changes`
+  - `orchard::builder::ChangeInfo` and `orchard::builder::ChangeInfo::new`, the
+    change-output counterpart of `OutputInfo`, recording the full viewing key
+    that owns the recipient (validated on construction) so the builder can
+    fabricate the paired same-expanded-receiver spend.
 - `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers
   can check the cross-address restriction's same-expanded-receiver structural property
   before signing. It is a no-op for bundles that permit cross-address
   transfers.
-- Error variants for PCZT cross-address structural checks:
+- Error variants for the cross-address builder and PCZT checks:
+  - `orchard::builder::BuildError::CrossAddressDisabled`
+  - `orchard::builder::OutputError::{CrossAddressDisabled, SpendsDisabled, RecipientNotOwned}`
   - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
   - `orchard::pczt::ProverError::{DisallowedCrossAddressTransfer, CrossAddressRestriction}`
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
@@ -82,6 +92,28 @@ and this project adheres to Rust's notion of
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one. `BatchValidator::add_bundle`
   now returns `Result<(), orchard::bundle::BatchError>`.
+- `orchard::builder::Builder` constructs bundles that disable cross-address
+  transfers as withdrawal/change bundles in which every action's output is
+  addressed to the expanded receiver of the note it spends. The fabricated
+  zero-value output paired with each real spend carries a randomized,
+  undecryptable note ciphertext rather than one encrypted to the spent note's
+  receiver, so neither the owning wallet nor a holder of that receiver's
+  incoming viewing key can use it to detect the spend.
+  - `Builder::add_output` returns `OutputError::CrossAddressDisabled` for
+    these bundles; use `Builder::add_change_output` for retained value, which
+    rejects a recipient not owned by the full viewing key
+    (`OutputError::RecipientNotOwned`) and, in a restricted bundle, requires
+    spends to be enabled (`OutputError::SpendsDisabled`).
+  - `orchard::builder::bundle` takes the change outputs as a separate
+    `changes: Vec<ChangeInfo>` argument (plain `outputs` and wallet-controlled
+    `changes` are distinct), and `orchard::builder::BundleMetadata` numbers
+    requested outputs as the plain outputs followed by the change outputs.
+  - `orchard::builder::BundleType::num_actions` counts
+    `num_spends + num_outputs` requested actions rather than the maximum of
+    the two (a requested spend and a requested output never share an action),
+    and `orchard::builder::BundleMetadata` maps them to distinct actions.
+    Wallets estimating fees (e.g. per ZIP 317) must account for the larger
+    action count.
 - `orchard::pczt::Bundle::create_proof` checks the cross-address restriction's
   same-expanded-receiver property, returning
   `ProverError::DisallowedCrossAddressTransfer` (or
