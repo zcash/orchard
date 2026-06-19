@@ -21,7 +21,10 @@ use memuse::DynamicUsage;
 use crate::{
     action::Action,
     address::Address,
-    bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
+    bundle::commitments::{
+        hash_bundle_auth_data, hash_bundle_auth_data_with_domain, hash_bundle_txid_data,
+        hash_bundle_txid_data_with_domain, BundleCommitmentDomain,
+    },
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::Note,
     note_encryption::OrchardDomain,
@@ -32,7 +35,7 @@ use crate::{
 };
 
 #[cfg(feature = "circuit")]
-use crate::circuit::{Instance, OrchardCircuitVersion, VerifyingKey};
+use crate::circuit::{Instance, VerifyingKey};
 
 #[cfg(feature = "circuit")]
 impl<T> Action<T> {
@@ -51,85 +54,121 @@ impl<T> Action<T> {
     }
 }
 
-/// Selects the protocol a bundle follows: a `(pool, era)` pair.
+/// The transaction-format generation an Orchard bundle is encoded in.
 ///
-/// This is the single selector threaded through bundle construction and wire encoding. It pins
-/// the facts a `(pool, era)` determines — the circuit version (`circuit_version`) and the
-/// flag-byte format — and surfaces the consensus *cross-address constraint*
-/// (`requires_cross_address_restriction`): whether the era forbids cross-address transfers or
-/// leaves the choice free. The `enableCrossAddress` value the builder actually emits is a
-/// prover-side default derived from that constraint (see [`Builder`](crate::builder::Builder)),
-/// not a protocol attribute. The integration layer derives one `BundleProtocol` from the pool
-/// and the transaction's consensus branch and threads that single value into every construction
-/// and codec method for the bundle.
+/// This determines how the bundle's flag byte is interpreted, which changes at the
+/// NU6.3 network upgrade. In pre-NU6.3 transaction formats, bit 2 is a reserved zero
+/// bit and cross-address transfers are implicitly enabled. In NU6.3 transaction
+/// formats, bit 2 is the `enableCrossAddress` flag.
 ///
-/// # Choosing the correct protocol
+/// # Choosing the correct format
+///
+/// A flag byte with bit 2 *clear* is valid in **both** generations but means **opposite**
+/// things: under [`PreNu6_3`] it denotes an unrestricted bundle (cross-address transfers
+/// implicitly enabled), while under [`Nu6_3`] it denotes a restricted bundle
+/// (`enableCrossAddress` clear, cross-address transfers disabled). Decoding such a byte
+/// under the wrong generation therefore *silently* produces the wrong [`Flags`] — there is
+/// no error to catch the mistake.
+///
+/// The producing direction is guarded: [`Flags::to_byte`] and [`Bundle::commitment`] refuse
+/// to encode a restricted bundle under [`PreNu6_3`] (returning `None` / an error). The silent
+/// hazard is entirely on the **consuming** side, when parsing a flag byte under the wrong
+/// generation ([`Flags::from_byte`], [`crate::pczt::Bundle::parse`]).
 ///
 /// This crate has no concept of consensus branches or activation heights, so it cannot derive
-/// the protocol itself — the disambiguating fact lives in the caller. A flag byte with bit 2
-/// *clear* is valid in multiple eras but means **opposite** things (cross-address implicitly
-/// enabled before NU6.3, disabled at/after it), so passing the wrong protocol to
-/// [`Flags::from_byte`] / [`crate::pczt::Bundle::parse`] still *silently* mis-decodes the flags.
-/// `BundleProtocol` **reduces** that hazard — one richly-typed value derived once, instead of an
-/// independently-threaded circuit version and flag format that can disagree — but does not
-/// eliminate it.
+/// the correct format itself — the disambiguating fact lives in the caller. The safe discipline
+/// is therefore:
 ///
-/// [`Flags::from_byte`]: Flags::from_byte
+/// - Derive the `BundleFormat` **once**, from the transaction's consensus branch, at the
+///   boundary where this crate is integrated (e.g. in `zcash_primitives`): transactions before
+///   NU6.3 use [`PreNu6_3`], NU6.3 and later use [`Nu6_3`].
+/// - Thread that single value into every format-taking method for the bundle, rather than
+///   recomputing or hardcoding it per call site.
+///
+/// [`PreNu6_3`]: BundleFormat::PreNu6_3
+/// [`Nu6_3`]: BundleFormat::Nu6_3
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
+pub enum BundleFormat {
+    /// Transaction formats before NU6.3, where bit 2 of the flag byte is reserved.
+    PreNu6_3,
+    /// NU6.3 transaction formats, where bit 2 is `enableCrossAddress`.
+    Nu6_3,
+}
+
+/// Selects whether a builder creates a transaction bundle or a coinbase bundle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BundleKind {
+    /// A normal transaction bundle.
+    ///
+    /// Transaction bundles use the flags implied by the selected protocol and
+    /// are padded to at least two actions when nonempty.
+    Transaction,
+    /// A shielded coinbase bundle.
+    ///
+    /// Coinbase bundles disable spends, contain exactly the outputs added, and
+    /// are not padded to the transaction minimum action count.
+    Coinbase,
+}
+
+/// Selects the valid protocol and pool combination for a bundle.
+///
+/// Encodes the correlated choices a caller would otherwise have to pass
+/// separately: pool, circuit version, flag-byte format, default note version,
+/// and the cross-address policy for transaction bundles.
+///
+/// Coinbase bundles use the protocol for circuit selection and default note
+/// version. Their flags are fixed to spends disabled, outputs enabled, and
+/// cross-address transfers enabled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BundleProtocol {
     /// The Orchard pool before NU6.2.
     ///
-    /// Uses the insecure historical Orchard circuit and the pre-NU6.3 flag-byte format.
-    /// Cross-address transfers are permitted and notes use the V2 plaintext format. Used to
-    /// reconstruct the historical verifying key and to parse/verify historical bundles, not to
-    /// build new ones.
+    /// Uses the insecure historical Orchard circuit and pre-NU6.3 flag-byte format.
+    /// Cross-address transfers are permitted and notes use the V2 plaintext format.
     OrchardPreNu6_2,
     /// The Orchard pool from NU6.2 until NU6.3.
     ///
-    /// Uses the post-NU6.2 fixed Orchard circuit and the pre-NU6.3 flag-byte format.
+    /// Uses the post-NU6.2 fixed Orchard circuit and pre-NU6.3 flag-byte format.
     /// Cross-address transfers are permitted and notes use the V2 plaintext format.
     OrchardPreNu6_3,
-    /// The Orchard pool at NU6.3 and later.
+    /// The Orchard pool at NU6.3+.
     ///
-    /// Uses the post-NU6.3 circuit and the NU6.3 flag-byte format. For transactional bundles
-    /// `enableCrossAddress = 0` is required by consensus, so cross-address transfers are
-    /// prohibited; coinbase bundles keep them enabled. Notes use V2 plaintexts.
+    /// Uses the post-NU6.3 circuit and NU6.3 flag-byte format. For transactional
+    /// bundles, `enableCrossAddress = 0` is required by consensus, so
+    /// cross-address transfers are prohibited. Notes use V2 plaintexts.
     OrchardPostNu6_3,
-    /// The Ironwood pool at NU6.3 and later.
+    /// The Ironwood pool at NU6.3+.
     ///
-    /// Uses the post-NU6.3 circuit (shared with [`OrchardPostNu6_3`]) and the NU6.3 flag-byte
-    /// format. Consensus permits either `enableCrossAddress` value here, so this crate's builder
-    /// applies its prover-side default and currently constructs Ironwood bundles with
-    /// `enableCrossAddress = 1`; the NU6.3 flag encoding still represents `enableCrossAddress = 0`
-    /// if a future builder policy chooses to expose it. Ironwood notes are intended to use V3
-    /// quantum-recoverable plaintexts, which are not yet implemented — bundles built under this
-    /// protocol currently use V2 plaintexts.
-    ///
-    /// [`OrchardPostNu6_3`]: BundleProtocol::OrchardPostNu6_3
+    /// Uses the post-NU6.3 circuit and NU6.3 flag-byte format. Transactional
+    /// bundles enable cross-address transfers. Notes use V3 quantum-recoverable
+    /// plaintexts.
     IronwoodPostNu6_3,
 }
 
+#[cfg(feature = "circuit")]
 impl BundleProtocol {
-    /// The circuit version whose proving and verifying keys prove and verify this protocol's
-    /// actions.
+    /// Returns the [`OrchardCircuitVersion`] for this protocol.
     ///
-    /// This is many-to-one: `OrchardPostNu6_3` and `IronwoodPostNu6_3` share the post-NU6.3
-    /// circuit, so build a key with `ProvingKey::build(protocol.circuit_version())` /
-    /// `VerifyingKey::build(protocol.circuit_version())`.
-    #[cfg(feature = "circuit")]
-    pub fn circuit_version(self) -> OrchardCircuitVersion {
+    /// [`OrchardCircuitVersion`]: crate::circuit::OrchardCircuitVersion
+    pub fn circuit_version(self) -> crate::circuit::OrchardCircuitVersion {
         match self {
-            BundleProtocol::OrchardPreNu6_2 => OrchardCircuitVersion::InsecurePreNu6_2,
-            BundleProtocol::OrchardPreNu6_3 => OrchardCircuitVersion::FixedPostNu6_2,
+            BundleProtocol::OrchardPreNu6_2 => {
+                crate::circuit::OrchardCircuitVersion::InsecurePreNu6_2
+            }
+            BundleProtocol::OrchardPreNu6_3 => {
+                crate::circuit::OrchardCircuitVersion::FixedPostNu6_2
+            }
             BundleProtocol::OrchardPostNu6_3 | BundleProtocol::IronwoodPostNu6_3 => {
-                OrchardCircuitVersion::PostNu6_3
+                crate::circuit::OrchardCircuitVersion::PostNu6_3
             }
         }
     }
+}
 
-    /// The transaction-format generation this protocol encodes its flag byte in.
-    pub(crate) fn bundle_format(self) -> BundleFormat {
+impl BundleProtocol {
+    /// Returns the [`BundleFormat`] for this protocol.
+    pub const fn bundle_format(self) -> BundleFormat {
         match self {
             BundleProtocol::OrchardPreNu6_2 | BundleProtocol::OrchardPreNu6_3 => {
                 BundleFormat::PreNu6_3
@@ -140,34 +179,126 @@ impl BundleProtocol {
         }
     }
 
-    /// Whether consensus *requires* transactional bundles under this protocol to disable
-    /// cross-address transfers (`enableCrossAddress = 0`).
+    /// Returns the transaction [`Flags`] for this protocol.
+    pub fn transaction_flags(self) -> Flags {
+        match self {
+            BundleProtocol::OrchardPostNu6_3 => Flags::CROSS_ADDRESS_DISABLED,
+            BundleProtocol::OrchardPreNu6_2
+            | BundleProtocol::OrchardPreNu6_3
+            | BundleProtocol::IronwoodPostNu6_3 => Flags::ENABLED,
+        }
+    }
+
+    /// Returns the default [`NoteVersion`] for notes created in this protocol.
     ///
-    /// This is a verifier-side fact about the `(pool, era)`: `OrchardPostNu6_3` mandates the
-    /// restriction; every other protocol leaves the value free (consensus accepts either). It is
-    /// *not* the value the builder emits — that is a prover-side default chosen within this
-    /// constraint (see [`Builder`](crate::builder::Builder)). Coinbase bundles always keep
-    /// cross-address transfers enabled regardless of protocol (see [`BundleType::Coinbase`]).
+    /// [`NoteVersion`]: crate::note::NoteVersion
+    pub fn default_note_version(self) -> crate::note::NoteVersion {
+        match self {
+            BundleProtocol::IronwoodPostNu6_3 => crate::note::NoteVersion::V3,
+            BundleProtocol::OrchardPreNu6_2
+            | BundleProtocol::OrchardPreNu6_3
+            | BundleProtocol::OrchardPostNu6_3 => crate::note::NoteVersion::V2,
+        }
+    }
+
+    /// Returns the number of actions that [`Builder::new`] will produce for the
+    /// selected bundle kind with the specified numbers of spends and outputs.
     ///
-    /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
-    pub(crate) fn requires_cross_address_restriction(self) -> bool {
-        matches!(self, BundleProtocol::OrchardPostNu6_3)
+    /// For [`BundleKind::Coinbase`], `num_spends` must be zero and the returned
+    /// count is exactly `num_outputs`.
+    ///
+    /// [`Builder::new`]: crate::builder::Builder::new
+    pub fn action_count(
+        self,
+        kind: BundleKind,
+        num_spends: usize,
+        num_outputs: usize,
+    ) -> Result<usize, BundleActionCountError> {
+        kind.bundle_type(self).num_actions(num_spends, num_outputs)
+    }
+
+    /// Compatibility alias for [`BundleProtocol::action_count`].
+    pub fn num_actions(
+        self,
+        kind: BundleKind,
+        num_spends: usize,
+        num_outputs: usize,
+    ) -> Result<usize, BundleActionCountError> {
+        self.action_count(kind, num_spends, num_outputs)
+    }
+
+    /// Returns the number of actions that [`Builder::new`] will produce for a
+    /// transactional bundle with the specified numbers of spends and outputs.
+    ///
+    /// [`Builder::new`]: crate::builder::Builder::new
+    pub fn transactional_action_count(
+        self,
+        num_spends: usize,
+        num_outputs: usize,
+    ) -> Result<usize, BundleActionCountError> {
+        crate::builder::BundleType::Transactional {
+            flags: self.transaction_flags(),
+            bundle_required: false,
+        }
+        .num_actions(num_spends, num_outputs)
+    }
+
+    /// Returns the number of actions that [`Builder::new_coinbase`] will produce
+    /// after adding `num_outputs` outputs.
+    ///
+    /// [`Builder::new_coinbase`]: crate::builder::Builder::new_coinbase
+    pub fn coinbase_action_count(self, num_outputs: usize) -> usize {
+        let _ = self;
+        num_outputs
     }
 }
 
-/// The transaction-format generation an Orchard bundle is encoded in: the era projection of
-/// [`BundleProtocol`] that determines how the flag byte's bit 2 is interpreted.
-///
-/// In pre-NU6.3 formats bit 2 is a reserved zero bit and cross-address transfers are implicitly
-/// enabled; in NU6.3 formats bit 2 is the `enableCrossAddress` flag. Callers select a
-/// [`BundleProtocol`]; this is the value it projects to via [`BundleProtocol::bundle_format`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BundleFormat {
-    /// Transaction formats before NU6.3, where bit 2 of the flag byte is reserved.
-    PreNu6_3,
-    /// NU6.3 transaction formats, where bit 2 is `enableCrossAddress`.
-    Nu6_3,
+impl BundleKind {
+    pub(crate) fn bundle_type(self, protocol: BundleProtocol) -> crate::builder::BundleType {
+        match self {
+            BundleKind::Transaction => crate::builder::BundleType::Transactional {
+                flags: protocol.transaction_flags(),
+                bundle_required: false,
+            },
+            BundleKind::Coinbase => crate::builder::BundleType::Coinbase,
+        }
+    }
 }
+
+/// Errors that can occur when computing the number of actions for a bundle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BundleActionCountError {
+    /// The requested spend and output counts overflowed `usize`.
+    InputCountOverflow,
+    /// Spends are disabled, so `num_spends` must be zero.
+    SpendsDisabled,
+    /// Outputs are disabled, so `num_outputs` must be zero.
+    OutputsDisabled,
+}
+
+impl BundleActionCountError {
+    /// Returns a stable message for this error.
+    pub const fn as_static_str(self) -> &'static str {
+        match self {
+            BundleActionCountError::InputCountOverflow => "num_spends + num_outputs overflowed",
+            BundleActionCountError::SpendsDisabled => {
+                "Spends are disabled, so num_spends must be zero"
+            }
+            BundleActionCountError::OutputsDisabled => {
+                "Outputs are disabled, so num_outputs must be zero"
+            }
+        }
+    }
+}
+
+impl fmt::Display for BundleActionCountError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_static_str())
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for BundleActionCountError {}
 
 /// Orchard-specific flags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -209,29 +340,16 @@ impl Flags {
     /// outputs enabled. A flag set that *both* disables cross-address transfers *and* disables
     /// spends or outputs is intentionally unrepresentable, because it is not a useful
     /// combination: see the [`BundleType::Coinbase`] documentation for why a spends-disabled
-    /// bundle must keep cross-address transfers enabled to pay an arbitrary recipient.
+    /// bundle must keep cross-address transfers enabled to pay an arbitrary recipient. If a
+    /// use case for that combination ever arises, this constructor would need to take
+    /// `cross_address_enabled`.
     ///
     /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
     pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
-        Flags::from_parts_with_cross_address(spends_enabled, outputs_enabled, true)
-    }
-
-    /// Construct a set of flags from its constituent parts, including the cross-address bit.
-    ///
-    /// Crate-internal: the builder supplies `cross_address_enabled` from its prover-side default
-    /// for the protocol (see [`Builder`](crate::builder::Builder)). The public surface keeps the
-    /// restricted-and-spends-disabled combination unrepresentable (see [`from_parts`]).
-    ///
-    /// [`from_parts`]: Flags::from_parts
-    pub(crate) const fn from_parts_with_cross_address(
-        spends_enabled: bool,
-        outputs_enabled: bool,
-        cross_address_enabled: bool,
-    ) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
-            cross_address_enabled,
+            cross_address_enabled: true,
         }
     }
 
@@ -309,16 +427,16 @@ impl Flags {
     }
 
     /// Serialize flags to a byte as defined in [Zcash Protocol Spec § 7.1: Transaction
-    /// Encoding And Consensus][txencoding], under the given bundle protocol.
+    /// Encoding And Consensus][txencoding], under the provided transaction format.
     ///
-    /// Returns `None` if this flag set cannot be encoded under `protocol`, i.e. cross-address
-    /// transfers are disabled but `protocol` is a pre-NU6.3 Orchard protocol (where bit 2 is a
-    /// reserved zero bit and cross-address transfers are implicitly enabled).
+    /// Returns `None` if this flag set cannot be encoded in the provided format, i.e.
+    /// cross-address transfers are disabled but `format` is pre-NU6.3 (where bit 2 is
+    /// a reserved zero bit and cross-address transfers are implicitly enabled).
     ///
-    /// See [`BundleProtocol`] for how to choose `protocol`.
+    /// See [`BundleFormat`] for how to choose `format`.
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
-    pub fn to_byte(&self, protocol: BundleProtocol) -> Option<u8> {
+    pub fn to_byte(&self, format: BundleFormat) -> Option<u8> {
         let mut value = 0u8;
         if self.spends_enabled {
             value |= FLAG_SPENDS_ENABLED;
@@ -326,7 +444,7 @@ impl Flags {
         if self.outputs_enabled {
             value |= FLAG_OUTPUTS_ENABLED;
         }
-        match protocol.bundle_format() {
+        match format {
             BundleFormat::PreNu6_3 if !self.cross_address_enabled => None,
             BundleFormat::PreNu6_3 => Some(value),
             BundleFormat::Nu6_3 => {
@@ -339,21 +457,21 @@ impl Flags {
     }
 
     /// Parses flags from a single byte as defined in [Zcash Protocol Spec § 7.1:
-    /// Transaction Encoding And Consensus][txencoding], under the given bundle protocol. The
-    /// protocol specification defines bits 0 and 1; bit 2 (the NU6.3 `enableCrossAddress` flag)
-    /// is interpreted according to `protocol`, and is a reserved zero bit under pre-NU6.3
-    /// protocols, where cross-address transfers are implicitly enabled.
+    /// Transaction Encoding And Consensus][txencoding], under the provided transaction
+    /// format. The protocol specification defines bits 0 and 1; bit 2 (the NU6.3
+    /// `enableCrossAddress` flag) is interpreted according to `format`, and is a
+    /// reserved zero bit in pre-NU6.3 formats, where cross-address transfers are
+    /// implicitly enabled.
     ///
     /// Returns `None` if unexpected bits are set in the flag byte.
     ///
-    /// `protocol` selects how bit 2 is interpreted; passing a protocol whose era does not match
-    /// the transaction silently mis-decodes an otherwise-valid byte (a byte with bit 2 clear is
-    /// valid in multiple eras but means opposite things). See [`BundleProtocol`] for how to
-    /// choose it.
+    /// `format` selects how bit 2 is interpreted; passing the generation that does not match
+    /// the transaction silently mis-decodes an otherwise-valid byte (a byte with bit 2 clear
+    /// is valid in both generations but means opposite things). See [`BundleFormat`] for how
+    /// to choose it.
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
-    pub fn from_byte(value: u8, protocol: BundleProtocol) -> Option<Self> {
-        let format = protocol.bundle_format();
+    pub fn from_byte(value: u8, format: BundleFormat) -> Option<Self> {
         let expected_unset = match format {
             // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
             BundleFormat::PreNu6_3 => PRE_NU6_3_FLAGS_EXPECTED_UNSET,
@@ -648,20 +766,37 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// Computes a commitment to the effects of this bundle, suitable for inclusion within
     /// a transaction ID.
     ///
-    /// The flag byte is hashed as encoded under `protocol`, the protocol the bundle follows
-    /// (see [`BundleProtocol`]), so the digest depends on the encoding era. See
-    /// [`BundleProtocol`] for how to derive `protocol` and why getting it wrong matters.
+    /// The flag byte is hashed as encoded under `format`, the transaction encoding the
+    /// bundle appears in (see [`BundleFormat`]), so the digest depends on the encoding
+    /// era. See [`BundleFormat`] for how to derive `format` and why getting it wrong matters.
     ///
     /// # Errors
     ///
-    /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot be encoded under
-    /// `protocol` (cross-address transfers disabled under a pre-NU6.3 Orchard protocol); such a
-    /// bundle cannot appear in a pre-NU6.3 transaction.
-    pub fn commitment(
+    /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot be encoded
+    /// in `format` (cross-address transfers disabled under [`BundleFormat::PreNu6_3`]);
+    /// such a bundle cannot appear in a pre-NU6.3 transaction.
+    pub fn commitment(&self, format: BundleFormat) -> Result<BundleCommitment, CommitmentError> {
+        hash_bundle_txid_data(self, format)
+            .map(BundleCommitment)
+            .ok_or(CommitmentError::UnrepresentableFlags)
+    }
+
+    /// Computes a transaction commitment to the effects of this bundle for the
+    /// specified [`BundleProtocol`].
+    pub fn commitment_for_protocol(
         &self,
         protocol: BundleProtocol,
     ) -> Result<BundleCommitment, CommitmentError> {
-        hash_bundle_txid_data(self, protocol)
+        self.commitment_for_domain(BundleCommitmentDomain::transaction(protocol))
+    }
+
+    /// Computes a commitment to the effects of this bundle under the specified
+    /// bundle commitment domain.
+    pub fn commitment_for_domain(
+        &self,
+        domain: BundleCommitmentDomain,
+    ) -> Result<BundleCommitment, CommitmentError> {
+        hash_bundle_txid_data_with_domain(self, domain)
             .map(BundleCommitment)
             .ok_or(CommitmentError::UnrepresentableFlags)
     }
@@ -777,11 +912,11 @@ impl core::error::Error for BundleError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CommitmentError {
-    /// The bundle's flags cannot be encoded under the requested [`BundleProtocol`].
+    /// The bundle's flags cannot be encoded in the requested [`BundleFormat`].
     ///
-    /// Cross-address transfers are disabled and `protocol` is a pre-NU6.3 Orchard
-    /// protocol, where bit 2 is reserved; such a bundle cannot appear in a pre-NU6.3
-    /// transaction.
+    /// Cross-address transfers are disabled and `format` is
+    /// [`BundleFormat::PreNu6_3`], where bit 2 is reserved; such a bundle cannot
+    /// appear in a pre-NU6.3 transaction.
     UnrepresentableFlags,
 }
 
@@ -843,6 +978,24 @@ impl<V> Bundle<Authorized, V> {
     /// This together with `Bundle::commitment` bind the entire bundle.
     pub fn authorizing_commitment(&self) -> BundleAuthorizingCommitment {
         BundleAuthorizingCommitment(hash_bundle_auth_data(self))
+    }
+
+    /// Computes a transaction commitment to the authorizing data within this
+    /// bundle for the specified [`BundleProtocol`].
+    pub fn authorizing_commitment_for_protocol(
+        &self,
+        protocol: BundleProtocol,
+    ) -> BundleAuthorizingCommitment {
+        self.authorizing_commitment_for_domain(BundleCommitmentDomain::transaction(protocol))
+    }
+
+    /// Computes a commitment to the authorizing data within this bundle under
+    /// the specified bundle commitment domain.
+    pub fn authorizing_commitment_for_domain(
+        &self,
+        domain: BundleCommitmentDomain,
+    ) -> BundleAuthorizingCommitment {
+        BundleAuthorizingCommitment(hash_bundle_auth_data_with_domain(self, domain))
     }
 
     /// Verifies the proof for this bundle.
@@ -1090,7 +1243,10 @@ pub(crate) mod tests {
     use proptest::prelude::*;
 
     use super::testing::{arb_bundle, arb_flags_nu6_3};
-    use super::{Authorized, Bundle, BundleError, BundleProtocol, CommitmentError, Flags};
+    use super::{
+        Authorized, Bundle, BundleActionCountError, BundleError, BundleFormat, BundleKind,
+        BundleProtocol, CommitmentError, Flags,
+    };
     use crate::Proof;
 
     #[cfg(feature = "circuit")]
@@ -1132,10 +1288,87 @@ pub(crate) mod tests {
             // encoding rules.
             (Flags::CROSS_ADDRESS_DISABLED, None, Some(0b011)),
         ] {
-            assert_eq!(flags.to_byte(BundleProtocol::OrchardPreNu6_3), pre_nu6_3);
-            assert_eq!(flags.to_byte(BundleProtocol::OrchardPostNu6_3), nu6_3);
-            assert_eq!(flags.to_byte(BundleProtocol::IronwoodPostNu6_3), nu6_3);
+            assert_eq!(flags.to_byte(BundleFormat::PreNu6_3), pre_nu6_3);
+            assert_eq!(flags.to_byte(BundleFormat::Nu6_3), nu6_3);
         }
+    }
+
+    #[test]
+    fn bundle_protocol_selects_valid_semantics() {
+        #[cfg(feature = "circuit")]
+        {
+            assert_eq!(
+                BundleProtocol::OrchardPreNu6_2.circuit_version(),
+                crate::circuit::OrchardCircuitVersion::InsecurePreNu6_2
+            );
+            assert_eq!(
+                BundleProtocol::OrchardPreNu6_3.circuit_version(),
+                crate::circuit::OrchardCircuitVersion::FixedPostNu6_2
+            );
+            assert_eq!(
+                BundleProtocol::OrchardPostNu6_3.circuit_version(),
+                crate::circuit::OrchardCircuitVersion::PostNu6_3
+            );
+            assert_eq!(
+                BundleProtocol::IronwoodPostNu6_3.circuit_version(),
+                crate::circuit::OrchardCircuitVersion::PostNu6_3
+            );
+        }
+
+        assert_eq!(
+            BundleProtocol::OrchardPreNu6_2.bundle_format(),
+            BundleFormat::PreNu6_3
+        );
+        assert_eq!(
+            BundleProtocol::OrchardPreNu6_3.bundle_format(),
+            BundleFormat::PreNu6_3
+        );
+        assert_eq!(
+            BundleProtocol::OrchardPostNu6_3.bundle_format(),
+            BundleFormat::Nu6_3
+        );
+        assert_eq!(
+            BundleProtocol::IronwoodPostNu6_3.bundle_format(),
+            BundleFormat::Nu6_3
+        );
+
+        assert_eq!(
+            BundleProtocol::OrchardPostNu6_3.transaction_flags(),
+            Flags::CROSS_ADDRESS_DISABLED
+        );
+        assert_eq!(
+            BundleProtocol::IronwoodPostNu6_3.transaction_flags(),
+            Flags::ENABLED
+        );
+
+        assert_eq!(
+            BundleProtocol::OrchardPostNu6_3.default_note_version(),
+            crate::note::NoteVersion::V2
+        );
+        assert_eq!(
+            BundleProtocol::IronwoodPostNu6_3.default_note_version(),
+            crate::note::NoteVersion::V3
+        );
+    }
+
+    #[test]
+    fn protocol_action_count_respects_bundle_kind() {
+        assert_eq!(
+            BundleProtocol::OrchardPostNu6_3.action_count(BundleKind::Transaction, 2, 1),
+            Ok(3)
+        );
+        assert_eq!(
+            BundleProtocol::IronwoodPostNu6_3.action_count(BundleKind::Transaction, 3, 2),
+            Ok(3)
+        );
+        assert_eq!(
+            BundleProtocol::IronwoodPostNu6_3.action_count(BundleKind::Coinbase, 0, 1),
+            Ok(1)
+        );
+        assert_eq!(
+            BundleProtocol::IronwoodPostNu6_3.action_count(BundleKind::Coinbase, 1, 1),
+            Err(BundleActionCountError::SpendsDisabled)
+        );
     }
 
     #[test]
@@ -1143,10 +1376,8 @@ pub(crate) mod tests {
         // A byte with bit 2 clear parses as an unrestricted bundle pre-NU6.3 and a
         // restricted bundle under NU6.3.
         for value in 0b000..=0b011 {
-            let pre_nu6_3_flags = Flags::from_byte(value, BundleProtocol::OrchardPreNu6_3).unwrap();
-            let nu6_3_flags = Flags::from_byte(value, BundleProtocol::OrchardPostNu6_3).unwrap();
-            let ironwood_flags =
-                Flags::from_byte(value, BundleProtocol::IronwoodPostNu6_3).unwrap();
+            let pre_nu6_3_flags = Flags::from_byte(value, BundleFormat::PreNu6_3).unwrap();
+            let nu6_3_flags = Flags::from_byte(value, BundleFormat::Nu6_3).unwrap();
 
             assert_eq!(
                 pre_nu6_3_flags.spends_enabled(),
@@ -1158,78 +1389,44 @@ pub(crate) mod tests {
             );
             assert!(pre_nu6_3_flags.cross_address_enabled());
             assert!(!nu6_3_flags.cross_address_enabled());
-            assert_eq!(ironwood_flags, nu6_3_flags);
 
             // Each parse round-trips to the same byte under its own era, but the
             // restricted set is unrepresentable pre-NU6.3.
-            assert_eq!(
-                pre_nu6_3_flags.to_byte(BundleProtocol::OrchardPreNu6_3),
-                Some(value)
-            );
-            assert_eq!(
-                nu6_3_flags.to_byte(BundleProtocol::OrchardPostNu6_3),
-                Some(value)
-            );
-            assert_eq!(nu6_3_flags.to_byte(BundleProtocol::OrchardPreNu6_3), None);
+            assert_eq!(pre_nu6_3_flags.to_byte(BundleFormat::PreNu6_3), Some(value));
+            assert_eq!(nu6_3_flags.to_byte(BundleFormat::Nu6_3), Some(value));
+            assert_eq!(nu6_3_flags.to_byte(BundleFormat::PreNu6_3), None);
         }
 
         assert_eq!(
-            Flags::from_byte(0b011, BundleProtocol::OrchardPreNu6_3),
+            Flags::from_byte(0b011, BundleFormat::PreNu6_3),
             Some(Flags::ENABLED)
         );
         assert_eq!(
-            Flags::from_byte(0b011, BundleProtocol::OrchardPostNu6_3),
+            Flags::from_byte(0b011, BundleFormat::Nu6_3),
             Some(Flags::CROSS_ADDRESS_DISABLED)
         );
-        assert_eq!(
-            Flags::from_byte(0b011, BundleProtocol::IronwoodPostNu6_3),
-            Some(Flags::CROSS_ADDRESS_DISABLED)
-        );
-    }
-
-    #[test]
-    fn only_orchard_post_nu6_3_requires_the_cross_address_restriction() {
-        // Consensus mandates the restriction only for the Orchard pool at NU6.3; every other
-        // protocol leaves the choice free (the builder then applies its prover-side default).
-        assert!(BundleProtocol::OrchardPostNu6_3.requires_cross_address_restriction());
-        for protocol in [
-            BundleProtocol::OrchardPreNu6_2,
-            BundleProtocol::OrchardPreNu6_3,
-            BundleProtocol::IronwoodPostNu6_3,
-        ] {
-            assert!(!protocol.requires_cross_address_restriction());
-        }
     }
 
     #[test]
     fn pre_nu6_3_flags_parsing_rejects_reserved_bits() {
         for value in 0b100..=u8::MAX {
-            assert_eq!(
-                Flags::from_byte(value, BundleProtocol::OrchardPreNu6_3),
-                None
-            );
+            assert_eq!(Flags::from_byte(value, BundleFormat::PreNu6_3), None);
         }
     }
 
     #[test]
     fn nu6_3_flags_parsing_recognizes_cross_address_enabled() {
         for value in 0b100..=0b111 {
-            let flags = Flags::from_byte(value, BundleProtocol::OrchardPostNu6_3).unwrap();
+            let flags = Flags::from_byte(value, BundleFormat::Nu6_3).unwrap();
 
             assert!(flags.cross_address_enabled());
-            assert_eq!(flags.to_byte(BundleProtocol::OrchardPostNu6_3), Some(value));
+            assert_eq!(flags.to_byte(BundleFormat::Nu6_3), Some(value));
             // Pre-NU6.3 formats encode the same flag set with bit 2 reserved zero.
-            assert_eq!(
-                flags.to_byte(BundleProtocol::OrchardPreNu6_3),
-                Some(value & 0b011)
-            );
+            assert_eq!(flags.to_byte(BundleFormat::PreNu6_3), Some(value & 0b011));
         }
 
         for value in 0b1000..=u8::MAX {
-            assert_eq!(
-                Flags::from_byte(value, BundleProtocol::OrchardPostNu6_3),
-                None
-            );
+            assert_eq!(Flags::from_byte(value, BundleFormat::Nu6_3), None);
         }
     }
 
@@ -1254,10 +1451,10 @@ pub(crate) mod tests {
         #[test]
         fn arb_flags_nu6_3_round_trips(flags in arb_flags_nu6_3()) {
             let encoded = flags
-                .to_byte(BundleProtocol::OrchardPostNu6_3)
+                .to_byte(BundleFormat::Nu6_3)
                 .expect("all NU6.3 flag strategy outputs encode under NU6.3");
 
-            prop_assert_eq!(Flags::from_byte(encoded, BundleProtocol::OrchardPostNu6_3), Some(flags));
+            prop_assert_eq!(Flags::from_byte(encoded, BundleFormat::Nu6_3), Some(flags));
         }
 
         #[test]
@@ -1284,30 +1481,30 @@ pub(crate) mod tests {
             // The restricted bundle's NU6.3 wire byte equals the unrestricted bundle's
             // pre-NU6.3 byte, so their commitments agree.
             prop_assert_eq!(
-                restricted.flags().to_byte(BundleProtocol::OrchardPostNu6_3),
-                bundle.flags().to_byte(BundleProtocol::OrchardPreNu6_3)
+                restricted.flags().to_byte(BundleFormat::Nu6_3),
+                bundle.flags().to_byte(BundleFormat::PreNu6_3)
             );
             let restricted_commitment: [u8; 32] = restricted
-                .commitment(BundleProtocol::OrchardPostNu6_3)
+                .commitment(BundleFormat::Nu6_3)
                 .expect("restricted flags are representable under NU6.3")
                 .into();
             let legacy_commitment: [u8; 32] = bundle
-                .commitment(BundleProtocol::OrchardPreNu6_3)
+                .commitment(BundleFormat::PreNu6_3)
                 .expect("unrestricted flags are representable pre-NU6.3")
                 .into();
             prop_assert_eq!(restricted_commitment, legacy_commitment);
 
             // The unrestricted NU6.3 encoding sets bit 2, producing a distinct digest.
             let unrestricted_commitment: [u8; 32] = bundle
-                .commitment(BundleProtocol::OrchardPostNu6_3)
+                .commitment(BundleFormat::Nu6_3)
                 .expect("unrestricted flags are representable under NU6.3")
                 .into();
             prop_assert_ne!(unrestricted_commitment, restricted_commitment);
 
             // The restricted flag set cannot be committed under pre-NU6.3 encoding.
-            prop_assert_eq!(restricted.flags().to_byte(BundleProtocol::OrchardPreNu6_3), None);
+            prop_assert_eq!(restricted.flags().to_byte(BundleFormat::PreNu6_3), None);
             prop_assert!(matches!(
-                restricted.commitment(BundleProtocol::OrchardPreNu6_3),
+                restricted.commitment(BundleFormat::PreNu6_3),
                 Err(CommitmentError::UnrepresentableFlags)
             ));
         }
@@ -1408,7 +1605,7 @@ pub(crate) mod tests {
             .expect("generated bundle value balance fits in i64");
 
         assert!(matches!(
-            bundle.commitment(BundleProtocol::OrchardPreNu6_3),
+            bundle.commitment(BundleFormat::PreNu6_3),
             Err(CommitmentError::UnrepresentableFlags)
         ));
     }
