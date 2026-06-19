@@ -74,8 +74,8 @@ fn output_only_builder(bundle_type: BundleType, recipient: Address) -> Builder {
 #[test]
 fn bundle_chain() {
     let mut rng = OsRng;
-    let pk = ProvingKey::build();
-    let vk = VerifyingKey::build();
+    let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+    let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);
@@ -146,9 +146,9 @@ fn bundle_chain() {
 #[test]
 fn builder_builds_for_insecure_circuit_version() {
     let mut rng = OsRng;
-    let insecure_pk = ProvingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
-    let insecure_vk = VerifyingKey::build_for_version(OrchardCircuitVersion::InsecurePreNu6_2);
-    let fixed_vk = VerifyingKey::build();
+    let insecure_pk = ProvingKey::build(OrchardCircuitVersion::InsecurePreNu6_2);
+    let insecure_vk = VerifyingKey::build(OrchardCircuitVersion::InsecurePreNu6_2);
+    let fixed_vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
     let fvk = FullViewingKey::from(&sk);

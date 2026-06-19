@@ -598,11 +598,11 @@ impl Builder {
     ///
     /// Setting this to [`OrchardCircuitVersion::InsecurePreNu6_2`] produces a
     /// bundle whose proof must be created with an insecure proving key (see
-    /// [`ProvingKey::build_for_version`]); this is intended only for
+    /// [`ProvingKey::build`]); this is intended only for
     /// reproducing pre-NU6.2 proofs in tests, never for proving transactions
     /// for the network.
     ///
-    /// [`ProvingKey::build_for_version`]: crate::circuit::ProvingKey::build_for_version
+    /// [`ProvingKey::build`]: crate::circuit::ProvingKey::build
     #[cfg(feature = "circuit")]
     pub fn new_for_version(
         bundle_type: BundleType,
@@ -801,9 +801,9 @@ pub fn bundle<V: TryFrom<i64>>(
 /// Only [`OrchardCircuitVersion::FixedPostNu6_2`] should be used to prove transactions for the
 /// network; [`OrchardCircuitVersion::InsecurePreNu6_2`] exists only to reproduce pre-NU6.2
 /// proofs in tests, and requires an insecure proving key (see
-/// [`ProvingKey::build_for_version`]) to create the proof.
+/// [`ProvingKey::build`]) to create the proof.
 ///
-/// [`ProvingKey::build_for_version`]: crate::circuit::ProvingKey::build_for_version
+/// [`ProvingKey::build`]: crate::circuit::ProvingKey::build
 #[cfg(feature = "circuit")]
 pub fn bundle_for_version<V: TryFrom<i64>>(
     rng: impl RngCore,
@@ -1287,7 +1287,7 @@ pub mod testing {
     use crate::{
         address::testing::arb_address,
         bundle::{Authorized, Bundle},
-        circuit::ProvingKey,
+        circuit::{OrchardCircuitVersion, ProvingKey},
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
@@ -1333,7 +1333,7 @@ pub mod testing {
                     .unwrap();
             }
 
-            let pk = ProvingKey::build();
+            let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
             builder
                 .build(&mut self.rng)
                 .unwrap()
@@ -1420,7 +1420,7 @@ mod tests {
     use crate::{
         builder::BundleType,
         bundle::{Authorized, Bundle},
-        circuit::ProvingKey,
+        circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendingKey},
         tree::EMPTY_ROOTS,
@@ -1429,7 +1429,7 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let pk = ProvingKey::build();
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
