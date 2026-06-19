@@ -12,7 +12,11 @@ impl super::Action {
     ///
     /// It is the caller's responsibility to perform any semantic validity checks on the
     /// PCZT (for example, confirming that the change amounts are correct) before calling
-    /// this method.
+    /// this method. For bundles that disable cross-address transfers, callers should
+    /// verify the bundle with [`Bundle::verify_cross_address_restriction`] before
+    /// signing.
+    ///
+    /// [`Bundle::verify_cross_address_restriction`]: super::Bundle::verify_cross_address_restriction
     pub fn sign<R: RngCore + CryptoRng>(
         &mut self,
         sighash: [u8; 32],
@@ -39,7 +43,11 @@ impl super::Action {
     ///
     /// It is the caller's responsibility to perform any semantic validity checks on the
     /// PCZT (for example, confirming that the change amounts are correct) before calling
-    /// this method.
+    /// this method. For bundles that disable cross-address transfers, callers should
+    /// verify the bundle with [`Bundle::verify_cross_address_restriction`] before
+    /// applying signatures.
+    ///
+    /// [`Bundle::verify_cross_address_restriction`]: super::Bundle::verify_cross_address_restriction
     pub fn apply_signature(
         &mut self,
         sighash: [u8; 32],

@@ -27,6 +27,14 @@ and this project adheres to Rust's notion of
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`
   - `orchard::circuit::VerifyingKey::circuit_version`
   - `orchard::circuit::VerifyingKey::supports_cross_address_restriction`
+- `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers
+  can check the cross-address restriction's same-expanded-receiver structural property
+  before signing. It is a no-op for bundles that permit cross-address
+  transfers.
+- Error variants for PCZT cross-address structural checks:
+  - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
+  - `orchard::pczt::ProverError::{DisallowedCrossAddressTransfer, CrossAddressRestriction}`
+  - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.
 - `orchard::bundle::testing::arb_flags_nu6_3` (under the `test-dependencies`
@@ -74,6 +82,15 @@ and this project adheres to Rust's notion of
   `BatchValidator::new` now takes a `&orchard::circuit::VerifyingKey`, and
   `BatchValidator::validate` no longer takes one. `BatchValidator::add_bundle`
   now returns `Result<(), orchard::bundle::BatchError>`.
+- `orchard::pczt::Bundle::create_proof` checks the cross-address restriction's
+  same-expanded-receiver property, returning
+  `ProverError::DisallowedCrossAddressTransfer` (or
+  `ProverError::MissingRecipient` if a `recipient` field is unset).
+- `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
+  before modifying the bundle, returning
+  `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
+  `VerifyError`) and leaving the bundle unmodified if the PCZT is missing
+  recipient data or violates the restriction.
 - `orchard::Bundle::commitment` now takes the `BundleProtocol` the bundle
   follows, and hashes that era's flag byte (via `Flags::to_byte`). The ZIP-244
   Orchard digest — and therefore the transaction ID and sighash — now depends on
