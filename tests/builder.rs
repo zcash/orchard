@@ -16,9 +16,9 @@ use rand::rngs::OsRng;
 use shardtree::{store::memory::MemoryShardStore, ShardTree};
 use zcash_note_encryption::try_note_decryption;
 
-fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey) {
+fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, protocol: BundleProtocol) {
     assert!(matches!(bundle.verify_proof(vk), Ok(())));
-    let sighash: [u8; 32] = bundle.commitment().into();
+    let sighash: [u8; 32] = bundle.commitment(protocol).into();
     let bvk = bundle.binding_validating_key();
     for action in bundle.actions() {
         assert_eq!(action.rk().verify(&sighash, action.authorization()), Ok(()));
@@ -102,13 +102,15 @@ fn bundle_chain() {
             Some(NoteValue::from_raw(5000))
         );
 
-        let sighash = unauthorized.commitment().into();
+        let sighash = unauthorized
+            .commitment(BundleProtocol::OrchardPreNu6_3)
+            .into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
 
     // Verify the shielding bundle.
-    verify_bundle(&shielding_bundle, &vk);
+    verify_bundle(&shielding_bundle, &vk, BundleProtocol::OrchardPreNu6_3);
 
     // Create a shielded bundle spending the previous output.
     let shielded_bundle: Bundle<_, i64> = {
@@ -137,7 +139,9 @@ fn bundle_chain() {
             Ok(())
         );
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
-        let sighash = unauthorized.commitment().into();
+        let sighash = unauthorized
+            .commitment(BundleProtocol::OrchardPreNu6_3)
+            .into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         proven
             .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
@@ -145,7 +149,7 @@ fn bundle_chain() {
     };
 
     // Verify the shielded bundle.
-    verify_bundle(&shielded_bundle, &vk);
+    verify_bundle(&shielded_bundle, &vk, BundleProtocol::OrchardPreNu6_3);
 }
 
 // A bundle built with the circuit version set to `InsecurePreNu6_2` produces a proof against
@@ -165,7 +169,9 @@ fn builder_builds_for_insecure_circuit_version() {
     let builder = output_only_builder(BundleProtocol::OrchardPreNu6_2, SHIELDING, recipient);
 
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
-    let sighash: [u8; 32] = unauthorized.commitment().into();
+    let sighash: [u8; 32] = unauthorized
+        .commitment(BundleProtocol::OrchardPreNu6_2)
+        .into();
     let proven = unauthorized.create_proof(&insecure_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 

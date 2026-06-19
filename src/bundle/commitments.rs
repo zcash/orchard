@@ -2,7 +2,7 @@
 
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
 
-use crate::bundle::{Authorization, Authorized, Bundle};
+use crate::bundle::{Authorization, Authorized, Bundle, BundleProtocol};
 
 const ZCASH_ORCHARD_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrchardHash";
 const ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrcActCHash";
@@ -26,9 +26,16 @@ fn hasher(personal: &[u8; 16]) -> State {
 /// Then, hash these together along with (flags, value_balance_orchard, anchor_orchard),
 /// personalized with ZCASH_ORCHARD_ACTIONS_HASH_PERSONALIZATION
 ///
+/// # Panics
+///
+/// Panics if `bundle`'s flags cannot be encoded under `protocol` (cross-address transfers
+/// disabled under a pre-NU6.3 Orchard protocol); such a bundle cannot appear in a
+/// pre-NU6.3 transaction.
+///
 /// [zip244]: https://zips.z.cash/zip-0244
 pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     bundle: &Bundle<A, V>,
+    protocol: BundleProtocol,
 ) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
     let mut ch = hasher(ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION);
@@ -52,7 +59,9 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     h.update(ch.finalize().as_bytes());
     h.update(mh.finalize().as_bytes());
     h.update(nh.finalize().as_bytes());
-    h.update(&[bundle.flags().to_byte()]);
+    h.update(&[bundle.flags().to_byte(protocol).expect(
+        "cross-address-restricted bundles are not representable in pre-NU6.3 transaction formats",
+    )]);
     h.update(&(*bundle.value_balance()).into().to_le_bytes());
     h.update(&bundle.anchor().to_bytes());
     h.finalize()
