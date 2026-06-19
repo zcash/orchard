@@ -7,6 +7,13 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+All changes in this release support the NU6.3 `enableCrossAddress` bundle flag
+and the post-NU 6.3 Orchard Action circuit that enforces the cross-address
+restriction. Construction and wire encoding are now selected by a single
+`orchard::bundle::BundleProtocol` (a `(pool, era)` value); existing callers keep
+the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
+`OrchardCircuitVersion::FixedPostNu6_2` when building proving/verifying keys).
+
 ### Added
 - `orchard::bundle::Flags` APIs for the NU6.3 `enableCrossAddress` flag:
   - `Flags::CROSS_ADDRESS_DISABLED`, the restricted flag set. It cannot be
