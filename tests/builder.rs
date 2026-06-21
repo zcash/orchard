@@ -3,7 +3,7 @@
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::{Authorized, BatchValidator, BundleFormat, BundleProtocol},
+    bundle::{commitments::BundleCommitmentDomain, Authorized, BatchValidator, BundleProtocol},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::ExtractedNoteCommitment,
@@ -40,10 +40,14 @@ fn single_leaf_witness(cmx: &ExtractedNoteCommitment) -> (MerkleHashOrchard, Mer
     (root, merkle_path.into())
 }
 
-fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, format: BundleFormat) {
+fn verify_bundle(
+    bundle: &Bundle<Authorized, i64>,
+    vk: &VerifyingKey,
+    domain: BundleCommitmentDomain,
+) {
     assert!(matches!(bundle.verify_proof(vk), Ok(())));
     let sighash: [u8; 32] = bundle
-        .commitment(format)
+        .commitment(domain)
         .expect("bundle flags are representable in this format")
         .into();
     let bvk = bundle.binding_validating_key();
@@ -108,7 +112,7 @@ fn bundle_chain() {
         );
 
         let sighash = unauthorized
-            .commitment(BundleFormat::PreNu6_3)
+            .commitment(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
@@ -116,7 +120,11 @@ fn bundle_chain() {
     };
 
     // Verify the shielding bundle.
-    verify_bundle(&shielding_bundle, &vk, BundleFormat::PreNu6_3);
+    verify_bundle(
+        &shielding_bundle,
+        &vk,
+        BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3,
+    );
 
     // Create a shielded bundle spending the previous output.
     let shielded_bundle: Bundle<_, i64> = {
@@ -146,7 +154,7 @@ fn bundle_chain() {
         );
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
-            .commitment(BundleFormat::PreNu6_3)
+            .commitment(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
@@ -156,7 +164,11 @@ fn bundle_chain() {
     };
 
     // Verify the shielded bundle.
-    verify_bundle(&shielded_bundle, &vk, BundleFormat::PreNu6_3);
+    verify_bundle(
+        &shielded_bundle,
+        &vk,
+        BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3,
+    );
 }
 
 #[test]
@@ -177,7 +189,7 @@ fn builder_builds_for_legacy_orchard_circuit_version() {
         OrchardCircuitVersion::FixedPostNu6_2
     );
     let sighash: [u8; 32] = unauthorized
-        .commitment(BundleFormat::PreNu6_3)
+        .commitment(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&fixed_pk, &mut rng).unwrap();
@@ -205,13 +217,17 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     );
 
     let sighash: [u8; 32] = unauthorized
-        .commitment(BundleFormat::Nu6_3)
+        .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
-    verify_bundle(&bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
+    verify_bundle(
+        &bundle,
+        &post_nu6_3_vk,
+        BundleCommitmentDomain::ORCHARD_V5_NU6_3,
+    );
 }
 
 // Coinbase bundles disable nonzero Orchard spends, but each Orchard action still
@@ -239,13 +255,17 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     assert!(unauthorized.flags().cross_address_enabled());
 
     let sighash: [u8; 32] = unauthorized
-        .commitment(BundleFormat::Nu6_3)
+        .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
-    verify_bundle(&bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
+    verify_bundle(
+        &bundle,
+        &post_nu6_3_vk,
+        BundleCommitmentDomain::ORCHARD_V5_NU6_3,
+    );
 }
 
 // A post-NU 6.3 restricted bundle chain: an ordinary shielding bundle, followed by a bundle
@@ -281,7 +301,7 @@ fn post_nu6_3_restricted_bundle_chain() {
 
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
-            .commitment(BundleFormat::Nu6_3)
+            .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
@@ -290,7 +310,11 @@ fn post_nu6_3_restricted_bundle_chain() {
             .unwrap()
     };
 
-    verify_bundle(&shielding_bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
+    verify_bundle(
+        &shielding_bundle,
+        &post_nu6_3_vk,
+        BundleCommitmentDomain::ORCHARD_V5_NU6_3,
+    );
     assert!(shielding_bundle.verify_proof(&fixed_vk).is_err());
 
     let change_addr = fvk.address_at(0u32, Scope::Internal);
@@ -357,7 +381,7 @@ fn post_nu6_3_restricted_bundle_chain() {
             .is_none());
 
         let sighash = unauthorized
-            .commitment(BundleFormat::Nu6_3)
+            .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
@@ -367,7 +391,11 @@ fn post_nu6_3_restricted_bundle_chain() {
     };
 
     assert_eq!(restricted_bundle.value_balance(), &2000);
-    verify_bundle(&restricted_bundle, &post_nu6_3_vk, BundleFormat::Nu6_3);
+    verify_bundle(
+        &restricted_bundle,
+        &post_nu6_3_vk,
+        BundleCommitmentDomain::ORCHARD_V5_NU6_3,
+    );
     assert!(restricted_bundle.verify_proof(&fixed_vk).is_err());
 
     let mut validator = BatchValidator::new(&post_nu6_3_vk);
@@ -375,7 +403,7 @@ fn post_nu6_3_restricted_bundle_chain() {
         .add_bundle(
             &restricted_bundle,
             restricted_bundle
-                .commitment(BundleFormat::Nu6_3)
+                .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
                 .expect("bundle flags are representable in this format")
                 .into(),
         )
@@ -389,7 +417,7 @@ fn post_nu6_3_restricted_bundle_chain() {
         .add_bundle(
             &restricted_bundle,
             restricted_bundle
-                .commitment(BundleFormat::Nu6_3)
+                .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
                 .expect("bundle flags are representable in this format")
                 .into(),
         )

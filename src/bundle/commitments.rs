@@ -127,21 +127,10 @@ fn hasher(personal: &[u8; 16]) -> State {
 /// Then, hash these together along with (flags, value_balance_orchard, anchor_orchard),
 /// personalized with ZCASH_ORCHARD_ACTIONS_HASH_PERSONALIZATION
 ///
+/// Returns `None` if the bundle flags cannot be encoded in the domain's bundle format.
+///
 /// [zip244]: https://zips.z.cash/zip-0244
 pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
-    bundle: &Bundle<A, V>,
-    format: BundleFormat,
-) -> Option<Blake2bHash> {
-    hash_bundle_txid_data_with_domain(bundle, orchard_v5_domain(format))
-}
-
-/// Construct the commitment to the effects of the specified bundle under the
-/// given bundle commitment domain.
-///
-/// Returns `None` if the bundle flags cannot be encoded in the domain's
-/// bundle format.
-///
-pub(crate) fn hash_bundle_txid_data_with_domain<A: Authorization, V: Copy + Into<i64>>(
     bundle: &Bundle<A, V>,
     domain: BundleCommitmentDomain,
 ) -> Option<Blake2bHash> {
@@ -179,13 +168,7 @@ pub(crate) fn hash_bundle_txid_data_with_domain<A: Authorization, V: Copy + Into
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
-pub fn hash_bundle_txid_empty() -> Blake2bHash {
-    hash_bundle_txid_empty_with_domain(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3)
-}
-
-/// Construct the commitment for the absent bundle under the given bundle
-/// commitment domain.
-pub fn hash_bundle_txid_empty_with_domain(domain: BundleCommitmentDomain) -> Blake2bHash {
+pub fn hash_bundle_txid_empty(domain: BundleCommitmentDomain) -> Blake2bHash {
     hasher(domain.personalizations.bundle).finalize()
 }
 
@@ -194,13 +177,7 @@ pub fn hash_bundle_txid_empty_with_domain(domain: BundleCommitmentDomain) -> Bla
 /// Identifier Non-Malleability][zip244]
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
-pub(crate) fn hash_bundle_auth_data<V>(bundle: &Bundle<Authorized, V>) -> Blake2bHash {
-    hash_bundle_auth_data_with_domain(bundle, BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3)
-}
-
-/// Construct the commitment to the authorizing data of an authorized bundle
-/// under the given bundle commitment domain.
-pub(crate) fn hash_bundle_auth_data_with_domain<V>(
+pub(crate) fn hash_bundle_auth_data<V>(
     bundle: &Bundle<Authorized, V>,
     domain: BundleCommitmentDomain,
 ) -> Blake2bHash {
@@ -222,19 +199,6 @@ pub(crate) fn hash_bundle_auth_data_with_domain<V>(
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
-pub fn hash_bundle_auth_empty() -> Blake2bHash {
-    hash_bundle_auth_empty_with_domain(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3)
-}
-
-/// Construct the commitment for absent authorizing data under the given bundle
-/// commitment domain.
-pub fn hash_bundle_auth_empty_with_domain(domain: BundleCommitmentDomain) -> Blake2bHash {
+pub fn hash_bundle_auth_empty(domain: BundleCommitmentDomain) -> Blake2bHash {
     hasher(domain.personalizations.auth).finalize()
-}
-
-const fn orchard_v5_domain(format: BundleFormat) -> BundleCommitmentDomain {
-    match format {
-        BundleFormat::PreNu6_3 => BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3,
-        BundleFormat::Nu6_3 => BundleCommitmentDomain::ORCHARD_V5_NU6_3,
-    }
 }

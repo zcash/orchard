@@ -21,10 +21,7 @@ use memuse::DynamicUsage;
 use crate::{
     action::Action,
     address::Address,
-    bundle::commitments::{
-        hash_bundle_auth_data, hash_bundle_auth_data_with_domain, hash_bundle_txid_data,
-        hash_bundle_txid_data_with_domain, BundleCommitmentDomain,
-    },
+    bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data, BundleCommitmentDomain},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::Note,
     note_encryption::OrchardDomain,
@@ -662,28 +659,20 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// Computes a commitment to the effects of this bundle, suitable for inclusion within
     /// a transaction ID.
     ///
-    /// The flag byte is hashed as encoded under `format`, the transaction encoding the
-    /// bundle appears in (see [`BundleFormat`]), so the digest depends on the encoding
-    /// era. See [`BundleFormat`] for how to derive `format` and why getting it wrong matters.
+    /// The commitment is computed under the given [`BundleCommitmentDomain`], which selects
+    /// the personalizations, flag-byte format, and anchor placement for the transaction
+    /// encoding the bundle appears in.
     ///
     /// # Errors
     ///
     /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot be encoded
-    /// in `format` (cross-address transfers disabled under [`BundleFormat::PreNu6_3`]);
+    /// in the domain's format (cross-address transfers disabled under a pre-NU6.3 format);
     /// such a bundle cannot appear in a pre-NU6.3 transaction.
-    pub fn commitment(&self, format: BundleFormat) -> Result<BundleCommitment, CommitmentError> {
-        hash_bundle_txid_data(self, format)
-            .map(BundleCommitment)
-            .ok_or(CommitmentError::UnrepresentableFlags)
-    }
-
-    /// Computes a commitment to the effects of this bundle under the specified
-    /// bundle commitment domain.
-    pub fn commitment_for_domain(
+    pub fn commitment(
         &self,
         domain: BundleCommitmentDomain,
     ) -> Result<BundleCommitment, CommitmentError> {
-        hash_bundle_txid_data_with_domain(self, domain)
+        hash_bundle_txid_data(self, domain)
             .map(BundleCommitment)
             .ok_or(CommitmentError::UnrepresentableFlags)
     }
@@ -860,20 +849,15 @@ impl<V> Bundle<Authorized, V> {
         ))
     }
 
-    /// Computes a commitment to the authorizing data within for this bundle.
+    /// Computes a commitment to the authorizing data within for this bundle, under the
+    /// given [`BundleCommitmentDomain`].
     ///
     /// This together with `Bundle::commitment` bind the entire bundle.
-    pub fn authorizing_commitment(&self) -> BundleAuthorizingCommitment {
-        BundleAuthorizingCommitment(hash_bundle_auth_data(self))
-    }
-
-    /// Computes a commitment to the authorizing data within this bundle under
-    /// the specified bundle commitment domain.
-    pub fn authorizing_commitment_for_domain(
+    pub fn authorizing_commitment(
         &self,
         domain: BundleCommitmentDomain,
     ) -> BundleAuthorizingCommitment {
-        BundleAuthorizingCommitment(hash_bundle_auth_data_with_domain(self, domain))
+        BundleAuthorizingCommitment(hash_bundle_auth_data(self, domain))
     }
 
     /// Verifies the proof for this bundle.
@@ -1122,7 +1106,8 @@ pub(crate) mod tests {
 
     use super::testing::{arb_bundle, arb_flags_nu6_3};
     use super::{
-        Authorized, Bundle, BundleError, BundleFormat, BundleProtocol, CommitmentError, Flags,
+        Authorized, Bundle, BundleCommitmentDomain, BundleError, BundleFormat, BundleProtocol,
+        CommitmentError, Flags,
     };
     use crate::Proof;
 
@@ -1336,18 +1321,18 @@ pub(crate) mod tests {
                 bundle.flags().to_byte(BundleFormat::PreNu6_3)
             );
             let restricted_commitment: [u8; 32] = restricted
-                .commitment(BundleFormat::Nu6_3)
+                .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
                 .expect("restricted flags are representable under NU6.3")
                 .into();
             let legacy_commitment: [u8; 32] = bundle
-                .commitment(BundleFormat::PreNu6_3)
+                .commitment(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3)
                 .expect("unrestricted flags are representable pre-NU6.3")
                 .into();
             prop_assert_eq!(restricted_commitment, legacy_commitment);
 
             // The unrestricted NU6.3 encoding sets bit 2, producing a distinct digest.
             let unrestricted_commitment: [u8; 32] = bundle
-                .commitment(BundleFormat::Nu6_3)
+                .commitment(BundleCommitmentDomain::ORCHARD_V5_NU6_3)
                 .expect("unrestricted flags are representable under NU6.3")
                 .into();
             prop_assert_ne!(unrestricted_commitment, restricted_commitment);
@@ -1355,7 +1340,7 @@ pub(crate) mod tests {
             // The restricted flag set cannot be committed under pre-NU6.3 encoding.
             prop_assert_eq!(restricted.flags().to_byte(BundleFormat::PreNu6_3), None);
             prop_assert!(matches!(
-                restricted.commitment(BundleFormat::PreNu6_3),
+                restricted.commitment(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3),
                 Err(CommitmentError::UnrepresentableFlags)
             ));
         }
@@ -1456,7 +1441,7 @@ pub(crate) mod tests {
             .expect("generated bundle value balance fits in i64");
 
         assert!(matches!(
-            bundle.commitment(BundleFormat::PreNu6_3),
+            bundle.commitment(BundleCommitmentDomain::ORCHARD_V5_PRE_NU6_3),
             Err(CommitmentError::UnrepresentableFlags)
         ));
     }

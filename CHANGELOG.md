@@ -23,6 +23,10 @@ serialize.
   byte is interpreted under pre-NU6.3 transaction encoding rules (bit 2 is
   reserved and cross-address transfers are implicitly enabled) or NU6.3 rules
   (bit 2 is `enableCrossAddress`).
+- `orchard::bundle::commitments::BundleCommitmentDomain`, selecting the
+  personalizations, flag-byte format, and anchor placement for a bundle
+  commitment, with constants `ORCHARD_V5_PRE_NU6_3`, `ORCHARD_V5_NU6_3`,
+  `ORCHARD_V6`, and `IRONWOOD_V6`.
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input (the negation of the
   bundle's `enableCrossAddress` flag). The post-NU 6.3 circuit has its own
@@ -135,17 +139,19 @@ serialize.
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
   `VerifyError`) and leaving the bundle unmodified if the PCZT is missing
   recipient data or violates the restriction.
-- `orchard::Bundle::commitment` now takes the `BundleFormat` of the
-  transaction encoding the bundle appears in, and hashes that format's flag
-  byte (via `Flags::to_byte`). The ZIP-244 Orchard digest — and therefore the
-  transaction ID and sighash — now depends on `BundleFormat`: under `Nu6_3` an
-  unrestricted bundle's flag byte sets bit 2. Callers computing transaction IDs
-  or sighashes (e.g. `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`)
-  must pass the `BundleFormat` matching the concrete transaction or PCZT encoding
-  version. It
-  now returns `Result<BundleCommitment, CommitmentError>`, returning
+- `orchard::Bundle::commitment`, `orchard::Bundle::authorizing_commitment`, and
+  the `orchard::bundle::commitments::hash_bundle_{txid,auth}_empty` functions now
+  take a `BundleCommitmentDomain` selecting the personalizations, flag-byte
+  format, and anchor placement for the transaction encoding the bundle appears
+  in. The ZIP-244 Orchard digest — and therefore the transaction ID and
+  sighash — depends on this domain: under an NU6.3 format an unrestricted
+  bundle's flag byte sets bit 2. Callers computing transaction IDs or sighashes
+  (e.g. `zcash_primitives`) must pass the domain matching the concrete
+  transaction or PCZT encoding version. `Bundle::commitment` now returns
+  `Result<BundleCommitment, CommitmentError>`, returning
   `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
-  in `format` (cross-address transfers disabled under `PreNu6_3`).
+  in the domain's format (cross-address transfers disabled under a pre-NU6.3
+  format).
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended
