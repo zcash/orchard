@@ -221,19 +221,20 @@ impl Flags {
     /// outputs enabled. A flag set that *both* disables cross-address transfers *and* disables
     /// spends or outputs is intentionally unrepresentable, because it is not a useful
     /// combination: see the [`BundleType::Coinbase`] documentation for why a spends-disabled
-    /// bundle must keep cross-address transfers enabled to pay an arbitrary recipient. If a
-    /// use case for that combination ever arises, this constructor would need to take
-    /// `cross_address_enabled`.
+    /// bundle must keep cross-address transfers enabled to pay an arbitrary recipient.
     ///
     /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
     pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
-        Flags {
-            spends_enabled,
-            outputs_enabled,
-            cross_address_enabled: true,
-        }
+        Flags::from_parts_with_cross_address(spends_enabled, outputs_enabled, true)
     }
 
+    /// Construct a set of flags from its constituent parts, including the cross-address bit.
+    ///
+    /// Crate-internal: the builder supplies `cross_address_enabled` from its prover-side default
+    /// for the protocol (see [`Builder`](crate::builder::Builder)). The public surface keeps the
+    /// restricted-and-spends-disabled combination unrepresentable (see [`from_parts`]).
+    ///
+    /// [`from_parts`]: Flags::from_parts
     pub(crate) const fn from_parts_with_cross_address(
         spends_enabled: bool,
         outputs_enabled: bool,
