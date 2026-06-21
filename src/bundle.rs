@@ -64,6 +64,7 @@ impl<T> Action<T> {
 /// version. Their flags are fixed to spends disabled, outputs enabled, and
 /// cross-address transfers enabled.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BundleProtocol {
     /// The Orchard pool before NU6.2.
     ///
