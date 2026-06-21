@@ -1051,15 +1051,17 @@ impl Builder {
 }
 
 /// Builds a bundle containing the given spent notes, outputs, and wallet-controlled change
-/// outputs for the given [`BundleProtocol`].
+/// outputs, under the given [`BundleProtocol`] (which selects the Action circuit version, the
+/// flag-byte format, and the cross-address policy).
 ///
 /// In a bundle that disables cross-address transfers, `outputs` must be empty (every output
 /// is addressed to the note it spends); retained value must be supplied as `changes`.
 #[cfg(feature = "circuit")]
 pub fn bundle<V: TryFrom<i64>>(
     rng: impl RngCore,
-    anchor: Anchor,
     protocol: BundleProtocol,
+    anchor: Anchor,
+    bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     changes: Vec<ChangeInfo>,
@@ -1071,49 +1073,10 @@ pub fn bundle<V: TryFrom<i64>>(
         BundlePlan {
             anchor,
             protocol,
-            bundle_type: BundleType::DEFAULT,
+            bundle_type,
             spends,
             outputs,
             changes,
-            note_version,
-        },
-        |pre_actions, flags, value_balance, bundle_meta, rng| {
-            finish_unauthorized_bundle(
-                pre_actions,
-                flags,
-                value_balance,
-                bundle_meta,
-                rng,
-                anchor,
-                circuit_version,
-            )
-        },
-    )
-}
-
-/// Builds a coinbase bundle for the given [`BundleProtocol`] from precomputed
-/// outputs.
-///
-/// Coinbase bundles have spends disabled and contain exactly the provided
-/// outputs. No `MIN_ACTIONS` padding is applied.
-#[cfg(feature = "circuit")]
-pub fn coinbase_bundle<V: TryFrom<i64>>(
-    rng: impl RngCore,
-    anchor: Anchor,
-    protocol: BundleProtocol,
-    outputs: Vec<OutputInfo>,
-) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
-    let circuit_version = protocol.circuit_version();
-    let note_version = protocol.default_note_version();
-    build_bundle(
-        rng,
-        BundlePlan {
-            anchor,
-            protocol,
-            bundle_type: BundleType::Coinbase,
-            spends: vec![],
-            outputs,
-            changes: vec![],
             note_version,
         },
         |pre_actions, flags, value_balance, bundle_meta, rng| {
@@ -2166,8 +2129,9 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
-                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 BundleProtocol::OrchardPostNu6_3,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+                BundleType::DEFAULT,
                 vec![],
                 vec![OutputInfo::new(
                     None,
@@ -2192,8 +2156,9 @@ mod tests {
         .unwrap();
         let (bundle, bundle_meta) = bundle::<i64>(
             &mut rng,
-            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
             BundleProtocol::OrchardPostNu6_3,
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+            BundleType::DEFAULT,
             vec![],
             vec![],
             vec![change_output],
@@ -2227,18 +2192,14 @@ mod tests {
         .unwrap();
 
         assert!(matches!(
-            build_bundle(
+            bundle::<i64>(
                 &mut rng,
-                BundlePlan {
-                    anchor: EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-                    protocol: BundleProtocol::OrchardPostNu6_3,
-                    bundle_type,
-                    spends: vec![],
-                    outputs: vec![],
-                    changes: vec![change_output],
-                    note_version: NoteVersion::DEFAULT,
-                },
-                |_, _, _, _, _| Ok::<(), BuildError>(()),
+                BundleProtocol::OrchardPostNu6_3,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+                bundle_type,
+                vec![],
+                vec![],
+                vec![change_output],
             ),
             Err(BuildError::BundleTypeNotSatisfiable)
         ));
