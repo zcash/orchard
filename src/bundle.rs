@@ -54,48 +54,6 @@ impl<T> Action<T> {
     }
 }
 
-/// The transaction-format generation an Orchard bundle is encoded in.
-///
-/// This determines how the bundle's flag byte is interpreted, which changes at the
-/// NU6.3 network upgrade. In pre-NU6.3 transaction formats, bit 2 is a reserved zero
-/// bit and cross-address transfers are implicitly enabled. In NU6.3 transaction
-/// formats, bit 2 is the `enableCrossAddress` flag.
-///
-/// # Choosing the correct format
-///
-/// A flag byte with bit 2 *clear* is valid in **both** generations but means **opposite**
-/// things: under [`PreNu6_3`] it denotes an unrestricted bundle (cross-address transfers
-/// implicitly enabled), while under [`Nu6_3`] it denotes a restricted bundle
-/// (`enableCrossAddress` clear, cross-address transfers disabled). Decoding such a byte
-/// under the wrong generation therefore *silently* produces the wrong [`Flags`] — there is
-/// no error to catch the mistake.
-///
-/// The producing direction is guarded: [`Flags::to_byte`] and [`Bundle::commitment`] refuse
-/// to encode a restricted bundle under [`PreNu6_3`] (returning `None` / an error). The silent
-/// hazard is entirely on the **consuming** side, when parsing a flag byte under the wrong
-/// generation ([`Flags::from_byte`], [`crate::pczt::Bundle::parse`]).
-///
-/// This crate has no concept of consensus branches or activation heights, so it cannot derive
-/// the correct format itself — the disambiguating fact lives in the caller. The safe discipline
-/// is therefore:
-///
-/// - Derive the `BundleFormat` **once**, from the concrete transaction or PCZT encoding
-///   version at the boundary where this crate is integrated (e.g. in `zcash_primitives`).
-///   Legacy v5 encodings use [`PreNu6_3`], while v6 encodings use [`Nu6_3`].
-/// - Thread that single value into every format-taking method for the bundle, rather than
-///   recomputing or hardcoding it per call site.
-///
-/// [`PreNu6_3`]: BundleFormat::PreNu6_3
-/// [`Nu6_3`]: BundleFormat::Nu6_3
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum BundleFormat {
-    /// Transaction formats before NU6.3, where bit 2 of the flag byte is reserved.
-    PreNu6_3,
-    /// NU6.3 transaction formats, where bit 2 is `enableCrossAddress`.
-    Nu6_3,
-}
-
 /// Selects the valid protocol and pool combination for a bundle.
 ///
 /// Encodes the correlated choices a caller would otherwise have to pass
@@ -181,6 +139,48 @@ impl BundleProtocol {
     pub(crate) fn requires_cross_address_restriction(self) -> bool {
         matches!(self, BundleProtocol::OrchardPostNu6_3)
     }
+}
+
+/// The transaction-format generation an Orchard bundle is encoded in.
+///
+/// This determines how the bundle's flag byte is interpreted, which changes at the
+/// NU6.3 network upgrade. In pre-NU6.3 transaction formats, bit 2 is a reserved zero
+/// bit and cross-address transfers are implicitly enabled. In NU6.3 transaction
+/// formats, bit 2 is the `enableCrossAddress` flag.
+///
+/// # Choosing the correct format
+///
+/// A flag byte with bit 2 *clear* is valid in **both** generations but means **opposite**
+/// things: under [`PreNu6_3`] it denotes an unrestricted bundle (cross-address transfers
+/// implicitly enabled), while under [`Nu6_3`] it denotes a restricted bundle
+/// (`enableCrossAddress` clear, cross-address transfers disabled). Decoding such a byte
+/// under the wrong generation therefore *silently* produces the wrong [`Flags`] — there is
+/// no error to catch the mistake.
+///
+/// The producing direction is guarded: [`Flags::to_byte`] and [`Bundle::commitment`] refuse
+/// to encode a restricted bundle under [`PreNu6_3`] (returning `None` / an error). The silent
+/// hazard is entirely on the **consuming** side, when parsing a flag byte under the wrong
+/// generation ([`Flags::from_byte`], [`crate::pczt::Bundle::parse`]).
+///
+/// This crate has no concept of consensus branches or activation heights, so it cannot derive
+/// the correct format itself — the disambiguating fact lives in the caller. The safe discipline
+/// is therefore:
+///
+/// - Derive the `BundleFormat` **once**, from the concrete transaction or PCZT encoding
+///   version at the boundary where this crate is integrated (e.g. in `zcash_primitives`).
+///   Legacy v5 encodings use [`PreNu6_3`], while v6 encodings use [`Nu6_3`].
+/// - Thread that single value into every format-taking method for the bundle, rather than
+///   recomputing or hardcoding it per call site.
+///
+/// [`PreNu6_3`]: BundleFormat::PreNu6_3
+/// [`Nu6_3`]: BundleFormat::Nu6_3
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BundleFormat {
+    /// Transaction formats before NU6.3, where bit 2 of the flag byte is reserved.
+    PreNu6_3,
+    /// NU6.3 transaction formats, where bit 2 is `enableCrossAddress`.
+    Nu6_3,
 }
 
 /// Orchard-specific flags.
