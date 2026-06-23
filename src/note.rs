@@ -308,8 +308,8 @@ impl Note {
         recipient: Address,
         value: NoteValue,
         rho: Rho,
-        mut rng: impl RngCore,
         version: NoteVersion,
+        mut rng: impl RngCore,
     ) -> Self {
         loop {
             let note = Note::from_parts(
@@ -344,8 +344,8 @@ impl Note {
             recipient,
             NoteValue::ZERO,
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
-            rng,
             note_version,
+            rng,
         );
 
         (sk, fvk, note)

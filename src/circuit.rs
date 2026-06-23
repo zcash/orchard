@@ -1448,8 +1448,8 @@ mod tests {
                 sender_address,
                 spent_note.value(),
                 rho,
-                &mut rng,
                 NoteVersion::DEFAULT,
+                &mut rng,
             )
         } else {
             loop {
@@ -1478,7 +1478,7 @@ mod tests {
                 v_old: Value::known(spent_note.value()),
                 rho_old: Value::known(spent_note.rho()),
                 psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
-                rcm_old: Value::known(spent_note.rseed().rcm(&spent_note.rho())),
+                rcm_old: Value::known(spent_note.rcm()),
                 cm_old: Value::known(spent_note.commitment()),
                 alpha: Value::known(alpha),
                 ak: Value::known(ak),
@@ -1488,7 +1488,7 @@ mod tests {
                 pk_d_new: Value::known(*output_note.recipient().pk_d()),
                 v_new: Value::known(output_note.value()),
                 psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
-                rcm_new: Value::known(output_note.rseed().rcm(&output_note.rho())),
+                rcm_new: Value::known(output_note.rcm()),
                 rcv: Value::known(rcv),
             },
             Instance {

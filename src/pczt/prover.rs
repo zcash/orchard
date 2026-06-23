@@ -9,7 +9,7 @@ use crate::{
     builder::SpendInfo,
     circuit::{Circuit, Instance, ProvingKey},
     note::Rho,
-    Note, NoteVersion, Proof,
+    Note, Proof,
 };
 
 impl super::Bundle {
@@ -77,7 +77,7 @@ impl super::Bundle {
                     action.spend.value.ok_or(ProverError::MissingValue)?,
                     action.spend.rho.ok_or(ProverError::MissingRho)?,
                     action.spend.rseed.ok_or(ProverError::MissingRandomSeed)?,
-                    NoteVersion::DEFAULT,
+                    action.spend.note_version,
                 )
                 .into_option()
                 .ok_or(ProverError::InvalidSpendNote)?;
@@ -99,7 +99,7 @@ impl super::Bundle {
                     action.output.value.ok_or(ProverError::MissingValue)?,
                     Rho::from_nf_old(action.spend.nullifier),
                     action.output.rseed.ok_or(ProverError::MissingRandomSeed)?,
-                    NoteVersion::DEFAULT,
+                    action.output.note_version,
                 )
                 .into_option()
                 .ok_or(ProverError::InvalidOutputNote)?;

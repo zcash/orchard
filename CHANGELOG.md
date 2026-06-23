@@ -21,13 +21,14 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   - `Flags::cross_address_enabled`
 - `orchard::bundle::BundlePoolRestrictions`, the `(pool, era)` selector for an Orchard
   bundle. It determines the circuit version (`BundlePoolRestrictions::circuit_version`),
+  the note plaintext version (`BundlePoolRestrictions::note_version`),
   the flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and
   cross-address transfers are implicitly enabled, vs NU6.3 rules, where bit 2 is
   `enableCrossAddress`), and whether consensus mandates the cross-address
   restriction (the builder then chooses the value within that constraint).
   Variants: `OrchardPreNu6_2`, `OrchardNu6_2Only`, `OrchardNu6_3Onward`, and
-  `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit; its V3 note plaintexts
-  are not yet implemented).
+  `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit and uses V3 note
+  plaintexts).
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input. The post-NU 6.3 circuit
   has its own proving and verifying keys.
@@ -50,11 +51,16 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   transfers.
 - Error variants for the cross-address builder and PCZT checks:
   - `orchard::builder::BuildError::CrossAddressDisabled`
+  - `orchard::builder::SpendError::InvalidNoteVersion`
   - `orchard::builder::OutputError::{CrossAddressDisabled, SpendsDisabled, RecipientNotOwned}`
+  - `orchard::pczt::ParseError::InvalidNoteVersion`
   - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
   - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`, wrapping the
     underlying `orchard::pczt::VerifyError`
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
+- Note version fields in PCZT spends and outputs, with generated public getters:
+  - `orchard::pczt::Spend::note_version`
+  - `orchard::pczt::Output::note_version`
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.
 - `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
@@ -90,6 +96,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     (it derives the circuit version from the protocol).
   - `orchard::builder::bundle` takes the `BundlePoolRestrictions` in place of the
     circuit-version argument.
+  - The builder derives new output, dummy, and fabricated note plaintext versions
+    from `BundlePoolRestrictions::note_version`, and rejects spends whose note
+    version does not match the builder's pool restrictions with
+    `SpendError::InvalidNoteVersion`.
 - `orchard::builder::BundleType::Transactional` no longer embeds a full `Flags`;
   it carries `{ spends_enabled, outputs_enabled, bundle_required }`, and
   `BundleType::flags` and `BundleType::num_actions` now take the
@@ -150,6 +160,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `FixedPostNu6_2`), and checks the cross-address restriction's same-expanded-receiver
   property, returning `ProverError::DisallowedCrossAddressTransfer` (or
   `ProverError::MissingRecipient` if a `recipient` field is unset).
+- `orchard::pczt::{Spend, Output}::parse` now take the note plaintext version
+  for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
+  actions whose spend or output note version does not match the
+  `BundlePoolRestrictions`.
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
   before modifying the bundle, returning
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying

@@ -17,7 +17,7 @@ use crate::{
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::MerklePath,
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
-    Address, Anchor, Proof,
+    Address, Anchor, NoteVersion, Proof,
 };
 
 mod parse;
@@ -182,6 +182,12 @@ pub struct Spend {
     /// - This is required by the Prover.
     pub(crate) fvk: Option<FullViewingKey>,
 
+    /// The plaintext version of the note being spent.
+    ///
+    /// This is set by the Constructor, and is required by Verifiers and
+    /// Provers to reconstruct the note commitment.
+    pub(crate) note_version: NoteVersion,
+
     /// A witness from the note to the bundle's anchor.
     ///
     /// - This is set by the Updater.
@@ -217,6 +223,12 @@ pub struct Spend {
 pub struct Output {
     /// A commitment to the new note being created.
     pub(crate) cmx: ExtractedNoteCommitment,
+
+    /// The plaintext version of the new note being created.
+    ///
+    /// This is set by the Constructor, and is required by Verifiers and
+    /// Provers to reconstruct the note commitment.
+    pub(crate) note_version: NoteVersion,
 
     /// The transmitted note ciphertext.
     ///
@@ -283,6 +295,7 @@ impl fmt::Debug for Output {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Output")
             .field("cmx", &self.cmx)
+            .field("note_version", &self.note_version)
             .field("encrypted_note", &self.encrypted_note)
             .field("recipient", &self.recipient)
             .field("value", &self.value)
@@ -379,20 +392,22 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let note_version = pool_restrictions.note_version();
 
         let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
         let note = Note::new(
             spend_recipient,
             NoteValue::from_raw(15_000),
             rho,
+            note_version,
             &mut rng,
-            NoteVersion::DEFAULT,
         );
         let merkle_path = MerklePath::dummy(&mut rng);
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
+            pool_restrictions,
             BundleType::Transactional {
                 spends_enabled: true,
                 outputs_enabled: true,
@@ -426,7 +441,6 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
-
         let mut builder = Builder::new(
             BundlePoolRestrictions::OrchardNu6_2Only,
             BundleType::DEFAULT,
@@ -449,7 +463,8 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
+        let pk = ProvingKey::build(pool_restrictions.circuit_version());
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -458,7 +473,7 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_2Only,
+            pool_restrictions,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
@@ -507,8 +522,148 @@ mod tests {
     }
 
     #[test]
+    fn qr_output_version_checks_note_commitment() {
+        let mut rng = OsRng;
+        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let mut builder = Builder::new(
+            BundlePoolRestrictions::IronwoodNu6_3Onward,
+            BundleType::DEFAULT,
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+        );
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
+            .unwrap();
+        let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        let output_action_index = bundle_meta.output_action_index(0).unwrap();
+
+        let action = &pczt_bundle.actions()[output_action_index];
+        assert_eq!(action.output.note_version(), &NoteVersion::V3);
+        action
+            .output
+            .verify_note_commitment(&action.spend)
+            .expect("V3 output version verifies the QR note commitment");
+
+        let sighash = [0; 32];
+        pczt_bundle.finalize_io(sighash, &mut rng).unwrap();
+        pczt_bundle
+            .create_proof(&pk, &mut rng)
+            .expect("V3 output version reconstructs the QR note for proving");
+
+        pczt_bundle.actions_mut()[output_action_index]
+            .output
+            .note_version = NoteVersion::V2;
+        let action = &pczt_bundle.actions()[output_action_index];
+        assert!(matches!(
+            action.output.verify_note_commitment(&action.spend),
+            Err(VerifyError::InvalidExtractedNoteCommitment)
+        ));
+        pczt_bundle.create_proof(&pk, &mut rng).unwrap();
+        let bundle = pczt_bundle
+            .extract::<i64>()
+            .unwrap()
+            .unwrap()
+            .apply_binding_signature(sighash, &mut rng)
+            .unwrap();
+        assert!(bundle.verify_proof(&vk).is_err());
+    }
+
+    #[test]
+    fn qr_spend_version_checks_nullifier_and_proves() {
+        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let mut rng = OsRng;
+
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+
+        let value = NoteValue::from_raw(15_000);
+        let note = {
+            let rho = Rho::from_bytes(&pallas::Base::random(&mut rng).to_repr()).unwrap();
+            loop {
+                if let Some(note) = Note::from_parts(
+                    recipient,
+                    value,
+                    rho,
+                    RandomSeed::random(&mut rng, &rho),
+                    NoteVersion::V3,
+                )
+                .into_option()
+                {
+                    break note;
+                }
+            }
+        };
+
+        let (anchor, merkle_path) = {
+            let cmx: ExtractedNoteCommitment = note.commitment().into();
+            let leaf = MerkleHashOrchard::from_cmx(&cmx);
+            let mut tree: ShardTree<MemoryShardStore<MerkleHashOrchard, u32>, 32, 16> =
+                ShardTree::new(MemoryShardStore::empty(), 100);
+            tree.append(
+                leaf,
+                Retention::Checkpoint {
+                    id: 0,
+                    marking: Marking::Marked,
+                },
+            )
+            .unwrap();
+            let root = tree.root_at_checkpoint_id(&0).unwrap().unwrap();
+            let position = tree.max_leaf_position(None).unwrap().unwrap();
+            let merkle_path = tree
+                .witness_at_checkpoint_id(position, &0)
+                .unwrap()
+                .unwrap();
+            assert_eq!(root, merkle_path.root(MerkleHashOrchard::from_cmx(&cmx)));
+            (root.into(), merkle_path)
+        };
+
+        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let mut builder = Builder::new(pool_restrictions, BundleType::DEFAULT, anchor);
+        builder
+            .add_spend(fvk.clone(), note, merkle_path.into())
+            .unwrap();
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+            .unwrap();
+        let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
+
+        let action = &pczt_bundle.actions()[spend_action_index];
+        assert_eq!(action.spend.note_version(), &NoteVersion::V3);
+        action
+            .spend
+            .verify_nullifier(None)
+            .expect("V3 spend version verifies the QR note nullifier");
+
+        pczt_bundle.finalize_io([0; 32], &mut rng).unwrap();
+        pczt_bundle
+            .create_proof(&pk, &mut rng)
+            .expect("V3 spend version reconstructs the QR note for proving");
+
+        pczt_bundle.actions_mut()[spend_action_index]
+            .spend
+            .note_version = NoteVersion::V2;
+        let action = &pczt_bundle.actions()[spend_action_index];
+        assert!(matches!(
+            action.spend.verify_nullifier(None),
+            Err(VerifyError::InvalidNullifier)
+        ));
+        assert!(matches!(
+            pczt_bundle.create_proof(&pk, &mut rng),
+            Err(ProverError::RhoMismatch)
+        ));
+    }
+
+    #[test]
     fn shielded_bundle() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
+        let pk = ProvingKey::build(pool_restrictions.circuit_version());
         let mut rng = OsRng;
 
         // Pretend we derived the spending key via ZIP 32.
@@ -528,7 +683,7 @@ mod tests {
                     value,
                     rho,
                     RandomSeed::random(&mut rng, &rho),
-                    NoteVersion::DEFAULT,
+                    pool_restrictions.note_version(),
                 )
                 .into_option()
                 {
@@ -859,8 +1014,8 @@ mod tests {
             spend_recipient,
             NoteValue::from_raw(15_000),
             rho,
-            &mut rng,
             NoteVersion::DEFAULT,
+            &mut rng,
         );
         let merkle_path = MerklePath::dummy(&mut rng);
         let anchor = merkle_path.root(note.commitment().into());

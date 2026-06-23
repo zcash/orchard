@@ -23,7 +23,7 @@ use crate::{
     address::Address,
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
-    note::Note,
+    note::{Note, NoteVersion},
     note_encryption::OrchardDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
@@ -96,10 +96,6 @@ pub enum BundlePoolRestrictions {
     /// `enableCrossAddress` value here, so this crate's builder currently constructs Ironwood
     /// bundles with `enableCrossAddress = 1`. The v6 flags are able to represent
     /// `enableCrossAddress = 0` if a future builder policy chooses to expose it.
-    ///
-    /// FIXME: Ironwood-pool notes MUST use lead-byte 0x03 (quantum-recoverable) plaintexts,
-    /// which are not yet implemented — bundles built under this `BundlePoolRestrictions` value
-    /// currently incorrectly use lead byte 0x02.
     IronwoodNu6_3Onward,
 }
 
@@ -117,6 +113,19 @@ impl BundlePoolRestrictions {
             BundlePoolRestrictions::OrchardNu6_2Only => OrchardCircuitVersion::FixedPostNu6_2,
             BundlePoolRestrictions::OrchardNu6_3Onward
             | BundlePoolRestrictions::IronwoodNu6_3Onward => OrchardCircuitVersion::PostNu6_3,
+        }
+    }
+
+    /// The [`NoteVersion`] associated with this bundle pool restriction.
+    ///
+    /// Orchard pools use V2 note plaintexts, and Ironwood pools use V3 note
+    /// plaintexts.
+    pub fn note_version(self) -> NoteVersion {
+        match self {
+            BundlePoolRestrictions::OrchardPreNu6_2 => NoteVersion::V2,
+            BundlePoolRestrictions::OrchardNu6_2Only => NoteVersion::V2,
+            BundlePoolRestrictions::OrchardNu6_3Onward => NoteVersion::V2,
+            BundlePoolRestrictions::IronwoodNu6_3Onward => NoteVersion::V3,
         }
     }
 
