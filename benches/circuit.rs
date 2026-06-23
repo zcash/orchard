@@ -8,7 +8,7 @@ use pprof::criterion::{Output, PProfProfiler};
 
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::BundleProtocol,
+    bundle::BundlePoolRestrictions,
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, Scope, SpendingKey},
     value::NoteValue,
@@ -27,7 +27,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let create_bundle = |num_recipients| {
         let mut builder = Builder::new(
-            BundleProtocol::OrchardPreNu6_3,
+            BundlePoolRestrictions::OrchardNu6_2Only,
             BundleType::DEFAULT,
             Anchor::from_bytes([0; 32]).unwrap(),
         );

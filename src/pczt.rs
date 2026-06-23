@@ -344,7 +344,7 @@ mod tests {
 
     use crate::{
         builder::{Builder, BundleMetadata, BundleType},
-        bundle::{BundleProtocol, Flags},
+        bundle::{BundlePoolRestrictions, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -386,7 +386,7 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
-            BundleProtocol::OrchardPostNu6_3,
+            BundlePoolRestrictions::OrchardNu6_3Onward,
             BundleType::Transactional {
                 spends_enabled: true,
                 outputs_enabled: true,
@@ -422,7 +422,7 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleProtocol::OrchardPreNu6_3,
+            BundlePoolRestrictions::OrchardNu6_2Only,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
@@ -452,7 +452,7 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
-            BundleProtocol::OrchardPreNu6_3,
+            BundlePoolRestrictions::OrchardNu6_2Only,
             BundleType::DEFAULT,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         );
@@ -551,8 +551,11 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let mut builder =
-            Builder::new(BundleProtocol::OrchardPreNu6_3, BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(
+            BundlePoolRestrictions::OrchardNu6_2Only,
+            BundleType::DEFAULT,
+            anchor,
+        );
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -675,7 +678,7 @@ mod tests {
             super::Bundle::parse(
                 vec![],
                 0b0000_0100,
-                BundleProtocol::OrchardPreNu6_3,
+                BundlePoolRestrictions::OrchardNu6_2Only,
                 (0, false),
                 anchor.to_bytes(),
                 None,
@@ -687,7 +690,7 @@ mod tests {
         let parsed = super::Bundle::parse(
             vec![],
             0b0000_0100,
-            BundleProtocol::OrchardPostNu6_3,
+            BundlePoolRestrictions::OrchardNu6_3Onward,
             (0, false),
             anchor.to_bytes(),
             None,
@@ -697,18 +700,22 @@ mod tests {
 
         assert!(parsed.flags().cross_address_enabled());
         assert_eq!(
-            parsed.flags().to_byte(BundleProtocol::OrchardPostNu6_3),
+            parsed
+                .flags()
+                .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
             Some(0b0000_0100)
         );
         assert_eq!(
-            parsed.flags().to_byte(BundleProtocol::OrchardPreNu6_3),
+            parsed
+                .flags()
+                .to_byte(BundlePoolRestrictions::OrchardNu6_2Only),
             Some(0b0000_0000)
         );
 
         let restricted = super::Bundle::parse(
             vec![],
             0b0000_0011,
-            BundleProtocol::OrchardPostNu6_3,
+            BundlePoolRestrictions::OrchardNu6_3Onward,
             (0, false),
             anchor.to_bytes(),
             None,
@@ -718,11 +725,15 @@ mod tests {
 
         assert!(!restricted.flags().cross_address_enabled());
         assert_eq!(
-            restricted.flags().to_byte(BundleProtocol::OrchardPostNu6_3),
+            restricted
+                .flags()
+                .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
             Some(0b0000_0011)
         );
         assert_eq!(
-            restricted.flags().to_byte(BundleProtocol::OrchardPreNu6_3),
+            restricted
+                .flags()
+                .to_byte(BundlePoolRestrictions::OrchardNu6_2Only),
             None
         );
     }
@@ -830,7 +841,7 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
-            BundleProtocol::OrchardPostNu6_3,
+            BundlePoolRestrictions::OrchardNu6_3Onward,
             BundleType::Transactional {
                 spends_enabled: true,
                 outputs_enabled: true,

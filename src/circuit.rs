@@ -1392,7 +1392,7 @@ mod tests {
 
     use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
-        bundle::{BundleProtocol, Flags},
+        bundle::{BundlePoolRestrictions, Flags},
         keys::SpendValidatingKey,
         note::{Note, Rho},
         tree::MerklePath,
@@ -1550,21 +1550,21 @@ mod tests {
         let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let enable_spend = read_bool(&mut r);
         let enable_output = read_bool(&mut r);
-        let (cross_address_bit, protocol) = match encoding {
-            ProofFixtureEncoding::LegacyTwoFlags => (0, BundleProtocol::OrchardPreNu6_3),
+        let (cross_address_bit, pool_restrictions) = match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => (0, BundlePoolRestrictions::OrchardNu6_2Only),
             ProofFixtureEncoding::PostNu6_3ThreeFlags => {
                 // The fixture stores the instance-level *disable* bit; the NU6.3 flag
                 // byte carries the *enable* bit, so invert when reconstructing.
                 let cross_address_disabled = read_bool(&mut r);
                 (
                     u8::from(!cross_address_disabled) << 2,
-                    BundleProtocol::OrchardPostNu6_3,
+                    BundlePoolRestrictions::OrchardNu6_3Onward,
                 )
             }
         };
         let flags = Flags::from_byte(
             u8::from(enable_spend) | (u8::from(enable_output) << 1) | cross_address_bit,
-            protocol,
+            pool_restrictions,
         )
         .expect("test vectors use canonical flag encodings");
 

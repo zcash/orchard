@@ -10,8 +10,8 @@ and this project adheres to Rust's notion of
 All changes in this release support the NU6.3 `enableCrossAddress` bundle flag
 and the post-NU 6.3 Orchard Action circuit that enforces the cross-address
 restriction. Construction and wire encoding are now selected by a single
-`orchard::bundle::BundleProtocol` (a `(pool, era)` value); existing callers keep
-the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
+`orchard::bundle::BundlePoolRestrictions` (a `(pool, era)` value); existing callers keep
+the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (and
 `OrchardCircuitVersion::FixedPostNu6_2` when building proving/verifying keys).
 
 ### Added
@@ -19,14 +19,14 @@ the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
   - `Flags::CROSS_ADDRESS_DISABLED`, the restricted flag set. It cannot be
     encoded in pre-NU6.3 formats.
   - `Flags::cross_address_enabled`
-- `orchard::bundle::BundleProtocol`, the `(pool, era)` selector for an Orchard
-  bundle. It determines the circuit version (`BundleProtocol::circuit_version`),
+- `orchard::bundle::BundlePoolRestrictions`, the `(pool, era)` selector for an Orchard
+  bundle. It determines the circuit version (`BundlePoolRestrictions::circuit_version`),
   the flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and
   cross-address transfers are implicitly enabled, vs NU6.3 rules, where bit 2 is
   `enableCrossAddress`), and whether consensus mandates the cross-address
   restriction (the builder then chooses the value within that constraint).
-  Variants: `OrchardPreNu6_2`, `OrchardPreNu6_3`, `OrchardPostNu6_3`, and
-  `IronwoodPostNu6_3` (which shares the post-NU6.3 circuit; its V3 note plaintexts
+  Variants: `OrchardPreNu6_2`, `OrchardNu6_2Only`, `OrchardNu6_3Onward`, and
+  `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit; its V3 note plaintexts
   are not yet implemented).
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input (the negation of the
@@ -67,7 +67,7 @@ the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
-  `orchard::pczt::Bundle::parse` now take a `BundleProtocol`. Under a NU6.3
+  `orchard::pczt::Bundle::parse` now take a `BundlePoolRestrictions`. Under a NU6.3
   protocol, bit 2 is parsed and serialized as `enableCrossAddress`; under a
   pre-NU6.3 protocol, bit 2 remains reserved, parsing yields flags with
   cross-address transfers enabled, and `Flags::to_byte` (which now returns
@@ -81,18 +81,18 @@ the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
   - `orchard::circuit::ProvingKey::build`
   - `orchard::circuit::VerifyingKey::build`
   - `orchard::circuit::Circuit::from_action_context`
-- Bundle construction now takes a `BundleProtocol` instead of a circuit version:
-  - `orchard::builder::Builder::new` takes the `BundleProtocol`, and
+- Bundle construction now takes a `BundlePoolRestrictions` instead of a circuit version:
+  - `orchard::builder::Builder::new` takes the `BundlePoolRestrictions`, and
     `orchard::builder::Builder::build` no longer takes a circuit-version argument
     (it derives the circuit version from the protocol).
-  - `orchard::builder::bundle` takes the `BundleProtocol` in place of the
+  - `orchard::builder::bundle` takes the `BundlePoolRestrictions` in place of the
     circuit-version argument.
 - `orchard::builder::BundleType::Transactional` no longer embeds a full `Flags`;
   it carries `{ spends_enabled, outputs_enabled, bundle_required }`, and
   `BundleType::flags` and `BundleType::num_actions` now take the
-  `BundleProtocol`. The builder chooses the cross-address bit as a prover-side
+  `BundlePoolRestrictions`. The builder chooses the cross-address bit as a prover-side
   default — the least-restrictive value consensus permits: enabled, except under
-  `OrchardPostNu6_3`, where consensus mandates the restriction. `BundleProtocol`
+  `OrchardNu6_3Onward`, where consensus mandates the restriction. `BundlePoolRestrictions`
   exposes only that consensus constraint; the default lives in builder logic. The
   `Flags` codec still represents NU6.3 `enableCrossAddress = 0` flag sets, so a
   future builder could expose the choice where consensus leaves it free (e.g.
@@ -152,10 +152,10 @@ the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
   `VerifyError`) and leaving the bundle unmodified if the PCZT is missing
   recipient data or violates the restriction.
-- `orchard::Bundle::commitment` now takes the `BundleProtocol` the bundle
+- `orchard::Bundle::commitment` now takes the `BundlePoolRestrictions` the bundle
   follows, and hashes that era's flag byte (via `Flags::to_byte`). The ZIP-244
   Orchard digest — and therefore the transaction ID and sighash — now depends on
-  the `BundleProtocol`: under a NU6.3 protocol an unrestricted bundle's flag byte
+  the `BundlePoolRestrictions`: under a NU6.3 protocol an unrestricted bundle's flag byte
   sets bit 2. Callers computing transaction IDs or sighashes (e.g.
   `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`) must pass the
   protocol matching the transaction. It now returns
@@ -165,13 +165,13 @@ the current behavior by selecting `BundleProtocol::OrchardPreNu6_3` (and
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended
-  `OrchardCircuitVersion` (keys/circuit) or `BundleProtocol` (construction) to
+  `OrchardCircuitVersion` (keys/circuit) or `BundlePoolRestrictions` (construction) to
   the plain APIs listed above instead:
   - `orchard::circuit::ProvingKey::build_for_version`
   - `orchard::circuit::VerifyingKey::build_for_version`
   - `orchard::circuit::Circuit::from_action_context_for_version`
   - `orchard::builder::Builder::new_for_version` (use `Builder::new`, which now
-    takes the `BundleProtocol`)
+    takes the `BundlePoolRestrictions`)
   - `orchard::builder::bundle_for_version`
 - The `Default` impls for `orchard::circuit::Circuit` and
   `orchard::circuit::OrchardCircuitVersion`; callers must choose a circuit
