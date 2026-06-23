@@ -9,7 +9,9 @@ use group::Curve;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 use halo2_gadgets::{
-    ecc::{chip::EccChip, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar},
+    ecc::{
+        chip::EccChip, CircuitVersion, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar,
+    },
     poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip},
     sinsemilla::{
         chip::SinsemillaChip,
@@ -329,6 +331,10 @@ impl OrchardCircuit for OrchardZSA {
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
+        if circuit.circuit_version.halo2_version() == CircuitVersion::InsecureUnanchoredBase {
+            return Err(plonk::Error::Synthesis);
+        }
+
         // Load the Sinsemilla generator lookup table used by the whole circuit.
         SinsemillaChip::load(config.sinsemilla_config_1.clone(), &mut layouter)?;
 
@@ -1167,6 +1173,7 @@ mod tests {
     fn generate_circuit_instance<R: CryptoRngCore>(
         is_zatoshi_asset: bool,
         split_flag: bool,
+        orchard_circuit_version: OrchardCircuitVersion,
         mut rng: R,
     ) -> (Circuit<OrchardZSA>, Instance) {
         // We cannot create a split note with a zatoshi asset.
@@ -1257,7 +1264,7 @@ mod tests {
                     output_note,
                     alpha,
                     rcv,
-                    OrchardCircuitVersion::FixedPostNu6_2,
+                    orchard_circuit_version,
                 ),
                 phantom: core::marker::PhantomData,
             },
@@ -1292,8 +1299,12 @@ mod tests {
         let mut rng = OsRng;
 
         for (is_zatoshi_asset, split_flag) in [(true, false), (false, true), (false, false)] {
-            let (circuit, instance) =
-                generate_circuit_instance(is_zatoshi_asset, split_flag, &mut rng);
+            let (circuit, instance) = generate_circuit_instance(
+                is_zatoshi_asset,
+                split_flag,
+                OrchardCircuitVersion::FixedPostNu6_2,
+                &mut rng,
+            );
 
             let should_pass = !(matches!((is_zatoshi_asset, split_flag), (true, true)));
 
@@ -1331,7 +1342,7 @@ mod tests {
             // The proof should fail
             let circuit_wrong_cm_old = Circuit {
                 witnesses: Witnesses {
-                    circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
+                    circuit_version: circuit.witnesses.circuit_version,
                     path: circuit.witnesses.path,
                     pos: circuit.witnesses.pos,
                     g_d_old: circuit.witnesses.g_d_old,
@@ -1391,7 +1402,7 @@ mod tests {
             if !split_flag {
                 let circuit_wrong_psi_nf = Circuit {
                     witnesses: Witnesses {
-                        circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
+                        circuit_version: circuit.witnesses.circuit_version,
                         path: circuit.witnesses.path,
                         pos: circuit.witnesses.pos,
                         g_d_old: circuit.witnesses.g_d_old,
@@ -1442,5 +1453,18 @@ mod tests {
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
             }
         }
+    }
+
+    #[test]
+    fn cannot_create_insecure_zsa_proof() {
+        let mut rng = OsRng;
+        let (circuit, instance) = generate_circuit_instance(
+            true,
+            false,
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            &mut rng,
+        );
+        let pk = ProvingKey::build::<OrchardZSA>();
+        assert!(Proof::create(&pk, &[circuit], &[instance], &mut rng).is_err());
     }
 }
