@@ -2345,7 +2345,7 @@ mod tests {
         ));
         assert!(matches!(
             pczt_bundle.create_proof(&pk, rng),
-            Err(ProverError::DisallowedCrossAddressTransfer)
+            Err(ProverError::DisallowedCrossAddressTransfer(_))
         ));
     }
 

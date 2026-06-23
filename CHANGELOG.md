@@ -52,7 +52,8 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   - `orchard::builder::BuildError::CrossAddressDisabled`
   - `orchard::builder::OutputError::{CrossAddressDisabled, SpendsDisabled, RecipientNotOwned}`
   - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
-  - `orchard::pczt::ProverError::{DisallowedCrossAddressTransfer, CrossAddressRestriction}`
+  - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`, wrapping the
+    underlying `orchard::pczt::VerifyError`
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.

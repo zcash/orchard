@@ -755,7 +755,7 @@ mod tests {
             mismatched_pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
             assert!(matches!(
                 mismatched_pczt_bundle.create_proof(&pk, rng),
-                Err(ProverError::DisallowedCrossAddressTransfer),
+                Err(ProverError::DisallowedCrossAddressTransfer(_)),
             ));
         }
 
