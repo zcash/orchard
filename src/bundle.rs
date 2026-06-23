@@ -902,9 +902,10 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::{
+        bundle::BundlePoolRestrictions,
         primitives::redpallas::{self, testing::arb_binding_signing_key},
         value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
-        Anchor, Proof,
+        Anchor, NoteVersion, Proof,
     };
 
     use super::{Action, Authorized, Bundle, Flags};
@@ -914,8 +915,19 @@ pub mod testing {
     /// Marker type for a bundle that contains no authorizing data.
     pub type Unauthorized = super::EffectsOnly;
 
+    /// Create an arbitrary bundle protocol restriction.
+    pub fn arb_bundle_protocol_restriction() -> impl Strategy<Value = BundlePoolRestrictions> {
+        prop_oneof![
+            Just(BundlePoolRestrictions::OrchardPreNu6_2),
+            Just(BundlePoolRestrictions::OrchardNu6_2Only),
+            Just(BundlePoolRestrictions::OrchardNu6_3Onward),
+            Just(BundlePoolRestrictions::IronwoodNu6_3Onward),
+        ]
+    }
+
     /// Generate an unauthorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
     pub fn arb_unauthorized_action_n(
+        note_version: NoteVersion,
         n_actions: usize,
         flags: Flags,
     ) -> impl Strategy<Value = (ValueSum, Action<()>)> {
@@ -933,7 +945,7 @@ pub mod testing {
             };
 
             output_value_gen.prop_flat_map(move |output_value| {
-                arb_unauthorized_action(spend_value, output_value)
+                arb_unauthorized_action(note_version, spend_value, output_value)
                     .prop_map(move |a| (spend_value - output_value, a))
             })
         })
@@ -941,6 +953,7 @@ pub mod testing {
 
     /// Generate an authorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
     pub fn arb_action_n(
+        note_version: NoteVersion,
         n_actions: usize,
         flags: Flags,
     ) -> impl Strategy<Value = (ValueSum, Action<redpallas::Signature<SpendAuth>>)> {
@@ -958,7 +971,7 @@ pub mod testing {
             };
 
             output_value_gen.prop_flat_map(move |output_value| {
-                arb_action(spend_value, output_value)
+                arb_action(note_version, spend_value, output_value)
                     .prop_map(move |a| (spend_value - output_value, a))
             })
         })
@@ -1005,10 +1018,11 @@ pub mod testing {
         /// [`crate::builder::testing::arb_bundle`]
         pub fn arb_unauthorized_bundle(n_actions: usize)
         (
+            protocol_restrictions in arb_bundle_protocol_restriction(),
             flags in arb_flags(),
         )
         (
-            acts in vec(arb_unauthorized_action_n(n_actions, flags), n_actions),
+            acts in vec(arb_unauthorized_action_n(protocol_restrictions.note_version(), n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
             flags in Just(flags)
         ) -> Bundle<Unauthorized, ValueSum> {
@@ -1030,10 +1044,11 @@ pub mod testing {
         /// [`crate::builder::testing::arb_bundle`]
         pub fn arb_bundle(n_actions: usize)
         (
+            protocol_restrictions in arb_bundle_protocol_restriction(),
             flags in arb_flags(),
         )
         (
-            acts in vec(arb_action_n(n_actions, flags), n_actions),
+            acts in vec(arb_action_n(protocol_restrictions.note_version(), n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
             sk in arb_binding_signing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
@@ -1343,7 +1358,9 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_enforces_canonical_proof_size(bundle in arb_bundle(3)) {
+        fn try_from_parts_enforces_canonical_proof_size(
+            bundle in arb_bundle(3)
+        ) {
             let actions = bundle.actions().clone();
             let expected = Proof::expected_proof_size(actions.len());
             let flags = *bundle.flags();
@@ -1382,7 +1399,9 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_preserves_cross_address_disabled(bundle in arb_bundle(3)) {
+        fn try_from_parts_preserves_cross_address_disabled(
+            bundle in arb_bundle(3)
+        ) {
             let actions = bundle.actions().clone();
             let mut flags = *bundle.flags();
             flags.cross_address_enabled = false;
@@ -1403,7 +1422,9 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_checks_proof_size_with_cross_address_disabled(bundle in arb_bundle(3)) {
+        fn try_from_parts_checks_proof_size_with_cross_address_disabled(
+            bundle in arb_bundle(3)
+        ) {
             let actions = bundle.actions().clone();
             let expected = Proof::expected_proof_size(actions.len());
             let mut flags = *bundle.flags();

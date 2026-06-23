@@ -1683,7 +1683,7 @@ pub mod testing {
         note::testing::arb_note,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
-        Address, Note,
+        Address, Note, NoteVersion,
     };
 
     use super::{Builder, BundleType};
@@ -1751,7 +1751,8 @@ pub mod testing {
         (
             // generate note values that we're certain won't exceed MAX_NOTE_VALUE in total
             notes in vec(
-                arb_positive_note_value(MAX_NOTE_VALUE / n_notes as u64).prop_flat_map(arb_note),
+                arb_positive_note_value(MAX_NOTE_VALUE / n_notes as u64)
+                    .prop_flat_map(|value| arb_note(value, NoteVersion::V2)),
                 n_notes
             ),
             output_amounts in vec(

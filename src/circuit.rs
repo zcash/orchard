@@ -1432,7 +1432,9 @@ mod tests {
         circuit_version: OrchardCircuitVersion,
         output_matches_spend: bool,
     ) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, NoteVersion::DEFAULT);
+        // Note Version does not matter for this
+        let note_version = NoteVersion::V2;
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, note_version);
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -1448,12 +1450,12 @@ mod tests {
                 sender_address,
                 spent_note.value(),
                 rho,
-                NoteVersion::DEFAULT,
+                note_version,
                 &mut rng,
             )
         } else {
             loop {
-                let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), NoteVersion::DEFAULT);
+                let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), note_version);
                 if !sender_address.same_expanded_receiver(&output_note.recipient()) {
                     break output_note;
                 }

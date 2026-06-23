@@ -1008,13 +1008,14 @@ mod tests {
         let spend_sk = SpendingKey::random(&mut rng);
         let spend_fvk = FullViewingKey::from(&spend_sk);
         let spend_recipient = spend_fvk.address_at(0u32, Scope::External);
+        let note_version = NoteVersion::V2;
 
         let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
         let note = Note::new(
             spend_recipient,
             NoteValue::from_raw(15_000),
             rho,
-            NoteVersion::DEFAULT,
+            note_version,
             &mut rng,
         );
         let merkle_path = MerklePath::dummy(&mut rng);

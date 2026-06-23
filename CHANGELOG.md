@@ -71,6 +71,9 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   transfers. `arb_flags` is unchanged and only generates flag sets with
   cross-address transfers enabled, which are representable under every pool
   restriction other than Orchard post-NU6.3.
+- `orchard::bundle::testing::arb_bundle_protocol_restriction` (under the
+  `test-dependencies` feature), a strategy that generates bundle pool
+  restrictions.
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
@@ -164,6 +167,15 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
   actions whose spend or output note version does not match the
   `BundlePoolRestrictions`.
+- `test-dependencies` note and bundle strategies now select note versions from
+  their callers or generated bundle pool restrictions:
+  - `orchard::note::testing::arb_note` now takes a note version.
+  - `orchard::action::testing::{arb_action, arb_unauthorized_action}` now take a
+    note version.
+  - `orchard::bundle::testing::{arb_action_n, arb_unauthorized_action_n}` now
+    take a note version.
+  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` no longer
+    take bundle pool restrictions, and instead select them internally.
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
   before modifying the bundle, returning
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying

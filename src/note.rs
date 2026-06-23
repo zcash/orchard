@@ -43,14 +43,6 @@ pub enum NoteVersion {
 }
 
 impl NoteVersion {
-    /// The note version produced by constructors that do not take an explicit
-    /// [`NoteVersion`].
-    ///
-    /// This is temporary for just this PR. In the follow-on PR for integration of Ironwood,
-    /// we delete this and show the integration. We currently use this as the placeholder for
-    /// every call-site in this PR.
-    pub const DEFAULT: Self = Self::V2;
-
     /// Returns the note plaintext lead byte signaling this version.
     pub(crate) const fn lead_byte(self) -> u8 {
         match self {
@@ -485,8 +477,8 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an action without authorization data.
-        pub fn arb_note(value: NoteValue)(
+        /// Generate an arbitrary note with the given plaintext version.
+        pub fn arb_note(value: NoteValue, version: NoteVersion)(
             recipient in arb_address(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
             rseed in arb_rseed(),
@@ -496,7 +488,7 @@ pub mod testing {
                 value,
                 rho,
                 rseed,
-                version: NoteVersion::DEFAULT,
+                version,
             }
         }
     }

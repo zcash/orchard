@@ -491,8 +491,8 @@ mod tests {
             assert_eq!(ock.as_ref(), tv.ock);
 
             let recipient = Address::from_parts(d, pk_d);
-            let note =
-                Note::from_parts(recipient, value, rho, rseed, NoteVersion::DEFAULT).unwrap();
+            let note_version = NoteVersion::V2;
+            let note = Note::from_parts(recipient, value, rho, rseed, note_version).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(
