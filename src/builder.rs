@@ -17,7 +17,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
+    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -358,7 +358,7 @@ impl SpendInfo {
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     fn dummy(rng: &mut impl RngCore) -> Self {
-        let (sk, fvk, note) = Note::dummy(rng, None);
+        let (sk, fvk, note) = Note::dummy(rng, None, NoteVersion::DEFAULT);
         let merkle_path = MerklePath::dummy(rng);
 
         SpendInfo {
@@ -504,7 +504,13 @@ impl OutputInfo {
         mut rng: impl RngCore,
     ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext) {
         let rho = Rho::from_nf_old(nf_old);
-        let note = Note::new(self.recipient, self.value, rho, &mut rng);
+        let note = Note::new(
+            self.recipient,
+            self.value,
+            rho,
+            &mut rng,
+            NoteVersion::DEFAULT,
+        );
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
@@ -1184,7 +1190,13 @@ fn build_bundle<B, R: RngCore>(
         for (chg_idx, change) in changes.into_iter().enumerate() {
             let ChangeInfo { output, fvk, scope } = change;
             let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
-            let note = Note::new(output.recipient, NoteValue::ZERO, rho, &mut rng);
+            let note = Note::new(
+                output.recipient,
+                NoteValue::ZERO,
+                rho,
+                &mut rng,
+                NoteVersion::DEFAULT,
+            );
             let spend = SpendInfo {
                 // The wallet controls this spend: it is signed through the normal
                 // signing flow, by the spend authorizing key matching `fvk`.
@@ -1777,7 +1789,7 @@ mod tests {
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{Nullifier, Rho},
+        note::{NoteVersion, Nullifier, Rho},
         pczt::{ProverError, VerifyError},
         tree::{MerklePath, EMPTY_ROOTS},
         value::NoteValue,
@@ -1790,7 +1802,7 @@ mod tests {
         value: NoteValue,
     ) -> (Note, MerklePath, Anchor) {
         let rho = Rho::from_nf_old(Nullifier::dummy(rng));
-        let note = Note::new(recipient, value, rho, &mut *rng);
+        let note = Note::new(recipient, value, rho, &mut *rng, NoteVersion::DEFAULT);
         let merkle_path = MerklePath::dummy(rng);
         let anchor = merkle_path.root(note.commitment().into());
 
