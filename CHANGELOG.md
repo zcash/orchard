@@ -99,7 +99,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   exposes only that consensus constraint; the default lives in builder logic. The
   `Flags` codec still represents NU6.3 `enableCrossAddress = 0` flag sets, so a
   future builder could expose the choice where consensus leaves it free (e.g.
-  Ironwood); this branch does not. `Coinbase` is unchanged.
+  Ironwood); this branch does not. Coinbase bundles follow the same pool
+  restrictions as non-coinbase bundles: post-NU6.3 Orchard coinbase
+  transactions cannot contain Orchard actions, so post-NU6.3 coinbase bundle
+  construction in this crate is only useful for `IronwoodNu6_3Onward`.
 - `orchard::circuit::Instance::from_parts` now takes an
   `orchard::bundle::Flags` argument instead of separate spend/output enable
   booleans, so the cross-address restriction is carried into the public
@@ -158,8 +161,8 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
 - `orchard::Bundle::commitment` now takes the `BundlePoolRestrictions` the bundle
   follows, and hashes that era's flag byte (via `Flags::to_byte`). The ZIP-244
   Orchard digest — and therefore the transaction ID and sighash — now depends on
-  the `BundlePoolRestrictions`: under a NU6.3 protocol an unrestricted bundle's flag byte
-  sets bit 2. Callers computing transaction IDs or sighashes (e.g.
+  the `BundlePoolRestrictions`: under `IronwoodNu6_3Onward` an unrestricted bundle's
+  flag byte sets bit 2. Callers computing transaction IDs or sighashes (e.g.
   `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`) must pass the
   protocol matching the transaction. It now returns
   `Result<BundleCommitment, CommitmentError>`, returning
