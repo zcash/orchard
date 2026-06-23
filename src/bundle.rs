@@ -182,7 +182,7 @@ pub enum BundleFormat {
 }
 
 /// Orchard-specific flags.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Flags {
     /// Flag denoting whether Orchard spends are enabled in the transaction.
     ///
@@ -223,8 +223,22 @@ impl Flags {
     /// combination: see the [`BundleType::Coinbase`] documentation for why a spends-disabled
     /// bundle must keep cross-address transfers enabled to pay an arbitrary recipient.
     ///
+    /// # Examples
+    ///
+    /// ```
+    /// use orchard::{BundleFormat, Flags};
+    ///
+    /// // This constructor keeps cross-address transfers enabled.
+    /// let flags = Flags::from_parts(true, true);
+    /// assert!(flags.spends_enabled() && flags.outputs_enabled());
+    ///
+    /// // Round-trips through the consensus flag byte using the selected bundle format.
+    /// let byte = flags.to_byte(BundleFormat::Nu6_3).expect("flags are encodable");
+    /// assert_eq!(Flags::from_byte(byte, BundleFormat::Nu6_3), Some(flags));
+    /// ```
+    ///
     /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
-    pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
+    pub const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
         Flags::from_parts_with_cross_address(spends_enabled, outputs_enabled, true)
     }
 
@@ -1248,6 +1262,51 @@ pub(crate) mod tests {
     fn pre_nu6_3_flags_parsing_rejects_reserved_bits() {
         for value in 0b100..=u8::MAX {
             assert_eq!(Flags::from_byte(value, BundleFormat::PreNu6_3), None);
+        }
+    }
+
+    #[test]
+    fn serde_round_trip_preserves_cross_address_bit_per_protocol() {
+        // At NU6.3 the cross-address bit (0b100) is the only flag-byte difference between
+        // Orchard (`enableCrossAddress = 0`) and Ironwood (`= 1`); before NU6.3 it is a
+        // reserved zero bit. Deriving `serde` on `Flags` must not disturb that bit, so for
+        // every protocol the value must survive a serde round-trip and re-encode to the
+        // same flag byte.
+        for protocol in [
+            BundleProtocol::OrchardPreNu6_2,
+            BundleProtocol::OrchardPreNu6_3,
+            BundleProtocol::OrchardPostNu6_3,
+            BundleProtocol::IronwoodPostNu6_3,
+        ] {
+            let format = protocol.bundle_format();
+            // The flags a typical spends+outputs bundle uses under this protocol.
+            let flags = if protocol.requires_cross_address_restriction() {
+                Flags::CROSS_ADDRESS_DISABLED
+            } else {
+                Flags::ENABLED
+            };
+
+            let byte = flags
+                .to_byte(format)
+                .expect("flags are encodable under their own format");
+
+            // Only NU6.3 Ironwood sets the cross-address bit; pre-NU6.3 and NU6.3 Orchard
+            // leave it clear (reserved / `enableCrossAddress = 0`).
+            assert_eq!(
+                byte & 0b100 != 0,
+                protocol == BundleProtocol::IronwoodPostNu6_3,
+                "unexpected cross-address bit for {protocol:?}"
+            );
+
+            // serde must round-trip the flags without changing the encoded byte.
+            let restored: Flags =
+                serde_json::from_str(&serde_json::to_string(&flags).unwrap()).unwrap();
+            assert_eq!(restored, flags, "serde changed the flags for {protocol:?}");
+            assert_eq!(
+                restored.to_byte(format),
+                Some(byte),
+                "serde changed the encoded flag byte for {protocol:?}"
+            );
         }
     }
 

@@ -53,7 +53,7 @@ mod test_vectors;
 
 pub use action::{Action, ActionFromPartsError};
 pub use address::Address;
-pub use bundle::{Bundle, BundleProtocol};
+pub use bundle::{Bundle, BundleFormat, BundleProtocol, Flags};
 pub use constants::MERKLE_DEPTH_ORCHARD as NOTE_COMMITMENT_TREE_DEPTH;
 pub use constants::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE};
 pub use note::{Note, NoteVersion};
