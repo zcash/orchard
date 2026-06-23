@@ -375,7 +375,7 @@ fn post_nu6_3_restricted_bundle_chain() {
             Some((NoteValue::from_raw(3000), change_addr))
         );
 
-        // The fabricated zero-value output paired with the real spend is addressed to the spent
+        // The fabricated zero-valued output paired with the real spend is addressed to the spent
         // note's own (external) receiver, but its ciphertext is randomized, so even the owning
         // wallet's external ivk cannot trial-decrypt it -- which is what keeps the spend hidden
         // from anyone (including a quantum adversary) who recovers that ivk from the address.

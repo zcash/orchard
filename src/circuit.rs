@@ -895,8 +895,8 @@ impl Circuit {
     /// sign           <- 1 (constant)
     /// root           <- old coordinate
     /// anchor         <- new coordinate
-    /// enable_spend  <- 1 (constant)
-    /// enable_output <- 1 (constant)
+    /// enable_spend   <- 1 (constant)
+    /// enable_output  <- 1 (constant)
     /// ```
     ///
     /// With this layout, the gate constraints become:
@@ -904,8 +904,8 @@ impl Circuit {
     /// ```text
     /// v_old - v_new = magnitude * sign  ->  disableCrossAddress - 0 = disableCrossAddress * 1
     /// v_old * (root - anchor) = 0       ->  disableCrossAddress * (old_coord - new_coord) = 0
-    /// v_old * (1 - enable_spend) = 0   ->  disableCrossAddress * (1 - 1) = 0
-    /// v_new * (1 - enable_output) = 0  ->  0 * (1 - 1) = 0
+    /// v_old * (1 - enable_spend) = 0    ->  disableCrossAddress * (1 - 1) = 0
+    /// v_new * (1 - enable_output) = 0   ->  0 * (1 - 1) = 0
     /// ```
     ///
     /// The second line is the actual cross-address check. Any nonzero

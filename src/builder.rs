@@ -51,7 +51,7 @@ pub enum BundleType {
         /// actions in the resulting bundle will be dummies.
         bundle_required: bool,
     },
-    /// A coinbase bundle disables nonzero Orchard spends, and is built with
+    /// A coinbase bundle disables nonzero-valued Orchard spends, and is built with
     /// [`Flags::SPENDS_DISABLED`]: spends disabled, outputs enabled, and
     /// cross-address transfers enabled. No padding is performed.
     ///
@@ -96,7 +96,7 @@ impl BundleType {
     ///
     /// For [`BundleType::Transactional`] bundles that disable cross-address transfers, a
     /// requested spend and a requested output never share an
-    /// action (each is paired with a fabricated zero-value counterpart), so the number of
+    /// action (each is paired with a fabricated zero-valued counterpart), so the number of
     /// requested actions is `num_spends + num_outputs` rather than `max(num_spends, num_outputs)`.
     /// Wallets estimating fees (e.g. per [ZIP 317]) must account for this larger action
     /// count.
@@ -435,8 +435,8 @@ pub struct OutputInfo {
     value: NoteValue,
     memo: [u8; 512],
     /// When set, `build` fills `enc_ciphertext` with random bytes instead of encrypting the
-    /// note to `recipient`. This is used only for the zero-value output the restricted
-    /// (cross-address-disabled) builder pairs with a real spend, which is addressed to the
+    /// note to `recipient`. This is used only for the zero-valued output that a builder with
+    /// cross-address actions disabled pairs with a real spend, which is addressed to the
     /// spent note's own receiver. A real ciphertext there would trial-decrypt under that
     /// receiver's incoming viewing key in the same action that carries the spend's nullifier,
     /// letting anyone who holds the ivk -- including a quantum adversary who recovered it from
@@ -466,7 +466,8 @@ impl OutputInfo {
         }
     }
 
-    /// Constructs the zero-value output the restricted builder pairs with a real spend.
+    /// Constructs the zero-valued output that a builder with cross-address actions
+    /// disabled pairs with a real spend.
     ///
     /// `recipient` is the spent note's own receiver, so the output's `enc_ciphertext` is
     /// randomized rather than encrypted to it (see the `randomized_ciphertext` field).
@@ -514,7 +515,7 @@ impl OutputInfo {
             assert_eq!(
                 self.value,
                 NoteValue::ZERO,
-                "a randomized note ciphertext must never stand in for a nonzero-value note",
+                "a randomized note ciphertext must never stand in for a nonzero-valued note",
             );
             let mut enc_ciphertext = [0u8; ENC_CIPHERTEXT_SIZE];
             rng.fill_bytes(&mut enc_ciphertext);
@@ -560,7 +561,7 @@ impl OutputInfo {
 ///
 /// This is an [`OutputInfo`] to a `recipient` owned by `fvk`, with that ownership recorded.
 /// In a bundle that disables cross-address transfers it is the only way to retain shielded
-/// value: the builder pairs it with a fabricated zero-value spend controlled by `fvk` at
+/// value: the builder pairs it with a fabricated zero-valued spend controlled by `fvk` at
 /// `recipient`, in the same action. In a bundle that permits cross-address transfers it is
 /// equivalent to the underlying [`OutputInfo`] (the ownership is validated when the
 /// `ChangeInfo` is constructed, then plays no further role).
@@ -629,6 +630,7 @@ impl ActionInfo {
     /// Builds the action for a given circuit version.
     ///
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
+    ///
     /// The circuit version must be consistent between actions in a bundle.
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
@@ -725,24 +727,24 @@ impl BundleMetadata {
     /// positions are randomized when building bundles. This means that the bundle
     /// consumer cannot assume that e.g. the first spend they added corresponds to the
     /// first action in the bundle. In a bundle that disables cross-address transfers,
-    /// each spend's action contains a fabricated zero-value output (to the spent note's
+    /// each spend's action contains a fabricated zero-valued output (to the spent note's
     /// own address), so no requested output shares the returned action index.
     pub fn spend_action_index(&self, n: usize) -> Option<usize> {
         self.spend_indices.get(n).copied()
     }
 
     /// Returns the index within the bundle of the [`Action`] corresponding to the `n`-th
-    /// requested output. Requested outputs are numbered as all plain outputs (in the order
-    /// they were added with [`Builder::add_output`], or their order in the `outputs` vector
-    /// passed to [`bundle`]) followed by all wallet-controlled change outputs (in the order
-    /// they were added with [`Builder::add_change_output`], or their order in the `changes`
-    /// vector passed to [`bundle`]).
+    /// requested output. Requested outputs are numbered as:
+    /// * all plain outputs (in the order they were added with [`Builder::add_output`], or their
+    ///   order in the `outputs` vector passed to [`bundle`]);
+    /// * followed by all wallet-controlled change outputs (in the order they were added with
+    ///   [`Builder::add_change_output`], or their order in the `changes` vector passed to [`bundle`]).
     ///
     /// For the purpose of improving indistinguishability, actions are padded and note
     /// positions are randomized when building bundles. This means that the bundle
     /// consumer cannot assume that e.g. the first output they added corresponds to the
     /// first action in the bundle. In a bundle that disables cross-address transfers,
-    /// each output's action contains a fabricated wallet-controlled zero-value spend (at
+    /// each output's action contains a fabricated wallet-controlled zero-valued spend (at
     /// the change address), so no requested spend shares the returned action index.
     pub fn output_action_index(&self, n: usize) -> Option<usize> {
         self.output_indices.get(n).copied()
@@ -795,7 +797,7 @@ impl Builder {
     /// the given note.
     ///
     /// In a bundle that disables cross-address transfers, each spend is paired with a
-    /// fabricated zero-value output addressed to the spent note's own receiver. That output's
+    /// fabricated zero-valued output addressed to the spent note's own receiver. That output's
     /// note ciphertext is randomized rather than encrypted to the receiver, so it is
     /// undecryptable: the owning wallet does not see it when scanning, and no holder of the
     /// receiver's incoming viewing key -- including a quantum adversary who recovered it from
@@ -856,9 +858,9 @@ impl Builder {
     ///
     /// This is the only way to retain shielded value in a bundle that disables
     /// cross-address transfers: the builder pairs the change output with a fabricated
-    /// zero-value spend at `recipient`, controlled by `fvk`, in the same action.
+    /// zero-valued spend at `recipient`, controlled by `fvk`, in the same action.
     /// (Withdrawals leave such a bundle through its positive value balance; its real
-    /// spends are each paired with a fabricated zero-value output to the spent note's
+    /// spends are each paired with a fabricated zero-valued output to the spent note's
     /// own address.) The fabricated spend's authorization is produced by the normal
     /// signing flow -- [`Bundle::apply_signatures`] with the [`SpendAuthorizingKey`]
     /// matching `fvk` -- exactly like the bundle's real spends.
@@ -1158,13 +1160,13 @@ fn build_bundle<B, R: RngCore>(
         // Every action's output must be addressed to the note it spends, so the
         // spend/output pairing within each action is intentional:
         //
-        // - each requested spend is paired with a fabricated zero-value output to the
+        // - each requested spend is paired with a fabricated zero-valued output to the
         //   spent note's own address;
-        // - each requested change output is paired with a fabricated zero-value spend
+        // - each requested change output is paired with a fabricated zero-valued spend
         //   controlled by the wallet at the change address, because withdrawn value leaves
         //   the bundle through its value balance, and retained value is exactly the
         //   wallet's change;
-        // - padding actions pair a dummy spend with a zero-value output to the dummy's
+        // - padding actions pair a dummy spend with a zero-valued output to the dummy's
         //   own address, since the cross-address checks apply to dummy actions too.
         //
         // `outputs` is empty here (a plain output was rejected above), so the only requested
@@ -2007,7 +2009,7 @@ mod tests {
         assert_eq!(spend_action.output.value, Some(NoteValue::ZERO));
 
         // The spend-paired output's ciphertext is randomized, so signers (e.g. Keystone) must be
-        // able to classify it as a zero-value dummy and tolerate the undecryptable ciphertext
+        // able to classify it as a zero-valued dummy and tolerate the undecryptable ciphertext
         // rather than reconstructing and rejecting it. That requires the explicit note fields to
         // be present (so the commitment verifies), no `user_address`, and a zero value.
         assert!(spend_action.output.user_address.is_none());
