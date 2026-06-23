@@ -1104,7 +1104,7 @@ mod tests {
     use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
     use crate::{
         keys::SpendValidatingKey,
-        note::{Note, Rho},
+        note::{Note, NoteVersion, Rho},
         tree::MerklePath,
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
@@ -1113,7 +1113,7 @@ mod tests {
         mut rng: R,
         circuit_version: OrchardCircuitVersion,
     ) -> (Circuit, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, NoteVersion::DEFAULT);
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -1124,7 +1124,7 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
+        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), NoteVersion::DEFAULT);
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();

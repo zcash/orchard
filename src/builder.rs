@@ -16,7 +16,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
+    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -261,7 +261,7 @@ impl SpendInfo {
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     fn dummy(rng: &mut impl RngCore) -> Self {
-        let (sk, fvk, note) = Note::dummy(rng, None);
+        let (sk, fvk, note) = Note::dummy(rng, None, NoteVersion::DEFAULT);
         let merkle_path = MerklePath::dummy(rng);
 
         SpendInfo {
@@ -375,7 +375,13 @@ impl OutputInfo {
         mut rng: impl RngCore,
     ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext) {
         let rho = Rho::from_nf_old(nf_old);
-        let note = Note::new(self.recipient, self.value, rho, &mut rng);
+        let note = Note::new(
+            self.recipient,
+            self.value,
+            rho,
+            &mut rng,
+            NoteVersion::DEFAULT,
+        );
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 

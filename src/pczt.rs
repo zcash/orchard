@@ -343,7 +343,7 @@ mod tests {
         circuit::ProvingKey,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{ExtractedNoteCommitment, RandomSeed, Rho},
+        note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
         pczt::{ProverError, TxExtractorError, Zip32Derivation},
         primitives::redpallas::{self, SpendAuth},
         tree::{MerkleHashOrchard, EMPTY_ROOTS},
@@ -430,9 +430,14 @@ mod tests {
         let note = {
             let rho = Rho::from_bytes(&pallas::Base::random(&mut rng).to_repr()).unwrap();
             loop {
-                if let Some(note) =
-                    Note::from_parts(recipient, value, rho, RandomSeed::random(&mut rng, &rho))
-                        .into_option()
+                if let Some(note) = Note::from_parts(
+                    recipient,
+                    value,
+                    rho,
+                    RandomSeed::random(&mut rng, &rho),
+                    NoteVersion::DEFAULT,
+                )
+                .into_option()
                 {
                     break note;
                 }
