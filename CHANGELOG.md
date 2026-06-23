@@ -29,9 +29,8 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit; its V3 note plaintexts
   are not yet implemented).
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
-  that enforces the `disableCrossAddress` public input (the negation of the
-  bundle's `enableCrossAddress` flag). The post-NU 6.3 circuit has its own
-  proving and verifying keys.
+  that enforces the `disableCrossAddress` public input. The post-NU 6.3 circuit
+  has its own proving and verifying keys.
 - Circuit-version support introspection for the cross-address restriction:
   - `orchard::circuit::OrchardCircuitVersion::supports_cross_address_restriction`
   - `orchard::circuit::ProvingKey::supports_cross_address_restriction`

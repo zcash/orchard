@@ -53,30 +53,23 @@ pub enum BundleType {
     },
     /// A coinbase bundle disables nonzero-valued Orchard spends, and is built with
     /// [`Flags::SPENDS_DISABLED`]: spends disabled, outputs enabled, and
-    /// cross-address transfers enabled. No padding is performed.
+    /// cross-address transfers enabled if possible for this bundle's pool
+    /// restrictions. No padding is performed.
     ///
-    /// The cross-address restriction is not a useful way to express coinbase. An
-    /// Orchard action always has a spend half and an output half; with spends disabled,
-    /// the spend half is zero-valued dummy/fabricated spend data. If cross-address
-    /// transfers were also disabled, every output would need to be addressed to the
-    /// same expanded receiver as that dummy spend, so a coinbase bundle could not pay an
-    /// arbitrary recipient.
-    ///
-    /// Therefore coinbase bundles always enable cross-address transfers. Under NU6.3
-    /// encoding this sets bit 2; if the same flag byte is interpreted by a pre-NU6.3
-    /// parser, it is rejected as a nonzero reserved bit. Whether an Orchard-format
-    /// shielded coinbase bundle is permitted at all is a consensus rule outside this
-    /// crate, decided per pool: a pool may allow unrestricted bundles, while a pool
-    /// whose rules require the cross-address restriction on every bundle thereby
-    /// prohibits coinbase bundles entirely.
+    /// Since coinbase transactions have `enableSpends = 0`, every spend must be a
+    /// dummy. Coinbase transactions are not otherwise any different wrt cross-address
+    /// restrictions from other transactions that have dummy inputs. For simplicity, we
+    /// therefore set `enableCrossAddress` in the same way we would for a non-coinbase
+    /// transaction (which is allowed by the consensus rules).
     Coinbase,
 }
 
 impl BundleType {
     /// The default bundle type enables spends and outputs, and does not require a bundle to be
     /// produced if no spends or outputs have been added to the bundle. The builder defaults the
-    /// cross-address bit to the least-restrictive value the protocol's consensus rules permit:
-    /// enabled, unless consensus mandates the restriction.
+    /// cross-address bit to the least-restrictive value that the consensus rules implied
+    /// by the bundle's pool restrictions will permit: enabled, unless those rules mandate
+    /// the restriction.
     pub const DEFAULT: BundleType = BundleType::Transactional {
         spends_enabled: true,
         outputs_enabled: true,
@@ -94,8 +87,8 @@ impl BundleType {
     /// Returns the number of logical actions that builder will produce in constructing a bundle
     /// of this type, given the specified numbers of spends and outputs.
     ///
-    /// For [`BundleType::Transactional`] bundles that disable cross-address transfers, a
-    /// requested spend and a requested output never share an
+    /// In the current implementation, for a bundle (regardless of type) that disables
+    /// cross-address transfers, a requested spend and a requested output do not share an
     /// action (each is paired with a fabricated zero-valued counterpart), so the number of
     /// requested actions is `num_spends + num_outputs` rather than `max(num_spends, num_outputs)`.
     /// Wallets estimating fees (e.g. per [ZIP 317]) must account for this larger action
@@ -119,9 +112,9 @@ impl BundleType {
             } => {
                 let cross_address_enabled = default_cross_address_enabled(pool_restrictions);
                 // When cross-address transfers are disabled, every action's output is
-                // addressed to the note it spends, so a requested spend and a requested
-                // output can never share an action: each is paired with a fabricated
-                // zero-value counterpart instead.
+                // addressed to the note it spends. For this implementation, a requested
+                // spend and a requested output never share an action: each is paired with
+                // a fabricated zero-valued counterpart instead.
                 let num_requested_actions = if !cross_address_enabled {
                     num_spends
                         .checked_add(num_outputs)
@@ -170,13 +163,17 @@ impl BundleType {
     }
 }
 
-/// The builder's prover-side default for `enableCrossAddress` under `pool_restrictions`.
+/// Decide, for a bundle targetting the consensus rules implied by `pool_restrictions`,
+/// whether to enable cross-address transfers according to the least restrictive policy
+/// mandated by those rules (see [`BundlePoolRestrictions::requires_cross_address_restriction`]).
 ///
-/// Within what consensus permits, this crate emits the least-restrictive bundle: cross-address
-/// transfers stay enabled unless consensus mandates the restriction (see
-/// [`BundlePoolRestrictions::requires_cross_address_restriction`]). This is builder policy, not a protocol
-/// attribute; a future builder could expose the choice where consensus leaves it free (e.g.
-/// Ironwood). Coinbase handles its own flags (see [`BundleType::flags`]).
+/// It is builder policy to enable cross-address transfers whenever `pool_restrictions`
+/// implies it is possible; a future builder could expose the choice in that case.
+///
+/// Note: whether cross-address transfers are enabled should not be confused
+/// with the value of bit 2 of the bundle's `flags` field. In v5 transactions, bit 2 of
+/// `flagsOrchard` is still reserved and is always 0; it is not the `enableCrossAddress`
+/// flag in that case, regardless of epoch.
 fn default_cross_address_enabled(pool_restrictions: BundlePoolRestrictions) -> bool {
     !pool_restrictions.requires_cross_address_restriction()
 }
@@ -294,8 +291,8 @@ pub enum OutputError {
     /// Outputs aren't enabled for this builder.
     OutputsDisabled,
     /// Spends aren't enabled for this builder. A wallet-controlled change output in a bundle
-    /// that disables cross-address transfers pairs with a fabricated spend, so it cannot be
-    /// added when spends are disabled.
+    /// that disables cross-address transfers pairs with a fabricated spend, so we do not support
+    /// change outputs when both spends and cross-address transfers are disabled.
     SpendsDisabled,
     /// Cross-address transfers are disabled for this builder, so ordinary outputs cannot
     /// be added; use [`Builder::add_change_output`] for wallet-controlled change.
@@ -578,7 +575,7 @@ impl ChangeInfo {
     /// Returns [`OutputError::RecipientNotOwned`] if `fvk` does not own `recipient`. The
     /// recorded `fvk`/scope are used only to fabricate the paired same-expanded-receiver spend in a
     /// bundle that disables cross-address transfers; they do not affect the output's note,
-    /// commitment, or ciphertext, which depend only on `ovk`, `recipient`, `value`, and `memo`.
+    /// commitment, or ciphertext.
     pub fn new(
         fvk: FullViewingKey,
         ovk: Option<OutgoingViewingKey>,
@@ -1812,8 +1809,8 @@ mod tests {
             bundle_required: false,
         };
 
-        // The builder defaults to the least-restrictive value consensus permits. Consensus
-        // leaves the choice free everywhere except Orchard post-NU6.3, so the default is enabled
+        // The builder defaults to the least-restrictive value consensus permits. Pool restrictions
+        // leave the choice free everywhere except Orchard post-NU6.3, so the default is enabled
         // for every variant but that one.
 
         // Orchard pre-NU6.3: free, so the default is enabled.
@@ -1887,12 +1884,11 @@ mod tests {
     fn coinbase_bundle_builds_for_post_nu6_3() {
         let mut rng = OsRng;
 
-        // Coinbase bundles disable nonzero Orchard spends, but the action spend
-        // halves are still present as zero-valued dummy/fabricated spend data. A
-        // cross-address-restricted coinbase bundle would have to address each output
-        // to its dummy spend's expanded receiver, so coinbase always uses unrestricted
-        // cross-address semantics. A pool whose rules require the cross-address
-        // restriction on every bundle prohibits coinbase outside this crate.
+        // Coinbase bundles disable nonzero-valued spends. From NU6.3, consensus requires
+        // nActionsOrchard = 0 in a v5+ coinbase transaction (v4, still valid after NU6.3,
+        // has no Orchard bundle). So a post-NU6.3 coinbase bundle built by this crate must
+        // be an Ironwood bundle. There the builder leaves cross-address enabled by default,
+        // and therefore ordinary outputs build normally.
         let builder = output_only_builder(
             &mut rng,
             BundlePoolRestrictions::OrchardNu6_3Onward,
@@ -2195,9 +2191,15 @@ mod tests {
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
         let recipient = fvk.address_at(0u32, Scope::Internal);
 
-        // A restricted bundle with spends disabled cannot fabricate the paired spend, so the
-        // change output is rejected eagerly rather than deferring to `build`. Under
-        // OrchardNu6_3Onward, spends-disabled + outputs-enabled is cross-address-disabled.
+        // For a cross-address-disabled bundle with spends disabled and outputs enabled,
+        // the change output is rejected eagerly.
+        //
+        // The builder wouldn't be prevented by consensus from supporting this (fabricating
+        // a spend with the same expanded receiver), but there is no point: `enableSpends = 0`
+        // is only enforced for coinbase transactions, and coinbase transactions do not allow
+        // Orchard actions at all post NU6.3. So the case unsupported by the builder would only
+        // happen by voluntarily disabling `enableSpends` and/or `enableCrossAddress` when
+        // consensus does not require it.
         let mut builder = Builder::new(
             BundlePoolRestrictions::OrchardNu6_3Onward,
             BundleType::Transactional {

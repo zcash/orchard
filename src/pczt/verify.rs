@@ -9,16 +9,18 @@ use crate::{
 
 impl super::Bundle {
     /// If this bundle disables cross-address transfers, verifies that every action's
-    /// output is addressed to the same `(g_d, pk_d)` as its spent note. This is a no-op
-    /// for bundles that permit cross-address transfers.
+    /// output is addressed to the same expanded receiver (`(g_d, pk_d)`) as its spent
+    /// note. This is a no-op for bundles that permit cross-address transfers.
     ///
-    /// When the restriction applies, this requires `spend.recipient` and
-    /// `output.recipient` to be set on every action. Signers presented with such a
-    /// bundle should call this before signing; the equivalent structural checks are
-    /// also performed by [`Bundle::finalize_io`] and `Bundle::create_proof`. A proof
-    /// created with a circuit version that supports the restriction also enforces it.
-    /// The post-NU 6.3 circuit supports the restriction; older circuit versions do not, so the
-    /// proof APIs reject restricted bundles for those keys.
+    /// When the restriction applies, it requires `spend.recipient` and `output.recipient`
+    /// to be set on every action. Signers should always call this before signing. The
+    /// equivalent structural checks are also performed by [`Bundle::finalize_io`] and
+    /// `Bundle::create_proof`.
+    ///
+    /// The post-NU6.3 circuit supports enforcing the restriction; older circuit versions
+    /// do not. The prover and verifier APIs reject restricted bundles for those keys.
+    /// (That is not a security restriction; for security, the consensus verifier must use
+    /// the correct key for the epoch and pool.)
     ///
     /// [`Bundle::finalize_io`]: super::Bundle::finalize_io
     pub fn verify_cross_address_restriction(&self) -> Result<(), VerifyError> {
@@ -183,8 +185,8 @@ impl super::Output {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum VerifyError {
-    /// An action's output is addressed differently than its spent note, but the bundle
-    /// disables cross-address transfers.
+    /// An action's output is addressed differently than its spent note, but the bundle's pool
+    /// restriction disables cross-address transfers.
     DisallowedCrossAddressTransfer,
     /// The output note's components do not produce the expected `cmx`.
     InvalidExtractedNoteCommitment,

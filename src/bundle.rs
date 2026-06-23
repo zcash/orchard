@@ -55,28 +55,19 @@ impl<T> Action<T> {
 /// (Orchard or Ironwood) and the epoch range (pre-NU6.2, NU6.2 only, NU6.3 onward)
 /// that it targets. The Ironwood pool is only allowed for NU6.3 onward.
 ///
-/// This is the single selector threaded through bundle construction and wire encoding. It pins
-/// the facts a `(pool, era)` determines — the circuit version (`circuit_version`) and the
-/// flag-byte format — and surfaces the consensus *cross-address constraint*
-/// (`requires_cross_address_restriction`): whether the era forbids cross-address transfers or
-/// leaves the choice free. The `enableCrossAddress` value the builder actually emits is a
-/// prover-side default derived from that constraint (see [`Builder`](crate::builder::Builder)),
-/// not a pool restriction attribute. The integration layer derives one `BundlePoolRestrictions` from the pool
-/// and the transaction's consensus branch and threads that single value into every construction
-/// and codec method for the bundle.
+/// This pins the `circuit_version` and the flag-byte format, and determines whether the
+/// cross-address consensus restriction is enforced (`requires_cross_address_restriction`).
+/// The `flagsOrchard` / `flagsIronwood` value emitted by the [`Builder`](crate::builder::Builder)
+/// depends on that constraint. The integration layer uses the pool and consensus branch ID
+/// to select the `BundlePoolRestrictions` value, and threads it through bundle construction
+/// and wire encoding.
 ///
-/// # Choosing the correct pool restrictions
-///
-/// This crate has no concept of consensus branches or activation heights, so it cannot derive
-/// the pool restrictions itself — the disambiguating fact lives in the caller. A flag byte with bit 2
-/// *clear* is valid in multiple eras but means **opposite** things (cross-address implicitly
-/// enabled before NU6.3, disabled at/after it), so passing the wrong pool restrictions to
-/// [`Flags::from_byte`] / [`crate::pczt::Bundle::parse`] still *silently* mis-decodes the flags.
-/// `BundlePoolRestrictions` **reduces** that hazard — one richly-typed value derived once, instead of an
-/// independently-threaded circuit version and flag format that can disagree — but does not
-/// eliminate it.
-///
-/// [`Flags::from_byte`]: Flags::from_byte
+/// This crate has no concept of consensus branches or activation heights, so it can't
+/// derive the `BundlePoolRestrictions` itself. Note that bit 2 of the flags is *reserved*
+/// (required to be clear) for v5, and encodes `enableCrossAddress` only for v6. The
+/// correct choice of `BundlePoolRestrictions` is needed to get that right, as well as
+/// affecting how requested spends and outputs map to actions. Using the wrong value
+/// may result in constructing a consensus-invalid transaction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BundlePoolRestrictions {
@@ -96,25 +87,25 @@ pub enum BundlePoolRestrictions {
     ///
     /// Uses the post-NU6.3 circuit and the NU6.3 flag-byte format. For transactional bundles
     /// `enableCrossAddress = 0` is required by consensus, so cross-address transfers are
-    /// prohibited; coinbase bundles keep them enabled. Notes use V2 plaintexts.
+    /// prohibited; Orchard actions are disallowed in coinbase. Notes use V2 plaintexts.
     OrchardNu6_3Onward,
     /// The Ironwood pool at NU6.3 and later.
     ///
-    /// Uses the post-NU6.3 circuit (shared with [`OrchardNu6_3Onward`]) and the NU6.3 flag-byte
-    /// format. Consensus permits either `enableCrossAddress` value here, so this crate's builder
-    /// applies its prover-side default and currently constructs Ironwood bundles with
-    /// `enableCrossAddress = 1`; the NU6.3 flag encoding still represents `enableCrossAddress = 0`
-    /// if a future builder policy chooses to expose it. Ironwood notes are intended to use V3
-    /// quantum-recoverable plaintexts, which are not yet implemented — bundles built under this
-    /// `BundlePoolRestrictions` value currently use V2 plaintexts.
+    /// Uses the post-NU6.3 circuit (shared with [`OrchardNu6_3Onward`]) and the v6 transaction
+    /// format, including its flag-byte encoding. Consensus permits either `enableCrossAddress`
+    /// value here, so this crate's builder currently constructs Ironwood bundles with
+    /// `enableCrossAddress = 1`. The v6 flags are able to represent `enableCrossAddress = 0`
+    /// if a future builder policy chooses to expose it.
     ///
-    /// [`OrchardNu6_3Onward`]: BundlePoolRestrictions::OrchardNu6_3Onward
+    /// FIXME: Ironwood-pool notes MUST use lead-byte 0x03 (quantum-recoverable) plaintexts,
+    /// which are not yet implemented — bundles built under this `BundlePoolRestrictions` value
+    /// currently incorrectly use lead byte 0x02.
     IronwoodNu6_3Onward,
 }
 
 impl BundlePoolRestrictions {
-    /// The circuit version whose proving and verifying keys prove and verify this protocol's
-    /// actions.
+    /// The circuit version whose proving and verifying keys prove and verify actions consistent
+    /// with these pool restrictions.
     ///
     /// This is many-to-one: `OrchardNu6_3Onward` and `IronwoodNu6_3Onward` share the post-NU6.3
     /// circuit, so build a key with `ProvingKey::build(pool_restrictions.circuit_version())` /
@@ -140,16 +131,14 @@ impl BundlePoolRestrictions {
         }
     }
 
-    /// Whether consensus *requires* transactional bundles under this `BundlePoolRestrictions` to disable
-    /// cross-address transfers (`enableCrossAddress = 0`).
+    /// Whether the consensus rules targetted by these pool restrictions *require*
+    /// bundles to disable cross-address transfers (by setting `enableCrossAddress = 0`
+    /// in the case of a v6 transaction).
     ///
-    /// This is a verifier-side fact about the `(pool, era)`: `OrchardNu6_3Onward` mandates the
-    /// restriction; every other protocol leaves the value free (consensus accepts either). It is
-    /// *not* the value the builder emits — that is a prover-side default chosen within this
-    /// constraint (see [`Builder`](crate::builder::Builder)). Coinbase bundles always keep
-    /// cross-address transfers enabled regardless (see [`BundleType::Coinbase`]).
-    ///
-    /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
+    /// `OrchardNu6_3Onward` mandates this restriction; every other value of
+    /// `BundlePoolRestrictions` leaves it free. This is not necessarily the same
+    /// cross-address-enabled decision the [`Builder`](crate::builder::Builder) makes;
+    /// that is determined by builder policy chosen within this constraint.
     pub(crate) fn requires_cross_address_restriction(self) -> bool {
         matches!(self, BundlePoolRestrictions::OrchardNu6_3Onward)
     }
@@ -219,10 +208,7 @@ impl Flags {
     /// Construct a set of flags from its constituent parts, including the cross-address bit.
     ///
     /// Crate-internal: the builder supplies `cross_address_enabled` from its prover-side default
-    /// for the pool restrictions (see [`Builder`](crate::builder::Builder)). The public surface keeps the
-    /// restricted-and-spends-disabled combination unrepresentable (see [`from_parts`]).
-    ///
-    /// [`from_parts`]: Flags::from_parts
+    /// for the pool restrictions (see [`Builder`](crate::builder::Builder)).
     pub(crate) const fn from_parts_with_cross_address(
         spends_enabled: bool,
         outputs_enabled: bool,
@@ -346,10 +332,9 @@ impl Flags {
     ///
     /// Returns `None` if unexpected bits are set in the flag byte.
     ///
-    /// `pool_restrictions` selects how bit 2 is interpreted; passing pool restrictions whose era does not match
-    /// the transaction silently mis-decodes an otherwise-valid byte (a byte with bit 2 clear is
-    /// valid in multiple eras but means opposite things). See [`BundlePoolRestrictions`] for how to
-    /// choose it.
+    /// Note: if the wrong value of `pool_restrictions` is passed for the actual pool and epoch
+    /// of the transaction, then a consensus-invalid transaction may be constructed (see
+    /// [`BundlePoolRestrictions`]).
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8, pool_restrictions: BundlePoolRestrictions) -> Option<Self> {
@@ -1149,8 +1134,8 @@ pub(crate) mod tests {
 
     #[test]
     fn flags_parsing_diverges_between_eras() {
-        // A byte with bit 2 clear parses as an unrestricted bundle pre-NU6.3 and a
-        // restricted bundle under NU6.3.
+        // A byte with bit 2 clear parses as an unrestricted bundle for Orchard pre-NU6.3,
+        // and a restricted bundle for Orchard or Ironwood post-NU6.3.
         for value in 0b000..=0b011 {
             let pre_nu6_3_flags =
                 Flags::from_byte(value, BundlePoolRestrictions::OrchardNu6_2Only).unwrap();

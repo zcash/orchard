@@ -24,10 +24,8 @@ use crate::{
 impl Bundle {
     /// Parses a PCZT bundle from its component parts.
     ///
-    /// `pool_restrictions` is the `BundlePoolRestrictions` the PCZT's transaction targets; it
-    /// determines how the `flags` byte is interpreted. Passing one whose era does not match the
-    /// transaction silently mis-decodes the flags; see [`BundlePoolRestrictions`] for the consequences
-    /// of choosing wrong.
+    /// See [`BundlePoolRestrictions`] for the choice of `pool_restrictions`.
+    ///
     /// `value_sum` is represented as `(magnitude, is_negative)`.
     pub fn parse(
         actions: Vec<Action>,

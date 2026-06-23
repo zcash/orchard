@@ -112,11 +112,18 @@ pub struct Config {
 /// [`FixedPostNu6_2`] and [`InsecurePreNu6_2`] produce different verifying keys: the fixed
 /// circuit anchors the variable-base scalar-multiplication base (see `halo2_gadgets`), while
 /// the pre-NU6.2 one does not. [`PostNu6_3`] extends the fixed circuit by enforcing the
-/// `disableCrossAddress` public input.
+/// same-address check, i.e. `(g_d^old, pk_d^old) = (g_d^new, pk_d^new)`, when the
+/// boolean `disableCrossAddress` public input is set.
 ///
 /// This is a runtime value rather than a type parameter: it is carried in [`Circuit`] and
 /// chosen when building a [`ProvingKey`] or [`VerifyingKey`], so the circuit version can be
 /// threaded dynamically (e.g. across an FFI boundary).
+///
+/// Please note that the public exposure of APIs using `InsecurePreNu6_2` is intentional,
+/// and is strictly necessary for verifying the block chain from NU5 activation and for
+/// creating proofs needed by tests that operate at past epochs. These APIs cannot be
+/// used accidentally without passing an `OrchardCircuitVersion` that is clearly labelled
+/// "insecure". This is not a security vulnerability.
 ///
 /// [`FixedPostNu6_2`]: OrchardCircuitVersion::FixedPostNu6_2
 /// [`InsecurePreNu6_2`]: OrchardCircuitVersion::InsecurePreNu6_2
@@ -312,6 +319,9 @@ impl Config {
         // Either v_old = 0, or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         // Constrain v_old = 0 or enable_spend = 1       (https://p.z.cash/ZKS:action-enable-spend).
         // Constrain v_new = 0 or enable_output = 1      (https://p.z.cash/ZKS:action-enable-output).
+        //
+        // This gate is also reused for the same-address check; see
+        // [`Circuit::synthesize_cross_address_checks`].
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);

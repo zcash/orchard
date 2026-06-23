@@ -242,13 +242,11 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     );
 }
 
-// Coinbase bundles disable nonzero Orchard spends, but each Orchard action still
-// has a zero-valued dummy/fabricated spend half. If cross-address transfers were
-// also disabled, each output would need to be addressed to that dummy spend's
-// expanded receiver, which is not useful for shielded coinbase payments. Coinbase bundles
-// therefore use Flags::SPENDS_DISABLED, with cross-address transfers enabled; a
-// pool whose consensus rules require the cross-address restriction on every bundle
-// prohibits coinbase entirely, outside this crate.
+// Coinbase bundles disable nonzero-valued spends. From NU6.3, consensus requires
+// nActionsOrchard = 0 in a v5+ coinbase transaction (v4, still valid after NU6.3,
+// has no Orchard bundle). So a post-NU6.3 coinbase bundle built by this crate must
+// be an Ironwood bundle. There the builder leaves cross-address enabled by default,
+// and therefore ordinary outputs build normally.
 #[test]
 fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     let mut rng = OsRng;
@@ -432,10 +430,11 @@ fn post_nu6_3_restricted_bundle_chain() {
         .is_err());
 }
 
-// `IronwoodNu6_3Onward` is the unrestricted post-NU6.3 protocol: it shares the post-NU6.3 circuit
-// with Orchard but permits cross-address transfers (and will use V3 note plaintexts once those
-// land; for now V2). A transactional Ironwood bundle is therefore an ordinary spend+output
-// bundle on the post-NU6.3 circuit whose NU6.3 flag byte sets bit 2.
+// `IronwoodNu6_3Onward` is the post-NU6.3 `BundlePoolRestrictions` variant that allows
+// any choice of the `enableCrossAddress` flag. It shares the post-NU6.3 circuit with the
+// `OrchardNU6_3Onward`, and will use V3 note plaintexts once those land. A transactional
+// Ironwood bundle is therefore an ordinary spend+output bundle on the post-NU6.3 circuit
+// whose NU6.3 flag byte sets bit 2.
 #[test]
 fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     let mut rng = OsRng;

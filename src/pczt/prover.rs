@@ -22,13 +22,13 @@ impl super::Bundle {
     ///
     /// # Errors
     ///
-    /// Returns [`ProverError::DisallowedCrossAddressTransfer`] if the bundle
-    /// disables cross-address transfers and any action's output is addressed
-    /// differently than its spent note.
+    /// Returns [`ProverError::DisallowedCrossAddressTransfer`] if the bundle's
+    /// pool restrictions disable cross-address transfers, and any action's output
+    /// is addressed differently than its spent note.
     ///
     /// Returns [`ProverError::ProofFailed`] containing
-    /// [`plonk::Error::InvalidInstances`] if the bundle disables cross-address
-    /// transfers and `pk` is not an
+    /// [`plonk::Error::InvalidInstances`] if the bundle's pool restrictions disable
+    /// cross-address transfers, and `pk` is not an
     /// [`OrchardCircuitVersion::PostNu6_3`] proving key.
     ///
     /// Also returns an error if required Prover-role fields are missing or invalid,
@@ -147,8 +147,8 @@ impl super::Bundle {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ProverError {
-    /// An action's output is addressed differently than its spent note, but the bundle
-    /// disables cross-address transfers.
+    /// An action's output is addressed differently than its spent note, but the bundle's pool
+    /// restrictions disable cross-address transfers.
     DisallowedCrossAddressTransfer,
     /// The cross-address restriction pre-check failed for a reason other than a disallowed
     /// transfer or a missing recipient.
