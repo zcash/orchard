@@ -91,11 +91,11 @@ pub enum BundlePoolRestrictions {
     OrchardNu6_3Onward,
     /// The Ironwood pool at NU6.3 and later.
     ///
-    /// Uses the post-NU6.3 circuit (shared with [`OrchardNu6_3Onward`]) and the v6 transaction
-    /// format, including its flag-byte encoding. Consensus permits either `enableCrossAddress`
-    /// value here, so this crate's builder currently constructs Ironwood bundles with
-    /// `enableCrossAddress = 1`. The v6 flags are able to represent `enableCrossAddress = 0`
-    /// if a future builder policy chooses to expose it.
+    /// Uses the post-NU6.3 circuit (shared with [`Self::OrchardNu6_3Onward`]) and the v6
+    /// transaction format, including its flag-byte encoding. Consensus permits either
+    /// `enableCrossAddress` value here, so this crate's builder currently constructs Ironwood
+    /// bundles with `enableCrossAddress = 1`. The v6 flags are able to represent
+    /// `enableCrossAddress = 0` if a future builder policy chooses to expose it.
     ///
     /// FIXME: Ironwood-pool notes MUST use lead-byte 0x03 (quantum-recoverable) plaintexts,
     /// which are not yet implemented — bundles built under this `BundlePoolRestrictions` value
