@@ -677,6 +677,7 @@ mod tests {
         // Bit 2 is reserved pre-NU6.3, and rejected for Orchard post-NU6.3 (which mandates
         // the cross-address restriction); only Ironwood may set it.
         for pr in [
+            BundlePoolRestrictions::OrchardPreNu6_2,
             BundlePoolRestrictions::OrchardNu6_2Only,
             BundlePoolRestrictions::OrchardNu6_3Onward,
         ] {
