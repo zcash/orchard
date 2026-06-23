@@ -49,9 +49,10 @@ pub(crate) fn prf_ock_orchard(
     )
 }
 
-fn orchard_parse_note_plaintext_without_memo<F>(
-    domain: &OrchardDomain,
+fn parse_note_plaintext_without_memo<F>(
+    domain: &SharedDomain,
     plaintext: &[u8],
+    note_version: NoteVersion,
     get_pk_d: F,
 ) -> Option<(Note, Address)>
 where
@@ -59,9 +60,8 @@ where
 {
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
-    // Check note plaintext version
-    // Note: Orchard only allows 0x02 lead bytes.
-    if plaintext[0] != 0x02 {
+    // Check note plaintext version.
+    if plaintext[0] != note_version.lead_byte() {
         return None;
     }
 
@@ -81,18 +81,17 @@ where
         value,
         domain.rho,
         rseed,
-        NoteVersion::V2,
+        note_version,
     ))?;
     Some((note, recipient))
 }
 
-/// Orchard-specific note encryption logic.
 #[derive(Debug)]
-pub struct OrchardDomain {
+struct SharedDomain {
     rho: Rho,
 }
 
-impl memuse::DynamicUsage for OrchardDomain {
+impl memuse::DynamicUsage for SharedDomain {
     fn dynamic_usage(&self) -> usize {
         self.rho.dynamic_usage()
     }
@@ -102,79 +101,53 @@ impl memuse::DynamicUsage for OrchardDomain {
     }
 }
 
-impl OrchardDomain {
-    /// Constructs a domain that can be used to trial-decrypt this action's output note.
-    pub fn for_action<T>(act: &Action<T>) -> Self {
+impl SharedDomain {
+    fn for_action<T>(act: &Action<T>) -> Self {
         Self { rho: act.rho() }
     }
 
-    /// Constructs a domain that can be used to trial-decrypt a PCZT action's output note.
-    pub fn for_pczt_action(act: &crate::pczt::Action) -> Self {
+    fn for_pczt_action(act: &crate::pczt::Action) -> Self {
         Self {
             rho: Rho::from_nf_old(act.spend().nullifier),
         }
     }
 
-    /// Constructs a domain that can be used to trial-decrypt this action's output note.
-    pub fn for_compact_action(act: &CompactAction) -> Self {
+    fn for_compact_action(act: &CompactAction) -> Self {
         Self { rho: act.rho() }
     }
-}
 
-impl Domain for OrchardDomain {
-    type EphemeralSecretKey = EphemeralSecretKey;
-    type EphemeralPublicKey = EphemeralPublicKey;
-    type PreparedEphemeralPublicKey = PreparedEphemeralPublicKey;
-    type SharedSecret = SharedSecret;
-    type SymmetricKey = Hash;
-    type Note = Note;
-    type Recipient = Address;
-    type DiversifiedTransmissionKey = DiversifiedTransmissionKey;
-    type IncomingViewingKey = PreparedIncomingViewingKey;
-    type OutgoingViewingKey = OutgoingViewingKey;
-    type ValueCommitment = ValueCommitment;
-    type ExtractedCommitment = ExtractedNoteCommitment;
-    type ExtractedCommitmentBytes = [u8; 32];
-    type Memo = [u8; 512]; // TODO use a more interesting type
-
-    fn derive_esk(note: &Self::Note) -> Option<Self::EphemeralSecretKey> {
+    fn derive_esk(note: &Note) -> Option<EphemeralSecretKey> {
         Some(note.esk())
     }
 
-    fn get_pk_d(note: &Self::Note) -> Self::DiversifiedTransmissionKey {
+    fn get_pk_d(note: &Note) -> DiversifiedTransmissionKey {
         *note.recipient().pk_d()
     }
 
-    fn prepare_epk(epk: Self::EphemeralPublicKey) -> Self::PreparedEphemeralPublicKey {
+    fn prepare_epk(epk: EphemeralPublicKey) -> PreparedEphemeralPublicKey {
         PreparedEphemeralPublicKey::new(epk)
     }
 
-    fn ka_derive_public(
-        note: &Self::Note,
-        esk: &Self::EphemeralSecretKey,
-    ) -> Self::EphemeralPublicKey {
+    fn ka_derive_public(note: &Note, esk: &EphemeralSecretKey) -> EphemeralPublicKey {
         esk.derive_public(note.recipient().g_d())
     }
 
-    fn ka_agree_enc(
-        esk: &Self::EphemeralSecretKey,
-        pk_d: &Self::DiversifiedTransmissionKey,
-    ) -> Self::SharedSecret {
+    fn ka_agree_enc(esk: &EphemeralSecretKey, pk_d: &DiversifiedTransmissionKey) -> SharedSecret {
         esk.agree(pk_d)
     }
 
     fn ka_agree_dec(
-        ivk: &Self::IncomingViewingKey,
-        epk: &Self::PreparedEphemeralPublicKey,
-    ) -> Self::SharedSecret {
+        ivk: &PreparedIncomingViewingKey,
+        epk: &PreparedEphemeralPublicKey,
+    ) -> SharedSecret {
         epk.agree(ivk)
     }
 
-    fn kdf(secret: Self::SharedSecret, ephemeral_key: &EphemeralKeyBytes) -> Self::SymmetricKey {
+    fn kdf(secret: SharedSecret, ephemeral_key: &EphemeralKeyBytes) -> Hash {
         secret.kdf_orchard(ephemeral_key)
     }
 
-    fn note_plaintext_bytes(note: &Self::Note, memo: &Self::Memo) -> NotePlaintextBytes {
+    fn note_plaintext_bytes(note: &Note, memo: &[u8; 512]) -> NotePlaintextBytes {
         let mut np = [0; NOTE_PLAINTEXT_SIZE];
         np[0] = note.version().lead_byte();
         np[1..12].copy_from_slice(note.recipient().diversifier().as_array());
@@ -185,115 +158,337 @@ impl Domain for OrchardDomain {
     }
 
     fn derive_ock(
-        ovk: &Self::OutgoingViewingKey,
-        cv: &Self::ValueCommitment,
-        cmstar_bytes: &Self::ExtractedCommitmentBytes,
+        ovk: &OutgoingViewingKey,
+        cv: &ValueCommitment,
+        cmstar_bytes: &[u8; 32],
         ephemeral_key: &EphemeralKeyBytes,
     ) -> OutgoingCipherKey {
         prf_ock_orchard(ovk, cv, cmstar_bytes, ephemeral_key)
     }
 
-    fn outgoing_plaintext_bytes(
-        note: &Self::Note,
-        esk: &Self::EphemeralSecretKey,
-    ) -> OutPlaintextBytes {
+    fn outgoing_plaintext_bytes(note: &Note, esk: &EphemeralSecretKey) -> OutPlaintextBytes {
         let mut op = [0; OUT_PLAINTEXT_SIZE];
         op[..32].copy_from_slice(&note.recipient().pk_d().to_bytes());
         op[32..].copy_from_slice(&esk.0.to_repr());
         OutPlaintextBytes(op)
     }
 
-    fn epk_bytes(epk: &Self::EphemeralPublicKey) -> EphemeralKeyBytes {
+    fn epk_bytes(epk: &EphemeralPublicKey) -> EphemeralKeyBytes {
         epk.to_bytes()
     }
 
-    fn epk(ephemeral_key: &EphemeralKeyBytes) -> Option<Self::EphemeralPublicKey> {
+    fn epk(ephemeral_key: &EphemeralKeyBytes) -> Option<EphemeralPublicKey> {
         EphemeralPublicKey::from_bytes(&ephemeral_key.0).into()
     }
 
-    fn cmstar(note: &Self::Note) -> Self::ExtractedCommitment {
+    fn cmstar(note: &Note) -> ExtractedNoteCommitment {
         note.commitment().into()
     }
 
-    fn parse_note_plaintext_without_memo_ivk(
+    fn parse_note_plaintext_without_memo_ivk<F>(
         &self,
-        ivk: &Self::IncomingViewingKey,
+        ivk: &PreparedIncomingViewingKey,
         plaintext: &[u8],
-    ) -> Option<(Self::Note, Self::Recipient)> {
-        orchard_parse_note_plaintext_without_memo(self, plaintext, |diversifier| {
-            DiversifiedTransmissionKey::derive(ivk, diversifier)
+        note_version: NoteVersion,
+        get_pk_d: F,
+    ) -> Option<(Note, Address)>
+    where
+        F: FnOnce(&PreparedIncomingViewingKey, &Diversifier) -> DiversifiedTransmissionKey,
+    {
+        parse_note_plaintext_without_memo(self, plaintext, note_version, |diversifier| {
+            get_pk_d(ivk, diversifier)
         })
     }
 
     fn parse_note_plaintext_without_memo_ovk(
         &self,
-        pk_d: &Self::DiversifiedTransmissionKey,
+        pk_d: &DiversifiedTransmissionKey,
         plaintext: &NotePlaintextBytes,
-    ) -> Option<(Self::Note, Self::Recipient)> {
-        orchard_parse_note_plaintext_without_memo(self, &plaintext.0, |_| *pk_d)
+        note_version: NoteVersion,
+    ) -> Option<(Note, Address)> {
+        parse_note_plaintext_without_memo(self, &plaintext.0, note_version, |_| *pk_d)
     }
 
-    fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> Self::Memo {
+    fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> [u8; 512] {
         plaintext.0[COMPACT_NOTE_SIZE..NOTE_PLAINTEXT_SIZE]
             .try_into()
             .unwrap()
     }
 
-    fn extract_pk_d(out_plaintext: &OutPlaintextBytes) -> Option<Self::DiversifiedTransmissionKey> {
+    fn extract_pk_d(out_plaintext: &OutPlaintextBytes) -> Option<DiversifiedTransmissionKey> {
         DiversifiedTransmissionKey::from_bytes(out_plaintext.0[0..32].try_into().unwrap()).into()
     }
 
-    fn extract_esk(out_plaintext: &OutPlaintextBytes) -> Option<Self::EphemeralSecretKey> {
+    fn extract_esk(out_plaintext: &OutPlaintextBytes) -> Option<EphemeralSecretKey> {
         EphemeralSecretKey::from_bytes(out_plaintext.0[32..OUT_PLAINTEXT_SIZE].try_into().unwrap())
             .into()
     }
 }
 
-impl BatchDomain for OrchardDomain {
-    fn batch_kdf<'a>(
-        items: impl Iterator<Item = (Option<Self::SharedSecret>, &'a EphemeralKeyBytes)>,
-    ) -> Vec<Option<Self::SymmetricKey>> {
-        let (shared_secrets, ephemeral_keys): (Vec<_>, Vec<_>) = items.unzip();
+fn batch_kdf<'a>(
+    items: impl Iterator<Item = (Option<SharedSecret>, &'a EphemeralKeyBytes)>,
+) -> Vec<Option<Hash>> {
+    let (shared_secrets, ephemeral_keys): (Vec<_>, Vec<_>) = items.unzip();
 
-        SharedSecret::batch_to_affine(shared_secrets)
-            .zip(ephemeral_keys)
-            .map(|(secret, ephemeral_key)| {
-                secret.map(|dhsecret| SharedSecret::kdf_orchard_inner(dhsecret, ephemeral_key))
-            })
-            .collect()
-    }
+    SharedSecret::batch_to_affine(shared_secrets)
+        .zip(ephemeral_keys)
+        .map(|(secret, ephemeral_key)| {
+            secret.map(|dhsecret| SharedSecret::kdf_orchard_inner(dhsecret, ephemeral_key))
+        })
+        .collect()
 }
+
+macro_rules! impl_domain {
+    ($domain:ty, $note_version:expr) => {
+        impl memuse::DynamicUsage for $domain {
+            fn dynamic_usage(&self) -> usize {
+                self.shared.dynamic_usage()
+            }
+
+            fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+                self.shared.dynamic_usage_bounds()
+            }
+        }
+
+        impl $domain {
+            /// Constructs a domain that can be used to trial-decrypt this
+            /// action's output note.
+            pub fn for_action<T>(act: &Action<T>) -> Self {
+                Self {
+                    shared: SharedDomain::for_action(act),
+                }
+            }
+
+            /// Constructs a domain that can be used to trial-decrypt a PCZT
+            /// action's output note.
+            pub fn for_pczt_action(act: &crate::pczt::Action) -> Self {
+                Self {
+                    shared: SharedDomain::for_pczt_action(act),
+                }
+            }
+
+            /// Constructs a domain that can be used to trial-decrypt this
+            /// action's output note.
+            pub fn for_compact_action(act: &CompactAction) -> Self {
+                Self {
+                    shared: SharedDomain::for_compact_action(act),
+                }
+            }
+        }
+
+        impl Domain for $domain {
+            type EphemeralSecretKey = EphemeralSecretKey;
+            type EphemeralPublicKey = EphemeralPublicKey;
+            type PreparedEphemeralPublicKey = PreparedEphemeralPublicKey;
+            type SharedSecret = SharedSecret;
+            type SymmetricKey = Hash;
+            type Note = Note;
+            type Recipient = Address;
+            type DiversifiedTransmissionKey = DiversifiedTransmissionKey;
+            type IncomingViewingKey = PreparedIncomingViewingKey;
+            type OutgoingViewingKey = OutgoingViewingKey;
+            type ValueCommitment = ValueCommitment;
+            type ExtractedCommitment = ExtractedNoteCommitment;
+            type ExtractedCommitmentBytes = [u8; 32];
+            type Memo = [u8; 512]; // TODO use a more interesting type
+
+            fn derive_esk(note: &Self::Note) -> Option<Self::EphemeralSecretKey> {
+                SharedDomain::derive_esk(note)
+            }
+
+            fn get_pk_d(note: &Self::Note) -> Self::DiversifiedTransmissionKey {
+                SharedDomain::get_pk_d(note)
+            }
+
+            fn prepare_epk(epk: Self::EphemeralPublicKey) -> Self::PreparedEphemeralPublicKey {
+                SharedDomain::prepare_epk(epk)
+            }
+
+            fn ka_derive_public(
+                note: &Self::Note,
+                esk: &Self::EphemeralSecretKey,
+            ) -> Self::EphemeralPublicKey {
+                SharedDomain::ka_derive_public(note, esk)
+            }
+
+            fn ka_agree_enc(
+                esk: &Self::EphemeralSecretKey,
+                pk_d: &Self::DiversifiedTransmissionKey,
+            ) -> Self::SharedSecret {
+                SharedDomain::ka_agree_enc(esk, pk_d)
+            }
+
+            fn ka_agree_dec(
+                ivk: &Self::IncomingViewingKey,
+                epk: &Self::PreparedEphemeralPublicKey,
+            ) -> Self::SharedSecret {
+                SharedDomain::ka_agree_dec(ivk, epk)
+            }
+
+            fn kdf(
+                secret: Self::SharedSecret,
+                ephemeral_key: &EphemeralKeyBytes,
+            ) -> Self::SymmetricKey {
+                SharedDomain::kdf(secret, ephemeral_key)
+            }
+
+            fn note_plaintext_bytes(note: &Self::Note, memo: &Self::Memo) -> NotePlaintextBytes {
+                SharedDomain::note_plaintext_bytes(note, memo)
+            }
+
+            fn derive_ock(
+                ovk: &Self::OutgoingViewingKey,
+                cv: &Self::ValueCommitment,
+                cmstar_bytes: &Self::ExtractedCommitmentBytes,
+                ephemeral_key: &EphemeralKeyBytes,
+            ) -> OutgoingCipherKey {
+                SharedDomain::derive_ock(ovk, cv, cmstar_bytes, ephemeral_key)
+            }
+
+            fn outgoing_plaintext_bytes(
+                note: &Self::Note,
+                esk: &Self::EphemeralSecretKey,
+            ) -> OutPlaintextBytes {
+                SharedDomain::outgoing_plaintext_bytes(note, esk)
+            }
+
+            fn epk_bytes(epk: &Self::EphemeralPublicKey) -> EphemeralKeyBytes {
+                SharedDomain::epk_bytes(epk)
+            }
+
+            fn epk(ephemeral_key: &EphemeralKeyBytes) -> Option<Self::EphemeralPublicKey> {
+                SharedDomain::epk(ephemeral_key)
+            }
+
+            fn cmstar(note: &Self::Note) -> Self::ExtractedCommitment {
+                SharedDomain::cmstar(note)
+            }
+
+            fn parse_note_plaintext_without_memo_ivk(
+                &self,
+                ivk: &Self::IncomingViewingKey,
+                plaintext: &[u8],
+            ) -> Option<(Self::Note, Self::Recipient)> {
+                self.shared.parse_note_plaintext_without_memo_ivk(
+                    ivk,
+                    plaintext,
+                    $note_version,
+                    DiversifiedTransmissionKey::derive,
+                )
+            }
+
+            fn parse_note_plaintext_without_memo_ovk(
+                &self,
+                pk_d: &Self::DiversifiedTransmissionKey,
+                plaintext: &NotePlaintextBytes,
+            ) -> Option<(Self::Note, Self::Recipient)> {
+                self.shared
+                    .parse_note_plaintext_without_memo_ovk(pk_d, plaintext, $note_version)
+            }
+
+            fn extract_memo(&self, plaintext: &NotePlaintextBytes) -> Self::Memo {
+                self.shared.extract_memo(plaintext)
+            }
+
+            fn extract_pk_d(
+                out_plaintext: &OutPlaintextBytes,
+            ) -> Option<Self::DiversifiedTransmissionKey> {
+                SharedDomain::extract_pk_d(out_plaintext)
+            }
+
+            fn extract_esk(out_plaintext: &OutPlaintextBytes) -> Option<Self::EphemeralSecretKey> {
+                SharedDomain::extract_esk(out_plaintext)
+            }
+        }
+
+        impl BatchDomain for $domain {
+            fn batch_kdf<'a>(
+                items: impl Iterator<Item = (Option<Self::SharedSecret>, &'a EphemeralKeyBytes)>,
+            ) -> Vec<Option<Self::SymmetricKey>> {
+                batch_kdf(items)
+            }
+        }
+    };
+}
+
+/// Orchard-specific note encryption logic.
+///
+/// This domain accepts only [`NoteVersion::V2`] note plaintexts, which use lead
+/// byte `0x02`.
+#[derive(Debug)]
+pub struct OrchardDomain {
+    shared: SharedDomain,
+}
+
+/// Ironwood-specific note encryption logic.
+///
+/// This domain is otherwise identical to [`OrchardDomain`], but accepts only
+/// [`NoteVersion::V3`] note plaintexts, which use lead byte `0x03`.
+#[derive(Debug)]
+pub struct IronwoodDomain {
+    shared: SharedDomain,
+}
+
+impl_domain!(OrchardDomain, NoteVersion::V2);
+impl_domain!(IronwoodDomain, NoteVersion::V3);
+
+macro_rules! impl_shielded_output {
+    ($domain:ty) => {
+        impl<T> ShieldedOutput<$domain, ENC_CIPHERTEXT_SIZE> for Action<T> {
+            fn ephemeral_key(&self) -> EphemeralKeyBytes {
+                EphemeralKeyBytes(self.encrypted_note().epk_bytes)
+            }
+
+            fn cmstar_bytes(&self) -> [u8; 32] {
+                self.cmx().to_bytes()
+            }
+
+            fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
+                &self.encrypted_note().enc_ciphertext
+            }
+        }
+
+        impl ShieldedOutput<$domain, ENC_CIPHERTEXT_SIZE> for crate::pczt::Action {
+            fn ephemeral_key(&self) -> EphemeralKeyBytes {
+                EphemeralKeyBytes(self.output().encrypted_note().epk_bytes)
+            }
+
+            fn cmstar_bytes(&self) -> [u8; 32] {
+                self.output().cmx().to_bytes()
+            }
+
+            fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
+                &self.output().encrypted_note().enc_ciphertext
+            }
+        }
+
+        impl ShieldedOutput<$domain, COMPACT_NOTE_SIZE> for CompactAction {
+            fn ephemeral_key(&self) -> EphemeralKeyBytes {
+                EphemeralKeyBytes(self.ephemeral_key.0)
+            }
+
+            fn cmstar_bytes(&self) -> [u8; 32] {
+                self.cmx.to_bytes()
+            }
+
+            fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
+                &self.enc_ciphertext
+            }
+        }
+    };
+}
+
+impl_shielded_output!(OrchardDomain);
+impl_shielded_output!(IronwoodDomain);
 
 /// Implementation of in-band secret distribution for Orchard bundles.
 pub type OrchardNoteEncryption = zcash_note_encryption::NoteEncryption<OrchardDomain>;
-
-impl<T> ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for Action<T> {
-    fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(self.encrypted_note().epk_bytes)
-    }
-
-    fn cmstar_bytes(&self) -> [u8; 32] {
-        self.cmx().to_bytes()
-    }
-
-    fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
-        &self.encrypted_note().enc_ciphertext
-    }
-}
-
-impl ShieldedOutput<OrchardDomain, ENC_CIPHERTEXT_SIZE> for crate::pczt::Action {
-    fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(self.output().encrypted_note().epk_bytes)
-    }
-
-    fn cmstar_bytes(&self) -> [u8; 32] {
-        self.output().cmx().to_bytes()
-    }
-
-    fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
-        &self.output().encrypted_note().enc_ciphertext
-    }
-}
+/// Implementation of in-band secret distribution for Ironwood bundles.
+///
+/// This is the [`NoteEncryption`] instantiation for [`IronwoodDomain`].
+///
+/// [`NoteEncryption`]: zcash_note_encryption::NoteEncryption
+pub type IronwoodNoteEncryption = zcash_note_encryption::NoteEncryption<IronwoodDomain>;
 
 /// A compact Action for light clients.
 #[derive(Clone)]
@@ -315,25 +510,11 @@ impl<T> From<&Action<T>> for CompactAction {
         CompactAction {
             nullifier: *action.nullifier(),
             cmx: *action.cmx(),
-            ephemeral_key: action.ephemeral_key(),
+            ephemeral_key: EphemeralKeyBytes(action.encrypted_note().epk_bytes),
             enc_ciphertext: action.encrypted_note().enc_ciphertext[..52]
                 .try_into()
                 .unwrap(),
         }
-    }
-}
-
-impl ShieldedOutput<OrchardDomain, COMPACT_NOTE_SIZE> for CompactAction {
-    fn ephemeral_key(&self) -> EphemeralKeyBytes {
-        EphemeralKeyBytes(self.ephemeral_key.0)
-    }
-
-    fn cmstar_bytes(&self) -> [u8; 32] {
-        self.cmx.to_bytes()
-    }
-
-    fn enc_ciphertext(&self) -> &[u8; COMPACT_NOTE_SIZE] {
-        &self.enc_ciphertext
     }
 }
 
@@ -427,11 +608,14 @@ pub mod testing {
 mod tests {
     use rand::rngs::OsRng;
     use zcash_note_encryption::{
-        try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk,
+        try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk, Domain,
         EphemeralKeyBytes,
     };
 
-    use super::{prf_ock_orchard, CompactAction, OrchardDomain, OrchardNoteEncryption};
+    use super::{
+        prf_ock_orchard, CompactAction, IronwoodDomain, OrchardDomain, OrchardNoteEncryption,
+        SharedDomain,
+    };
     use crate::{
         action::Action,
         keys::{
@@ -516,7 +700,9 @@ mod tests {
             // (Tested first because it only requires immutable references.)
             //
 
-            let domain = OrchardDomain { rho };
+            let domain = OrchardDomain {
+                shared: SharedDomain { rho },
+            };
 
             match try_note_decryption(&domain, &ivk, &action) {
                 Some((decrypted_note, decrypted_to, decrypted_memo)) => {
@@ -556,5 +742,59 @@ mod tests {
                 &tv.c_out[..]
             );
         }
+    }
+
+    #[test]
+    fn domains_accept_only_their_note_plaintext_versions() {
+        let mut rng = OsRng;
+        let sk = crate::keys::SpendingKey::random(&mut rng);
+        let fvk = crate::keys::FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, crate::keys::Scope::External);
+        let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+        let memo = [0u8; 512];
+
+        let note_v2 = Note::new(
+            recipient,
+            NoteValue::from_raw(5),
+            rho,
+            NoteVersion::V2,
+            &mut rng,
+        );
+        let note_v3 = Note::new(
+            recipient,
+            NoteValue::from_raw(5),
+            rho,
+            NoteVersion::V3,
+            &mut rng,
+        );
+        let orchard_domain = OrchardDomain {
+            shared: SharedDomain { rho },
+        };
+        let ironwood_domain = IronwoodDomain {
+            shared: SharedDomain { rho },
+        };
+
+        let np_v2 = OrchardDomain::note_plaintext_bytes(&note_v2, &memo);
+        let np_v3 = IronwoodDomain::note_plaintext_bytes(&note_v3, &memo);
+        let pk_d = recipient.pk_d();
+
+        assert_eq!(
+            orchard_domain
+                .parse_note_plaintext_without_memo_ovk(pk_d, &np_v2)
+                .map(|(note, _)| note),
+            Some(note_v2)
+        );
+        assert_eq!(
+            ironwood_domain
+                .parse_note_plaintext_without_memo_ovk(pk_d, &np_v3)
+                .map(|(note, _)| note),
+            Some(note_v3)
+        );
+        assert!(orchard_domain
+            .parse_note_plaintext_without_memo_ovk(pk_d, &np_v3)
+            .is_none());
+        assert!(ironwood_domain
+            .parse_note_plaintext_without_memo_ovk(pk_d, &np_v2)
+            .is_none());
     }
 }

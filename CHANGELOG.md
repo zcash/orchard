@@ -61,6 +61,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
 - Note version fields in PCZT spends and outputs, with generated public getters:
   - `orchard::pczt::Spend::note_version`
   - `orchard::pczt::Output::note_version`
+- `orchard::note_encryption::IronwoodDomain` and
+  `orchard::note_encryption::IronwoodNoteEncryption`, matching
+  `OrchardDomain` note-encryption behavior but accepting V3 note plaintexts
+  during parsing.
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.
 - `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
