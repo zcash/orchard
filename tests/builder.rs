@@ -321,6 +321,7 @@ fn post_nu6_3_restricted_bundle_chain() {
     let mut rng = OsRng;
     let post_nu6_3_pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
     let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let fixed_pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
     let fixed_vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
@@ -329,26 +330,25 @@ fn post_nu6_3_restricted_bundle_chain() {
 
     let shielding_bundle: Bundle<_, i64> = {
         let builder = output_only_builder(
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
+            BundlePoolRestrictions::OrchardNu6_2Only,
             SHIELDING,
             recipient,
         );
 
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
-            .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward)
+            .commitment(BundlePoolRestrictions::OrchardNu6_2Only)
             .expect("bundle flags are representable in this format")
             .into();
-        let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
+        let proven = unauthorized.create_proof(&fixed_pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
 
     verify_bundle(
         &shielding_bundle,
-        &post_nu6_3_vk,
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
+        &fixed_vk,
+        BundlePoolRestrictions::OrchardNu6_2Only,
     );
-    assert!(shielding_bundle.verify_proof(&fixed_vk).is_err());
 
     let change_addr = fvk.address_at(0u32, Scope::Internal);
     let restricted_bundle: Bundle<_, i64> = {
