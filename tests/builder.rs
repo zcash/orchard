@@ -6,8 +6,8 @@ use orchard::{
     bundle::{Authorized, BatchValidator, BundlePoolRestrictions},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-    note::ExtractedNoteCommitment,
-    note_encryption::OrchardDomain,
+    note::{ExtractedNoteCommitment, NoteVersion},
+    note_encryption::{IronwoodDomain, OrchardDomain},
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
     Address, Bundle,
@@ -242,6 +242,37 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     );
 }
 
+#[test]
+fn ironwood_builder_outputs_decrypt_with_ironwood_domain() {
+    let mut rng = OsRng;
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let recipient = fvk.address_at(0u32, Scope::External);
+    let ivk = PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::External));
+
+    let builder = output_only_builder(
+        BundlePoolRestrictions::IronwoodNu6_3Onward,
+        SHIELDING,
+        recipient,
+    );
+    let (bundle, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let action = &bundle.actions()[bundle_meta
+        .output_action_index(0)
+        .expect("Output 0 can be found")];
+
+    let orchard_domain = OrchardDomain::for_action(action);
+    assert!(try_note_decryption(&orchard_domain, &ivk, action).is_none());
+
+    let ironwood_domain = IronwoodDomain::for_action(action);
+    let (note, decrypted_to, memo) =
+        try_note_decryption(&ironwood_domain, &ivk, action).expect("V3 output decrypts");
+
+    assert_eq!(note.version(), NoteVersion::V3);
+    assert_eq!(note.value(), NoteValue::from_raw(5000));
+    assert_eq!(decrypted_to, recipient);
+    assert_eq!(memo, [0u8; 512]);
+}
+
 // Coinbase bundles disable nonzero-valued spends. From NU6.3, consensus requires
 // nActionsOrchard = 0 in a v5+ coinbase transaction (v4, still valid after NU6.3,
 // has no Orchard bundle). So a post-NU6.3 coinbase bundle built by this crate must
@@ -432,7 +463,7 @@ fn post_nu6_3_restricted_bundle_chain() {
 
 // `IronwoodNu6_3Onward` is the post-NU6.3 `BundlePoolRestrictions` variant that allows
 // any choice of the `enableCrossAddress` flag. It shares the post-NU6.3 circuit with the
-// `OrchardNU6_3Onward`, and will use V3 note plaintexts once those land. A transactional
+// `OrchardNU6_3Onward`, and uses V3 note plaintexts. A transactional
 // Ironwood bundle is therefore an ordinary spend+output bundle on the post-NU6.3 circuit
 // whose NU6.3 flag byte sets bit 2.
 #[test]
@@ -467,8 +498,11 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
         .actions()
         .iter()
         .find_map(|action| {
-            let domain = OrchardDomain::for_action(action);
-            try_note_decryption(&domain, &ivk, action)
+            let orchard_domain = OrchardDomain::for_action(action);
+            assert!(try_note_decryption(&orchard_domain, &ivk, action).is_none());
+
+            let ironwood_domain = IronwoodDomain::for_action(action);
+            try_note_decryption(&ironwood_domain, &ivk, action)
         })
         .unwrap();
     let cmx: ExtractedNoteCommitment = note.commitment().into();

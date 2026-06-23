@@ -86,6 +86,8 @@ where
     Some((note, recipient))
 }
 
+// A private, common domain for both Orchard and Ironwood.
+// The two implementations differ in just choice of NoteVersion.
 #[derive(Debug)]
 struct SharedDomain {
     rho: Rho,
@@ -613,23 +615,67 @@ mod tests {
     };
 
     use super::{
-        prf_ock_orchard, CompactAction, IronwoodDomain, OrchardDomain, OrchardNoteEncryption,
-        SharedDomain,
+        prf_ock_orchard, CompactAction, IronwoodDomain, IronwoodNoteEncryption, OrchardDomain,
+        OrchardNoteEncryption, SharedDomain,
     };
     use crate::{
         action::Action,
         keys::{
             DiversifiedTransmissionKey, Diversifier, EphemeralSecretKey, IncomingViewingKey,
-            OutgoingViewingKey, PreparedIncomingViewingKey,
+            OutgoingViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
         },
         note::{
             ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho,
             TransmittedNoteCiphertext,
         },
         primitives::redpallas,
-        value::{NoteValue, ValueCommitment},
+        value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
         Address, Note,
     };
+
+    fn v3_encrypted_action() -> (
+        Action<()>,
+        PreparedIncomingViewingKey,
+        Note,
+        Address,
+        [u8; 512],
+    ) {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = crate::keys::FullViewingKey::from(&sk);
+        let incoming_viewing_key = fvk.to_ivk(Scope::External);
+        let prepared_ivk = PreparedIncomingViewingKey::new(&incoming_viewing_key);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let nf_old = Nullifier::dummy(&mut rng);
+        let rho = Rho::from_nf_old(nf_old);
+        let note = Note::new(
+            recipient,
+            NoteValue::from_raw(5),
+            rho,
+            NoteVersion::V3,
+            &mut rng,
+        );
+        let memo = [7u8; 512];
+        let cv_net = ValueCommitment::derive(ValueSum::from_raw(5), ValueCommitTrapdoor::zero());
+        let cmx = ExtractedNoteCommitment::from(note.commitment());
+        let encryptor = IronwoodNoteEncryption::new(Some(fvk.to_ovk(Scope::External)), note, memo);
+        let encrypted_note = TransmittedNoteCiphertext {
+            epk_bytes: IronwoodDomain::epk_bytes(encryptor.epk()).0,
+            enc_ciphertext: encryptor.encrypt_note_plaintext(),
+            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv_net, &cmx, &mut rng),
+        };
+        let action = Action::from_parts(
+            nf_old,
+            redpallas::VerificationKey::dummy(),
+            cmx,
+            encrypted_note,
+            cv_net,
+            (),
+        )
+        .expect("a dummy verification key is unlikely to be the identity");
+
+        (action, prepared_ivk, note, recipient, memo)
+    }
 
     #[test]
     fn test_vectors() {
@@ -796,5 +842,36 @@ mod tests {
         assert!(ironwood_domain
             .parse_note_plaintext_without_memo_ovk(pk_d, &np_v2)
             .is_none());
+    }
+
+    #[test]
+    fn ironwood_domain_decrypts_v3_encrypted_outputs() {
+        let (action, ivk, note, recipient, memo) = v3_encrypted_action();
+        let domain = IronwoodDomain::for_action(&action);
+
+        assert_eq!(
+            try_note_decryption(&domain, &ivk, &action),
+            Some((note, recipient, memo))
+        );
+    }
+
+    #[test]
+    fn orchard_domain_rejects_v3_encrypted_outputs() {
+        let (action, ivk, _, _, _) = v3_encrypted_action();
+        let domain = OrchardDomain::for_action(&action);
+
+        assert!(try_note_decryption(&domain, &ivk, &action).is_none());
+    }
+
+    #[test]
+    fn ironwood_domain_decrypts_v3_compact_outputs() {
+        let (action, ivk, note, recipient, _) = v3_encrypted_action();
+        let domain = IronwoodDomain::for_action(&action);
+        let compact = CompactAction::from(&action);
+
+        assert_eq!(
+            try_compact_note_decryption(&domain, &ivk, &compact),
+            Some((note, recipient))
+        );
     }
 }
