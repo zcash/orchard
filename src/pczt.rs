@@ -671,26 +671,33 @@ mod tests {
     }
 
     #[test]
-    fn parse_uses_bundle_format_for_flags() {
+    fn parse_uses_pool_restrictions_for_flags() {
         let anchor: crate::Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
 
-        assert!(matches!(
-            super::Bundle::parse(
-                vec![],
-                0b0000_0100,
-                BundlePoolRestrictions::OrchardNu6_2Only,
-                (0, false),
-                anchor.to_bytes(),
-                None,
-                None,
-            ),
-            Err(ParseError::UnexpectedFlagBitsSet),
-        ));
+        // Bit 2 is reserved pre-NU6.3, and rejected for Orchard post-NU6.3 (which mandates
+        // the cross-address restriction); only Ironwood may set it.
+        for pr in [
+            BundlePoolRestrictions::OrchardNu6_2Only,
+            BundlePoolRestrictions::OrchardNu6_3Onward,
+        ] {
+            assert!(matches!(
+                super::Bundle::parse(
+                    vec![],
+                    0b0000_0100,
+                    pr,
+                    (0, false),
+                    anchor.to_bytes(),
+                    None,
+                    None,
+                ),
+                Err(ParseError::UnexpectedFlagBitsSet),
+            ));
+        }
 
         let parsed = super::Bundle::parse(
             vec![],
             0b0000_0100,
-            BundlePoolRestrictions::OrchardNu6_3Onward,
+            BundlePoolRestrictions::IronwoodNu6_3Onward,
             (0, false),
             anchor.to_bytes(),
             None,
@@ -702,7 +709,7 @@ mod tests {
         assert_eq!(
             parsed
                 .flags()
-                .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
+                .to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward),
             Some(0b0000_0100)
         );
         assert_eq!(

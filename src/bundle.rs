@@ -120,17 +120,6 @@ impl BundlePoolRestrictions {
         }
     }
 
-    /// The transaction-format generation this `BundlePoolRestrictions` encodes its flag byte in.
-    pub(crate) fn bundle_format(self) -> BundleFormat {
-        match self {
-            BundlePoolRestrictions::OrchardPreNu6_2 | BundlePoolRestrictions::OrchardNu6_2Only => {
-                BundleFormat::PreNu6_3
-            }
-            BundlePoolRestrictions::OrchardNu6_3Onward
-            | BundlePoolRestrictions::IronwoodNu6_3Onward => BundleFormat::Nu6_3,
-        }
-    }
-
     /// Whether the consensus rules targetted by these pool restrictions *require*
     /// bundles to disable cross-address transfers (by setting `enableCrossAddress = 0`
     /// in the case of a v6 transaction).
@@ -142,20 +131,6 @@ impl BundlePoolRestrictions {
     pub(crate) fn requires_cross_address_restriction(self) -> bool {
         matches!(self, BundlePoolRestrictions::OrchardNu6_3Onward)
     }
-}
-
-/// The transaction-format generation an Orchard bundle is encoded in: the era projection of
-/// [`BundlePoolRestrictions`] that determines how the flag byte's bit 2 is interpreted.
-///
-/// In pre-NU6.3 formats bit 2 is a reserved zero bit and cross-address transfers are implicitly
-/// enabled; in NU6.3 formats bit 2 is the `enableCrossAddress` flag. Callers select a
-/// [`BundlePoolRestrictions`]; this is the value it projects to via [`BundlePoolRestrictions::bundle_format`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BundleFormat {
-    /// Transaction formats before NU6.3, where bit 2 of the flag byte is reserved.
-    PreNu6_3,
-    /// NU6.3 transaction formats, where bit 2 is `enableCrossAddress`.
-    Nu6_3,
 }
 
 /// Orchard-specific flags.
@@ -184,32 +159,16 @@ pub struct Flags {
 
 const FLAG_SPENDS_ENABLED: u8 = 0b0000_0001;
 const FLAG_OUTPUTS_ENABLED: u8 = 0b0000_0010;
-const FLAG_CROSS_ADDRESS_ENABLED: u8 = 0b0000_0100;
-const PRE_NU6_3_FLAGS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED);
-const NU6_3_FLAGS_EXPECTED_UNSET: u8 =
-    !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED | FLAG_CROSS_ADDRESS_ENABLED);
+const FLAG_V6_CROSS_ADDRESS_ENABLED: u8 = 0b0000_0100;
+const FLAGS_ALWAYS_EXPECTED_UNSET: u8 =
+    !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED | FLAG_V6_CROSS_ADDRESS_ENABLED);
 
 impl Flags {
-    /// Construct a set of flags from its constituent parts, with cross-address
-    /// transfers enabled.
-    ///
-    /// Cross-address transfers are always enabled here by design. The only restricted flag
-    /// set this crate exposes is [`Flags::CROSS_ADDRESS_DISABLED`], which keeps spends and
-    /// outputs enabled. A flag set that *both* disables cross-address transfers *and* disables
-    /// spends or outputs is intentionally unrepresentable, because it is not a useful
-    /// combination: see the [`BundleType::Coinbase`] documentation for why a spends-disabled
-    /// bundle must keep cross-address transfers enabled to pay an arbitrary recipient.
-    ///
-    /// [`BundleType::Coinbase`]: crate::builder::BundleType::Coinbase
-    pub(crate) const fn from_parts(spends_enabled: bool, outputs_enabled: bool) -> Self {
-        Flags::from_parts_with_cross_address(spends_enabled, outputs_enabled, true)
-    }
-
     /// Construct a set of flags from its constituent parts, including the cross-address bit.
     ///
     /// Crate-internal: the builder supplies `cross_address_enabled` from its prover-side default
     /// for the pool restrictions (see [`Builder`](crate::builder::Builder)).
-    pub(crate) const fn from_parts_with_cross_address(
+    pub(crate) const fn from_parts(
         spends_enabled: bool,
         outputs_enabled: bool,
         cross_address_enabled: bool,
@@ -297,9 +256,13 @@ impl Flags {
     /// Serialize flags to a byte as defined in [Zcash Protocol Spec § 7.1: Transaction
     /// Encoding And Consensus][txencoding], under the given bundle protocol.
     ///
-    /// Returns `None` if this flag set cannot be encoded under `pool_restrictions`, i.e. cross-address
-    /// transfers are disabled but `pool_restrictions` is for pre-NU6.3 Orchard (where bit 2 is a
-    /// reserved zero bit and cross-address transfers are implicitly enabled).
+    /// Returns `None` if this flag set cannot be encoded under `pool_restrictions`. This
+    /// happens in two cases:
+    ///
+    /// * cross-address transfers are disabled but `pool_restrictions` specifies a pre-NU6.3
+    ///   Orchard pool (where cross-address transfers are implicitly enabled);
+    /// * cross-address transfers are enabled but `pool_restrictions` specifies a post-NU6.3
+    ///   Orchard pool (where cross-address transfers are forbidden).
     ///
     /// See [`BundlePoolRestrictions`] for how to choose `pool_restrictions`.
     ///
@@ -312,25 +275,39 @@ impl Flags {
         if self.outputs_enabled {
             value |= FLAG_OUTPUTS_ENABLED;
         }
-        match pool_restrictions.bundle_format() {
-            BundleFormat::PreNu6_3 if !self.cross_address_enabled => None,
-            BundleFormat::PreNu6_3 => Some(value),
-            BundleFormat::Nu6_3 => {
-                if self.cross_address_enabled {
-                    value |= FLAG_CROSS_ADDRESS_ENABLED;
-                }
-                Some(value)
+        // What value of `cross_address_enabled` are we able to encode based on `pool_restrictions`?
+        let cross_address_encodable = match pool_restrictions {
+            BundlePoolRestrictions::OrchardPreNu6_2 | BundlePoolRestrictions::OrchardNu6_2Only => {
+                true
             }
+            BundlePoolRestrictions::OrchardNu6_3Onward => false,
+            BundlePoolRestrictions::IronwoodNu6_3Onward => {
+                if self.cross_address_enabled {
+                    value |= FLAG_V6_CROSS_ADDRESS_ENABLED;
+                }
+                self.cross_address_enabled // we can encode what we wanted
+            }
+        };
+        if self.cross_address_enabled != cross_address_encodable {
+            // We can't encode the requested value.
+            return None;
         }
+        assert!(Self::from_byte(value, pool_restrictions) == Some(*self));
+        Some(value)
     }
 
     /// Parses flags from a single byte as defined in [Zcash Protocol Spec § 7.1:
-    /// Transaction Encoding And Consensus][txencoding], under the given bundle protocol. The
-    /// protocol specification defines bits 0 and 1; bit 2 (the NU6.3 `enableCrossAddress` flag)
-    /// is interpreted according to `pool_restrictions`, and is a reserved zero bit under pre-NU6.3
-    /// protocols, where cross-address transfers are implicitly enabled.
+    /// Transaction Encoding And Consensus][txencoding], according to the interpretation
+    /// implied by `pool_restrictions`. Returns `None` if unexpected bits are set in the flag byte.
     ///
-    /// Returns `None` if unexpected bits are set in the flag byte.
+    /// The protocol specification and ZIPs 225 and TODO:draft-zodl-valargroup-ironwood-txformat
+    /// define bit 2 of `flags` to be reserved in v5 transactions, and to encode the
+    /// `enableCrossAddress` flag in v6 transactions. However, we can (by design) parse and
+    /// validate the flags knowing only `pool_restrictions`: bit 2 can only be 1 when
+    /// `pool_restrictions == BundlePoolRestrictions::IronwoodNu6_3Onward`, and otherwise
+    /// MUST be 0. Assuming that has been checked, cross-address transactions are then
+    /// always enabled before NU6.3, and are taken to be enabled when bit 2 is set and
+    /// `pool_restrictions == BundlePoolRestrictions::IronwoodNu6_3Onward`, otherwise.
     ///
     /// Note: if the wrong value of `pool_restrictions` is passed for the actual pool and epoch
     /// of the transaction, then a consensus-invalid transaction may be constructed (see
@@ -338,31 +315,37 @@ impl Flags {
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8, pool_restrictions: BundlePoolRestrictions) -> Option<Self> {
-        let format = pool_restrictions.bundle_format();
-        let expected_unset = match format {
-            // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
-            BundleFormat::PreNu6_3 => PRE_NU6_3_FLAGS_EXPECTED_UNSET,
-            // NU6.3 reinterprets bit 2 as `enableCrossAddress`; only bits 3.. are reserved.
-            // The pre-NU6.3 rule above is anchored at
-            // p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero.
-            // TODO(resolve-before-release): the NU6.3 reserved-bits consensus rule (per the
-            // NU6.3 ZIP defining `enableCrossAddress`) has no p.z.cash anchor yet; add the
-            // canonical TCR link here once published, to match the pre-NU6.3 citation.
-            BundleFormat::Nu6_3 => NU6_3_FLAGS_EXPECTED_UNSET,
-        };
-
-        if value & expected_unset == 0 {
-            Some(Self {
-                spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
-                outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
-                cross_address_enabled: match format {
-                    BundleFormat::PreNu6_3 => true,
-                    BundleFormat::Nu6_3 => value & FLAG_CROSS_ADDRESS_ENABLED != 0,
-                },
-            })
-        } else {
-            None
+        // Bits 3..=7 are always reserved and MUST be 0.
+        // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
+        if value & FLAGS_ALWAYS_EXPECTED_UNSET != 0 {
+            return None;
         }
+        let bit2 = value & FLAG_V6_CROSS_ADDRESS_ENABLED != 0;
+
+        // Bit 2 can only be 1 for an Ironwood bundle post-NU6.3 (necessarily a v6+ transaction).
+        // Otherwise it MUST be 0, independent of the tx version:
+        //
+        // * for a v5 transaction it is still reserved and MUST be 0;
+        // * for a v6+ transaction it encodes `enableCrossAddress` and MUST be 0.
+        //
+        // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
+        if bit2 && pool_restrictions != BundlePoolRestrictions::IronwoodNu6_3Onward {
+            return None;
+        }
+
+        // We have already validated bit2 and can assume that here.
+        let cross_address_enabled = match pool_restrictions {
+            BundlePoolRestrictions::OrchardPreNu6_2 | BundlePoolRestrictions::OrchardNu6_2Only => {
+                true
+            }
+            BundlePoolRestrictions::OrchardNu6_3Onward => false,
+            BundlePoolRestrictions::IronwoodNu6_3Onward => bit2,
+        };
+        Some(Self {
+            spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
+            outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
+            cross_address_enabled,
+        })
     }
 }
 
@@ -640,8 +623,8 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// # Errors
     ///
     /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot be encoded under
-    /// `pool_restrictions` (cross-address transfers disabled under pre-NU6.3 Orchard); such a
-    /// bundle cannot appear in a pre-NU6.3 transaction.
+    /// `pool_restrictions` (cross-address transfers disabled pre-NU6.3, or enabled for Orchard
+    /// post-NU6.3).
     pub fn commitment(
         &self,
         pool_restrictions: BundlePoolRestrictions,
@@ -763,10 +746,12 @@ impl core::error::Error for BundleError {}
 #[non_exhaustive]
 pub enum CommitmentError {
     /// The bundle's flags cannot be encoded under the requested `pool_restrictions`.
+    /// This happens in two cases:
     ///
-    /// Cross-address transfers are disabled and `pool_restrictions` is for pre-NU6.3
-    /// Orchard, where bit 2 is reserved; such a bundle cannot appear in a pre-NU6.3
-    /// transaction.
+    /// * cross-address transfers are disabled but `pool_restrictions` specifies a pre-NU6.3
+    ///   Orchard pool (where cross-address transfers are implicitly enabled);
+    /// * cross-address transfers are enabled but `pool_restrictions` specifies a post-NU6.3
+    ///   Orchard pool (where cross-address transfers are forbidden).
     UnrepresentableFlags,
 }
 
@@ -775,8 +760,7 @@ impl fmt::Display for CommitmentError {
         match self {
             CommitmentError::UnrepresentableFlags => write!(
                 f,
-                "bundle flags are not representable in the requested transaction \
-                 format (cross-address transfers disabled under pre-NU6.3 encoding)",
+                "bundle flags are not representable according to the requested pool restrictions",
             ),
         }
     }
@@ -972,19 +956,19 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Create an arbitrary set of flags with cross-address transfers enabled, so
-        /// that the flag set is representable in both pre-NU6.3 and NU6.3 formats.
+        /// Create an arbitrary set of flags with cross-address transfers enabled.
+        /// This is representable for all `pool_restrictions` other than Orchard post-NU6.3.
         ///
-        /// Use `arb_flags_nu6_3` for a strategy that can also disable cross-address
-        /// transfers, which is representable only under NU6.3 encoding rules.
+        /// Use `arb_flags_ironwood_post_nu6_3` for a strategy that can also disable
+        /// cross-address transfers.
         pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY) -> Flags {
-            Flags::from_parts(spends_enabled, outputs_enabled)
+            Flags::from_parts(spends_enabled, outputs_enabled, true)
         }
     }
 
     prop_compose! {
-        /// Create an arbitrary set of flags under NU6.3 encoding rules.
-        pub fn arb_flags_nu6_3()(
+        /// Create an arbitrary set of flags that are valid for an Ironwood bundle post-NU6.3.
+        pub fn arb_flags_ironwood_post_nu6_3()(
             spends_enabled in prop::bool::ANY,
             outputs_enabled in prop::bool::ANY,
             cross_address_enabled in prop::bool::ANY,
@@ -1074,7 +1058,7 @@ pub(crate) mod tests {
 
     use proptest::prelude::*;
 
-    use super::testing::{arb_bundle, arb_flags_nu6_3};
+    use super::testing::{arb_bundle, arb_flags, arb_flags_ironwood_post_nu6_3};
     use super::{Authorized, Bundle, BundleError, BundlePoolRestrictions, CommitmentError, Flags};
     use crate::Proof;
 
@@ -1109,31 +1093,34 @@ pub(crate) mod tests {
 
     #[test]
     fn flags_byte_encoding() {
-        for (flags, pre_nu6_3, nu6_3) in [
-            (Flags::ENABLED, Some(0b011), Some(0b111)),
-            (Flags::SPENDS_DISABLED, Some(0b010), Some(0b110)),
-            (Flags::OUTPUTS_DISABLED, Some(0b001), Some(0b101)),
-            // Disabling cross-address transfers is representable only under NU6.3
-            // encoding rules.
-            (Flags::CROSS_ADDRESS_DISABLED, None, Some(0b011)),
+        for (flags, orchard_pre_nu6_3, orchard_nu6_3, ironwood_nu6_3) in [
+            (Flags::ENABLED, Some(0b011), None, Some(0b111)),
+            (Flags::SPENDS_DISABLED, Some(0b010), None, Some(0b110)),
+            (Flags::OUTPUTS_DISABLED, Some(0b001), None, Some(0b101)),
+            (
+                Flags::CROSS_ADDRESS_DISABLED,
+                None,
+                Some(0b011),
+                Some(0b011),
+            ),
         ] {
             assert_eq!(
                 flags.to_byte(BundlePoolRestrictions::OrchardNu6_2Only),
-                pre_nu6_3
+                orchard_pre_nu6_3
             );
             assert_eq!(
                 flags.to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
-                nu6_3
+                orchard_nu6_3
             );
             assert_eq!(
                 flags.to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward),
-                nu6_3
+                ironwood_nu6_3
             );
         }
     }
 
     #[test]
-    fn flags_parsing_diverges_between_eras() {
+    fn flags_parsing_diverges_between_epochs() {
         // A byte with bit 2 clear parses as an unrestricted bundle for Orchard pre-NU6.3,
         // and a restricted bundle for Orchard or Ironwood post-NU6.3.
         for value in 0b000..=0b011 {
@@ -1211,14 +1198,21 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn nu6_3_flags_parsing_recognizes_cross_address_enabled() {
+    fn nu6_3_flags_parsing_handles_the_cross_address_bit() {
         for value in 0b100..=0b111 {
+            // Orchard post-NU6.3 mandates the restriction, so bit 2 (`enableCrossAddress`)
+            // set is rejected there.
+            assert_eq!(
+                Flags::from_byte(value, BundlePoolRestrictions::OrchardNu6_3Onward),
+                None
+            );
+            // Bit 2 set is only valid for the Ironwood pool, where it is recognized as
+            // cross-address enabled and round-trips.
             let flags =
-                Flags::from_byte(value, BundlePoolRestrictions::OrchardNu6_3Onward).unwrap();
-
+                Flags::from_byte(value, BundlePoolRestrictions::IronwoodNu6_3Onward).unwrap();
             assert!(flags.cross_address_enabled());
             assert_eq!(
-                flags.to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
+                flags.to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward),
                 Some(value)
             );
             // Pre-NU6.3 formats encode the same flag set with bit 2 reserved zero.
@@ -1228,9 +1222,14 @@ pub(crate) mod tests {
             );
         }
 
+        // Bits 3.. are always reserved, in every NU6.3 pool.
         for value in 0b1000..=u8::MAX {
             assert_eq!(
                 Flags::from_byte(value, BundlePoolRestrictions::OrchardNu6_3Onward),
+                None
+            );
+            assert_eq!(
+                Flags::from_byte(value, BundlePoolRestrictions::IronwoodNu6_3Onward),
                 None
             );
         }
@@ -1255,12 +1254,30 @@ pub(crate) mod tests {
         #![proptest_config(ProptestConfig::with_cases(16))]
 
         #[test]
-        fn arb_flags_nu6_3_round_trips(flags in arb_flags_nu6_3()) {
+        fn arb_flags_ironwood_post_nu6_3_round_trips(flags in arb_flags_ironwood_post_nu6_3()) {
             let encoded = flags
-                .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward)
-                .expect("all NU6.3 flag strategy outputs encode under NU6.3");
+                .to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward)
+                .expect("all Ironwood post-NU6.3 flag strategy outputs encode under Ironwood post-NU6.3");
 
-            prop_assert_eq!(Flags::from_byte(encoded, BundlePoolRestrictions::OrchardNu6_3Onward), Some(flags));
+            prop_assert_eq!(Flags::from_byte(encoded, BundlePoolRestrictions::IronwoodNu6_3Onward), Some(flags));
+        }
+
+        #[test]
+        fn orchard_nu6_3_rejects_cross_address_enabled(flags in arb_flags()) {
+            // `arb_flags` always enables cross-address transfers, which Orchard post-NU6.3
+            // forbids, so encoding under those restrictions must fail. The cross-address-
+            // disabled projection must still encode and round-trip.
+            prop_assert_eq!(flags.to_byte(BundlePoolRestrictions::OrchardNu6_3Onward), None);
+
+            let mut disabled = flags;
+            disabled.cross_address_enabled = false;
+            let encoded = disabled
+                .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward)
+                .expect("cross-address-disabled flags encode under Orchard post-NU6.3");
+            prop_assert_eq!(
+                Flags::from_byte(encoded, BundlePoolRestrictions::OrchardNu6_3Onward),
+                Some(disabled)
+            );
         }
 
         #[test]
@@ -1300,10 +1317,11 @@ pub(crate) mod tests {
                 .into();
             prop_assert_eq!(restricted_commitment, legacy_commitment);
 
-            // The unrestricted NU6.3 encoding sets bit 2, producing a distinct digest.
+            // The unrestricted NU6.3 encoding sets bit 2, producing a distinct digest. Only
+            // the Ironwood pool may set it; Orchard post-NU6.3 prohibits cross-address transfers.
             let unrestricted_commitment: [u8; 32] = bundle
-                .commitment(BundlePoolRestrictions::OrchardNu6_3Onward)
-                .expect("unrestricted flags are representable under NU6.3")
+                .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward)
+                .expect("unrestricted flags are representable under Ironwood NU6.3")
                 .into();
             prop_assert_ne!(unrestricted_commitment, restricted_commitment);
 

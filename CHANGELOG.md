@@ -59,21 +59,24 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   returned by `orchard::bundle::BatchValidator::add_bundle`.
 - `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
   returned by `orchard::Bundle::commitment`.
-- `orchard::bundle::testing::arb_flags_nu6_3` (under the `test-dependencies`
-  feature), a strategy that generates flag sets under NU6.3 encoding rules,
-  including flag sets that disable cross-address transfers. `arb_flags` is
-  unchanged and only generates flag sets with cross-address transfers enabled,
-  which are representable in every transaction format.
+- `orchard::bundle::testing::arb_flags_ironwood_post_nu6_3` (under the
+  `test-dependencies` feature), a strategy that generates flag sets valid for an
+  Ironwood bundle post-NU6.3, including flag sets that disable cross-address
+  transfers. `arb_flags` is unchanged and only generates flag sets with
+  cross-address transfers enabled, which are representable under every pool
+  restriction other than Orchard post-NU6.3.
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
-  `orchard::pczt::Bundle::parse` now take a `BundlePoolRestrictions`. Under a NU6.3
-  protocol, bit 2 is parsed and serialized as `enableCrossAddress`; under a
-  pre-NU6.3 protocol, bit 2 remains reserved, parsing yields flags with
-  cross-address transfers enabled, and `Flags::to_byte` (which now returns
-  `Option<u8>`) returns `None` if cross-address transfers are disabled. The same
-  flag byte is therefore interpreted differently per era: a byte with bit 2 clear
-  parses as an unrestricted bundle before NU6.3 and a restricted bundle under NU6.3.
+  `orchard::pczt::Bundle::parse` now take a `BundlePoolRestrictions`. Bit 2
+  (`enableCrossAddress`) is only representable for the Ironwood pool post-NU6.3;
+  it is rejected for pre-NU6.3 (where bit 2 is reserved) and for Orchard
+  post-NU6.3 (where consensus mandates the cross-address restriction).
+  `Flags::to_byte` now returns `Option<u8>`, yielding `None` when the flag set is
+  not representable under the given pool restrictions (cross-address transfers
+  disabled under pre-NU6.3, or enabled under Orchard post-NU6.3). A byte with
+  bit 2 clear is interpreted differently per epoch: an unrestricted bundle
+  before NU6.3, a restricted bundle under NU6.3.
 - Key- and circuit-building APIs now take the intended `OrchardCircuitVersion`
   explicitly instead of implicitly selecting `FixedPostNu6_2` — pass
   `FixedPostNu6_2` for the previous behavior, or `PostNu6_3` for restricted

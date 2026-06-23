@@ -153,12 +153,16 @@ impl BundleType {
                 spends_enabled,
                 outputs_enabled,
                 ..
-            } => Flags::from_parts_with_cross_address(
+            } => Flags::from_parts(
                 *spends_enabled,
                 *outputs_enabled,
                 default_cross_address_enabled(pool_restrictions),
             ),
-            BundleType::Coinbase => Flags::SPENDS_DISABLED,
+            BundleType::Coinbase => Flags::from_parts(
+                false,
+                true,
+                default_cross_address_enabled(pool_restrictions),
+            ),
         }
     }
 }
@@ -1769,7 +1773,7 @@ mod tests {
     use super::{bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo};
     use crate::{
         builder::BundleType,
-        bundle::{Authorized, Bundle, BundlePoolRestrictions, Flags},
+        bundle::{Authorized, Bundle, BundlePoolRestrictions},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -1891,7 +1895,7 @@ mod tests {
         // and therefore ordinary outputs build normally.
         let builder = output_only_builder(
             &mut rng,
-            BundlePoolRestrictions::OrchardNu6_3Onward,
+            BundlePoolRestrictions::IronwoodNu6_3Onward,
             BundleType::Coinbase,
         );
 
@@ -1907,27 +1911,37 @@ mod tests {
     }
 
     #[test]
-    fn coinbase_bundle_type_uses_spends_disabled_flags() {
-        assert_eq!(
-            BundleType::Coinbase.flags(BundlePoolRestrictions::OrchardNu6_3Onward),
-            Flags::SPENDS_DISABLED
-        );
-        assert!(BundleType::Coinbase
-            .flags(BundlePoolRestrictions::OrchardNu6_3Onward)
-            .cross_address_enabled());
-        // Post-NU6.3 coinbase bundles set bit 2 of the flag byte, so pre-NU6.3
-        // parsers reject them under the reserved-bits rule.
+    fn coinbase_is_not_exceptional_for_cross_address() {
+        // Coinbase bundles always disable spends, but are otherwise no different wrt the
+        // cross-address restriction: they set `enableCrossAddress` exactly as a non-coinbase
+        // transaction would for the same pool restrictions.
+        for pr in [
+            BundlePoolRestrictions::OrchardPreNu6_2,
+            BundlePoolRestrictions::OrchardNu6_2Only,
+            BundlePoolRestrictions::OrchardNu6_3Onward,
+            BundlePoolRestrictions::IronwoodNu6_3Onward,
+        ] {
+            let flags = BundleType::Coinbase.flags(pr);
+            assert!(!flags.spends_enabled());
+            assert!(flags.outputs_enabled());
+            assert_eq!(
+                flags.cross_address_enabled(),
+                !pr.requires_cross_address_restriction()
+            );
+        }
+        // Orchard post-NU6.3 mandates the restriction, so the coinbase flag byte has bit 2
+        // clear; Ironwood leaves the builder default (set).
         assert_eq!(
             BundleType::Coinbase
                 .flags(BundlePoolRestrictions::OrchardNu6_3Onward)
                 .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
-            Some(0b110)
+            Some(0b010)
         );
         assert_eq!(
             BundleType::Coinbase
-                .flags(BundlePoolRestrictions::OrchardNu6_3Onward)
-                .to_byte(BundlePoolRestrictions::OrchardNu6_2Only),
-            Some(0b010)
+                .flags(BundlePoolRestrictions::IronwoodNu6_3Onward)
+                .to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward),
+            Some(0b110)
         );
     }
 

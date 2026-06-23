@@ -1565,10 +1565,14 @@ mod tests {
             ProofFixtureEncoding::PostNu6_3ThreeFlags => {
                 // The fixture stores the instance-level *disable* bit; the NU6.3 flag
                 // byte carries the *enable* bit, so invert when reconstructing.
+                //
+                // The circuit is pool-agnostic; decode under Ironwood, the pool whose flag
+                // byte can represent `enableCrossAddress` either way (Orchard post-NU6.3
+                // rejects bit 2).
                 let cross_address_disabled = read_bool(&mut r);
                 (
                     u8::from(!cross_address_disabled) << 2,
-                    BundlePoolRestrictions::OrchardNu6_3Onward,
+                    BundlePoolRestrictions::IronwoodNu6_3Onward,
                 )
             }
         };

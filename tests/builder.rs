@@ -258,7 +258,7 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let builder = output_only_builder(
-        BundlePoolRestrictions::OrchardNu6_3Onward,
+        BundlePoolRestrictions::IronwoodNu6_3Onward,
         BundleType::Coinbase,
         recipient,
     );
@@ -269,7 +269,7 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     assert!(unauthorized.flags().cross_address_enabled());
 
     let sighash: [u8; 32] = unauthorized
-        .commitment(BundlePoolRestrictions::OrchardNu6_3Onward)
+        .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
@@ -278,7 +278,7 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     verify_bundle(
         &bundle,
         &post_nu6_3_vk,
-        BundlePoolRestrictions::OrchardNu6_3Onward,
+        BundlePoolRestrictions::IronwoodNu6_3Onward,
     );
 }
 
