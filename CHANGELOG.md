@@ -70,6 +70,9 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `orchard::note_encryption::IronwoodNoteEncryption`, matching
   `OrchardDomain` note-encryption behavior but accepting V3 note plaintexts
   during parsing.
+- `orchard::note_encryption::{DomainVersion, NoteEncryptionDomain, OrchardVersion,
+  IronwoodVersion}`, the sealed marker-domain API underlying `OrchardDomain`
+  and `IronwoodDomain`.
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.
 - `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
