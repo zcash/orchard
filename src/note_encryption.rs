@@ -61,11 +61,6 @@ where
 {
     assert!(plaintext.len() >= COMPACT_NOTE_SIZE);
 
-    // Check note plaintext version.
-    if plaintext[0] != note_version.lead_byte() {
-        return None;
-    }
-
     // The unwraps below are guaranteed to succeed by the assertion above
     let diversifier = Diversifier::from_bytes(plaintext[1..12].try_into().unwrap());
     let value = NoteValue::from_bytes(plaintext[12..20].try_into().unwrap());
