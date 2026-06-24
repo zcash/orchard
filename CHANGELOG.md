@@ -56,7 +56,7 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   transfers.
 - Error variants for the cross-address builder and PCZT checks:
   - `orchard::builder::BuildError::CrossAddressDisabled`
-  - `orchard::builder::SpendError::InvalidNoteVersion`
+  - `orchard::builder::BuildError::InvalidNoteVersion`
   - `orchard::builder::OutputError::{CrossAddressDisabled, SpendsDisabled, RecipientNotOwned}`
   - `orchard::pczt::ParseError::InvalidNoteVersion`
   - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
@@ -113,9 +113,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   - `orchard::builder::bundle` takes the `BundlePoolRestrictions` in place of the
     circuit-version argument.
   - The builder derives new output, dummy, and fabricated note plaintext versions
-    from `BundlePoolRestrictions::note_version`, and rejects spends whose note
-    version does not match the builder's pool restrictions with
-    `SpendError::InvalidNoteVersion`.
+    from `BundlePoolRestrictions::note_version`.
+  - The lower-level `orchard::builder::bundle` helper rejects supplied
+    `OutputInfo` and `ChangeInfo` values whose note version does not match the
+    `BundlePoolRestrictions`, returning `BuildError::InvalidNoteVersion`.
 - Bundle output decryption and recovery helpers now take a `BundlePoolRestrictions`
   and enforce its note plaintext version after decryption:
   - `orchard::Bundle::{decrypt_outputs_with_keys, decrypt_output_with_key}`

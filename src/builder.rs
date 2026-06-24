@@ -210,6 +210,9 @@ pub enum BuildError {
     /// Cross-address transfers are disabled for the bundle being constructed, and an
     /// output is not a wallet-controlled change output.
     CrossAddressDisabled,
+    /// A supplied output or change output has a note version that is
+    /// inconsistent with the bundle pool restrictions.
+    InvalidNoteVersion,
 }
 
 impl fmt::Display for BuildError {
@@ -242,6 +245,10 @@ impl fmt::Display for BuildError {
                 "Cross-address transfers are disabled for this bundle: every output must \
                  be a wallet-controlled change output.",
             ),
+            InvalidNoteVersion => f.write_str(
+                "A supplied output or change output has a note version that does not match \
+                 the bundle pool restrictions.",
+            ),
         }
     }
 }
@@ -272,8 +279,6 @@ pub enum SpendError {
     AnchorMismatch,
     /// The full viewing key provided didn't match the note provided
     FvkMismatch,
-    /// The note version provided doesn't match the note version requested for this builder.
-    InvalidNoteVersion,
 }
 
 impl fmt::Display for SpendError {
@@ -283,9 +288,6 @@ impl fmt::Display for SpendError {
             SpendsDisabled => "Spends are not enabled for this builder",
             AnchorMismatch => "All anchors must be equal.",
             FvkMismatch => "FullViewingKey does not correspond to the given note",
-            InvalidNoteVersion => {
-                "Note version does not match the note version requested for this builder"
-            }
         })
     }
 }
@@ -833,9 +835,6 @@ impl Builder {
         if !flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
-        if note.version() != self.note_version() {
-            return Err(SpendError::InvalidNoteVersion);
-        }
 
         let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
 
@@ -1144,6 +1143,7 @@ fn build_bundle<B, R: RngCore>(
     finisher: impl FnOnce(Vec<ActionInfo>, Flags, ValueSum, BundleMetadata, R) -> Result<B, BuildError>,
 ) -> Result<B, BuildError> {
     let flags = bundle_type.flags(pool_restrictions);
+    let note_version = pool_restrictions.note_version();
 
     let num_requested_spends = spends.len();
     if !flags.spends_enabled() && num_requested_spends > 0 {
@@ -1163,6 +1163,15 @@ fn build_bundle<B, R: RngCore>(
     if !flags.outputs_enabled() && num_requested_outputs > 0 {
         return Err(BuildError::OutputsDisabled);
     }
+    if outputs
+        .iter()
+        .any(|output| output.note_version != note_version)
+        || changes
+            .iter()
+            .any(|change| change.output.note_version != note_version)
+    {
+        return Err(BuildError::InvalidNoteVersion);
+    }
     if !flags.spends_enabled() && !flags.cross_address_enabled() && num_requested_outputs > 0 {
         return Err(BuildError::BundleTypeNotSatisfiable);
     }
@@ -1181,7 +1190,6 @@ fn build_bundle<B, R: RngCore>(
             pool_restrictions,
         )
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
-    let note_version = pool_restrictions.note_version();
 
     let (pre_actions, bundle_meta) = if !flags.cross_address_enabled() {
         // Every action's output must be addressed to the note it spends, so the
@@ -1214,7 +1222,7 @@ fn build_bundle<B, R: RngCore>(
                 output.recipient,
                 NoteValue::ZERO,
                 rho,
-                pool_restrictions.note_version(),
+                note_version,
                 &mut rng,
             );
             let spend = SpendInfo {
@@ -1235,7 +1243,7 @@ fn build_bundle<B, R: RngCore>(
                 None,
                 spend.note.recipient(),
                 NoteValue::ZERO,
-                pool_restrictions.note_version(),
+                note_version,
                 [0u8; 512],
             );
             pairs.push((None, None, spend, output));
@@ -1810,7 +1818,9 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::RngCore;
 
-    use super::{bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo};
+    use super::{
+        bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo, SpendInfo,
+    };
     use crate::{
         builder::BundleType,
         bundle::{Authorized, Bundle, BundlePoolRestrictions},
@@ -2218,6 +2228,85 @@ mod tests {
                 vec![change_output],
             ),
             Err(BuildError::BundleTypeNotSatisfiable)
+        ));
+    }
+
+    #[test]
+    fn builder_note_version_checks_apply_to_outputs_only() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let mismatched_note_version = NoteVersion::V2;
+
+        let (note, merkle_path, anchor) = note_with_path(
+            &mut rng,
+            recipient,
+            NoteValue::from_raw(15_000),
+            mismatched_note_version,
+        );
+        let mut builder = Builder::new(pool_restrictions, BundleType::DEFAULT, anchor);
+        assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
+
+        let (note, merkle_path, anchor) = note_with_path(
+            &mut rng,
+            recipient,
+            NoteValue::from_raw(15_000),
+            mismatched_note_version,
+        );
+        let spend = SpendInfo::new(fvk.clone(), note, merkle_path).unwrap();
+        assert!(bundle::<i64>(
+            &mut rng,
+            pool_restrictions,
+            anchor,
+            BundleType::DEFAULT,
+            vec![spend],
+            vec![],
+            vec![],
+        )
+        .is_ok());
+
+        let output = OutputInfo::new(
+            None,
+            recipient,
+            NoteValue::from_raw(5_000),
+            mismatched_note_version,
+            [0u8; 512],
+        );
+        assert!(matches!(
+            bundle::<i64>(
+                &mut rng,
+                pool_restrictions,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+                BundleType::DEFAULT,
+                vec![],
+                vec![output],
+                vec![],
+            ),
+            Err(BuildError::InvalidNoteVersion)
+        ));
+
+        let change = ChangeInfo::new(
+            fvk,
+            None,
+            recipient,
+            NoteValue::from_raw(5_000),
+            mismatched_note_version,
+            [0u8; 512],
+        )
+        .unwrap();
+        assert!(matches!(
+            bundle::<i64>(
+                &mut rng,
+                pool_restrictions,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+                BundleType::DEFAULT,
+                vec![],
+                vec![],
+                vec![change],
+            ),
+            Err(BuildError::InvalidNoteVersion)
         ));
     }
 
