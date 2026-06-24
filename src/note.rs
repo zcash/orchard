@@ -199,7 +199,8 @@ impl RandomSeed {
     /// $$
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
-    fn rcm_v3(
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+    pub(crate) fn rcm_v3(
         &self,
         rho: &Rho,
         g_d: &NonIdentityPallasPoint,

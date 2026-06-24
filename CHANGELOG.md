@@ -83,6 +83,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
 - `orchard::bundle::testing::arb_bundle_protocol_restriction` (under the
   `test-dependencies` feature), a strategy that generates bundle pool
   restrictions.
+- `RandomSeed::rcm_v3` (behind the `unstable-voting-circuits` feature), the rcm
+  derivation for V3 (ZIP 2005, Ironwood) notes, for low-level construction of
+  Ironwood note plaintexts. These APIs are not covered by the crate's semver
+  guarantees.
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
