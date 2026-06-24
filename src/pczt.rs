@@ -456,6 +456,21 @@ mod tests {
         pczt_bundle
     }
 
+    fn ironwood_output_pczt_bundle(mut rng: OsRng) -> super::Bundle {
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let mut builder = Builder::new(
+            BundlePoolRestrictions::IronwoodNu6_3Onward,
+            BundleType::DEFAULT,
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+        );
+        builder
+            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
+            .unwrap();
+        builder.build_for_pczt(&mut rng).unwrap().0
+    }
+
     fn identity_rk() -> redpallas::VerificationKey<SpendAuth> {
         redpallas::VerificationKey::<SpendAuth>::try_from([0u8; 32])
             .expect("plain redpallas accepts the identity encoding")
@@ -550,9 +565,9 @@ mod tests {
             .expect("V3 output version verifies the QR note commitment");
 
         let sighash = [0; 32];
-        pczt_bundle.finalize_io(sighash, &mut rng).unwrap();
+        pczt_bundle.finalize_io(sighash, rng).unwrap();
         pczt_bundle
-            .create_proof(&pk, &mut rng)
+            .create_proof(&pk, rng)
             .expect("V3 output version reconstructs the QR note for proving");
 
         pczt_bundle.actions_mut()[output_action_index]
@@ -563,12 +578,12 @@ mod tests {
             action.output.verify_note_commitment(&action.spend),
             Err(VerifyError::InvalidExtractedNoteCommitment)
         ));
-        pczt_bundle.create_proof(&pk, &mut rng).unwrap();
+        pczt_bundle.create_proof(&pk, rng).unwrap();
         let bundle = pczt_bundle
             .extract::<i64>()
             .unwrap()
             .unwrap()
-            .apply_binding_signature(sighash, &mut rng)
+            .apply_binding_signature(sighash, rng)
             .unwrap();
         assert!(bundle.verify_proof(&vk).is_err());
     }
@@ -641,9 +656,9 @@ mod tests {
             .verify_nullifier(None)
             .expect("V3 spend version verifies the QR note nullifier");
 
-        pczt_bundle.finalize_io([0; 32], &mut rng).unwrap();
+        pczt_bundle.finalize_io([0; 32], rng).unwrap();
         pczt_bundle
-            .create_proof(&pk, &mut rng)
+            .create_proof(&pk, rng)
             .expect("V3 spend version reconstructs the QR note for proving");
 
         pczt_bundle.actions_mut()[spend_action_index]
@@ -655,7 +670,7 @@ mod tests {
             Err(VerifyError::InvalidNullifier)
         ));
         assert!(matches!(
-            pczt_bundle.create_proof(&pk, &mut rng),
+            pczt_bundle.create_proof(&pk, rng),
             Err(ProverError::RhoMismatch)
         ));
     }
@@ -910,6 +925,53 @@ mod tests {
                 .to_byte(BundlePoolRestrictions::OrchardNu6_2Only),
             None
         );
+    }
+
+    #[test]
+    fn parse_preserves_note_versions() {
+        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let pczt_bundle = ironwood_output_pczt_bundle(OsRng);
+        let flags = pczt_bundle.flags.to_byte(pool_restrictions).unwrap();
+        let anchor = pczt_bundle.anchor.to_bytes();
+        let actions = pczt_bundle.actions;
+
+        let parsed = super::Bundle::parse(
+            actions,
+            flags,
+            pool_restrictions,
+            (5000, true),
+            anchor,
+            None,
+            None,
+        )
+        .unwrap();
+        let action = &parsed.actions()[0];
+
+        assert_eq!(action.spend().note_version(), &NoteVersion::V3);
+        assert_eq!(action.output().note_version(), &NoteVersion::V3);
+    }
+
+    #[test]
+    fn parse_rejects_output_note_version_mismatch() {
+        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let pczt_bundle = ironwood_output_pczt_bundle(OsRng);
+        let flags = pczt_bundle.flags.to_byte(pool_restrictions).unwrap();
+        let anchor = pczt_bundle.anchor.to_bytes();
+        let mut actions = pczt_bundle.actions;
+        actions[0].output.note_version = NoteVersion::V2;
+
+        assert!(matches!(
+            super::Bundle::parse(
+                actions,
+                flags,
+                pool_restrictions,
+                (5000, true),
+                anchor,
+                None,
+                None,
+            ),
+            Err(ParseError::InvalidNoteVersion)
+        ));
     }
 
     #[test]

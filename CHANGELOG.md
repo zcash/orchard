@@ -123,10 +123,13 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   - `orchard::Bundle::{recover_outputs_with_ovks, recover_output_with_ovk}`
   Selecting `BundlePoolRestrictions::IronwoodNu6_3Onward` lets these helpers
   discover V3 Ironwood notes.
-- Low-level note constructors now take an explicit `orchard::note::NoteVersion`
-  so callers choose between V2 Orchard notes and V3 Ironwood notes. Affected API:
+- Low-level note and builder-info constructors now take an explicit
+  `orchard::note::NoteVersion` so callers choose between V2 Orchard notes and V3
+  Ironwood notes. Affected API:
   - `orchard::Note::from_parts`
   - `orchard::Note::new`
+  - `orchard::builder::OutputInfo::new`
+  - `orchard::builder::ChangeInfo::new`
 - `orchard::builder::BundleType::Transactional` no longer embeds a full `Flags`;
   it carries `{ spends_enabled, outputs_enabled, bundle_required }`, and
   `BundleType::flags` and `BundleType::num_actions` now take the
@@ -193,7 +196,7 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
 - `orchard::pczt::{Spend, Output}::parse` now take the note plaintext version
   for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
   actions whose output note version does not match the `BundlePoolRestrictions`.
-- `orchard::builder::OutputInfo::{new, dummy}` now take an explicit
+- `orchard::builder::OutputInfo::dummy` now takes an explicit
   `orchard::note::NoteVersion`; builder-created outputs use the note version
   associated with the selected `BundlePoolRestrictions`.
 - `test-dependencies` note and bundle strategies now select note versions from
