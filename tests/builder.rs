@@ -105,6 +105,7 @@ fn bundle_chain() {
         assert_eq!(
             unauthorized
                 .decrypt_output_with_key(
+                    BundlePoolRestrictions::OrchardNu6_2Only,
                     bundle_meta
                         .output_action_index(0)
                         .expect("Output 0 can be found"),
@@ -273,6 +274,73 @@ fn ironwood_builder_outputs_decrypt_with_ironwood_domain() {
     assert_eq!(memo, [0u8; 512]);
 }
 
+#[test]
+fn ironwood_bundle_helpers_decrypt_and_recover_outputs() {
+    let mut rng = OsRng;
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let recipient = fvk.address_at(0u32, Scope::External);
+    let ivk = fvk.to_ivk(Scope::External);
+    let ovk = fvk.to_ovk(Scope::External);
+    let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+    let anchor = MerkleHashOrchard::empty_root(32.into()).into();
+
+    let mut builder = Builder::new(pool_restrictions, SHIELDING, anchor);
+    assert_eq!(
+        builder.add_output(
+            Some(ovk.clone()),
+            recipient,
+            NoteValue::from_raw(5000),
+            [0u8; 512],
+        ),
+        Ok(())
+    );
+    let (bundle, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let action_idx = bundle_meta
+        .output_action_index(0)
+        .expect("Output 0 can be found");
+
+    assert!(bundle
+        .decrypt_output_with_key(BundlePoolRestrictions::OrchardNu6_2Only, action_idx, &ivk,)
+        .is_none());
+
+    let (note, decrypted_to, memo) = bundle
+        .decrypt_output_with_key(pool_restrictions, action_idx, &ivk)
+        .expect("V3 output decrypts through the bundle helper");
+    assert_eq!(note.version(), NoteVersion::V3);
+    assert_eq!(note.value(), NoteValue::from_raw(5000));
+    assert_eq!(decrypted_to, recipient);
+    assert_eq!(memo, [0u8; 512]);
+
+    let decrypted = bundle.decrypt_outputs_with_keys(pool_restrictions, &[ivk]);
+    assert_eq!(decrypted.len(), 1);
+    assert_eq!(decrypted[0].0, action_idx);
+    assert_eq!(decrypted[0].2.version(), NoteVersion::V3);
+    assert_eq!(decrypted[0].2.value(), NoteValue::from_raw(5000));
+    assert_eq!(decrypted[0].3, recipient);
+    assert_eq!(decrypted[0].4, [0u8; 512]);
+
+    assert!(bundle
+        .recover_output_with_ovk(BundlePoolRestrictions::OrchardNu6_2Only, action_idx, &ovk,)
+        .is_none());
+
+    let (note, recovered_to, memo) = bundle
+        .recover_output_with_ovk(pool_restrictions, action_idx, &ovk)
+        .expect("V3 output recovers through the bundle helper");
+    assert_eq!(note.version(), NoteVersion::V3);
+    assert_eq!(note.value(), NoteValue::from_raw(5000));
+    assert_eq!(recovered_to, recipient);
+    assert_eq!(memo, [0u8; 512]);
+
+    let recovered = bundle.recover_outputs_with_ovks(pool_restrictions, &[ovk]);
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].0, action_idx);
+    assert_eq!(recovered[0].2.version(), NoteVersion::V3);
+    assert_eq!(recovered[0].2.value(), NoteValue::from_raw(5000));
+    assert_eq!(recovered[0].3, recipient);
+    assert_eq!(recovered[0].4, [0u8; 512]);
+}
+
 // Coinbase bundles disable nonzero-valued spends. From NU6.3, consensus requires
 // nActionsOrchard = 0 in a v5+ coinbase transaction (v4, still valid after NU6.3,
 // has no Orchard bundle). So a post-NU6.3 coinbase bundle built by this crate must
@@ -395,6 +463,7 @@ fn post_nu6_3_restricted_bundle_chain() {
         assert_eq!(
             unauthorized
                 .decrypt_output_with_key(
+                    BundlePoolRestrictions::OrchardNu6_3Onward,
                     bundle_meta
                         .output_action_index(0)
                         .expect("Output 0 can be found"),
@@ -410,6 +479,7 @@ fn post_nu6_3_restricted_bundle_chain() {
         // from anyone (including a quantum adversary) who recovers that ivk from the address.
         assert!(unauthorized
             .decrypt_output_with_key(
+                BundlePoolRestrictions::OrchardNu6_3Onward,
                 bundle_meta
                     .spend_action_index(0)
                     .expect("Spend 0 can be found"),

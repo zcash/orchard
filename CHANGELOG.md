@@ -116,6 +116,12 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     from `BundlePoolRestrictions::note_version`, and rejects spends whose note
     version does not match the builder's pool restrictions with
     `SpendError::InvalidNoteVersion`.
+- Bundle output decryption and recovery helpers now take a `BundlePoolRestrictions`
+  and enforce its note plaintext version after decryption:
+  - `orchard::Bundle::{decrypt_outputs_with_keys, decrypt_output_with_key}`
+  - `orchard::Bundle::{recover_outputs_with_ovks, recover_output_with_ovk}`
+  Selecting `BundlePoolRestrictions::IronwoodNu6_3Onward` lets these helpers
+  discover V3 Ironwood notes.
 - Low-level note constructors now take an explicit `orchard::note::NoteVersion`
   so callers choose between V2 Orchard notes and V3 Ironwood notes. Affected API:
   - `orchard::Note::from_parts`

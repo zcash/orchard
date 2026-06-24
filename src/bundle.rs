@@ -24,7 +24,7 @@ use crate::{
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::{Note, NoteVersion},
-    note_encryption::OrchardDomain,
+    note_encryption::BundleDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
     value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -532,12 +532,13 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Performs trial decryption of each action in the bundle with each of the
-    /// specified incoming viewing keys, and returns a vector of each decrypted
-    /// note plaintext contents along with the index of the action from which it
-    /// was derived.
+    /// Performs trial decryption of each action in the bundle under
+    /// `pool_restrictions` with each of the specified incoming viewing keys, and
+    /// returns a vector of each decrypted note plaintext contents along with the
+    /// index of the action from which it was derived.
     pub fn decrypt_outputs_with_keys(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         keys: &[IncomingViewingKey],
     ) -> Vec<(usize, IncomingViewingKey, Note, Address, [u8; 512])> {
         let prepared_keys: Vec<_> = keys
@@ -548,7 +549,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
-                let domain = OrchardDomain::for_action(action);
+                let domain = BundleDomain::for_action(action, pool_restrictions);
                 prepared_keys.iter().find_map(|(ivk, prepared_ivk)| {
                     try_note_decryption(&domain, prepared_ivk, action)
                         .map(|(n, a, m)| (idx, (*ivk).clone(), n, a, m))
@@ -557,34 +558,36 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Performs trial decryption of the action at `action_idx` in the bundle with the
-    /// specified incoming viewing key, and returns the decrypted note plaintext
-    /// contents if successful.
+    /// Performs trial decryption of the action at `action_idx` in the bundle
+    /// under `pool_restrictions` with the specified incoming viewing key, and
+    /// returns the decrypted note plaintext contents if successful.
     pub fn decrypt_output_with_key(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         action_idx: usize,
         key: &IncomingViewingKey,
     ) -> Option<(Note, Address, [u8; 512])> {
         let prepared_ivk = PreparedIncomingViewingKey::new(key);
         self.actions.get(action_idx).and_then(move |action| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = BundleDomain::for_action(action, pool_restrictions);
             try_note_decryption(&domain, &prepared_ivk, action)
         })
     }
 
-    /// Performs trial decryption of each action in the bundle with each of the
-    /// specified outgoing viewing keys, and returns a vector of each decrypted
-    /// note plaintext contents along with the index of the action from which it
-    /// was derived.
+    /// Performs trial decryption of each action in the bundle under
+    /// `pool_restrictions` with each of the specified outgoing viewing keys, and
+    /// returns a vector of each decrypted note plaintext contents along with the
+    /// index of the action from which it was derived.
     pub fn recover_outputs_with_ovks(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         keys: &[OutgoingViewingKey],
     ) -> Vec<(usize, OutgoingViewingKey, Note, Address, [u8; 512])> {
         self.actions
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
-                let domain = OrchardDomain::for_action(action);
+                let domain = BundleDomain::for_action(action, pool_restrictions);
                 keys.iter().find_map(move |key| {
                     try_output_recovery_with_ovk(
                         &domain,
@@ -599,16 +602,17 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Attempts to decrypt the action at the specified index with the specified
-    /// outgoing viewing key, and returns the decrypted note plaintext contents
-    /// if successful.
+    /// Attempts to decrypt the action at the specified index under
+    /// `pool_restrictions` with the specified outgoing viewing key, and returns
+    /// the decrypted note plaintext contents if successful.
     pub fn recover_output_with_ovk(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         action_idx: usize,
         key: &OutgoingViewingKey,
     ) -> Option<(Note, Address, [u8; 512])> {
         self.actions.get(action_idx).and_then(move |action| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = BundleDomain::for_action(action, pool_restrictions);
             try_output_recovery_with_ovk(
                 &domain,
                 key,
