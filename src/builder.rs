@@ -52,9 +52,9 @@ pub enum BundleType {
         bundle_required: bool,
     },
     /// A coinbase bundle disables nonzero-valued Orchard spends, and is built with
-    /// [`Flags::SPENDS_DISABLED`]: spends disabled, outputs enabled, and
-    /// cross-address transfers enabled if possible for this bundle's pool
-    /// restrictions. No padding is performed.
+    /// `Flags::from_parts(false, true, default_cross_address_enabled(pool_restrictions))`:
+    /// spends disabled, outputs enabled, and cross-address transfers enabled if
+    /// possible for this bundle's pool restrictions. No padding is performed.
     ///
     /// Since coinbase transactions have `enableSpends = 0`, every spend must be a
     /// dummy. Coinbase transactions are not otherwise any different wrt cross-address
