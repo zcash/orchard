@@ -29,6 +29,11 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   Variants: `OrchardPreNu6_2`, `OrchardNu6_2Only`, `OrchardNu6_3Onward`, and
   `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit and uses V3 note
   plaintexts).
+- `orchard::note::NoteVersion`, the note plaintext version selector used by
+  low-level note constructors and accessors. `NoteVersion::V2` is the ZIP 212
+  Orchard note plaintext format, and `NoteVersion::V3` is the quantum-recoverable
+  Ironwood note plaintext version defined in ZIP 2005.
+- `orchard::Note::version`, returning the note's plaintext version.
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input. The post-NU 6.3 circuit
   has its own proving and verifying keys.
@@ -107,6 +112,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     from `BundlePoolRestrictions::note_version`, and rejects spends whose note
     version does not match the builder's pool restrictions with
     `SpendError::InvalidNoteVersion`.
+- Low-level note constructors now take an explicit `orchard::note::NoteVersion`
+  so callers choose between V2 Orchard notes and V3 Ironwood notes. Affected API:
+  - `orchard::Note::from_parts`
+  - `orchard::Note::new`
 - `orchard::builder::BundleType::Transactional` no longer embeds a full `Flags`;
   it carries `{ spends_enabled, outputs_enabled, bundle_required }`, and
   `BundleType::flags` and `BundleType::num_actions` now take the
@@ -169,13 +178,15 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `ProverError::MissingRecipient` if a `recipient` field is unset).
 - `orchard::pczt::{Spend, Output}::parse` now take the note plaintext version
   for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
-  actions whose spend or output note version does not match the
-  `BundlePoolRestrictions`.
+  actions whose output note version does not match the `BundlePoolRestrictions`.
+- `orchard::builder::OutputInfo::{new, dummy}` now take an explicit
+  `orchard::note::NoteVersion`; builder-created outputs use the note version
+  associated with the selected `BundlePoolRestrictions`.
 - `test-dependencies` note and bundle strategies now select note versions from
   their callers or generated bundle pool restrictions:
   - `orchard::note::testing::arb_note` now takes a note version.
-  - `orchard::action::testing::{arb_action, arb_unauthorized_action}` now take a
-    note version.
+  - `orchard::bundle::testing::{arb_action, arb_unauthorized_action}` now take a
+    note version through their re-exported path.
   - `orchard::bundle::testing::{arb_action_n, arb_unauthorized_action_n}` now
     take a note version.
   - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` no longer
