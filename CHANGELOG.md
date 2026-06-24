@@ -206,6 +206,9 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `Result<BundleCommitment, CommitmentError>`, returning
   `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
   under that protocol (cross-address transfers disabled under a pre-NU6.3 protocol).
+- Behind the `unstable-voting-circuits` feature, `RandomSeed::rcm` is renamed to
+  `RandomSeed::rcm_v2`, marking it as the rcm derivation for V2 (ZIP 212) notes.
+  These APIs are not covered by the crate's semver guarantees.
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended

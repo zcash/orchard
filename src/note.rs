@@ -164,11 +164,13 @@ impl RandomSeed {
         self.esk_inner(rho).unwrap()
     }
 
+    /// The rcm derivation for V2 (ZIP 212) notes.
+    ///
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
-    pub(crate) fn rcm(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
+    pub(crate) fn rcm_v2(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
             PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
         ))
@@ -197,7 +199,7 @@ impl RandomSeed {
     /// $$
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
-    fn qr_rcm(
+    fn rcm_v3(
         &self,
         rho: &Rho,
         g_d: &NonIdentityPallasPoint,
@@ -381,10 +383,10 @@ impl Note {
         let psi = self.rseed.psi(&rho);
 
         match self.version {
-            NoteVersion::V2 => self.rseed.rcm(&rho),
+            NoteVersion::V2 => self.rseed.rcm_v2(&rho),
             NoteVersion::V3 => self
                 .rseed
-                .qr_rcm(&rho, &g_d, &pk_d, self.value.inner(), &psi),
+                .rcm_v3(&rho, &g_d, &pk_d, self.value.inner(), &psi),
         }
     }
 
@@ -523,9 +525,9 @@ mod tests {
         let g_d_bytes = g_d.to_bytes();
         let pk_d_bytes = pk_d.to_bytes();
 
-        let rcm_old = rseed.rcm(&rho);
+        let rcm_old = rseed.rcm_v2(&rho);
         let psi = rseed.psi(&rho);
-        let rcm_new = rseed.qr_rcm(&rho, &g_d, &pk_d, tv.note_v, &psi);
+        let rcm_new = rseed.rcm_v3(&rho, &g_d, &pk_d, tv.note_v, &psi);
 
         let rcm_old_repr = rcm_old.0.to_repr();
         let rcm_new_repr = rcm_new.0.to_repr();
