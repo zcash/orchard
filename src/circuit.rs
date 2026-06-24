@@ -266,11 +266,10 @@ impl Circuit {
     ) -> Circuit {
         let sender_address = spend.note.recipient();
         let rho_old = spend.note.rho();
-        let psi_old = spend.note.rseed().psi(&rho_old);
+        let psi_old = spend.note.psi();
         let rcm_old = spend.note.rcm();
 
-        let rho_new = output_note.rho();
-        let psi_new = output_note.rseed().psi(&rho_new);
+        let psi_new = output_note.psi();
         let rcm_new = output_note.rcm();
 
         Circuit {
@@ -1479,7 +1478,7 @@ mod tests {
                 pk_d_old: Value::known(*sender_address.pk_d()),
                 v_old: Value::known(spent_note.value()),
                 rho_old: Value::known(spent_note.rho()),
-                psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
+                psi_old: Value::known(spent_note.psi()),
                 rcm_old: Value::known(spent_note.rcm()),
                 cm_old: Value::known(spent_note.commitment()),
                 alpha: Value::known(alpha),
@@ -1489,7 +1488,7 @@ mod tests {
                 g_d_new: Value::known(output_note.recipient().g_d()),
                 pk_d_new: Value::known(*output_note.recipient().pk_d()),
                 v_new: Value::known(output_note.value()),
-                psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
+                psi_new: Value::known(output_note.psi()),
                 rcm_new: Value::known(output_note.rcm()),
                 rcv: Value::known(rcv),
             },

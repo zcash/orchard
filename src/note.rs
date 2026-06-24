@@ -376,12 +376,17 @@ impl Note {
         self.version
     }
 
+    /// Derives the ψ value for this note.
+    pub(crate) fn psi(&self) -> pallas::Base {
+        self.rseed.psi(&self.rho())
+    }
+
     /// Derives the note commitment trapdoor for this note.
     pub(crate) fn rcm(&self) -> commitment::NoteCommitTrapdoor {
         let g_d = self.recipient.g_d();
         let pk_d = self.recipient.pk_d().inner();
         let rho = self.rho();
-        let psi = self.rseed.psi(&rho);
+        let psi = self.psi();
 
         match self.version {
             NoteVersion::V2 => self.rseed.rcm_v2(&rho),
@@ -415,7 +420,7 @@ impl Note {
         let g_d_bytes = g_d.to_bytes();
         let pk_d = self.recipient.pk_d().inner();
         let pk_d_bytes = pk_d.to_bytes();
-        let psi = self.rseed.psi(&self.rho);
+        let psi = self.psi();
 
         NoteCommitment::derive(
             g_d_bytes,
@@ -432,7 +437,7 @@ impl Note {
         Nullifier::derive(
             fvk.nk(),
             self.rho.0,
-            self.rseed.psi(&self.rho),
+            self.psi(),
             self.commitment(),
         )
     }
