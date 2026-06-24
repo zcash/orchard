@@ -121,10 +121,9 @@ impl BundlePoolRestrictions {
     /// Orchard pools use V2 note plaintexts, and Ironwood pools use V3 note
     /// plaintexts.
     pub fn note_version(self) -> NoteVersion {
+        use BundlePoolRestrictions::*;
         match self {
-            BundlePoolRestrictions::OrchardPreNu6_2 => NoteVersion::V2,
-            BundlePoolRestrictions::OrchardNu6_2Only => NoteVersion::V2,
-            BundlePoolRestrictions::OrchardNu6_3Onward => NoteVersion::V2,
+            OrchardPreNu6_2 | OrchardNu6_2Only | OrchardNu6_3Onward => NoteVersion::V2,
             BundlePoolRestrictions::IronwoodNu6_3Onward => NoteVersion::V3,
         }
     }
