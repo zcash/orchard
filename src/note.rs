@@ -383,16 +383,18 @@ impl Note {
 
     /// Derives the note commitment trapdoor for this note.
     pub(crate) fn rcm(&self) -> commitment::NoteCommitTrapdoor {
-        let g_d = self.recipient.g_d();
-        let pk_d = self.recipient.pk_d().inner();
         let rho = self.rho();
-        let psi = self.psi();
 
         match self.version {
             NoteVersion::V2 => self.rseed.rcm_v2(&rho),
-            NoteVersion::V3 => self
-                .rseed
-                .rcm_v3(&rho, &g_d, &pk_d, self.value.inner(), &psi),
+            NoteVersion::V3 => {
+                let g_d = self.recipient.g_d();
+                let pk_d = self.recipient.pk_d().inner();
+                let psi = self.rseed.psi(&rho);
+
+                self.rseed
+                    .rcm_v3(&rho, &g_d, &pk_d, self.value.inner(), &psi)
+            }
         }
     }
 

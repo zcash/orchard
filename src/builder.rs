@@ -520,6 +520,8 @@ impl OutputInfo {
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
+        // The Orchard and Ironwood encryptor aliases share encryption behavior;
+        // `Note::version()` selects the note plaintext lead byte.
         let encryptor = OrchardNoteEncryption::new(self.ovk.clone(), note, self.memo);
 
         // `encryptor` still supplies a valid non-identity `epk` and, because these outputs use
@@ -808,8 +810,8 @@ impl Builder {
 
     /// Adds a note to be spent in this transaction.
     ///
-    /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`] using the
-    ///   [`zcash_note_encryption`] crate instantiated with [`OrchardDomain`].
+    /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`]
+    ///   under the bundle's pool restrictions.
     /// - `merkle_path` can be obtained using the [`incrementalmerkletree`] crate
     ///   instantiated with [`MerkleHashOrchard`].
     ///
@@ -823,7 +825,6 @@ impl Builder {
     /// receiver's incoming viewing key -- including a quantum adversary who recovered it from
     /// the published address -- can use it to detect the spend.
     ///
-    /// [`OrchardDomain`]: crate::note_encryption::OrchardDomain
     /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
     pub fn add_spend(
         &mut self,

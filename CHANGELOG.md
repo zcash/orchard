@@ -196,6 +196,10 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
 - `orchard::pczt::{Spend, Output}::parse` now take the note plaintext version
   for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
   actions whose output note version does not match the `BundlePoolRestrictions`.
+- `orchard::note_encryption::{OrchardNoteEncryption, IronwoodNoteEncryption}`
+  documentation now clarifies that encryption uses the note's own
+  `NoteVersion`; the aliases differ in which note plaintext versions they
+  accept during parsing and decryption.
 - `orchard::builder::OutputInfo::dummy` now takes an explicit
   `orchard::note::NoteVersion`; builder-created outputs use the note version
   associated with the selected `BundlePoolRestrictions`.

@@ -653,10 +653,22 @@ impl_shielded_output!(IronwoodDomain);
 impl_shielded_output!(BundleDomain);
 
 /// Implementation of in-band secret distribution for Orchard bundles.
+///
+/// This is the [`NoteEncryption`] instantiation for [`OrchardDomain`]. Encryption
+/// behavior is shared with [`IronwoodNoteEncryption`]: the note plaintext lead
+/// byte is selected from [`crate::Note::version`], while the domain type
+/// controls which note plaintext versions are accepted during parsing and
+/// decryption.
+///
+/// [`NoteEncryption`]: zcash_note_encryption::NoteEncryption
 pub type OrchardNoteEncryption = zcash_note_encryption::NoteEncryption<OrchardDomain>;
 /// Implementation of in-band secret distribution for Ironwood bundles.
 ///
-/// This is the [`NoteEncryption`] instantiation for [`IronwoodDomain`].
+/// This is the [`NoteEncryption`] instantiation for [`IronwoodDomain`]. Encryption
+/// behavior is shared with [`OrchardNoteEncryption`]: the note plaintext lead
+/// byte is selected from [`crate::Note::version`], while the domain type
+/// controls which note plaintext versions are accepted during parsing and
+/// decryption.
 ///
 /// [`NoteEncryption`]: zcash_note_encryption::NoteEncryption
 pub type IronwoodNoteEncryption = zcash_note_encryption::NoteEncryption<IronwoodDomain>;
