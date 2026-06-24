@@ -213,8 +213,8 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     note version through their re-exported path.
   - `orchard::bundle::testing::{arb_action_n, arb_unauthorized_action_n}` now
     take a note version.
-  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` no longer
-    take bundle pool restrictions, and instead select them internally.
+  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` now
+    generate a bundle pool restriction internally to select the note version.
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
   before modifying the bundle, returning
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
