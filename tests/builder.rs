@@ -6,8 +6,8 @@ use orchard::{
     bundle::{Authorized, BatchValidator, BundlePoolRestrictions},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-    note::ExtractedNoteCommitment,
-    note_encryption::OrchardDomain,
+    note::{ExtractedNoteCommitment, NoteVersion},
+    note_encryption::{IronwoodDomain, OrchardDomain},
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
     Address, Bundle,
@@ -105,6 +105,7 @@ fn bundle_chain() {
         assert_eq!(
             unauthorized
                 .decrypt_output_with_key(
+                    BundlePoolRestrictions::OrchardNu6_2Only,
                     bundle_meta
                         .output_action_index(0)
                         .expect("Output 0 can be found"),
@@ -242,6 +243,104 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     );
 }
 
+#[test]
+fn ironwood_builder_outputs_decrypt_with_ironwood_domain() {
+    let mut rng = OsRng;
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let recipient = fvk.address_at(0u32, Scope::External);
+    let ivk = PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::External));
+
+    let builder = output_only_builder(
+        BundlePoolRestrictions::IronwoodNu6_3Onward,
+        SHIELDING,
+        recipient,
+    );
+    let (bundle, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let action = &bundle.actions()[bundle_meta
+        .output_action_index(0)
+        .expect("Output 0 can be found")];
+
+    let orchard_domain = OrchardDomain::for_action(action);
+    assert!(try_note_decryption(&orchard_domain, &ivk, action).is_none());
+
+    let ironwood_domain = IronwoodDomain::for_action(action);
+    let (note, decrypted_to, memo) =
+        try_note_decryption(&ironwood_domain, &ivk, action).expect("V3 output decrypts");
+
+    assert_eq!(note.version(), NoteVersion::V3);
+    assert_eq!(note.value(), NoteValue::from_raw(5000));
+    assert_eq!(decrypted_to, recipient);
+    assert_eq!(memo, [0u8; 512]);
+}
+
+#[test]
+fn ironwood_bundle_helpers_decrypt_and_recover_outputs() {
+    let mut rng = OsRng;
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let recipient = fvk.address_at(0u32, Scope::External);
+    let ivk = fvk.to_ivk(Scope::External);
+    let ovk = fvk.to_ovk(Scope::External);
+    let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+    let anchor = MerkleHashOrchard::empty_root(32.into()).into();
+
+    let mut builder = Builder::new(pool_restrictions, SHIELDING, anchor);
+    assert_eq!(
+        builder.add_output(
+            Some(ovk.clone()),
+            recipient,
+            NoteValue::from_raw(5000),
+            [0u8; 512],
+        ),
+        Ok(())
+    );
+    let (bundle, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    let action_idx = bundle_meta
+        .output_action_index(0)
+        .expect("Output 0 can be found");
+
+    assert!(bundle
+        .decrypt_output_with_key(BundlePoolRestrictions::OrchardNu6_2Only, action_idx, &ivk,)
+        .is_none());
+
+    let (note, decrypted_to, memo) = bundle
+        .decrypt_output_with_key(pool_restrictions, action_idx, &ivk)
+        .expect("V3 output decrypts through the bundle helper");
+    assert_eq!(note.version(), NoteVersion::V3);
+    assert_eq!(note.value(), NoteValue::from_raw(5000));
+    assert_eq!(decrypted_to, recipient);
+    assert_eq!(memo, [0u8; 512]);
+
+    let decrypted = bundle.decrypt_outputs_with_keys(pool_restrictions, &[ivk]);
+    assert_eq!(decrypted.len(), 1);
+    assert_eq!(decrypted[0].0, action_idx);
+    assert_eq!(decrypted[0].2.version(), NoteVersion::V3);
+    assert_eq!(decrypted[0].2.value(), NoteValue::from_raw(5000));
+    assert_eq!(decrypted[0].3, recipient);
+    assert_eq!(decrypted[0].4, [0u8; 512]);
+
+    assert!(bundle
+        .recover_output_with_ovk(BundlePoolRestrictions::OrchardNu6_2Only, action_idx, &ovk,)
+        .is_none());
+
+    let (note, recovered_to, memo) = bundle
+        .recover_output_with_ovk(pool_restrictions, action_idx, &ovk)
+        .expect("V3 output recovers through the bundle helper");
+    assert_eq!(note.version(), NoteVersion::V3);
+    assert_eq!(note.value(), NoteValue::from_raw(5000));
+    assert_eq!(recovered_to, recipient);
+    assert_eq!(memo, [0u8; 512]);
+
+    let recovered = bundle.recover_outputs_with_ovks(pool_restrictions, &[ovk]);
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].0, action_idx);
+    assert_eq!(recovered[0].2.version(), NoteVersion::V3);
+    assert_eq!(recovered[0].2.value(), NoteValue::from_raw(5000));
+    assert_eq!(recovered[0].3, recipient);
+    assert_eq!(recovered[0].4, [0u8; 512]);
+}
+
 // Coinbase bundles disable nonzero-valued spends. From NU6.3, consensus requires
 // nActionsOrchard = 0 in a v5+ coinbase transaction (v4, still valid after NU6.3,
 // has no Orchard bundle). So a post-NU6.3 coinbase bundle built by this crate must
@@ -290,6 +389,7 @@ fn post_nu6_3_restricted_bundle_chain() {
     let mut rng = OsRng;
     let post_nu6_3_pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
     let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let fixed_pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
     let fixed_vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
@@ -298,26 +398,25 @@ fn post_nu6_3_restricted_bundle_chain() {
 
     let shielding_bundle: Bundle<_, i64> = {
         let builder = output_only_builder(
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
+            BundlePoolRestrictions::OrchardNu6_2Only,
             SHIELDING,
             recipient,
         );
 
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
-            .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward)
+            .commitment(BundlePoolRestrictions::OrchardNu6_2Only)
             .expect("bundle flags are representable in this format")
             .into();
-        let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
+        let proven = unauthorized.create_proof(&fixed_pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
 
     verify_bundle(
         &shielding_bundle,
-        &post_nu6_3_vk,
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
+        &fixed_vk,
+        BundlePoolRestrictions::OrchardNu6_2Only,
     );
-    assert!(shielding_bundle.verify_proof(&fixed_vk).is_err());
 
     let change_addr = fvk.address_at(0u32, Scope::Internal);
     let restricted_bundle: Bundle<_, i64> = {
@@ -364,6 +463,7 @@ fn post_nu6_3_restricted_bundle_chain() {
         assert_eq!(
             unauthorized
                 .decrypt_output_with_key(
+                    BundlePoolRestrictions::OrchardNu6_3Onward,
                     bundle_meta
                         .output_action_index(0)
                         .expect("Output 0 can be found"),
@@ -379,6 +479,7 @@ fn post_nu6_3_restricted_bundle_chain() {
         // from anyone (including a quantum adversary) who recovers that ivk from the address.
         assert!(unauthorized
             .decrypt_output_with_key(
+                BundlePoolRestrictions::OrchardNu6_3Onward,
                 bundle_meta
                     .spend_action_index(0)
                     .expect("Spend 0 can be found"),
@@ -432,7 +533,7 @@ fn post_nu6_3_restricted_bundle_chain() {
 
 // `IronwoodNu6_3Onward` is the post-NU6.3 `BundlePoolRestrictions` variant that allows
 // any choice of the `enableCrossAddress` flag. It shares the post-NU6.3 circuit with the
-// `OrchardNU6_3Onward`, and will use V3 note plaintexts once those land. A transactional
+// `OrchardNU6_3Onward`, and uses V3 note plaintexts. A transactional
 // Ironwood bundle is therefore an ordinary spend+output bundle on the post-NU6.3 circuit
 // whose NU6.3 flag byte sets bit 2.
 #[test]
@@ -467,8 +568,11 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
         .actions()
         .iter()
         .find_map(|action| {
-            let domain = OrchardDomain::for_action(action);
-            try_note_decryption(&domain, &ivk, action)
+            let orchard_domain = OrchardDomain::for_action(action);
+            assert!(try_note_decryption(&orchard_domain, &ivk, action).is_none());
+
+            let ironwood_domain = IronwoodDomain::for_action(action);
+            try_note_decryption(&ironwood_domain, &ivk, action)
         })
         .unwrap();
     let cmx: ExtractedNoteCommitment = note.commitment().into();

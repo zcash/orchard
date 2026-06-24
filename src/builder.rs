@@ -17,7 +17,7 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{ExtractedNoteCommitment, Note, Nullifier, Rho, TransmittedNoteCiphertext},
+    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -210,6 +210,9 @@ pub enum BuildError {
     /// Cross-address transfers are disabled for the bundle being constructed, and an
     /// output is not a wallet-controlled change output.
     CrossAddressDisabled,
+    /// A supplied output or change output has a note version that is
+    /// inconsistent with the bundle pool restrictions.
+    InvalidNoteVersion,
 }
 
 impl fmt::Display for BuildError {
@@ -241,6 +244,10 @@ impl fmt::Display for BuildError {
             CrossAddressDisabled => f.write_str(
                 "Cross-address transfers are disabled for this bundle: every output must \
                  be a wallet-controlled change output.",
+            ),
+            InvalidNoteVersion => f.write_str(
+                "A supplied output or change output has a note version that does not match \
+                 the bundle pool restrictions.",
             ),
         }
     }
@@ -357,8 +364,8 @@ impl SpendInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    fn dummy(rng: &mut impl RngCore) -> Self {
-        let (sk, fvk, note) = Note::dummy(rng, None);
+    fn dummy(note_version: NoteVersion, rng: &mut impl RngCore) -> Self {
+        let (sk, fvk, note) = Note::dummy(rng, None, note_version);
         let merkle_path = MerklePath::dummy(rng);
 
         SpendInfo {
@@ -415,6 +422,7 @@ impl SpendInfo {
             value: Some(self.note.value()),
             rho: Some(self.note.rho()),
             rseed: Some(*self.note.rseed()),
+            note_version: self.note.version(),
             fvk: Some(self.fvk),
             witness: Some(self.merkle_path),
             alpha: Some(alpha),
@@ -435,6 +443,7 @@ pub struct OutputInfo {
     recipient: Address,
     value: NoteValue,
     memo: [u8; 512],
+    note_version: NoteVersion,
     /// When set, `build` fills `enc_ciphertext` with random bytes instead of encrypting the
     /// note to `recipient`. This is used only for the zero-valued output that a builder with
     /// cross-address actions disabled pairs with a real spend, which is addressed to the
@@ -456,6 +465,7 @@ impl OutputInfo {
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
+        note_version: NoteVersion,
         memo: [u8; 512],
     ) -> Self {
         Self {
@@ -463,6 +473,7 @@ impl OutputInfo {
             recipient,
             value,
             memo,
+            note_version,
             randomized_ciphertext: false,
         }
     }
@@ -472,12 +483,13 @@ impl OutputInfo {
     ///
     /// `recipient` is the spent note's own receiver, so the output's `enc_ciphertext` is
     /// randomized rather than encrypted to it (see the `randomized_ciphertext` field).
-    fn fabricated_for_spend(recipient: Address) -> Self {
+    fn fabricated_for_spend(note_version: NoteVersion, recipient: Address) -> Self {
         Self {
             ovk: None,
             recipient,
             value: NoteValue::ZERO,
             memo: [0u8; 512],
+            note_version,
             randomized_ciphertext: true,
         }
     }
@@ -485,11 +497,11 @@ impl OutputInfo {
     /// Defined in [Zcash Protocol Spec § 4.8.3: Dummy Notes (Orchard)][orcharddummynotes].
     ///
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
-    pub fn dummy(rng: &mut impl RngCore) -> Self {
+    pub fn dummy(note_version: NoteVersion, rng: &mut impl RngCore) -> Self {
         let fvk: FullViewingKey = (&SpendingKey::random(rng)).into();
         let recipient = fvk.address_at(0u32, Scope::External);
 
-        Self::new(None, recipient, NoteValue::ZERO, [0u8; 512])
+        Self::new(None, recipient, NoteValue::ZERO, note_version, [0u8; 512])
     }
 
     /// Builds the output half of an action.
@@ -504,10 +516,12 @@ impl OutputInfo {
         mut rng: impl RngCore,
     ) -> (Note, ExtractedNoteCommitment, TransmittedNoteCiphertext) {
         let rho = Rho::from_nf_old(nf_old);
-        let note = Note::new(self.recipient, self.value, rho, &mut rng);
+        let note = Note::new(self.recipient, self.value, rho, self.note_version, &mut rng);
         let cm_new = note.commitment();
         let cmx = cm_new.into();
 
+        // The Orchard and Ironwood encryptor aliases share encryption behavior;
+        // `Note::version()` selects the note plaintext lead byte.
         let encryptor = OrchardNoteEncryption::new(self.ovk.clone(), note, self.memo);
 
         // `encryptor` still supplies a valid non-identity `epk` and, because these outputs use
@@ -544,6 +558,7 @@ impl OutputInfo {
 
         crate::pczt::Output {
             cmx,
+            note_version: self.note_version,
             encrypted_note,
             recipient: Some(self.recipient),
             value: Some(self.value),
@@ -585,13 +600,14 @@ impl ChangeInfo {
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
         value: NoteValue,
+        note_version: NoteVersion,
         memo: [u8; 512],
     ) -> Result<Self, OutputError> {
         let scope = fvk
             .scope_for_address(&recipient)
             .ok_or(OutputError::RecipientNotOwned)?;
         Ok(Self {
-            output: OutputInfo::new(ovk, recipient, value, memo),
+            output: OutputInfo::new(ovk, recipient, value, note_version, memo),
             fvk,
             scope,
         })
@@ -787,10 +803,15 @@ impl Builder {
         }
     }
 
+    /// Returns the note version associated with this builder's pool restrictions.
+    fn note_version(&self) -> NoteVersion {
+        self.pool_restrictions.note_version()
+    }
+
     /// Adds a note to be spent in this transaction.
     ///
-    /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`] using the
-    ///   [`zcash_note_encryption`] crate instantiated with [`OrchardDomain`].
+    /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`]
+    ///   under the bundle's pool restrictions.
     /// - `merkle_path` can be obtained using the [`incrementalmerkletree`] crate
     ///   instantiated with [`MerkleHashOrchard`].
     ///
@@ -804,7 +825,6 @@ impl Builder {
     /// receiver's incoming viewing key -- including a quantum adversary who recovered it from
     /// the published address -- can use it to detect the spend.
     ///
-    /// [`OrchardDomain`]: crate::note_encryption::OrchardDomain
     /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
     pub fn add_spend(
         &mut self,
@@ -849,8 +869,13 @@ impl Builder {
             return Err(OutputError::CrossAddressDisabled);
         }
 
-        self.outputs
-            .push(OutputInfo::new(ovk, recipient, value, memo));
+        self.outputs.push(OutputInfo::new(
+            ovk,
+            recipient,
+            value,
+            self.note_version(),
+            memo,
+        ));
 
         Ok(())
     }
@@ -898,7 +923,7 @@ impl Builder {
             return Err(OutputError::SpendsDisabled);
         }
 
-        let change = ChangeInfo::new(fvk, ovk, recipient, value, memo)?;
+        let change = ChangeInfo::new(fvk, ovk, recipient, value, self.note_version(), memo)?;
         self.changes.push(change);
 
         Ok(())
@@ -1119,6 +1144,7 @@ fn build_bundle<B, R: RngCore>(
     finisher: impl FnOnce(Vec<ActionInfo>, Flags, ValueSum, BundleMetadata, R) -> Result<B, BuildError>,
 ) -> Result<B, BuildError> {
     let flags = bundle_type.flags(pool_restrictions);
+    let note_version = pool_restrictions.note_version();
 
     let num_requested_spends = spends.len();
     if !flags.spends_enabled() && num_requested_spends > 0 {
@@ -1137,6 +1163,15 @@ fn build_bundle<B, R: RngCore>(
     let num_requested_outputs = num_plain_outputs + changes.len();
     if !flags.outputs_enabled() && num_requested_outputs > 0 {
         return Err(BuildError::OutputsDisabled);
+    }
+    if outputs
+        .iter()
+        .any(|output| output.note_version != note_version)
+        || changes
+            .iter()
+            .any(|change| change.output.note_version != note_version)
+    {
+        return Err(BuildError::InvalidNoteVersion);
     }
     if !flags.spends_enabled() && !flags.cross_address_enabled() && num_requested_outputs > 0 {
         return Err(BuildError::BundleTypeNotSatisfiable);
@@ -1177,14 +1212,20 @@ fn build_bundle<B, R: RngCore>(
         let mut pairs = Vec::with_capacity(num_actions);
 
         for (spend_idx, spend) in spends.into_iter().enumerate() {
-            let output = OutputInfo::fabricated_for_spend(spend.note.recipient());
+            let output = OutputInfo::fabricated_for_spend(note_version, spend.note.recipient());
             pairs.push((Some(spend_idx), None, spend, output));
         }
 
         for (chg_idx, change) in changes.into_iter().enumerate() {
             let ChangeInfo { output, fvk, scope } = change;
             let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
-            let note = Note::new(output.recipient, NoteValue::ZERO, rho, &mut rng);
+            let note = Note::new(
+                output.recipient,
+                NoteValue::ZERO,
+                rho,
+                note_version,
+                &mut rng,
+            );
             let spend = SpendInfo {
                 // The wallet controls this spend: it is signed through the normal
                 // signing flow, by the spend authorizing key matching `fvk`.
@@ -1198,8 +1239,14 @@ fn build_bundle<B, R: RngCore>(
         }
 
         while pairs.len() < num_actions {
-            let spend = SpendInfo::dummy(&mut rng);
-            let output = OutputInfo::new(None, spend.note.recipient(), NoteValue::ZERO, [0u8; 512]);
+            let spend = SpendInfo::dummy(note_version, &mut rng);
+            let output = OutputInfo::new(
+                None,
+                spend.note.recipient(),
+                NoteValue::ZERO,
+                note_version,
+                [0u8; 512],
+            );
             pairs.push((None, None, spend, output));
         }
 
@@ -1241,7 +1288,9 @@ fn build_bundle<B, R: RngCore>(
         // Pair up the spends and outputs, extending with dummy values as necessary.
         let mut indexed_spends = spends
             .into_iter()
-            .chain(iter::repeat_with(|| SpendInfo::dummy(&mut rng)))
+            .chain(iter::repeat_with(|| {
+                SpendInfo::dummy(note_version, &mut rng)
+            }))
             .enumerate()
             .take(num_actions)
             .collect::<Vec<_>>();
@@ -1253,7 +1302,9 @@ fn build_bundle<B, R: RngCore>(
         let mut indexed_outputs = outputs
             .into_iter()
             .chain(changes.into_iter().map(ChangeInfo::into_output))
-            .chain(iter::repeat_with(|| OutputInfo::dummy(&mut rng)))
+            .chain(iter::repeat_with(|| {
+                OutputInfo::dummy(note_version, &mut rng)
+            }))
             .enumerate()
             .take(num_actions)
             .collect::<Vec<_>>();
@@ -1641,7 +1692,7 @@ pub mod testing {
         note::testing::arb_note,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
-        Address, Note,
+        Address, Note, NoteVersion,
     };
 
     use super::{Builder, BundleType};
@@ -1667,11 +1718,8 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let mut builder = Builder::new(
-                BundlePoolRestrictions::OrchardNu6_2Only,
-                BundleType::DEFAULT,
-                self.anchor,
-            );
+            let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
+            let mut builder = Builder::new(pool_restrictions, BundleType::DEFAULT, self.anchor);
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -1712,7 +1760,8 @@ pub mod testing {
         (
             // generate note values that we're certain won't exceed MAX_NOTE_VALUE in total
             notes in vec(
-                arb_positive_note_value(MAX_NOTE_VALUE / n_notes as u64).prop_flat_map(arb_note),
+                arb_positive_note_value(MAX_NOTE_VALUE / n_notes as u64)
+                    .prop_flat_map(|value| arb_note(value, NoteVersion::V2)),
                 n_notes
             ),
             output_amounts in vec(
@@ -1770,14 +1819,16 @@ mod tests {
     use rand::rngs::OsRng;
     use rand::RngCore;
 
-    use super::{bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo};
+    use super::{
+        bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo, SpendInfo,
+    };
     use crate::{
         builder::BundleType,
         bundle::{Authorized, Bundle, BundlePoolRestrictions},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{Nullifier, Rho},
+        note::{NoteVersion, Nullifier, Rho},
         pczt::{ProverError, VerifyError},
         tree::{MerklePath, EMPTY_ROOTS},
         value::NoteValue,
@@ -1788,9 +1839,10 @@ mod tests {
         rng: &mut impl RngCore,
         recipient: Address,
         value: NoteValue,
+        note_version: NoteVersion,
     ) -> (Note, MerklePath, Anchor) {
         let rho = Rho::from_nf_old(Nullifier::dummy(rng));
-        let note = Note::new(recipient, value, rho, &mut *rng);
+        let note = Note::new(recipient, value, rho, note_version, &mut *rng);
         let merkle_path = MerklePath::dummy(rng);
         let anchor = merkle_path.root(note.commitment().into());
 
@@ -1954,14 +2006,15 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let (note, merkle_path, anchor) =
-            note_with_path(&mut rng, spend_recipient, NoteValue::from_raw(15_000));
-
-        let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            restricted_bundle_type(false),
-            anchor,
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let (note, merkle_path, anchor) = note_with_path(
+            &mut rng,
+            spend_recipient,
+            NoteValue::from_raw(15_000),
+            pool_restrictions.note_version(),
         );
+
+        let mut builder = Builder::new(pool_restrictions, restricted_bundle_type(false), anchor);
         assert_eq!(
             builder.add_output(
                 None,
@@ -2091,11 +2144,12 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
 
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
-                BundlePoolRestrictions::OrchardNu6_3Onward,
+                pool_restrictions,
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 restricted_bundle_type(false),
                 vec![],
@@ -2103,6 +2157,7 @@ mod tests {
                     None,
                     recipient,
                     NoteValue::from_raw(5_000),
+                    pool_restrictions.note_version(),
                     [0u8; 512],
                 )],
                 vec![],
@@ -2110,11 +2165,18 @@ mod tests {
             Err(BuildError::CrossAddressDisabled)
         ));
 
-        let change_output =
-            ChangeInfo::new(fvk, None, recipient, NoteValue::from_raw(5_000), [0u8; 512]).unwrap();
+        let change_output = ChangeInfo::new(
+            fvk,
+            None,
+            recipient,
+            NoteValue::from_raw(5_000),
+            pool_restrictions.note_version(),
+            [0u8; 512],
+        )
+        .unwrap();
         let (bundle, bundle_meta) = bundle::<i64>(
             &mut rng,
-            BundlePoolRestrictions::OrchardNu6_3Onward,
+            pool_restrictions,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
             restricted_bundle_type(false),
             vec![],
@@ -2139,19 +2201,27 @@ mod tests {
             outputs_enabled: true,
             bundle_required: false,
         };
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
         // Under OrchardNu6_3Onward this is spends-disabled and cross-address-disabled.
-        let flags = bundle_type.flags(BundlePoolRestrictions::OrchardNu6_3Onward);
+        let flags = bundle_type.flags(pool_restrictions);
         assert!(!flags.spends_enabled());
         assert!(flags.outputs_enabled());
         assert!(!flags.cross_address_enabled());
 
-        let change_output =
-            ChangeInfo::new(fvk, None, recipient, NoteValue::from_raw(5_000), [0u8; 512]).unwrap();
+        let change_output = ChangeInfo::new(
+            fvk,
+            None,
+            recipient,
+            NoteValue::from_raw(5_000),
+            pool_restrictions.note_version(),
+            [0u8; 512],
+        )
+        .unwrap();
 
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
-                BundlePoolRestrictions::OrchardNu6_3Onward,
+                pool_restrictions,
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 bundle_type,
                 vec![],
@@ -2163,15 +2233,94 @@ mod tests {
     }
 
     #[test]
+    fn builder_note_version_checks_apply_to_outputs_only() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let mismatched_note_version = NoteVersion::V2;
+
+        let (note, merkle_path, anchor) = note_with_path(
+            &mut rng,
+            recipient,
+            NoteValue::from_raw(15_000),
+            mismatched_note_version,
+        );
+        let mut builder = Builder::new(pool_restrictions, BundleType::DEFAULT, anchor);
+        assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
+
+        let (note, merkle_path, anchor) = note_with_path(
+            &mut rng,
+            recipient,
+            NoteValue::from_raw(15_000),
+            mismatched_note_version,
+        );
+        let spend = SpendInfo::new(fvk.clone(), note, merkle_path).unwrap();
+        assert!(bundle::<i64>(
+            &mut rng,
+            pool_restrictions,
+            anchor,
+            BundleType::DEFAULT,
+            vec![spend],
+            vec![],
+            vec![],
+        )
+        .is_ok());
+
+        let output = OutputInfo::new(
+            None,
+            recipient,
+            NoteValue::from_raw(5_000),
+            mismatched_note_version,
+            [0u8; 512],
+        );
+        assert!(matches!(
+            bundle::<i64>(
+                &mut rng,
+                pool_restrictions,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+                BundleType::DEFAULT,
+                vec![],
+                vec![output],
+                vec![],
+            ),
+            Err(BuildError::InvalidNoteVersion)
+        ));
+
+        let change = ChangeInfo::new(
+            fvk,
+            None,
+            recipient,
+            NoteValue::from_raw(5_000),
+            mismatched_note_version,
+            [0u8; 512],
+        )
+        .unwrap();
+        assert!(matches!(
+            bundle::<i64>(
+                &mut rng,
+                pool_restrictions,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+                BundleType::DEFAULT,
+                vec![],
+                vec![],
+                vec![change],
+            ),
+            Err(BuildError::InvalidNoteVersion)
+        ));
+    }
+
+    #[test]
     fn add_change_output_validates_ownership_when_unrestricted() {
         let mut rng = OsRng;
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
         let owned = fvk.address_at(0u32, Scope::Internal);
         let foreign =
             FullViewingKey::from(&SpendingKey::random(&mut rng)).address_at(0u32, Scope::External);
-
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_2Only,
+            pool_restrictions,
             BundleType::Transactional {
                 spends_enabled: true,
                 outputs_enabled: true,
@@ -2239,14 +2388,15 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let (note, merkle_path, anchor) =
-            note_with_path(&mut rng, spend_recipient, NoteValue::from_raw(15_000));
-
-        let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            restricted_bundle_type(false),
-            anchor,
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let (note, merkle_path, anchor) = note_with_path(
+            &mut rng,
+            spend_recipient,
+            NoteValue::from_raw(15_000),
+            pool_restrictions.note_version(),
         );
+
+        let mut builder = Builder::new(pool_restrictions, restricted_bundle_type(false), anchor);
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(
@@ -2320,14 +2470,15 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let (note, merkle_path, anchor) =
-            note_with_path(&mut rng, spend_recipient, NoteValue::from_raw(15_000));
-
-        let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            restricted_bundle_type(false),
-            anchor,
+        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let (note, merkle_path, anchor) = note_with_path(
+            &mut rng,
+            spend_recipient,
+            NoteValue::from_raw(15_000),
+            pool_restrictions.note_version(),
         );
+
+        let mut builder = Builder::new(pool_restrictions, restricted_bundle_type(false), anchor);
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(

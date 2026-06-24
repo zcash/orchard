@@ -23,8 +23,8 @@ use crate::{
     address::Address,
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
-    note::Note,
-    note_encryption::OrchardDomain,
+    note::{Note, NoteVersion},
+    note_encryption::BundleDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
     value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -96,10 +96,6 @@ pub enum BundlePoolRestrictions {
     /// `enableCrossAddress` value here, so this crate's builder currently constructs Ironwood
     /// bundles with `enableCrossAddress = 1`. The v6 flags are able to represent
     /// `enableCrossAddress = 0` if a future builder policy chooses to expose it.
-    ///
-    /// FIXME: Ironwood-pool notes MUST use lead-byte 0x03 (quantum-recoverable) plaintexts,
-    /// which are not yet implemented — bundles built under this `BundlePoolRestrictions` value
-    /// currently incorrectly use lead byte 0x02.
     IronwoodNu6_3Onward,
 }
 
@@ -117,6 +113,18 @@ impl BundlePoolRestrictions {
             BundlePoolRestrictions::OrchardNu6_2Only => OrchardCircuitVersion::FixedPostNu6_2,
             BundlePoolRestrictions::OrchardNu6_3Onward
             | BundlePoolRestrictions::IronwoodNu6_3Onward => OrchardCircuitVersion::PostNu6_3,
+        }
+    }
+
+    /// The [`NoteVersion`] associated with this bundle pool restriction.
+    ///
+    /// Orchard pools use V2 note plaintexts, and Ironwood pools use V3 note
+    /// plaintexts.
+    pub fn note_version(self) -> NoteVersion {
+        use BundlePoolRestrictions::*;
+        match self {
+            OrchardPreNu6_2 | OrchardNu6_2Only | OrchardNu6_3Onward => NoteVersion::V2,
+            BundlePoolRestrictions::IronwoodNu6_3Onward => NoteVersion::V3,
         }
     }
 
@@ -524,12 +532,13 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Performs trial decryption of each action in the bundle with each of the
-    /// specified incoming viewing keys, and returns a vector of each decrypted
-    /// note plaintext contents along with the index of the action from which it
-    /// was derived.
+    /// Performs trial decryption of each action in the bundle under
+    /// `pool_restrictions` with each of the specified incoming viewing keys, and
+    /// returns a vector of each decrypted note plaintext contents along with the
+    /// index of the action from which it was derived.
     pub fn decrypt_outputs_with_keys(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         keys: &[IncomingViewingKey],
     ) -> Vec<(usize, IncomingViewingKey, Note, Address, [u8; 512])> {
         let prepared_keys: Vec<_> = keys
@@ -540,7 +549,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
-                let domain = OrchardDomain::for_action(action);
+                let domain = BundleDomain::for_action(action, pool_restrictions);
                 prepared_keys.iter().find_map(|(ivk, prepared_ivk)| {
                     try_note_decryption(&domain, prepared_ivk, action)
                         .map(|(n, a, m)| (idx, (*ivk).clone(), n, a, m))
@@ -549,34 +558,36 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Performs trial decryption of the action at `action_idx` in the bundle with the
-    /// specified incoming viewing key, and returns the decrypted note plaintext
-    /// contents if successful.
+    /// Performs trial decryption of the action at `action_idx` in the bundle
+    /// under `pool_restrictions` with the specified incoming viewing key, and
+    /// returns the decrypted note plaintext contents if successful.
     pub fn decrypt_output_with_key(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         action_idx: usize,
         key: &IncomingViewingKey,
     ) -> Option<(Note, Address, [u8; 512])> {
         let prepared_ivk = PreparedIncomingViewingKey::new(key);
         self.actions.get(action_idx).and_then(move |action| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = BundleDomain::for_action(action, pool_restrictions);
             try_note_decryption(&domain, &prepared_ivk, action)
         })
     }
 
-    /// Performs trial decryption of each action in the bundle with each of the
-    /// specified outgoing viewing keys, and returns a vector of each decrypted
-    /// note plaintext contents along with the index of the action from which it
-    /// was derived.
+    /// Performs trial decryption of each action in the bundle under
+    /// `pool_restrictions` with each of the specified outgoing viewing keys, and
+    /// returns a vector of each decrypted note plaintext contents along with the
+    /// index of the action from which it was derived.
     pub fn recover_outputs_with_ovks(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         keys: &[OutgoingViewingKey],
     ) -> Vec<(usize, OutgoingViewingKey, Note, Address, [u8; 512])> {
         self.actions
             .iter()
             .enumerate()
             .filter_map(|(idx, action)| {
-                let domain = OrchardDomain::for_action(action);
+                let domain = BundleDomain::for_action(action, pool_restrictions);
                 keys.iter().find_map(move |key| {
                     try_output_recovery_with_ovk(
                         &domain,
@@ -591,16 +602,17 @@ impl<T: Authorization, V> Bundle<T, V> {
             .collect()
     }
 
-    /// Attempts to decrypt the action at the specified index with the specified
-    /// outgoing viewing key, and returns the decrypted note plaintext contents
-    /// if successful.
+    /// Attempts to decrypt the action at the specified index under
+    /// `pool_restrictions` with the specified outgoing viewing key, and returns
+    /// the decrypted note plaintext contents if successful.
     pub fn recover_output_with_ovk(
         &self,
+        pool_restrictions: BundlePoolRestrictions,
         action_idx: usize,
         key: &OutgoingViewingKey,
     ) -> Option<(Note, Address, [u8; 512])> {
         self.actions.get(action_idx).and_then(move |action| {
-            let domain = OrchardDomain::for_action(action);
+            let domain = BundleDomain::for_action(action, pool_restrictions);
             try_output_recovery_with_ovk(
                 &domain,
                 key,
@@ -893,9 +905,10 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::{
+        bundle::BundlePoolRestrictions,
         primitives::redpallas::{self, testing::arb_binding_signing_key},
         value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
-        Anchor, Proof,
+        Anchor, NoteVersion, Proof,
     };
 
     use super::{Action, Authorized, Bundle, Flags};
@@ -905,8 +918,19 @@ pub mod testing {
     /// Marker type for a bundle that contains no authorizing data.
     pub type Unauthorized = super::EffectsOnly;
 
+    /// Create an arbitrary bundle pool restriction.
+    pub fn arb_bundle_pool_restriction() -> impl Strategy<Value = BundlePoolRestrictions> {
+        prop_oneof![
+            Just(BundlePoolRestrictions::OrchardPreNu6_2),
+            Just(BundlePoolRestrictions::OrchardNu6_2Only),
+            Just(BundlePoolRestrictions::OrchardNu6_3Onward),
+            Just(BundlePoolRestrictions::IronwoodNu6_3Onward),
+        ]
+    }
+
     /// Generate an unauthorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
     pub fn arb_unauthorized_action_n(
+        note_version: NoteVersion,
         n_actions: usize,
         flags: Flags,
     ) -> impl Strategy<Value = (ValueSum, Action<()>)> {
@@ -924,7 +948,7 @@ pub mod testing {
             };
 
             output_value_gen.prop_flat_map(move |output_value| {
-                arb_unauthorized_action(spend_value, output_value)
+                arb_unauthorized_action(note_version, spend_value, output_value)
                     .prop_map(move |a| (spend_value - output_value, a))
             })
         })
@@ -932,6 +956,7 @@ pub mod testing {
 
     /// Generate an authorized action having spend and output values less than MAX_NOTE_VALUE / n_actions.
     pub fn arb_action_n(
+        note_version: NoteVersion,
         n_actions: usize,
         flags: Flags,
     ) -> impl Strategy<Value = (ValueSum, Action<redpallas::Signature<SpendAuth>>)> {
@@ -949,7 +974,7 @@ pub mod testing {
             };
 
             output_value_gen.prop_flat_map(move |output_value| {
-                arb_action(spend_value, output_value)
+                arb_action(note_version, spend_value, output_value)
                     .prop_map(move |a| (spend_value - output_value, a))
             })
         })
@@ -996,10 +1021,11 @@ pub mod testing {
         /// [`crate::builder::testing::arb_bundle`]
         pub fn arb_unauthorized_bundle(n_actions: usize)
         (
+            pool_restrictions in arb_bundle_pool_restriction(),
             flags in arb_flags(),
         )
         (
-            acts in vec(arb_unauthorized_action_n(n_actions, flags), n_actions),
+            acts in vec(arb_unauthorized_action_n(pool_restrictions.note_version(), n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
             flags in Just(flags)
         ) -> Bundle<Unauthorized, ValueSum> {
@@ -1021,10 +1047,11 @@ pub mod testing {
         /// [`crate::builder::testing::arb_bundle`]
         pub fn arb_bundle(n_actions: usize)
         (
+            pool_restrictions in arb_bundle_pool_restriction(),
             flags in arb_flags(),
         )
         (
-            acts in vec(arb_action_n(n_actions, flags), n_actions),
+            acts in vec(arb_action_n(pool_restrictions.note_version(), n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
             sk in arb_binding_signing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
@@ -1334,7 +1361,9 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_enforces_canonical_proof_size(bundle in arb_bundle(3)) {
+        fn try_from_parts_enforces_canonical_proof_size(
+            bundle in arb_bundle(3)
+        ) {
             let actions = bundle.actions().clone();
             let expected = Proof::expected_proof_size(actions.len());
             let flags = *bundle.flags();
@@ -1373,7 +1402,9 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_preserves_cross_address_disabled(bundle in arb_bundle(3)) {
+        fn try_from_parts_preserves_cross_address_disabled(
+            bundle in arb_bundle(3)
+        ) {
             let actions = bundle.actions().clone();
             let mut flags = *bundle.flags();
             flags.cross_address_enabled = false;
@@ -1394,7 +1425,9 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn try_from_parts_checks_proof_size_with_cross_address_disabled(bundle in arb_bundle(3)) {
+        fn try_from_parts_checks_proof_size_with_cross_address_disabled(
+            bundle in arb_bundle(3)
+        ) {
             let actions = bundle.actions().clone();
             let expected = Proof::expected_proof_size(actions.len());
             let mut flags = *bundle.flags();

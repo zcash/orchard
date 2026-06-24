@@ -21,13 +21,19 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   - `Flags::cross_address_enabled`
 - `orchard::bundle::BundlePoolRestrictions`, the `(pool, era)` selector for an Orchard
   bundle. It determines the circuit version (`BundlePoolRestrictions::circuit_version`),
+  the note plaintext version (`BundlePoolRestrictions::note_version`),
   the flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and
   cross-address transfers are implicitly enabled, vs NU6.3 rules, where bit 2 is
   `enableCrossAddress`), and whether consensus mandates the cross-address
   restriction (the builder then chooses the value within that constraint).
   Variants: `OrchardPreNu6_2`, `OrchardNu6_2Only`, `OrchardNu6_3Onward`, and
-  `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit; its V3 note plaintexts
-  are not yet implemented).
+  `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit and uses V3 note
+  plaintexts).
+- `orchard::note::NoteVersion`, the note plaintext version selector used by
+  low-level note constructors and accessors. `NoteVersion::V2` is the ZIP 212
+  Orchard note plaintext format, and `NoteVersion::V3` is the quantum-recoverable
+  Ironwood note plaintext version defined in ZIP 2005.
+- `orchard::Note::version`, returning the note's plaintext version.
 - `orchard::circuit::OrchardCircuitVersion::PostNu6_3`, the circuit version
   that enforces the `disableCrossAddress` public input. The post-NU 6.3 circuit
   has its own proving and verifying keys.
@@ -50,11 +56,23 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   transfers.
 - Error variants for the cross-address builder and PCZT checks:
   - `orchard::builder::BuildError::CrossAddressDisabled`
+  - `orchard::builder::BuildError::InvalidNoteVersion`
   - `orchard::builder::OutputError::{CrossAddressDisabled, SpendsDisabled, RecipientNotOwned}`
+  - `orchard::pczt::ParseError::InvalidNoteVersion`
   - `orchard::pczt::VerifyError::DisallowedCrossAddressTransfer`
   - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`, wrapping the
     underlying `orchard::pczt::VerifyError`
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
+- Note version fields in PCZT spends and outputs, with generated public getters:
+  - `orchard::pczt::Spend::note_version`
+  - `orchard::pczt::Output::note_version`
+- `orchard::note_encryption::IronwoodDomain` and
+  `orchard::note_encryption::IronwoodNoteEncryption`, matching
+  `OrchardDomain` note-encryption behavior but accepting V3 note plaintexts
+  during parsing.
+- `orchard::note_encryption::{DomainVersion, NoteEncryptionDomain, OrchardVersion,
+  IronwoodVersion}`, the sealed marker-domain API underlying `OrchardDomain`
+  and `IronwoodDomain`.
 - `orchard::bundle::BatchError`, with its `RestrictionUnsupportedByKey` variant,
   returned by `orchard::bundle::BatchValidator::add_bundle`.
 - `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
@@ -65,6 +83,13 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   transfers. `arb_flags` is unchanged and only generates flag sets with
   cross-address transfers enabled, which are representable under every pool
   restriction other than Orchard post-NU6.3.
+- `orchard::bundle::testing::arb_bundle_pool_restriction` (under the
+  `test-dependencies` feature), a strategy that generates bundle pool
+  restrictions.
+- `RandomSeed::rcm_v3` (behind the `unstable-voting-circuits` feature), the rcm
+  derivation for V3 (ZIP 2005, Ironwood) notes, for low-level construction of
+  Ironwood note plaintexts. These APIs are not covered by the crate's semver
+  guarantees.
 
 ### Changed
 - `orchard::bundle::Flags::{from_byte, to_byte}` and
@@ -90,6 +115,24 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     (it derives the circuit version from the protocol).
   - `orchard::builder::bundle` takes the `BundlePoolRestrictions` in place of the
     circuit-version argument.
+  - The builder derives new output, dummy, and fabricated note plaintext versions
+    from `BundlePoolRestrictions::note_version`.
+  - The lower-level `orchard::builder::bundle` helper rejects supplied
+    `OutputInfo` and `ChangeInfo` values whose note version does not match the
+    `BundlePoolRestrictions`, returning `BuildError::InvalidNoteVersion`.
+- Bundle output decryption and recovery helpers now take a `BundlePoolRestrictions`
+  and enforce its note plaintext version after decryption:
+  - `orchard::Bundle::{decrypt_outputs_with_keys, decrypt_output_with_key}`
+  - `orchard::Bundle::{recover_outputs_with_ovks, recover_output_with_ovk}`
+  Selecting `BundlePoolRestrictions::IronwoodNu6_3Onward` lets these helpers
+  discover V3 Ironwood notes.
+- Low-level note and builder-info constructors now take an explicit
+  `orchard::note::NoteVersion` so callers choose between V2 Orchard notes and V3
+  Ironwood notes. Affected API:
+  - `orchard::Note::from_parts`
+  - `orchard::Note::new`
+  - `orchard::builder::OutputInfo::new`
+  - `orchard::builder::ChangeInfo::new`
 - `orchard::builder::BundleType::Transactional` no longer embeds a full `Flags`;
   it carries `{ spends_enabled, outputs_enabled, bundle_required }`, and
   `BundleType::flags` and `BundleType::num_actions` now take the
@@ -153,6 +196,25 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `FixedPostNu6_2`), and checks the cross-address restriction's same-expanded-receiver
   property, returning `ProverError::DisallowedCrossAddressTransfer` (or
   `ProverError::MissingRecipient` if a `recipient` field is unset).
+- `orchard::pczt::{Spend, Output}::parse` now take the note plaintext version
+  for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
+  actions whose output note version does not match the `BundlePoolRestrictions`.
+- `orchard::note_encryption::{OrchardNoteEncryption, IronwoodNoteEncryption}`
+  documentation now clarifies that encryption uses the note's own
+  `NoteVersion`; the aliases differ in which note plaintext versions they
+  accept during parsing and decryption.
+- `orchard::builder::OutputInfo::dummy` now takes an explicit
+  `orchard::note::NoteVersion`; builder-created outputs use the note version
+  associated with the selected `BundlePoolRestrictions`.
+- `test-dependencies` note and bundle strategies now select note versions from
+  their callers or generated bundle pool restrictions:
+  - `orchard::note::testing::arb_note` now takes a note version.
+  - `orchard::bundle::testing::{arb_action, arb_unauthorized_action}` now take a
+    note version through their re-exported path.
+  - `orchard::bundle::testing::{arb_action_n, arb_unauthorized_action_n}` now
+    take a note version.
+  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` now
+    generate a bundle pool restriction internally to select the note version.
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
   before modifying the bundle, returning
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
@@ -168,6 +230,9 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `Result<BundleCommitment, CommitmentError>`, returning
   `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
   under that protocol (cross-address transfers disabled under a pre-NU6.3 protocol).
+- Behind the `unstable-voting-circuits` feature, `RandomSeed::rcm` is renamed to
+  `RandomSeed::rcm_v2`, marking it as the rcm derivation for V2 (ZIP 212) notes.
+  These APIs are not covered by the crate's semver guarantees.
 
 ### Removed
 - The temporary `_for_version` APIs from `0.14.0`; pass the intended

@@ -14,7 +14,9 @@ use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
     bundle::{BundlePoolRestrictions, Flags},
     keys::{FullViewingKey, SpendingKey},
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
+    note::{
+        ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
+    },
     primitives::redpallas::{self, SpendAuth},
     tree::{MerkleHashOrchard, MerklePath},
     value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -38,6 +40,13 @@ impl Bundle {
     ) -> Result<Self, ParseError> {
         let flags =
             Flags::from_byte(flags, pool_restrictions).ok_or(ParseError::UnexpectedFlagBitsSet)?;
+
+        let note_version = pool_restrictions.note_version();
+        for action in actions.iter() {
+            if *action.output.note_version() != note_version {
+                return Err(ParseError::InvalidNoteVersion);
+            }
+        }
 
         let value_sum = {
             let (magnitude, is_negative) = value_sum;
@@ -118,6 +127,7 @@ impl Spend {
         alpha: Option<[u8; 32]>,
         zip32_derivation: Option<Zip32Derivation>,
         dummy_sk: Option<[u8; 32]>,
+        note_version: NoteVersion,
         proprietary: BTreeMap<String, Vec<u8>>,
     ) -> Result<Self, ParseError> {
         let nullifier = Nullifier::from_bytes(&nullifier)
@@ -200,6 +210,7 @@ impl Spend {
             value,
             rho,
             rseed,
+            note_version,
             fvk,
             witness,
             alpha,
@@ -226,6 +237,7 @@ impl Output {
         ock: Option<[u8; 32]>,
         zip32_derivation: Option<Zip32Derivation>,
         user_address: Option<String>,
+        note_version: NoteVersion,
         proprietary: BTreeMap<String, Vec<u8>>,
     ) -> Result<Self, ParseError> {
         let cmx = ExtractedNoteCommitment::from_bytes(&cmx)
@@ -268,6 +280,7 @@ impl Output {
 
         Ok(Self {
             cmx,
+            note_version,
             encrypted_note,
             recipient,
             value,
@@ -342,6 +355,8 @@ pub enum ParseError {
     /// The provided `flags` field had unexpected bits set for the bundle's pool
     /// restrictions.
     UnexpectedFlagBitsSet,
+    /// An invalid `note_version` was provided.
+    InvalidNoteVersion,
 }
 
 impl fmt::Display for ParseError {
@@ -368,6 +383,7 @@ impl fmt::Display for ParseError {
                 write!(f, "`rho` must be provided whenever `rseed` is provided")
             }
             ParseError::UnexpectedFlagBitsSet => write!(f, "`flags` field had unexpected bits set"),
+            ParseError::InvalidNoteVersion => write!(f, "invalid `note_version`"),
         }
     }
 }
