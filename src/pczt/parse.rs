@@ -43,9 +43,6 @@ impl Bundle {
 
         let note_version = pool_restrictions.note_version();
         for action in actions.iter() {
-            if *action.spend.note_version() != note_version {
-                return Err(ParseError::InvalidNoteVersion);
-            }
             if *action.output.note_version() != note_version {
                 return Err(ParseError::InvalidNoteVersion);
             }
