@@ -331,6 +331,7 @@ impl OrchardCircuit for OrchardZSA {
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
+        // Prevent synthesis of insecure ZSA circuits.
         if circuit.circuit_version.halo2_version() == CircuitVersion::InsecureUnanchoredBase {
             return Err(plonk::Error::Synthesis);
         }
