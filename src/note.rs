@@ -434,12 +434,7 @@ impl Note {
 
     /// Derives the nullifier for this note.
     pub fn nullifier(&self, fvk: &FullViewingKey) -> Nullifier {
-        Nullifier::derive(
-            fvk.nk(),
-            self.rho.0,
-            self.psi(),
-            self.commitment(),
-        )
+        Nullifier::derive(fvk.nk(), self.rho.0, self.psi(), self.commitment())
     }
 }
 
