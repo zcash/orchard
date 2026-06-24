@@ -80,7 +80,7 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   transfers. `arb_flags` is unchanged and only generates flag sets with
   cross-address transfers enabled, which are representable under every pool
   restriction other than Orchard post-NU6.3.
-- `orchard::bundle::testing::arb_bundle_protocol_restriction` (under the
+- `orchard::bundle::testing::arb_bundle_pool_restriction` (under the
   `test-dependencies` feature), a strategy that generates bundle pool
   restrictions.
 - `RandomSeed::rcm_v3` (behind the `unstable-voting-circuits` feature), the rcm

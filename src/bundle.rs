@@ -918,8 +918,8 @@ pub mod testing {
     /// Marker type for a bundle that contains no authorizing data.
     pub type Unauthorized = super::EffectsOnly;
 
-    /// Create an arbitrary bundle protocol restriction.
-    pub fn arb_bundle_protocol_restriction() -> impl Strategy<Value = BundlePoolRestrictions> {
+    /// Create an arbitrary bundle pool restriction.
+    pub fn arb_bundle_pool_restriction() -> impl Strategy<Value = BundlePoolRestrictions> {
         prop_oneof![
             Just(BundlePoolRestrictions::OrchardPreNu6_2),
             Just(BundlePoolRestrictions::OrchardNu6_2Only),
@@ -1021,11 +1021,11 @@ pub mod testing {
         /// [`crate::builder::testing::arb_bundle`]
         pub fn arb_unauthorized_bundle(n_actions: usize)
         (
-            protocol_restrictions in arb_bundle_protocol_restriction(),
+            pool_restrictions in arb_bundle_pool_restriction(),
             flags in arb_flags(),
         )
         (
-            acts in vec(arb_unauthorized_action_n(protocol_restrictions.note_version(), n_actions, flags), n_actions),
+            acts in vec(arb_unauthorized_action_n(pool_restrictions.note_version(), n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
             flags in Just(flags)
         ) -> Bundle<Unauthorized, ValueSum> {
@@ -1047,11 +1047,11 @@ pub mod testing {
         /// [`crate::builder::testing::arb_bundle`]
         pub fn arb_bundle(n_actions: usize)
         (
-            protocol_restrictions in arb_bundle_protocol_restriction(),
+            pool_restrictions in arb_bundle_pool_restriction(),
             flags in arb_flags(),
         )
         (
-            acts in vec(arb_action_n(protocol_restrictions.note_version(), n_actions, flags), n_actions),
+            acts in vec(arb_action_n(pool_restrictions.note_version(), n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
             sk in arb_binding_signing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
