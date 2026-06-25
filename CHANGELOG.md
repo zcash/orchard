@@ -235,7 +235,8 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   `TxVersion::V6` uses the v6 personalization strings and commits the anchor in the
   authorizing commitment instead of the effects commitment. Callers computing
   transaction IDs or sighashes must pass the restrictions and version matching the
-  transaction. `Bundle::commitment` now returns
+  transaction; these APIs do not validate that the selected pool/era is consensus-valid
+  for the selected transaction version. `Bundle::commitment` now returns
   `Result<BundleCommitment, CommitmentError>`, returning
   `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
   under those restrictions (for example, cross-address transfers disabled under
