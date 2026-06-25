@@ -325,22 +325,25 @@ impl Flags {
         Some(value)
     }
 
-    /// Parses flags from a single byte as defined in [Zcash Protocol Spec § 7.1:
-    /// Transaction Encoding And Consensus][txencoding], according to the interpretation
-    /// implied by `pool_restrictions`. Returns `None` if unexpected bits are set in the flag byte.
+    /// Parses flags from a single byte as defined in [Zcash Protocol Spec §
+    /// 7.1: Transaction Encoding And Consensus][txencoding], according to the
+    /// interpretation implied by `pool_restrictions`. Returns `None` if
+    /// unexpected bits are set in the flag byte.
     ///
-    /// The protocol specification and ZIPs 225 and TODO:draft-zodl-valargroup-ironwood-txformat
-    /// define bit 2 of `flags` to be reserved in v5 transactions, and to encode the
-    /// `enableCrossAddress` flag in v6 transactions. However, we can (by design) parse and
-    /// validate the flags knowing only `pool_restrictions`: bit 2 can only be 1 when
-    /// `pool_restrictions == BundlePoolRestrictions::IronwoodNu6_3Onward`, and otherwise
-    /// MUST be 0. Assuming that has been checked, cross-address transactions are then
-    /// always enabled before NU6.3, and are taken to be enabled when bit 2 is set and
-    /// `pool_restrictions == BundlePoolRestrictions::IronwoodNu6_3Onward`, otherwise.
+    /// The protocol specification and ZIPs 225 and 229 define bit 2 of `flags`
+    /// to be reserved in v5 transactions, and to encode the
+    /// `enableCrossAddress` flag in v6 transactions. However, we can (by
+    /// design) parse and validate the flags knowing only `pool_restrictions`:
+    /// bit 2 can only be 1 when `pool_restrictions ==
+    /// BundlePoolRestrictions::IronwoodNu6_3Onward`, and otherwise MUST be 0.
+    /// Assuming that has been checked, cross-address transactions are then
+    /// always enabled before NU6.3, and are taken to be enabled when bit 2 is
+    /// set and `pool_restrictions ==
+    /// BundlePoolRestrictions::IronwoodNu6_3Onward`, otherwise.
     ///
-    /// Note: if the wrong value of `pool_restrictions` is passed for the actual pool and epoch
-    /// of the transaction, then a consensus-invalid transaction may be constructed (see
-    /// [`BundlePoolRestrictions`]).
+    /// Note: if the wrong value of `pool_restrictions` is passed for the actual
+    /// pool and epoch of the transaction, then a consensus-invalid transaction
+    /// may be constructed (see [`BundlePoolRestrictions`]).
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8, pool_restrictions: BundlePoolRestrictions) -> Option<Self> {
