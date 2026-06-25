@@ -17,12 +17,6 @@ const ZCASH_IRONWOOD_ACTIONS_MEMOS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrnA
 const ZCASH_IRONWOOD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrnActNH_v6";
 const ZCASH_IRONWOOD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnwdH_v6";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AnchorCommitment {
-    Include,
-    Omit,
-}
-
 #[derive(Clone, Copy, Debug)]
 struct BundleCommitmentPersonalizations {
     bundle: &'static [u8; 16],
@@ -64,10 +58,10 @@ const IRONWOOD_V6_PERSONALIZATIONS: BundleCommitmentPersonalizations =
         auth: ZCASH_IRONWOOD_SIGS_HASH_PERSONALIZATION,
     };
 
-/// The commitment format used to compute a bundle's transaction-ID and authorizing
-/// commitments, selected from the bundle's pool and the version of the transaction it is
-/// encoded in. Orchard bundles use the v5 or v6 format according to the transaction; Ironwood
-/// bundles exist only in v6 transactions.
+/// The hash format used to compute a bundle's transaction-ID and authorizing digests,
+/// selected from the bundle's pool and the version of the transaction it is encoded in.
+/// Orchard bundles use the v5 or v6 format according to the transaction; Ironwood bundles
+/// exist only in v6 transactions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum BundleCommitmentFormat {
     OrchardV5,
@@ -99,22 +93,15 @@ impl BundleCommitmentFormat {
         }
     }
 
-    fn effects_anchor_commitment(self) -> AnchorCommitment {
-        match self {
-            BundleCommitmentFormat::OrchardV5 => AnchorCommitment::Include,
-            BundleCommitmentFormat::OrchardV6 | BundleCommitmentFormat::IronwoodV6 => {
-                AnchorCommitment::Omit
-            }
-        }
+    fn includes_anchor_in_txid_digest(self) -> bool {
+        matches!(self, BundleCommitmentFormat::OrchardV5)
     }
 
-    fn auth_anchor_commitment(self) -> AnchorCommitment {
-        match self {
-            BundleCommitmentFormat::OrchardV5 => AnchorCommitment::Omit,
-            BundleCommitmentFormat::OrchardV6 | BundleCommitmentFormat::IronwoodV6 => {
-                AnchorCommitment::Include
-            }
-        }
+    fn includes_anchor_in_authorizing_digest(self) -> bool {
+        matches!(
+            self,
+            BundleCommitmentFormat::OrchardV6 | BundleCommitmentFormat::IronwoodV6
+        )
     }
 }
 
@@ -133,7 +120,7 @@ fn hasher(personal: &[u8; 16]) -> State {
 ///
 /// Then, hash these together along with (flags, value_balance_orchard, and — for the v5
 /// transaction format only — anchor_orchard), personalized with the format's bundle
-/// personalization string. In the v6 format the anchor is committed by
+/// personalization string. In the v6 format the anchor is included by
 /// `hash_bundle_auth_data` instead.
 ///
 /// Returns `None` if the bundle flags cannot be encoded in the domain's bundle format.
@@ -170,7 +157,7 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     h.update(nh.finalize().as_bytes());
     h.update(&[bundle.flags().to_byte(pool_restrictions)?]);
     h.update(&(*bundle.value_balance()).into().to_le_bytes());
-    if format.effects_anchor_commitment() == AnchorCommitment::Include {
+    if format.includes_anchor_in_txid_digest() {
         h.update(&bundle.anchor().to_bytes());
     }
     Some(h.finalize())
@@ -212,7 +199,7 @@ pub(crate) fn hash_bundle_auth_data<V>(
     h.update(&<[u8; 64]>::from(
         bundle.authorization().binding_signature(),
     ));
-    if format.auth_anchor_commitment() == AnchorCommitment::Include {
+    if format.includes_anchor_in_authorizing_digest() {
         h.update(&bundle.anchor().to_bytes());
     }
     h.finalize()

@@ -144,10 +144,10 @@ impl BundlePoolRestrictions {
 /// The transaction version a bundle's commitments are computed for.
 ///
 /// An Orchard bundle at NU6.3 and later may be encoded in either a v5 or a v6 transaction.
-/// The two formats use different commitment personalization strings and place the bundle's
-/// anchor in different digests: v5 commits the anchor within the transaction-ID effects,
-/// while v6 commits it within the authorizing data. Ironwood bundles exist only in v6
-/// transactions, so their commitments ignore this value.
+/// The two formats use different commitment personalization strings and include the bundle's
+/// anchor in different digests: v5 includes the anchor in the transaction-ID digest, while v6
+/// includes it in the authorizing digest. Ironwood bundles exist only in v6 transactions, so
+/// their commitment format ignores this value.
 ///
 /// This is independent of the [`BundlePoolRestrictions`] that govern construction: the same
 /// Orchard bundle can be committed under either version, and the caller must pass the one
@@ -649,13 +649,12 @@ impl<T: Authorization, V> Bundle<T, V> {
 }
 
 impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
-    /// Computes a commitment to the effects of this bundle, suitable for inclusion within
-    /// a transaction ID.
+    /// Computes this bundle's transaction-ID commitment component.
     ///
     /// `pool_restrictions` selects the flag-byte encoding; `tx_version` selects the commitment
-    /// personalizations and the anchor placement for the transaction the bundle is encoded in.
-    /// In a v5 transaction the anchor is committed here (within the transaction-ID effects); in
-    /// a v6 transaction it is committed by [`Bundle::authorizing_commitment`] instead.
+    /// personalizations and whether the bundle anchor bytes are included here or in the
+    /// authorizing digest. In a v5 transaction the anchor bytes are included here; in a v6
+    /// transaction they are included by [`Bundle::authorizing_commitment`] instead.
     ///
     /// # Errors
     ///
@@ -844,11 +843,11 @@ impl<V> Bundle<Authorized, V> {
         ))
     }
 
-    /// Computes a commitment to the authorizing data within for this bundle.
+    /// Computes the authorizing-data commitment for this bundle.
     ///
-    /// This together with `Bundle::commitment` bind the entire bundle. `pool_restrictions` and
-    /// `tx_version` select the commitment personalization; in a v6 transaction this commitment
-    /// also binds the bundle's anchor (in a v5 transaction the anchor is bound by
+    /// This together with `Bundle::commitment` binds the entire bundle. `pool_restrictions` and
+    /// `tx_version` select the commitment personalization; in a v6 transaction this digest also
+    /// includes the bundle anchor bytes (in a v5 transaction they are included by
     /// [`Bundle::commitment`] instead).
     pub fn authorizing_commitment(
         &self,
@@ -1421,10 +1420,10 @@ pub(crate) mod tests {
             ));
         }
 
-        /// The anchor is committed in the transaction-ID effects for the v5 format and in the
-        /// authorizing data for the v6 format, so changing only the anchor moves exactly one of
-        /// the two digests. The v5 and v6 Orchard formats are also domain-separated, so the same
-        /// bundle commits to distinct transaction-ID digests under each.
+        /// The anchor bytes are included in the transaction-ID digest for the v5 format and in
+        /// the authorizing digest for the v6 format, so changing only the anchor moves exactly
+        /// one of the two digests. The v5 and v6 Orchard formats are also domain-separated, so
+        /// the same bundle commits to distinct transaction-ID digests under each.
         #[test]
         fn anchor_placement_follows_tx_version(bundle in arb_bundle(3)) {
             // Orchard post-NU6.3 cannot encode cross-address transfers, so clear the bit to keep
@@ -1444,7 +1443,7 @@ pub(crate) mod tests {
             let a = with_anchor(crate::Anchor::from_bytes([0u8; 32]).unwrap());
             let b = with_anchor(crate::Anchor::from_bytes([6u8; 32]).unwrap());
 
-            for (pool_restrictions, tx, anchor_in_effects) in [
+            for (pool_restrictions, tx, anchor_in_txid_digest) in [
                 (BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5, true),
                 (BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V6, false),
                 (BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6, false),
@@ -1453,7 +1452,7 @@ pub(crate) mod tests {
                 let txid_b: [u8; 32] = b.commitment(pool_restrictions, tx).unwrap().into();
                 let auth_a = a.authorizing_commitment(pool_restrictions, tx).0;
                 let auth_b = b.authorizing_commitment(pool_restrictions, tx).0;
-                if anchor_in_effects {
+                if anchor_in_txid_digest {
                     prop_assert_ne!(txid_a, txid_b);
                     prop_assert_eq!(auth_a.as_bytes(), auth_b.as_bytes());
                 } else {
