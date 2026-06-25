@@ -141,6 +141,27 @@ impl BundlePoolRestrictions {
     }
 }
 
+/// The transaction version a bundle's commitments are computed for.
+///
+/// An Orchard bundle at NU6.3 and later may be encoded in either a v5 or a v6 transaction.
+/// The two formats use different commitment personalization strings and include the bundle's
+/// anchor in different digests: v5 includes the anchor in the transaction-ID digest, while v6
+/// includes it in the authorizing digest. Ironwood bundles exist only in v6 transactions, so
+/// their commitment format ignores this value.
+///
+/// This is independent of the [`BundlePoolRestrictions`] that govern construction: the same
+/// Orchard bundle can be committed under either version, and the caller must pass the one
+/// matching the transaction the bundle is encoded in. See [`Bundle::commitment`] and
+/// [`Bundle::authorizing_commitment`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TxVersion {
+    /// A v5 transaction.
+    V5,
+    /// A v6 transaction.
+    V6,
+}
+
 /// Orchard-specific flags.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Flags {
@@ -304,22 +325,25 @@ impl Flags {
         Some(value)
     }
 
-    /// Parses flags from a single byte as defined in [Zcash Protocol Spec § 7.1:
-    /// Transaction Encoding And Consensus][txencoding], according to the interpretation
-    /// implied by `pool_restrictions`. Returns `None` if unexpected bits are set in the flag byte.
+    /// Parses flags from a single byte as defined in [Zcash Protocol Spec §
+    /// 7.1: Transaction Encoding And Consensus][txencoding], according to the
+    /// interpretation implied by `pool_restrictions`. Returns `None` if
+    /// unexpected bits are set in the flag byte.
     ///
-    /// The protocol specification and ZIPs 225 and TODO:draft-zodl-valargroup-ironwood-txformat
-    /// define bit 2 of `flags` to be reserved in v5 transactions, and to encode the
-    /// `enableCrossAddress` flag in v6 transactions. However, we can (by design) parse and
-    /// validate the flags knowing only `pool_restrictions`: bit 2 can only be 1 when
-    /// `pool_restrictions == BundlePoolRestrictions::IronwoodNu6_3Onward`, and otherwise
-    /// MUST be 0. Assuming that has been checked, cross-address transactions are then
-    /// always enabled before NU6.3, and are taken to be enabled when bit 2 is set and
-    /// `pool_restrictions == BundlePoolRestrictions::IronwoodNu6_3Onward`, otherwise.
+    /// The protocol specification and ZIPs 225 and 229 define bit 2 of `flags`
+    /// to be reserved in v5 transactions, and to encode the
+    /// `enableCrossAddress` flag in v6 transactions. However, we can (by
+    /// design) parse and validate the flags knowing only `pool_restrictions`:
+    /// bit 2 can only be 1 when `pool_restrictions ==
+    /// BundlePoolRestrictions::IronwoodNu6_3Onward`, and otherwise MUST be 0.
+    /// Assuming that has been checked, cross-address transactions are then
+    /// always enabled before NU6.3, and are taken to be enabled when bit 2 is
+    /// set and `pool_restrictions ==
+    /// BundlePoolRestrictions::IronwoodNu6_3Onward`, otherwise.
     ///
-    /// Note: if the wrong value of `pool_restrictions` is passed for the actual pool and epoch
-    /// of the transaction, then a consensus-invalid transaction may be constructed (see
-    /// [`BundlePoolRestrictions`]).
+    /// Note: if the wrong value of `pool_restrictions` is passed for the actual
+    /// pool and epoch of the transaction, then a consensus-invalid transaction
+    /// may be constructed (see [`BundlePoolRestrictions`]).
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8, pool_restrictions: BundlePoolRestrictions) -> Option<Self> {
@@ -625,23 +649,23 @@ impl<T: Authorization, V> Bundle<T, V> {
 }
 
 impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
-    /// Computes a commitment to the effects of this bundle, suitable for inclusion within
-    /// a transaction ID.
+    /// Computes this bundle's transaction-ID commitment component.
     ///
-    /// The flag byte is hashed as encoded under the `pool_restrictions` targetted by this
-    /// bundle, so the digest depends on the encoding epoch. See [`BundlePoolRestrictions`]
-    /// for why getting `pool_restrictions` wrong matters.
+    /// `pool_restrictions` selects the flag-byte encoding; `tx_version` selects the commitment
+    /// personalizations and whether the bundle anchor bytes are included here or in the
+    /// authorizing digest. In a v5 transaction the anchor bytes are included here; in a v6
+    /// transaction they are included by [`Bundle::authorizing_commitment`] instead.
     ///
     /// # Errors
     ///
-    /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot be encoded under
-    /// `pool_restrictions` (cross-address transfers disabled pre-NU6.3, or enabled for Orchard
-    /// post-NU6.3).
+    /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot
+    /// be encoded under the given pool restrictions.
     pub fn commitment(
         &self,
         pool_restrictions: BundlePoolRestrictions,
+        tx_version: TxVersion,
     ) -> Result<BundleCommitment, CommitmentError> {
-        hash_bundle_txid_data(self, pool_restrictions)
+        hash_bundle_txid_data(self, pool_restrictions, tx_version)
             .map(BundleCommitment)
             .ok_or(CommitmentError::UnrepresentableFlags)
     }
@@ -819,11 +843,18 @@ impl<V> Bundle<Authorized, V> {
         ))
     }
 
-    /// Computes a commitment to the authorizing data within for this bundle.
+    /// Computes the authorizing-data commitment for this bundle.
     ///
-    /// This together with `Bundle::commitment` bind the entire bundle.
-    pub fn authorizing_commitment(&self) -> BundleAuthorizingCommitment {
-        BundleAuthorizingCommitment(hash_bundle_auth_data(self))
+    /// This together with `Bundle::commitment` binds the entire bundle. `pool_restrictions` and
+    /// `tx_version` select the commitment personalization; in a v6 transaction this digest also
+    /// includes the bundle anchor bytes (in a v5 transaction they are included by
+    /// [`Bundle::commitment`] instead).
+    pub fn authorizing_commitment(
+        &self,
+        pool_restrictions: BundlePoolRestrictions,
+        tx_version: TxVersion,
+    ) -> BundleAuthorizingCommitment {
+        BundleAuthorizingCommitment(hash_bundle_auth_data(self, pool_restrictions, tx_version))
     }
 
     /// Verifies the proof for this bundle.
@@ -1086,7 +1117,9 @@ pub(crate) mod tests {
     use proptest::prelude::*;
 
     use super::testing::{arb_bundle, arb_flags, arb_flags_ironwood_post_nu6_3};
-    use super::{Authorized, Bundle, BundleError, BundlePoolRestrictions, CommitmentError, Flags};
+    use super::{
+        Authorized, Bundle, BundleError, BundlePoolRestrictions, CommitmentError, Flags, TxVersion,
+    };
     use crate::Proof;
 
     #[cfg(feature = "circuit")]
@@ -1276,6 +1309,33 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
+    fn empty_commitments_are_domain_separated() {
+        use crate::bundle::commitments::{hash_bundle_auth_empty, hash_bundle_txid_empty};
+
+        // The three commitment formats — Orchard v5, Orchard v6, Ironwood v6 — use distinct
+        // personalizations, so the absent-bundle digests are all different from one another.
+        let formats = [
+            (BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5),
+            (BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V6),
+            (BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6),
+        ];
+        for i in 0..formats.len() {
+            for j in (i + 1)..formats.len() {
+                let (pi, ti) = formats[i];
+                let (pj, tj) = formats[j];
+                assert_ne!(
+                    hash_bundle_txid_empty(pi, ti).as_bytes(),
+                    hash_bundle_txid_empty(pj, tj).as_bytes()
+                );
+                assert_ne!(
+                    hash_bundle_auth_empty(pi, ti).as_bytes(),
+                    hash_bundle_auth_empty(pj, tj).as_bytes()
+                );
+            }
+        }
+    }
+
     proptest! {
         // The property is deterministic given the actions, so a handful of cases suffices.
         #![proptest_config(ProptestConfig::with_cases(16))]
@@ -1335,11 +1395,11 @@ pub(crate) mod tests {
                 bundle.flags().to_byte(BundlePoolRestrictions::OrchardNu6_2Only)
             );
             let restricted_commitment: [u8; 32] = restricted
-                .commitment(BundlePoolRestrictions::OrchardNu6_3Onward)
+                .commitment(BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5)
                 .expect("restricted flags are representable under NU6.3")
                 .into();
             let legacy_commitment: [u8; 32] = bundle
-                .commitment(BundlePoolRestrictions::OrchardNu6_2Only)
+                .commitment(BundlePoolRestrictions::OrchardNu6_2Only, TxVersion::V5)
                 .expect("unrestricted flags are representable pre-NU6.3")
                 .into();
             prop_assert_eq!(restricted_commitment, legacy_commitment);
@@ -1347,7 +1407,7 @@ pub(crate) mod tests {
             // The unrestricted NU6.3 encoding sets bit 2, producing a distinct digest. Only
             // the Ironwood pool may set it; Orchard post-NU6.3 prohibits cross-address transfers.
             let unrestricted_commitment: [u8; 32] = bundle
-                .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward)
+                .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6)
                 .expect("unrestricted flags are representable under Ironwood NU6.3")
                 .into();
             prop_assert_ne!(unrestricted_commitment, restricted_commitment);
@@ -1355,9 +1415,61 @@ pub(crate) mod tests {
             // The restricted flag set cannot be committed under pre-NU6.3 encoding.
             prop_assert_eq!(restricted.flags().to_byte(BundlePoolRestrictions::OrchardNu6_2Only), None);
             prop_assert!(matches!(
-                restricted.commitment(BundlePoolRestrictions::OrchardNu6_2Only),
+                restricted.commitment(BundlePoolRestrictions::OrchardNu6_2Only, TxVersion::V5),
                 Err(CommitmentError::UnrepresentableFlags)
             ));
+        }
+
+        /// The anchor bytes are included in the transaction-ID digest for the v5 format and in
+        /// the authorizing digest for the v6 format, so changing only the anchor moves exactly
+        /// one of the two digests. The v5 and v6 Orchard formats are also domain-separated, so
+        /// the same bundle commits to distinct transaction-ID digests under each.
+        #[test]
+        fn anchor_placement_follows_tx_version(bundle in arb_bundle(3)) {
+            // Orchard post-NU6.3 cannot encode cross-address transfers, so clear the bit to keep
+            // the flags representable in every format under test.
+            let mut flags = *bundle.flags();
+            flags.cross_address_enabled = false;
+
+            let with_anchor = |anchor| {
+                Bundle::from_parts_unchecked(
+                    bundle.actions().clone(),
+                    flags,
+                    0i64,
+                    anchor,
+                    bundle.authorization().clone(),
+                )
+            };
+            let a = with_anchor(crate::Anchor::from_bytes([0u8; 32]).unwrap());
+            let b = with_anchor(crate::Anchor::from_bytes([6u8; 32]).unwrap());
+
+            for (pool_restrictions, tx, anchor_in_txid_digest) in [
+                (BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5, true),
+                (BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V6, false),
+                (BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6, false),
+            ] {
+                let txid_a: [u8; 32] = a.commitment(pool_restrictions, tx).unwrap().into();
+                let txid_b: [u8; 32] = b.commitment(pool_restrictions, tx).unwrap().into();
+                let auth_a = a.authorizing_commitment(pool_restrictions, tx).0;
+                let auth_b = b.authorizing_commitment(pool_restrictions, tx).0;
+                if anchor_in_txid_digest {
+                    prop_assert_ne!(txid_a, txid_b);
+                    prop_assert_eq!(auth_a.as_bytes(), auth_b.as_bytes());
+                } else {
+                    prop_assert_eq!(txid_a, txid_b);
+                    prop_assert_ne!(auth_a.as_bytes(), auth_b.as_bytes());
+                }
+            }
+
+            let orchard_v5: [u8; 32] = a
+                .commitment(BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5)
+                .unwrap()
+                .into();
+            let orchard_v6: [u8; 32] = a
+                .commitment(BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V6)
+                .unwrap()
+                .into();
+            prop_assert_ne!(orchard_v5, orchard_v6);
         }
 
         #[test]
@@ -1462,7 +1574,7 @@ pub(crate) mod tests {
             .expect("generated bundle value balance fits in i64");
 
         assert!(matches!(
-            bundle.commitment(BundlePoolRestrictions::OrchardNu6_2Only),
+            bundle.commitment(BundlePoolRestrictions::OrchardNu6_2Only, TxVersion::V5),
             Err(CommitmentError::UnrepresentableFlags)
         ));
     }
