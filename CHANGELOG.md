@@ -199,14 +199,12 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     action count.
 - `orchard::pczt::Bundle::create_proof` now builds the Action circuits for
   the provided `ProvingKey`'s circuit version (previously always
-  `FixedPostNu6_2`), and checks the cross-address restriction's
-  same-expanded-receiver property, returning
-  `ProverError::DisallowedCrossAddressTransfer` (or
+  `FixedPostNu6_2`), and checks the cross-address restriction's same-expanded-receiver
+  property, returning `ProverError::DisallowedCrossAddressTransfer` (or
   `ProverError::MissingRecipient` if a `recipient` field is unset).
 - `orchard::pczt::{Spend, Output}::parse` now take the note plaintext version
   for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
-  actions whose spend or output note version does not match the
-  `BundlePoolRestrictions`.
+  actions whose spend or output note version does not match the `BundlePoolRestrictions`.
 - `orchard::note_encryption::{OrchardNoteEncryption, IronwoodNoteEncryption}`
   documentation now clarifies that encryption uses the note's own
   `NoteVersion`; the aliases differ in which note plaintext versions they
