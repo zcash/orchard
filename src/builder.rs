@@ -167,7 +167,7 @@ impl BundleType {
     }
 }
 
-/// Decide, for a bundle targetting the consensus rules implied by `pool_restrictions`,
+/// Decide, for a bundle targeting the consensus rules implied by `pool_restrictions`,
 /// whether to enable cross-address transfers according to the least restrictive policy
 /// mandated by those rules (see [`BundlePoolRestrictions::requires_cross_address_restriction`]).
 ///

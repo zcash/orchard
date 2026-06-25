@@ -29,6 +29,12 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
   Variants: `OrchardPreNu6_2`, `OrchardNu6_2Only`, `OrchardNu6_3Onward`, and
   `IronwoodNu6_3Onward` (which shares the post-NU6.3 circuit and uses V3 note
   plaintexts).
+- `orchard::bundle::TxVersion`, the transaction version (`V5` or `V6`) a bundle's
+  commitments are computed for. At NU6.3 an Orchard bundle may be encoded in a v5
+  or a v6 transaction; the two use different commitment personalizations and place
+  the anchor in different digests (v5 in the transaction-ID effects, v6 in the
+  authorizing data). It is passed to `Bundle::commitment`,
+  `Bundle::authorizing_commitment`, and the `hash_bundle_*_empty` helpers.
 - `orchard::note::NoteVersion`, the note plaintext version selector used by
   low-level note constructors and accessors. `NoteVersion::V2` is the ZIP 212
   Orchard note plaintext format, and `NoteVersion::V3` is the quantum-recoverable
@@ -193,12 +199,14 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     action count.
 - `orchard::pczt::Bundle::create_proof` now builds the Action circuits for
   the provided `ProvingKey`'s circuit version (previously always
-  `FixedPostNu6_2`), and checks the cross-address restriction's same-expanded-receiver
-  property, returning `ProverError::DisallowedCrossAddressTransfer` (or
+  `FixedPostNu6_2`), and checks the cross-address restriction's
+  same-expanded-receiver property, returning
+  `ProverError::DisallowedCrossAddressTransfer` (or
   `ProverError::MissingRecipient` if a `recipient` field is unset).
 - `orchard::pczt::{Spend, Output}::parse` now take the note plaintext version
   for the parsed spend or output, and `orchard::pczt::Bundle::parse` rejects
-  actions whose output note version does not match the `BundlePoolRestrictions`.
+  actions whose spend or output note version does not match the
+  `BundlePoolRestrictions`.
 - `orchard::note_encryption::{OrchardNoteEncryption, IronwoodNoteEncryption}`
   documentation now clarifies that encryption uses the note's own
   `NoteVersion`; the aliases differ in which note plaintext versions they
@@ -213,23 +221,29 @@ the current behavior by selecting `BundlePoolRestrictions::OrchardNu6_2Only` (an
     note version through their re-exported path.
   - `orchard::bundle::testing::{arb_action_n, arb_unauthorized_action_n}` now
     take a note version.
-  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` now
-    generate a bundle pool restriction internally to select the note version.
+  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` no longer
+    take bundle pool restrictions, and instead select them internally.
 - `orchard::pczt::Bundle::finalize_io` verifies the cross-address restriction
   before modifying the bundle, returning
   `IoFinalizerError::CrossAddressRestriction` (wrapping the underlying
   `VerifyError`) and leaving the bundle unmodified if the PCZT is missing
   recipient data or violates the restriction.
-- `orchard::Bundle::commitment` now takes the `BundlePoolRestrictions` the bundle
-  follows, and hashes that era's flag byte (via `Flags::to_byte`). The ZIP-244
-  Orchard digest — and therefore the transaction ID and sighash — now depends on
-  the `BundlePoolRestrictions`: under `IronwoodNu6_3Onward` an unrestricted bundle's
-  flag byte sets bit 2. Callers computing transaction IDs or sighashes (e.g.
-  `zcash_primitives`, or the `pczt` crate via `Flags::to_byte`) must pass the
-  protocol matching the transaction. It now returns
+- `orchard::Bundle::{commitment, authorizing_commitment}` now take a
+  `orchard::bundle::BundlePoolRestrictions` (which selects the flag-byte encoding) and
+  an `orchard::bundle::TxVersion` (which selects the commitment personalization
+  strings and the anchor placement for the transaction the bundle is encoded in). The
+  ZIP-244 digest — and therefore the transaction ID and sighash — now depends on both:
+  under a NU6.3 protocol an unrestricted bundle's flag byte sets bit 2, and
+  `TxVersion::V6` uses the v6 personalization strings and commits the anchor in the
+  authorizing commitment instead of the effects commitment. Callers computing
+  transaction IDs or sighashes must pass the restrictions and version matching the
+  transaction. `Bundle::commitment` now returns
   `Result<BundleCommitment, CommitmentError>`, returning
   `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
-  under that protocol (cross-address transfers disabled under a pre-NU6.3 protocol).
+  under those restrictions (for example, cross-address transfers disabled under
+  pre-NU6.3 restrictions).
+- `orchard::bundle::commitments::{hash_bundle_txid_empty, hash_bundle_auth_empty}`
+  now take a `BundlePoolRestrictions` and a `TxVersion`.
 - Behind the `unstable-voting-circuits` feature, `RandomSeed::rcm` is renamed to
   `RandomSeed::rcm_v2`, marking it as the rcm derivation for V2 (ZIP 212) notes.
   These APIs are not covered by the crate's semver guarantees.
