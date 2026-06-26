@@ -46,9 +46,11 @@ when building proving/verifying keys).
     introspection for whether a circuit version (or a key's circuit version)
     constrains the `disableCrossAddress` public input.
   - `orchard::circuit::VerifyingKey::circuit_version`
-- `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` variant,
-  returned by `orchard::Bundle::commitment` when a bundle's flags cannot be
-  represented under the requested `BundlePoolRestrictions`.
+- `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` and
+  `InvalidTransactionVersion` variants, returned by bundle commitment APIs when
+  a bundle's flags cannot be represented under the requested
+  `BundlePoolRestrictions`, or when `IronwoodNu6_3Onward` is requested for a v5
+  transaction.
 - `orchard::bundle::BatchError` (requires the `circuit` feature), with its
   `RestrictionUnsupportedByKey` variant, returned by
   `orchard::bundle::BatchValidator::add_bundle` when a restricted bundle is added
@@ -160,14 +162,19 @@ when building proving/verifying keys).
     flag byte sets bit 2, and `TxVersion::V6` uses the v6 personalization strings
     and commits the anchor in the authorizing commitment instead of the effects
     commitment. Callers computing transaction IDs or sighashes must pass the
-    restrictions and version matching the transaction; these APIs do not validate
-    that the selected pool/era is consensus-valid for the selected transaction
-    version. `Bundle::commitment` now returns
-    `Result<BundleCommitment, CommitmentError>`, yielding
-    `Err(CommitmentError::UnrepresentableFlags)` if the flags are unrepresentable
-    under those restrictions.
+    restrictions and version matching the transaction; these APIs check only that
+    the combination is representable, not that it is consensus-valid for the
+    transaction version. `Bundle::commitment` now returns
+    `Result<BundleCommitment, CommitmentError>` and
+    `Bundle::<Authorized, V>::authorizing_commitment` returns
+    `Result<BundleAuthorizingCommitment, CommitmentError>`, with
+    `Err(CommitmentError::InvalidTransactionVersion)` for an Ironwood bundle in a
+    v5 transaction and `Err(CommitmentError::UnrepresentableFlags)` (from
+    `commitment` only) for flags the restrictions cannot represent.
   - `orchard::bundle::commitments::{hash_bundle_txid_empty, hash_bundle_auth_empty}`
-    now take a `BundlePoolRestrictions` and a `TxVersion`.
+    now take a `BundlePoolRestrictions` and a `TxVersion`, and return
+    `Result<Blake2bHash, CommitmentError>`, rejecting an Ironwood pool in a v5
+    transaction with `CommitmentError::InvalidTransactionVersion`.
 - Circuit APIs now require explicit circuit versions:
   - `orchard::circuit::Circuit::from_action_context` now takes an
     `OrchardCircuitVersion` instead of implicitly selecting `FixedPostNu6_2`.

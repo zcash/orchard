@@ -147,7 +147,7 @@ impl BundlePoolRestrictions {
 /// The two formats use different commitment personalization strings and include the bundle's
 /// anchor in different digests: v5 includes the anchor in the transaction-ID digest, while v6
 /// includes it in the authorizing digest. Ironwood bundles exist only in v6 transactions, so
-/// their commitment format ignores this value.
+/// attempting to compute an Ironwood commitment for a v5 transaction returns an error.
 ///
 /// This is independent of the [`BundlePoolRestrictions`] that govern construction: the same
 /// Orchard bundle can be committed under either version, and the caller must pass the one
@@ -659,15 +659,15 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// # Errors
     ///
     /// Returns [`CommitmentError::UnrepresentableFlags`] if the flags cannot
-    /// be encoded under the given pool restrictions.
+    /// be encoded under the given pool restrictions, or
+    /// [`CommitmentError::InvalidTransactionVersion`] if `tx_version` is not
+    /// valid for `pool_restrictions`.
     pub fn commitment(
         &self,
         pool_restrictions: BundlePoolRestrictions,
         tx_version: TxVersion,
     ) -> Result<BundleCommitment, CommitmentError> {
-        hash_bundle_txid_data(self, pool_restrictions, tx_version)
-            .map(BundleCommitment)
-            .ok_or(CommitmentError::UnrepresentableFlags)
+        hash_bundle_txid_data(self, pool_restrictions, tx_version).map(BundleCommitment)
     }
 
     /// Returns the transaction binding validating key for this bundle.
@@ -789,6 +789,13 @@ pub enum CommitmentError {
     /// * cross-address transfers are enabled but `pool_restrictions` specifies a post-NU6.3
     ///   Orchard pool (where cross-address transfers are forbidden).
     UnrepresentableFlags,
+    /// The requested transaction version is not valid for the requested pool
+    /// restrictions.
+    ///
+    /// Ironwood bundles exist only in v6 transactions, so
+    /// `BundlePoolRestrictions::IronwoodNu6_3Onward` cannot be committed with
+    /// `TxVersion::V5`.
+    InvalidTransactionVersion,
 }
 
 impl fmt::Display for CommitmentError {
@@ -797,6 +804,10 @@ impl fmt::Display for CommitmentError {
             CommitmentError::UnrepresentableFlags => write!(
                 f,
                 "bundle flags are not representable according to the requested pool restrictions",
+            ),
+            CommitmentError::InvalidTransactionVersion => write!(
+                f,
+                "Ironwood bundles can only be committed in a v6 transaction",
             ),
         }
     }
@@ -849,12 +860,17 @@ impl<V> Bundle<Authorized, V> {
     /// `tx_version` select the commitment personalization; in a v6 transaction this digest also
     /// includes the bundle anchor bytes (in a v5 transaction they are included by
     /// [`Bundle::commitment`] instead).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommitmentError::InvalidTransactionVersion`] if `tx_version`
+    /// is not valid for `pool_restrictions`.
     pub fn authorizing_commitment(
         &self,
         pool_restrictions: BundlePoolRestrictions,
         tx_version: TxVersion,
-    ) -> BundleAuthorizingCommitment {
-        BundleAuthorizingCommitment(hash_bundle_auth_data(self, pool_restrictions, tx_version))
+    ) -> Result<BundleAuthorizingCommitment, CommitmentError> {
+        hash_bundle_auth_data(self, pool_restrictions, tx_version).map(BundleAuthorizingCommitment)
     }
 
     /// Verifies the proof for this bundle.
@@ -1325,15 +1341,24 @@ pub(crate) mod tests {
                 let (pi, ti) = formats[i];
                 let (pj, tj) = formats[j];
                 assert_ne!(
-                    hash_bundle_txid_empty(pi, ti).as_bytes(),
-                    hash_bundle_txid_empty(pj, tj).as_bytes()
+                    hash_bundle_txid_empty(pi, ti).unwrap().as_bytes(),
+                    hash_bundle_txid_empty(pj, tj).unwrap().as_bytes()
                 );
                 assert_ne!(
-                    hash_bundle_auth_empty(pi, ti).as_bytes(),
-                    hash_bundle_auth_empty(pj, tj).as_bytes()
+                    hash_bundle_auth_empty(pi, ti).unwrap().as_bytes(),
+                    hash_bundle_auth_empty(pj, tj).unwrap().as_bytes()
                 );
             }
         }
+
+        assert!(matches!(
+            hash_bundle_txid_empty(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V5),
+            Err(CommitmentError::InvalidTransactionVersion)
+        ));
+        assert!(matches!(
+            hash_bundle_auth_empty(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V5),
+            Err(CommitmentError::InvalidTransactionVersion)
+        ));
     }
 
     proptest! {
@@ -1420,6 +1445,29 @@ pub(crate) mod tests {
             ));
         }
 
+        #[test]
+        fn ironwood_rejects_v5_commitment_version(bundle in arb_bundle(3)) {
+            let bundle_i64 = Bundle::from_parts_unchecked(
+                bundle.actions().clone(),
+                *bundle.flags(),
+                0i64,
+                *bundle.anchor(),
+                bundle.authorization().clone(),
+            );
+
+            prop_assert!(matches!(
+                bundle_i64.commitment(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V5),
+                Err(CommitmentError::InvalidTransactionVersion)
+            ));
+            prop_assert!(matches!(
+                bundle.authorizing_commitment(
+                    BundlePoolRestrictions::IronwoodNu6_3Onward,
+                    TxVersion::V5
+                ),
+                Err(CommitmentError::InvalidTransactionVersion)
+            ));
+        }
+
         /// The anchor bytes are included in the transaction-ID digest for the v5 format and in
         /// the authorizing digest for the v6 format, so changing only the anchor moves exactly
         /// one of the two digests. The v5 and v6 Orchard formats are also domain-separated, so
@@ -1450,8 +1498,8 @@ pub(crate) mod tests {
             ] {
                 let txid_a: [u8; 32] = a.commitment(pool_restrictions, tx).unwrap().into();
                 let txid_b: [u8; 32] = b.commitment(pool_restrictions, tx).unwrap().into();
-                let auth_a = a.authorizing_commitment(pool_restrictions, tx).0;
-                let auth_b = b.authorizing_commitment(pool_restrictions, tx).0;
+                let auth_a = a.authorizing_commitment(pool_restrictions, tx).unwrap().0;
+                let auth_b = b.authorizing_commitment(pool_restrictions, tx).unwrap().0;
                 if anchor_in_txid_digest {
                     prop_assert_ne!(txid_a, txid_b);
                     prop_assert_eq!(auth_a.as_bytes(), auth_b.as_bytes());
