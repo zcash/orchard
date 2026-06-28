@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::BundlePoolRestrictions,
+    bundle::BundleVersion,
     circuit::{OrchardCircuitVersion, ProvingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note_encryption::{CompactAction, OrchardDomain},
@@ -46,7 +46,7 @@ fn bench_note_decryption(c: &mut Criterion) {
 
     let bundle = {
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_2Only,
+            BundleVersion::orchard_v1(),
             BundleType::DEFAULT,
             Anchor::from_bytes([0; 32]).unwrap(),
         );

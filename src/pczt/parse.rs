@@ -12,7 +12,7 @@ use zip32::ChildIndex;
 
 use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
-    bundle::{BundlePoolRestrictions, Flags},
+    bundle::{BundleVersion, Flags},
     keys::{FullViewingKey, SpendingKey},
     note::{
         ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
@@ -26,22 +26,22 @@ use crate::{
 impl Bundle {
     /// Parses a PCZT bundle from its component parts.
     ///
-    /// See [`BundlePoolRestrictions`] for the choice of `pool_restrictions`.
+    /// See [`BundleVersion`] for the choice of `bundle_version`.
     ///
     /// `value_sum` is represented as `(magnitude, is_negative)`.
     pub fn parse(
         actions: Vec<Action>,
         flags: u8,
-        pool_restrictions: BundlePoolRestrictions,
+        bundle_version: BundleVersion,
         value_sum: (u64, bool),
         anchor: [u8; 32],
         zkproof: Option<Vec<u8>>,
         bsk: Option<[u8; 32]>,
     ) -> Result<Self, ParseError> {
         let flags =
-            Flags::from_byte(flags, pool_restrictions).ok_or(ParseError::UnexpectedFlagBitsSet)?;
+            Flags::from_byte(flags, bundle_version).ok_or(ParseError::UnexpectedFlagBitsSet)?;
 
-        let note_version = pool_restrictions.note_version();
+        let note_version = bundle_version.note_version();
         for action in actions.iter() {
             if *action.output.note_version() != note_version {
                 return Err(ParseError::InvalidNoteVersion);
@@ -74,6 +74,7 @@ impl Bundle {
         Ok(Self {
             actions,
             flags,
+            bundle_version,
             value_sum,
             anchor,
             zkproof,

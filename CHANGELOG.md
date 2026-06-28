@@ -7,26 +7,34 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
-This release introduces `orchard::bundle::BundlePoolRestrictions`, a `(pool, era)`
-selector now threaded through bundle construction, wire encoding, and commitments,
-alongside the post-NU 6.3 Action circuit that enforces the cross-address restriction.
-Existing callers keep the current behavior by selecting
-`BundlePoolRestrictions::OrchardNu6_2Only` (and `OrchardCircuitVersion::FixedPostNu6_2`
-when building proving/verifying keys).
+This release introduces `orchard::bundle::BundleVersion`, the `(value pool, protocol
+version)` of an Orchard bundle, built from the new `orchard::ValuePool` and
+`orchard::ProtocolVersion` types. Each `Bundle` now carries its `BundleVersion` as
+non-serialized context, so a bundle can be serialized and committed to without separately
+supplying a — possibly mismatching — version, and is encodable and committable by
+construction. The post-NU 6.3 Action circuit enforces the cross-address restriction.
+Existing callers keep the current behavior by constructing bundles with
+`BundleVersion::orchard_v1()` (and `OrchardCircuitVersion::FixedPostNu6_2` when building
+proving/verifying keys).
 
 ### Added
-- NU6.3 and Ironwood bundle-selection APIs:
-  - `orchard::bundle::BundlePoolRestrictions`, the `(pool, era)` selector for an
-    Orchard bundle. It determines the note plaintext version
-    (`BundlePoolRestrictions::note_version`), the circuit version
-    (`BundlePoolRestrictions::circuit_version`, when the `circuit` feature is
-    enabled), the flag-byte interpretation (pre-NU6.3 rules, where bit 2 is
-    reserved and cross-address transfers are implicitly enabled, vs NU6.3 rules,
-    where bit 2 is `enableCrossAddress`), and whether consensus mandates the
-    cross-address restriction (the builder then chooses the value within that
-    constraint). Variants: `OrchardPreNu6_2`, `OrchardNu6_2Only`,
-    `OrchardNu6_3Onward`, and `IronwoodNu6_3Onward` (which shares the post-NU6.3
-    circuit and uses V3 note plaintexts).
+- NU6.3 and Ironwood bundle-version APIs:
+  - `orchard::ValuePool`, the value pool an Orchard bundle belongs to (`Orchard` or
+    `Ironwood`), and `orchard::ProtocolVersion`, the Orchard protocol version
+    (`InsecureV0`, the historical pre-NU6.2 protocol that uses the unsound circuit; `V1`,
+    NU6.2; `V2`, NU6.3, which also instantiates the Ironwood pool).
+  - `orchard::bundle::BundleVersion`, the `(value pool, protocol version)` of an Orchard
+    bundle. Its `const fn` constructors `orchard_insecure_v0`, `orchard_v1`, `orchard_v2`,
+    and `ironwood_v2` make only the valid combinations representable. It determines the
+    note plaintext version (`BundleVersion::note_version`), the circuit version
+    (`BundleVersion::circuit_version`, when the `circuit` feature is enabled), the
+    flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and cross-address
+    transfers are implicitly enabled, vs NU6.3 rules, where bit 2 is `enableCrossAddress`),
+    and whether consensus mandates the cross-address restriction (the builder then chooses
+    the value within that constraint). `BundleVersion::value_pool` and
+    `BundleVersion::protocol_version` return the bundle's `ValuePool` and
+    `ProtocolVersion`; the Ironwood pool (`ironwood_v2`) shares the post-NU6.3 circuit and
+    uses V3 note plaintexts.
   - `orchard::bundle::TxVersion`, the transaction version (`V5` or `V6`) a
     bundle's commitments are computed for. At NU6.3 an Orchard bundle may be
     encoded in a v5 or a v6 transaction; the two use different commitment
@@ -46,11 +54,12 @@ when building proving/verifying keys).
     introspection for whether a circuit version (or a key's circuit version)
     constrains the `disableCrossAddress` public input.
   - `orchard::circuit::VerifyingKey::circuit_version`
-- `orchard::bundle::CommitmentError`, with its `UnrepresentableFlags` and
-  `InvalidTransactionVersion` variants, returned by bundle commitment APIs when
-  a bundle's flags cannot be represented under the requested
-  `BundlePoolRestrictions`, or when `IronwoodNu6_3Onward` is requested for a v5
-  transaction.
+- `orchard::bundle::CommitmentError`, with its `InvalidTransactionVersion` variant,
+  returned by the bundle commitment APIs when an Ironwood bundle's commitment is requested
+  for a `TxVersion::V5` transaction.
+- `orchard::Bundle::bundle_version`, returning the `BundleVersion` the bundle is encoded
+  under, and `orchard::Bundle::flag_byte`, the infallible byte encoding of the bundle's
+  flags under that version.
 - `orchard::bundle::BatchError` (requires the `circuit` feature), with its
   `RestrictionUnsupportedByKey` variant, returned by
   `orchard::bundle::BatchValidator::add_bundle` when a restricted bundle is added
@@ -81,6 +90,9 @@ when building proving/verifying keys).
 - PCZT note-version and cross-address APIs:
   - `orchard::pczt::{Spend, Output}::note_version`, the generated getters for the
     note plaintext version of a parsed spend or output.
+  - `orchard::pczt::Bundle::bundle_version`, the generated getter for the bundle's
+    `BundleVersion`, and `orchard::pczt::Bundle::flag_byte`, the infallible byte encoding of
+    its flags under that version.
   - `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers can
     check the cross-address restriction's same-expanded-receiver structural
     property before signing. It is a no-op for bundles that permit cross-address
@@ -92,21 +104,21 @@ when building proving/verifying keys).
     underlying `orchard::pczt::VerifyError`.
 
 ### Changed
-- Bundle construction now requires explicit pool restrictions:
+- Bundle construction now requires an explicit `BundleVersion`:
   - `orchard::builder::Builder::new` now takes
-    `(BundlePoolRestrictions, BundleType, Anchor)`; the builder derives the circuit
-    version from the pool restrictions rather than from an explicit
+    `(BundleVersion, BundleType, Anchor)`; the builder derives the circuit
+    version from the bundle version rather than from an explicit
     `OrchardCircuitVersion`.
-  - `orchard::builder::bundle` now takes a `BundlePoolRestrictions` in place of
+  - `orchard::builder::bundle` now takes a `BundleVersion` in place of
     the circuit-version argument, and takes the wallet-controlled change outputs
     as a separate `changes: Vec<ChangeInfo>` argument (plain `outputs` and
     `changes` are distinct). It rejects supplied `OutputInfo`/`ChangeInfo` values
-    whose note version does not match the `BundlePoolRestrictions`, returning
+    whose note version does not match the `BundleVersion`, returning
     `BuildError::InvalidNoteVersion`.
   - `orchard::builder::BundleType::Transactional` no longer embeds a full
     `Flags`; it now carries `{ spends_enabled, outputs_enabled, bundle_required }`.
   - `orchard::builder::BundleType::{num_actions, flags}` now take a
-    `BundlePoolRestrictions`. For bundles that disable cross-address transfers,
+    `BundleVersion`. For bundles that disable cross-address transfers,
     `num_actions` counts `num_spends + num_outputs` requested actions (a requested
     spend and a requested output never share an action) rather than the maximum of
     the two, and `BundleMetadata` maps them to distinct actions; wallets
@@ -114,10 +126,10 @@ when building proving/verifying keys).
   - `orchard::builder::OutputInfo::{new, dummy}` now take an `orchard::NoteVersion`,
     so callers choose between V2 Orchard notes and V3 Ironwood notes;
     builder-created outputs use the note version associated with the selected
-    `BundlePoolRestrictions`.
+    `BundleVersion`.
   - `orchard::builder::BundleMetadata::output_action_index` now indexes the plain
     outputs first, followed by the wallet-controlled change outputs.
-- For `BundlePoolRestrictions::OrchardNu6_3Onward`, the builder constructs
+- For `BundleVersion::orchard_v2()`, the builder constructs
   withdrawal/change bundles that disable cross-address transfers: every action's
   output is addressed to the expanded receiver of the note it spends. The
   fabricated zero-value output paired with each real spend carries a randomized,
@@ -129,52 +141,60 @@ when building proving/verifying keys).
   recipient not owned by the full viewing key (`OutputError::RecipientNotOwned`)
   and requires spends to be enabled (`OutputError::SpendsDisabled`). The builder
   chooses the cross-address bit as a prover-side default — the least-restrictive
-  value consensus permits: enabled, except under `OrchardNu6_3Onward`, where
-  consensus mandates the restriction. `BundlePoolRestrictions` exposes only that
-  consensus constraint; the default lives in builder logic. The `Flags` codec
-  still represents NU6.3 `enableCrossAddress = 0` flag sets, so a future builder
-  could expose the choice where consensus leaves it free (e.g. Ironwood); this
-  branch does not. Coinbase bundles follow the same pool restrictions as
-  non-coinbase bundles: post-NU6.3 Orchard coinbase transactions cannot contain
-  Orchard actions, so post-NU6.3 coinbase bundle construction in this crate is
-  only useful for `IronwoodNu6_3Onward`.
+  value consensus permits: enabled, except for the Orchard pool under
+  `BundleVersion::orchard_v2()`, where consensus mandates the restriction.
+  `BundleVersion` exposes only that consensus constraint; the default lives in builder
+  logic. The `Flags` codec still represents NU6.3 `enableCrossAddress = 0` flag sets, so a
+  future builder could expose the choice where consensus leaves it free (e.g. Ironwood);
+  this branch does not. Coinbase bundles follow the same constraints as non-coinbase
+  bundles: post-NU6.3 Orchard coinbase transactions cannot contain Orchard actions, so
+  post-NU6.3 coinbase bundle construction in this crate is only useful for
+  `BundleVersion::ironwood_v2()`.
 - `orchard::bundle::Flags::{to_byte, from_byte}` now take a
-  `BundlePoolRestrictions`. Bit 2 (`enableCrossAddress`) is only representable for
+  `BundleVersion`. Bit 2 (`enableCrossAddress`) is only representable for
   the Ironwood pool post-NU6.3; it is rejected for pre-NU6.3 (where bit 2 is
   reserved) and for Orchard post-NU6.3 (where consensus mandates the cross-address
   restriction). `to_byte` now returns `Option<u8>`, yielding `None` when the flag
-  set is not representable under the given pool restrictions. A byte with bit 2
+  set is not representable under the given bundle version. A byte with bit 2
   clear is interpreted differently per epoch: an unrestricted bundle before NU6.3,
-  a restricted bundle under NU6.3.
-- Bundle decryption, recovery, and commitment APIs now require pool or
-  transaction-version context:
+  a restricted bundle under NU6.3. A `Bundle` exposes the infallible
+  `Bundle::flag_byte` for its own flag encoding.
+- A bundle's `BundleVersion` is now carried by the bundle itself rather than passed to its
+  decryption, recovery, and commitment methods:
   - `orchard::Bundle::{decrypt_outputs_with_keys, decrypt_output_with_key}` and
-    `orchard::Bundle::{recover_outputs_with_ovks, recover_output_with_ovk}` now
-    take a `BundlePoolRestrictions` and enforce its note plaintext version after
-    decryption; selecting `IronwoodNu6_3Onward` lets these helpers discover V3
-    Ironwood notes.
+    `orchard::Bundle::{recover_outputs_with_ovks, recover_output_with_ovk}` no longer take a
+    version argument; they use the bundle's own `BundleVersion` (so an Ironwood bundle's
+    helpers discover its V3 notes).
   - `orchard::Bundle::commitment` and
-    `orchard::Bundle::<Authorized, V>::authorizing_commitment` now take a
-    `BundlePoolRestrictions` (which selects the flag-byte encoding) and a
-    `TxVersion` (which selects the commitment personalization strings and the
-    anchor placement). The ZIP-244 digest — and therefore the transaction ID and
-    sighash — now depends on both: under a NU6.3 protocol an unrestricted bundle's
-    flag byte sets bit 2, and `TxVersion::V6` uses the v6 personalization strings
-    and commits the anchor in the authorizing commitment instead of the effects
-    commitment. Callers computing transaction IDs or sighashes must pass the
-    restrictions and version matching the transaction; these APIs check only that
-    the combination is representable, not that it is consensus-valid for the
-    transaction version. `Bundle::commitment` now returns
-    `Result<BundleCommitment, CommitmentError>` and
-    `Bundle::<Authorized, V>::authorizing_commitment` returns
-    `Result<BundleAuthorizingCommitment, CommitmentError>`, with
-    `Err(CommitmentError::InvalidTransactionVersion)` for an Ironwood bundle in a
-    v5 transaction and `Err(CommitmentError::UnrepresentableFlags)` (from
-    `commitment` only) for flags the restrictions cannot represent.
-  - `orchard::bundle::commitments::{hash_bundle_txid_empty, hash_bundle_auth_empty}`
-    now take a `BundlePoolRestrictions` and a `TxVersion`, and return
-    `Result<Blake2bHash, CommitmentError>`, rejecting an Ironwood pool in a v5
-    transaction with `CommitmentError::InvalidTransactionVersion`.
+    `orchard::Bundle::<Authorized, V>::authorizing_commitment` no longer take a
+    `BundleVersion` (the bundle supplies it); they still take a `TxVersion`, which selects
+    the commitment personalization strings and the anchor placement. The ZIP-244 digest —
+    and therefore the transaction ID and sighash — depends on both the bundle's version and
+    the transaction version: under a NU6.3 protocol an unrestricted bundle's flag byte sets
+    bit 2, and `TxVersion::V6` uses the v6 personalization strings and commits the anchor in
+    the authorizing commitment instead of the effects commitment. Callers must construct the
+    bundle with the version matching the transaction and pass the matching `TxVersion`;
+    these APIs check only that the combination is representable, not that it is
+    consensus-valid. Both now return only
+    `Err(CommitmentError::InvalidTransactionVersion)` (for an Ironwood bundle in a v5
+    transaction); because flags are validated when the bundle is constructed, commitment can
+    no longer fail on unrepresentable flags.
+  - `orchard::bundle::commitments::{hash_bundle_txid_empty, hash_bundle_auth_empty}`, which
+    operate on an absent bundle (and so hash no flags), now take a `ValuePool` and a
+    `TxVersion`, and return `Result<Blake2bHash, CommitmentError>`, rejecting an Ironwood pool
+    in a v5 transaction with `CommitmentError::InvalidTransactionVersion`.
+- Bundle construction now takes a `BundleVersion` and validates flags against it:
+  - `orchard::Bundle::<EffectsOnly, V>::from_parts` and
+    `orchard::Bundle::<Authorized, V>::try_from_parts` now take a `BundleVersion`, and
+    reject a flag set that cannot be encoded under it with the new
+    `orchard::bundle::BundleError::UnrepresentableFlags` variant. `from_parts` is now
+    fallible (returns `Result<_, BundleError>`) for this reason, so a constructed `Bundle`
+    is always encodable and committable.
+  - `try_from_parts` no longer takes an `orchard::bundle::ProofSizeEnforcement`: the
+    canonical proof-size check (GHSA-2x4w-pxqw-58v9) is derived from the bundle version,
+    enforced for every version except the historical pre-NU6.2 Orchard pool
+    (`BundleVersion::orchard_insecure_v0`), whose already-committed transactions may carry
+    non-canonical proofs.
 - Circuit APIs now require explicit circuit versions:
   - `orchard::circuit::Circuit::from_action_context` now takes an
     `OrchardCircuitVersion` instead of implicitly selecting `FixedPostNu6_2`.
@@ -210,7 +230,7 @@ when building proving/verifying keys).
   differ only in which note plaintext versions they accept during parsing and
   decryption.
 - PCZT parsing and role checks now carry pool and note-version context:
-  - `orchard::pczt::Bundle::parse` now takes a `BundlePoolRestrictions` and rejects
+  - `orchard::pczt::Bundle::parse` now takes a `BundleVersion` and rejects
     flags and output note versions that do not match it.
   - `orchard::pczt::{Spend, Output}::parse` now take the `orchard::NoteVersion` for
     the parsed spend or output.
@@ -229,13 +249,13 @@ when building proving/verifying keys).
     `orchard::bundle::testing::{arb_action, arb_unauthorized_action}`, and
     `orchard::bundle::testing::{arb_action_n, arb_unauthorized_action_n}` now take
     an `orchard::NoteVersion`.
-  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` now generate
-    a `BundlePoolRestrictions` (via the new
-    `orchard::bundle::testing::arb_bundle_pool_restriction` strategy) to select the
-    note version.
+  - `orchard::bundle::testing::{arb_bundle, arb_unauthorized_bundle}` now construct the
+    bundle with a generated `BundleVersion` (via the new
+    `orchard::bundle::testing::arb_bundle_version` strategy), choosing flags
+    consistent with that version.
   - `orchard::bundle::testing::arb_flags` is unchanged and only generates flag sets
-    with cross-address transfers enabled, representable under every pool
-    restriction other than Orchard post-NU6.3; use the new
+    with cross-address transfers enabled, representable under every bundle
+    version other than Orchard post-NU6.3; use the new
     `arb_flags_ironwood_post_nu6_3` for Ironwood post-NU6.3 flag sets that may
     disable cross-address transfers.
 - `unstable-voting-circuits`-only (not covered by the crate's semver guarantees):
@@ -245,10 +265,13 @@ when building proving/verifying keys).
     (ZIP 2005, Ironwood) notes.
 
 ### Removed
+- `orchard::bundle::ProofSizeEnforcement`; `Bundle::try_from_parts` now derives the
+  canonical proof-size check from the `BundleVersion` (enforced for every version except
+  `BundleVersion::orchard_insecure_v0`).
 - `orchard::builder::Builder::new_for_version`; use
-  `Builder::new(pool_restrictions, bundle_type, anchor)`.
+  `Builder::new(bundle_version, bundle_type, anchor)`.
 - `orchard::builder::bundle_for_version`; use `builder::bundle` with
-  `BundlePoolRestrictions` and a `Vec<ChangeInfo>`.
+  `BundleVersion` and a `Vec<ChangeInfo>`.
 - Zero-argument `orchard::circuit::{ProvingKey, VerifyingKey}::build`; pass an
   `OrchardCircuitVersion` explicitly.
 - `orchard::circuit::{ProvingKey, VerifyingKey}::build_for_version`; use
@@ -472,7 +495,7 @@ when building proving/verifying keys).
 
 ### Changed
 - MSRV is now 1.70
-- Migrated to `nonempty 0.11`, `incrementalmerkletree 0.8`, `shardtree 0.6`, 
+- Migrated to `nonempty 0.11`, `incrementalmerkletree 0.8`, `shardtree 0.6`,
   `zcash_spec 0.2`, `zip32 0.2`
 - `orchard::builder::Builder::add_output` now takes a `[u8; 512]` for its
   `memo` argument instead of an optional value.

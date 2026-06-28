@@ -112,6 +112,7 @@ impl super::Bundle {
                 value_balance,
                 self.anchor,
                 authorization,
+                self.bundle_version,
             ))
         } else {
             None
@@ -143,6 +144,8 @@ pub enum TxExtractorError {
         /// The length of the proof that was provided.
         actual: usize,
     },
+    /// The bundle's flags cannot be encoded under its value pool and protocol version.
+    UnrepresentableFlags,
 }
 
 impl From<crate::ActionFromPartsError> for TxExtractorError {
@@ -159,6 +162,9 @@ impl From<crate::bundle::BundleError> for TxExtractorError {
         match e {
             crate::bundle::BundleError::NonCanonicalProofSize { expected, actual } => {
                 TxExtractorError::NonCanonicalProofSize { expected, actual }
+            }
+            crate::bundle::BundleError::UnrepresentableFlags => {
+                TxExtractorError::UnrepresentableFlags
             }
         }
     }
@@ -191,6 +197,10 @@ impl fmt::Display for TxExtractorError {
             TxExtractorError::NonCanonicalProofSize { expected, actual } => write!(
                 f,
                 "Orchard `zkproof` has non-canonical length {actual}; expected {expected} bytes",
+            ),
+            TxExtractorError::UnrepresentableFlags => write!(
+                f,
+                "Orchard bundle flags are not representable under its value pool and protocol version",
             ),
         }
     }

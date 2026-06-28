@@ -13,7 +13,6 @@ use zcash_note_encryption::{
 
 use crate::{
     action::Action,
-    bundle::BundlePoolRestrictions,
     keys::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
@@ -126,13 +125,13 @@ impl DomainVersion for IronwoodVersion {
 
 #[derive(Debug)]
 pub(crate) struct BundleDomainPolicy {
-    pool_restrictions: BundlePoolRestrictions,
+    note_version: NoteVersion,
 }
 
 impl DomainPolicy for BundleDomainPolicy {
     fn note_version(&self, plaintext: &[u8]) -> Option<NoteVersion> {
         let note_version = NoteVersion::from_lead_byte(*plaintext.first()?)?;
-        if note_version == self.pool_restrictions.note_version() {
+        if note_version == self.note_version {
             Some(note_version)
         } else {
             None
@@ -196,24 +195,21 @@ pub type OrchardDomain = NoteEncryptionDomain<OrchardVersion>;
 /// [`NoteVersion::V3`] note plaintexts, which use lead byte `0x03`.
 pub type IronwoodDomain = NoteEncryptionDomain<IronwoodVersion>;
 
-/// Bundle-pool-restricted note encryption logic.
+/// Note encryption logic restricted to a single note plaintext version.
 ///
-/// This domain is used by public bundle helpers that are given the target
-/// [`BundlePoolRestrictions`]. Trial decryption still happens once; after
-/// decryption succeeds, the revealed note plaintext lead byte selects the note
-/// version and the bundle pool restrictions are enforced against it.
+/// This domain is used by public bundle helpers that are given the bundle's
+/// [`NoteVersion`]. Trial decryption still happens once; after decryption
+/// succeeds, the revealed note plaintext lead byte selects the note version, which is
+/// enforced to match the expected one.
 pub(crate) type BundleDomain = NoteEncryptionDomain<BundleDomainPolicy>;
 
 impl BundleDomain {
     /// Constructs a domain that can be used to trial-decrypt this action's
-    /// output note under `pool_restrictions`.
-    pub(crate) fn for_action<T>(
-        act: &Action<T>,
-        pool_restrictions: BundlePoolRestrictions,
-    ) -> Self {
+    /// output note as a note of `note_version`.
+    pub(crate) fn for_action<T>(act: &Action<T>, note_version: NoteVersion) -> Self {
         Self {
             rho: act.rho(),
-            policy: BundleDomainPolicy { pool_restrictions },
+            policy: BundleDomainPolicy { note_version },
         }
     }
 }
