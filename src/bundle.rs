@@ -922,7 +922,7 @@ impl<V> Bundle<Authorized, V> {
     /// Constructs an authorized `Bundle` from its constituent parts.
     ///
     /// This is the only constructor for an authorized bundle. For every version except the
-    /// historical pre-NU6.2 Orchard pool (see [`BundleVersion::enforces_canonical_proof_size`]) it
+    /// historical pre-NU6.2 Orchard pool ([`BundleVersion::orchard_insecure_v0`]) it
     /// validates that the proof has exactly [`Proof::expected_proof_size`] bytes for
     /// `actions.len()`, so such an authorized bundle can never hold a non-canonical proof. This
     /// matters when building a bundle from untrusted input (e.g. deserializing from bytes), as it
