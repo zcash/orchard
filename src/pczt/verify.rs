@@ -228,7 +228,7 @@ impl fmt::Display for VerifyError {
             VerifyError::DisallowedCrossAddressTransfer => write!(
                 f,
                 "an action outputs to a different expanded receiver than it spends from, but the \
-                 bundle's pool restriction disables cross-address transfers"
+                 bundle disables cross-address transfers"
             ),
             VerifyError::InvalidExtractedNoteCommitment => {
                 write!(f, "output note doesn't match `cmx`")

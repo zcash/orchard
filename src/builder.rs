@@ -12,7 +12,7 @@ use zcash_note_encryption::ENC_CIPHERTEXT_SIZE;
 
 use crate::{
     address::Address,
-    bundle::{Authorization, Authorized, Bundle, BundlePoolRestrictions, Flags},
+    bundle::{Authorization, Authorized, Bundle, BundleVersion, Flags},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
@@ -37,55 +37,36 @@ use {
 const MIN_ACTIONS: usize = 2;
 
 /// An enumeration of rules for Orchard bundle construction.
+///
+/// This selects only the construction discipline; the bundle's [`Flags`] are supplied separately
+/// to the builder (see [`Builder::new`] and [`BundleVersion::default_flags`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
     /// irrespective of whether any genuine actions are required.
     Transactional {
-        /// Whether Orchard spends are enabled for the bundle.
-        spends_enabled: bool,
-        /// Whether Orchard outputs are enabled for the bundle.
-        outputs_enabled: bool,
         /// A flag that, when set to `true`, indicates that a bundle should be produced even if no
         /// spends or outputs have been added to the bundle; in such a circumstance, all of the
         /// actions in the resulting bundle will be dummies.
         bundle_required: bool,
     },
-    /// A coinbase bundle disables nonzero-valued Orchard spends, and is built with
-    /// `Flags::from_parts(false, true, default_cross_address_enabled(pool_restrictions))`:
-    /// spends disabled, outputs enabled, and cross-address transfers enabled if
-    /// possible for this bundle's pool restrictions. No padding is performed.
+    /// A coinbase bundle performs no padding and requires the bundle's flags to disable spends.
     ///
-    /// Since coinbase transactions have `enableSpends = 0`, every spend must be a
-    /// dummy. Coinbase transactions are not otherwise any different wrt cross-address
-    /// restrictions from other transactions that have dummy inputs. For simplicity, we
-    /// therefore set `enableCrossAddress` in the same way we would for a non-coinbase
-    /// transaction (which is allowed by the consensus rules).
+    /// Since coinbase transactions have `enableSpends = 0`, every spend must be a dummy. Coinbase
+    /// transactions are not otherwise any different wrt cross-address restrictions from other
+    /// transactions that have dummy inputs.
     Coinbase,
 }
 
 impl BundleType {
-    /// The default bundle type enables spends and outputs, and does not require a bundle to be
-    /// produced if no spends or outputs have been added to the bundle. The builder defaults the
-    /// cross-address bit to the least-restrictive value that the consensus rules implied
-    /// by the bundle's pool restrictions will permit: enabled, unless those rules mandate
-    /// the restriction.
+    /// The default bundle type: a transactional bundle that is not required to be produced if no
+    /// spends or outputs have been added.
     pub const DEFAULT: BundleType = BundleType::Transactional {
-        spends_enabled: true,
-        outputs_enabled: true,
         bundle_required: false,
     };
 
-    /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
-    /// builder will prevent any spends or outputs from being added.
-    pub const DISABLED: BundleType = BundleType::Transactional {
-        spends_enabled: false,
-        outputs_enabled: false,
-        bundle_required: false,
-    };
-
-    /// Returns the number of logical actions that builder will produce in constructing a bundle
-    /// of this type, given the specified numbers of spends and outputs.
+    /// Returns the number of logical actions that the builder will produce in constructing a bundle
+    /// of this type with the given `flags`, given the specified numbers of spends and outputs.
     ///
     /// In the current implementation, for a bundle (regardless of type) that disables
     /// cross-address transfers, a requested spend and a requested output do not share an
@@ -95,27 +76,22 @@ impl BundleType {
     /// count.
     ///
     /// Returns an error if the specified number of spends and outputs is incompatible with
-    /// this bundle type.
+    /// this bundle type and flags.
     ///
     /// [ZIP 317]: https://zips.z.cash/zip-0317
     pub fn num_actions(
         &self,
+        flags: Flags,
         num_spends: usize,
         num_outputs: usize,
-        pool_restrictions: BundlePoolRestrictions,
     ) -> Result<usize, &'static str> {
         match self {
-            BundleType::Transactional {
-                spends_enabled,
-                outputs_enabled,
-                bundle_required,
-            } => {
-                let cross_address_enabled = default_cross_address_enabled(pool_restrictions);
+            BundleType::Transactional { bundle_required } => {
                 // When cross-address transfers are disabled, every action's output is
                 // addressed to the note it spends. For this implementation, a requested
                 // spend and a requested output never share an action: each is paired with
                 // a fabricated zero-valued counterpart instead.
-                let num_requested_actions = if !cross_address_enabled {
+                let num_requested_actions = if !flags.cross_address_enabled() {
                     num_spends
                         .checked_add(num_outputs)
                         .ok_or("num_spends + num_outputs overflowed")?
@@ -123,9 +99,9 @@ impl BundleType {
                     core::cmp::max(num_spends, num_outputs)
                 };
 
-                if !*spends_enabled && num_spends > 0 {
+                if !flags.spends_enabled() && num_spends > 0 {
                     Err("Spends are disabled, so num_spends must be zero")
-                } else if !*outputs_enabled && num_outputs > 0 {
+                } else if !flags.outputs_enabled() && num_outputs > 0 {
                     Err("Outputs are disabled, so num_outputs must be zero")
                 } else {
                     Ok(if *bundle_required || num_requested_actions > 0 {
@@ -144,42 +120,6 @@ impl BundleType {
             }
         }
     }
-
-    /// Returns the set of flags that will be used for bundle construction under
-    /// `pool_restrictions`.
-    pub fn flags(&self, pool_restrictions: BundlePoolRestrictions) -> Flags {
-        match self {
-            BundleType::Transactional {
-                spends_enabled,
-                outputs_enabled,
-                ..
-            } => Flags::from_parts(
-                *spends_enabled,
-                *outputs_enabled,
-                default_cross_address_enabled(pool_restrictions),
-            ),
-            BundleType::Coinbase => Flags::from_parts(
-                false,
-                true,
-                default_cross_address_enabled(pool_restrictions),
-            ),
-        }
-    }
-}
-
-/// Decide, for a bundle targeting the consensus rules implied by `pool_restrictions`,
-/// whether to enable cross-address transfers according to the least restrictive policy
-/// mandated by those rules (see [`BundlePoolRestrictions::requires_cross_address_restriction`]).
-///
-/// It is builder policy to enable cross-address transfers whenever `pool_restrictions`
-/// implies it is possible; a future builder could expose the choice in that case.
-///
-/// Note: whether cross-address transfers are enabled should not be confused
-/// with the value of bit 2 of the bundle's `flags` field. In v5 transactions, bit 2 of
-/// `flagsOrchard` is still reserved and is always 0; it is not the `enableCrossAddress`
-/// flag in that case, regardless of epoch.
-fn default_cross_address_enabled(pool_restrictions: BundlePoolRestrictions) -> bool {
-    !pool_restrictions.requires_cross_address_restriction()
 }
 
 /// An error type for the kinds of errors that can occur during bundle construction.
@@ -211,8 +151,12 @@ pub enum BuildError {
     /// output is not a wallet-controlled change output.
     CrossAddressDisabled,
     /// A supplied output or change output has a note version that is
-    /// inconsistent with the bundle pool restrictions.
+    /// inconsistent with the bundle version.
     InvalidNoteVersion,
+    /// The builder's flags cannot be encoded under its [`BundleVersion`].
+    UnrepresentableFlags,
+    /// A coinbase bundle was requested with flags that enable spends.
+    CoinbaseSpendsEnabled,
 }
 
 impl fmt::Display for BuildError {
@@ -247,8 +191,14 @@ impl fmt::Display for BuildError {
             ),
             InvalidNoteVersion => f.write_str(
                 "A supplied output or change output has a note version that does not match \
-                 the bundle pool restrictions.",
+                 the bundle version.",
             ),
+            UnrepresentableFlags => f.write_str(
+                "The requested flags cannot be encoded under the requested bundle version.",
+            ),
+            CoinbaseSpendsEnabled => {
+                f.write_str("A coinbase bundle was requested with flags that enable spends.")
+            }
         }
     }
 }
@@ -772,46 +722,64 @@ impl BundleMetadata {
 /// to receive funds.
 #[derive(Debug)]
 pub struct Builder {
+    bundle_type: BundleType,
+    bundle_version: BundleVersion,
+    flags: Flags,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     changes: Vec<ChangeInfo>,
-    pool_restrictions: BundlePoolRestrictions,
-    bundle_type: BundleType,
     anchor: Anchor,
 }
 
 impl Builder {
-    /// Constructs a new empty builder for an Orchard bundle following `pool_restrictions`.
+    /// Constructs a new empty builder for an Orchard bundle following `bundle_version` with the
+    /// given `flags`.
     ///
-    /// `pool_restrictions` is the information needed to determine restrictions on bundles
-    /// created by this builder: its shielded pool (Orchard or Ironwood) and the epoch range
-    /// (pre-NU6.2, NU6.2 only, NU6.3 onward) that it targets. It influences the circuit version,
-    /// the flag-byte format, and the cross-address policy, and is threaded into building,
-    /// committing, and parsing. See [`BundlePoolRestrictions`].
+    /// `bundle_version` is the [`ValuePool`](crate::ValuePool) (Orchard or Ironwood) and
+    /// [`ProtocolVersion`](crate::ProtocolVersion) of the bundles created by this builder. It
+    /// influences the circuit version, the flag-byte format, and the cross-address policy, and is
+    /// threaded into building, committing, and parsing. See [`BundleVersion`].
+    ///
+    /// `flags` are the bundle's flags; [`BundleVersion::default_flags`] provides a suitable default
+    /// that a caller may restrict further.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::UnrepresentableFlags`] if `flags` cannot be encoded under
+    /// `bundle_version`, or [`BuildError::CoinbaseSpendsEnabled`] if `bundle_type` is
+    /// [`BundleType::Coinbase`] but `flags` enable spends.
     pub fn new(
-        pool_restrictions: BundlePoolRestrictions,
         bundle_type: BundleType,
+        bundle_version: BundleVersion,
+        flags: Flags,
         anchor: Anchor,
-    ) -> Self {
-        Builder {
+    ) -> Result<Self, BuildError> {
+        if flags.to_byte(bundle_version).is_none() {
+            return Err(BuildError::UnrepresentableFlags);
+        }
+        if matches!(bundle_type, BundleType::Coinbase) && flags.spends_enabled() {
+            return Err(BuildError::CoinbaseSpendsEnabled);
+        }
+        Ok(Builder {
+            bundle_type,
+            bundle_version,
+            flags,
             spends: vec![],
             outputs: vec![],
             changes: vec![],
-            pool_restrictions,
-            bundle_type,
             anchor,
-        }
+        })
     }
 
-    /// Returns the note version associated with this builder's pool restrictions.
+    /// Returns the note version associated with this builder's bundle version.
     fn note_version(&self) -> NoteVersion {
-        self.pool_restrictions.note_version()
+        self.bundle_version.note_version()
     }
 
     /// Adds a note to be spent in this transaction.
     ///
     /// - `note` is a spendable note, obtained by trial-decrypting an [`Action`]
-    ///   under the bundle's pool restrictions.
+    ///   under the bundle's version.
     /// - `merkle_path` can be obtained using the [`incrementalmerkletree`] crate
     ///   instantiated with [`MerkleHashOrchard`].
     ///
@@ -832,8 +800,7 @@ impl Builder {
         note: Note,
         merkle_path: MerklePath,
     ) -> Result<(), SpendError> {
-        let flags = self.bundle_type.flags(self.pool_restrictions);
-        if !flags.spends_enabled() {
+        if !self.flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
 
@@ -861,11 +828,10 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        let flags = self.bundle_type.flags(self.pool_restrictions);
-        if !flags.outputs_enabled() {
+        if !self.flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
-        if !flags.cross_address_enabled() {
+        if !self.flags.cross_address_enabled() {
             return Err(OutputError::CrossAddressDisabled);
         }
 
@@ -911,15 +877,14 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        let flags = self.bundle_type.flags(self.pool_restrictions);
-        if !flags.outputs_enabled() {
+        if !self.flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
         // In a bundle that disables cross-address transfers, every change output pairs with
         // a fabricated wallet-controlled spend, so spends must be enabled. (In a bundle that
         // permits cross-address transfers, a change output is just an owned output and does
         // not require spends.)
-        if !flags.cross_address_enabled() && !flags.spends_enabled() {
+        if !self.flags.cross_address_enabled() && !self.flags.spends_enabled() {
             return Err(OutputError::SpendsDisabled);
         }
 
@@ -979,12 +944,12 @@ impl Builder {
     }
 
     /// Builds a bundle containing the given spent notes and outputs, under this builder's
-    /// [`BundlePoolRestrictions`].
+    /// [`BundleVersion`].
     ///
     /// The returned bundle will have no proof or signatures; these can be applied with
     /// [`Bundle::create_proof`] and [`Bundle::apply_signatures`] respectively. The proof must be
     /// created with a [`ProvingKey`] for the circuit version consistent with the builder's
-    /// pool restrictions.
+    /// bundle version.
     #[cfg(feature = "circuit")]
     pub fn build<V: TryFrom<i64>>(
         self,
@@ -992,9 +957,10 @@ impl Builder {
     ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
         bundle(
             rng,
-            self.pool_restrictions,
-            self.anchor,
             self.bundle_type,
+            self.bundle_version,
+            self.flags,
+            self.anchor,
             self.spends,
             self.outputs,
             self.changes,
@@ -1009,7 +975,8 @@ impl Builder {
     ) -> Result<(crate::pczt::Bundle, BundleMetadata), BuildError> {
         build_bundle(
             rng,
-            self.pool_restrictions,
+            self.bundle_version,
+            self.flags,
             self.anchor,
             self.bundle_type,
             self.spends,
@@ -1026,6 +993,7 @@ impl Builder {
                     crate::pczt::Bundle {
                         actions,
                         flags,
+                        bundle_version: self.bundle_version,
                         value_sum,
                         anchor: self.anchor,
                         zkproof: None,
@@ -1039,25 +1007,33 @@ impl Builder {
 }
 
 /// Builds a bundle containing the given spent notes, outputs, and wallet-controlled change
-/// outputs, under the given [`BundlePoolRestrictions`] (which selects the Action circuit
+/// outputs, under the given [`BundleVersion`] (which selects the Action circuit
 /// version, the flag-byte format, and the cross-address policy).
 ///
 /// In a bundle that disables cross-address transfers, `outputs` must be empty (every output
 /// is addressed to the note it spends); retained value must be supplied as `changes`.
+///
+/// # Errors
+///
+/// Returns [`BuildError::UnrepresentableFlags`] if `flags` cannot be encoded under
+/// `bundle_version`, or [`BuildError::CoinbaseSpendsEnabled`] if `bundle_type` is
+/// [`BundleType::Coinbase`] but `flags` enable spends.
+#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "circuit")]
 pub fn bundle<V: TryFrom<i64>>(
     rng: impl RngCore,
-    pool_restrictions: BundlePoolRestrictions,
-    anchor: Anchor,
     bundle_type: BundleType,
+    bundle_version: BundleVersion,
+    flags: Flags,
+    anchor: Anchor,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     changes: Vec<ChangeInfo>,
 ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
-    let circuit_version = pool_restrictions.circuit_version();
     build_bundle(
         rng,
-        pool_restrictions,
+        bundle_version,
+        flags,
         anchor,
         bundle_type,
         spends,
@@ -1071,7 +1047,7 @@ pub fn bundle<V: TryFrom<i64>>(
                 bundle_meta,
                 rng,
                 anchor,
-                circuit_version,
+                bundle_version,
             )
         },
     )
@@ -1085,8 +1061,9 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
     bundle_meta: BundleMetadata,
     mut rng: R,
     anchor: Anchor,
-    circuit_version: OrchardCircuitVersion,
+    bundle_version: BundleVersion,
 ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
+    let circuit_version = bundle_version.circuit_version();
     let result_value_balance: V = i64::try_from(value_balance)
         .map_err(BuildError::ValueSum)
         .and_then(|i| {
@@ -1126,6 +1103,7 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
                     },
                     sigs: Unauthorized { bsk },
                 },
+                bundle_version,
             ),
             bundle_meta,
         )
@@ -1135,7 +1113,8 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
 #[allow(clippy::too_many_arguments)]
 fn build_bundle<B, R: RngCore>(
     mut rng: R,
-    pool_restrictions: BundlePoolRestrictions,
+    bundle_version: BundleVersion,
+    flags: Flags,
     anchor: Anchor,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
@@ -1143,8 +1122,18 @@ fn build_bundle<B, R: RngCore>(
     changes: Vec<ChangeInfo>,
     finisher: impl FnOnce(Vec<ActionInfo>, Flags, ValueSum, BundleMetadata, R) -> Result<B, BuildError>,
 ) -> Result<B, BuildError> {
-    let flags = bundle_type.flags(pool_restrictions);
-    let note_version = pool_restrictions.note_version();
+    // Every build path funnels through here (the free `bundle` function, `Builder::build`, and
+    // `Builder::build_for_pczt`), so validate the version-dependent invariants here rather than
+    // trusting each caller: the flags must be encodable under the bundle version, and a coinbase
+    // bundle must not enable spends. `Builder::new` also enforces both up front, for fail-fast
+    // construction.
+    if flags.to_byte(bundle_version).is_none() {
+        return Err(BuildError::UnrepresentableFlags);
+    }
+    if matches!(bundle_type, BundleType::Coinbase) && flags.spends_enabled() {
+        return Err(BuildError::CoinbaseSpendsEnabled);
+    }
+    let note_version = bundle_version.note_version();
 
     let num_requested_spends = spends.len();
     if !flags.spends_enabled() && num_requested_spends > 0 {
@@ -1185,11 +1174,7 @@ fn build_bundle<B, R: RngCore>(
     }
 
     let num_actions = bundle_type
-        .num_actions(
-            num_requested_spends,
-            num_requested_outputs,
-            pool_restrictions,
-        )
+        .num_actions(flags, num_requested_spends, num_requested_outputs)
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
     let (pre_actions, bundle_meta) = if !flags.cross_address_enabled() {
@@ -1686,7 +1671,7 @@ pub mod testing {
 
     use crate::{
         address::testing::arb_address,
-        bundle::{Authorized, Bundle, BundlePoolRestrictions},
+        bundle::{Authorized, Bundle, BundleVersion},
         circuit::{OrchardCircuitVersion, ProvingKey},
         keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
         note::testing::arb_note,
@@ -1718,8 +1703,14 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
-            let mut builder = Builder::new(pool_restrictions, BundleType::DEFAULT, self.anchor);
+            let bundle_version = BundleVersion::orchard_v2();
+            let mut builder = Builder::new(
+                BundleType::DEFAULT,
+                bundle_version,
+                bundle_version.default_flags(),
+                self.anchor,
+            )
+            .unwrap();
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -1824,7 +1815,7 @@ mod tests {
     };
     use crate::{
         builder::BundleType,
-        bundle::{Authorized, Bundle, BundlePoolRestrictions},
+        bundle::{Authorized, Bundle, BundleVersion, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -1849,61 +1840,76 @@ mod tests {
         (note, merkle_path, anchor)
     }
 
-    fn restricted_bundle_type(bundle_required: bool) -> BundleType {
-        BundleType::Transactional {
-            spends_enabled: true,
-            outputs_enabled: true,
-            bundle_required,
-        }
+    fn transactional(bundle_required: bool) -> BundleType {
+        BundleType::Transactional { bundle_required }
     }
 
     #[test]
-    fn transactional_cross_address_defaults_to_least_restrictive() {
-        let bundle_type = BundleType::Transactional {
-            spends_enabled: true,
-            outputs_enabled: true,
-            bundle_required: false,
-        };
-
-        // The builder defaults to the least-restrictive value consensus permits. Pool restrictions
-        // leave the choice free everywhere except Orchard post-NU6.3, so the default is enabled
-        // for every variant but that one.
-
-        // Orchard pre-NU6.3: free, so the default is enabled.
-        for pool_restrictions in [
-            BundlePoolRestrictions::OrchardPreNu6_2,
-            BundlePoolRestrictions::OrchardNu6_2Only,
+    fn default_flags_match_pool_policy() {
+        // The builder's default flags enable spends and outputs and leave cross-address transfers
+        // as permissive as consensus allows. The bundle version leaves the cross-address choice free
+        // everywhere except Orchard from NU6.3 onward, where it is mandatorily disabled.
+        for bundle_version in [
+            BundleVersion::orchard_insecure_v1(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::ironwood_v3(),
         ] {
-            assert!(bundle_type.flags(pool_restrictions).cross_address_enabled());
+            let flags = bundle_version.default_flags();
+            assert!(flags.spends_enabled());
+            assert!(flags.outputs_enabled());
+            assert!(flags.cross_address_enabled());
         }
 
-        // Orchard post-NU6.3: consensus mandates the restriction, so the default is disabled.
-        assert!(!bundle_type
-            .flags(BundlePoolRestrictions::OrchardNu6_3Onward)
-            .cross_address_enabled());
+        // Orchard from NU6.3 onward mandates the cross-address restriction.
+        let flags = BundleVersion::orchard_v3().default_flags();
+        assert!(flags.spends_enabled());
+        assert!(flags.outputs_enabled());
+        assert!(!flags.cross_address_enabled());
 
-        // Ironwood post-NU6.3: free, so the default is enabled (currently built unrestricted).
-        assert!(bundle_type
-            .flags(BundlePoolRestrictions::IronwoodNu6_3Onward)
-            .cross_address_enabled());
+        // The default flag bytes follow from the settings above.
+        assert_eq!(
+            BundleVersion::orchard_v3()
+                .default_flags()
+                .to_byte(BundleVersion::orchard_v3()),
+            Some(0b011),
+        );
+        assert_eq!(
+            BundleVersion::ironwood_v3()
+                .default_flags()
+                .to_byte(BundleVersion::ironwood_v3()),
+            Some(0b111),
+        );
     }
 
-    /// Creates a builder with the given `pool_restrictions` and `bundle_type` over the
+    /// Creates a builder with the given `bundle_version` and `bundle_type` over the
     /// empty-tree anchor, with a single 5000-zat output to a freshly derived external address.
     fn output_only_builder(
         rng: &mut impl RngCore,
-        pool_restrictions: BundlePoolRestrictions,
+        bundle_version: BundleVersion,
         bundle_type: BundleType,
     ) -> Builder {
         let sk = SpendingKey::random(rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
+        // Coinbase bundles must disable spends; transactional bundles use the version's defaults.
+        let flags = if matches!(bundle_type, BundleType::Coinbase) {
+            Flags::from_parts(
+                false,
+                true,
+                bundle_version.permits_cross_address_transfers(),
+            )
+        } else {
+            bundle_version.default_flags()
+        };
+
         let mut builder = Builder::new(
-            pool_restrictions,
             bundle_type,
+            bundle_version,
+            flags,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .expect("flags are valid for the bundle version");
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .expect("output-only builders accept ordinary outputs");
@@ -1915,11 +1921,8 @@ mod tests {
         let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
         let mut rng = OsRng;
 
-        let builder = output_only_builder(
-            &mut rng,
-            BundlePoolRestrictions::OrchardNu6_2Only,
-            BundleType::DEFAULT,
-        );
+        let builder =
+            output_only_builder(&mut rng, BundleVersion::orchard_v2(), BundleType::DEFAULT);
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);
 
@@ -1945,11 +1948,8 @@ mod tests {
         // has no Orchard bundle). So a post-NU6.3 coinbase bundle built by this crate must
         // be an Ironwood bundle. There the builder leaves cross-address enabled by default,
         // and therefore ordinary outputs build normally.
-        let builder = output_only_builder(
-            &mut rng,
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
-            BundleType::Coinbase,
-        );
+        let builder =
+            output_only_builder(&mut rng, BundleVersion::ironwood_v3(), BundleType::Coinbase);
 
         let (bundle, _) = builder
             .build::<i64>(&mut rng)
@@ -1963,38 +1963,71 @@ mod tests {
     }
 
     #[test]
-    fn coinbase_is_not_exceptional_for_cross_address() {
-        // Coinbase bundles always disable spends, but are otherwise no different wrt the
-        // cross-address restriction: they set `enableCrossAddress` exactly as a non-coinbase
-        // transaction would for the same pool restrictions.
-        for pr in [
-            BundlePoolRestrictions::OrchardPreNu6_2,
-            BundlePoolRestrictions::OrchardNu6_2Only,
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
-        ] {
-            let flags = BundleType::Coinbase.flags(pr);
-            assert!(!flags.spends_enabled());
-            assert!(flags.outputs_enabled());
-            assert_eq!(
-                flags.cross_address_enabled(),
-                !pr.requires_cross_address_restriction()
-            );
-        }
-        // Orchard post-NU6.3 mandates the restriction, so the coinbase flag byte has bit 2
-        // clear; Ironwood leaves the builder default (set).
-        assert_eq!(
-            BundleType::Coinbase
-                .flags(BundlePoolRestrictions::OrchardNu6_3Onward)
-                .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
-            Some(0b010)
+    fn coinbase_rejects_spends_enabled_flags() {
+        let anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+        let bundle_version = BundleVersion::ironwood_v3();
+
+        // A coinbase bundle must disable spends; the builder rejects spends-enabled flags at
+        // construction rather than silently producing an invalid bundle.
+        assert!(matches!(
+            Builder::new(
+                BundleType::Coinbase,
+                bundle_version,
+                bundle_version.default_flags(),
+                anchor,
+            ),
+            Err(BuildError::CoinbaseSpendsEnabled)
+        ));
+
+        // Spends-disabled flags are accepted.
+        assert!(Builder::new(
+            BundleType::Coinbase,
+            bundle_version,
+            Flags::from_parts(
+                false,
+                true,
+                bundle_version.permits_cross_address_transfers()
+            ),
+            anchor,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn free_bundle_rejects_coinbase_spends_enabled() {
+        let mut rng = OsRng;
+        let anchor: Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+        let bundle_version = BundleVersion::ironwood_v3();
+
+        // The coinbase-spends invariant is enforced on every build path, not just at
+        // `Builder::new`: a direct caller of the free `bundle` function cannot silently produce a
+        // coinbase bundle with `enableSpends` set.
+        let result = bundle::<i64>(
+            &mut rng,
+            BundleType::Coinbase,
+            bundle_version,
+            bundle_version.default_flags(), // spends enabled
+            anchor,
+            vec![],
+            vec![],
+            vec![],
         );
-        assert_eq!(
-            BundleType::Coinbase
-                .flags(BundlePoolRestrictions::IronwoodNu6_3Onward)
-                .to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward),
-            Some(0b110)
-        );
+        assert!(matches!(result, Err(BuildError::CoinbaseSpendsEnabled)));
+    }
+
+    #[test]
+    fn new_rejects_unrepresentable_flags() {
+        // Orchard from NU6.3 onward cannot encode cross-address-enabled flags.
+        let bundle_version = BundleVersion::orchard_v3();
+        assert!(matches!(
+            Builder::new(
+                BundleType::DEFAULT,
+                bundle_version,
+                Flags::ENABLED,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+            ),
+            Err(BuildError::UnrepresentableFlags)
+        ));
     }
 
     #[test]
@@ -2006,15 +2039,21 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let bundle_version = BundleVersion::orchard_v3();
         let (note, merkle_path, anchor) = note_with_path(
             &mut rng,
             spend_recipient,
             NoteValue::from_raw(15_000),
-            pool_restrictions.note_version(),
+            bundle_version.note_version(),
         );
 
-        let mut builder = Builder::new(pool_restrictions, restricted_bundle_type(false), anchor);
+        let mut builder = Builder::new(
+            transactional(false),
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         assert_eq!(
             builder.add_output(
                 None,
@@ -2107,10 +2146,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::Internal);
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            restricted_bundle_type(true),
+            transactional(true),
+            BundleVersion::orchard_v3(),
+            BundleVersion::orchard_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
 
         builder
             .add_change_output(fvk, None, recipient, NoteValue::ZERO, [0u8; 512])
@@ -2144,20 +2185,21 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let bundle_version = BundleVersion::orchard_v3();
 
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
-                pool_restrictions,
+                transactional(false),
+                bundle_version,
+                bundle_version.default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-                restricted_bundle_type(false),
                 vec![],
                 vec![OutputInfo::new(
                     None,
                     recipient,
                     NoteValue::from_raw(5_000),
-                    pool_restrictions.note_version(),
+                    bundle_version.note_version(),
                     [0u8; 512],
                 )],
                 vec![],
@@ -2170,15 +2212,16 @@ mod tests {
             None,
             recipient,
             NoteValue::from_raw(5_000),
-            pool_restrictions.note_version(),
+            bundle_version.note_version(),
             [0u8; 512],
         )
         .unwrap();
         let (bundle, bundle_meta) = bundle::<i64>(
             &mut rng,
-            pool_restrictions,
+            transactional(false),
+            bundle_version,
+            bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-            restricted_bundle_type(false),
             vec![],
             vec![],
             vec![change_output],
@@ -2196,14 +2239,14 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::Internal);
-        let bundle_type = BundleType::Transactional {
-            spends_enabled: false,
-            outputs_enabled: true,
-            bundle_required: false,
-        };
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
-        // Under OrchardNu6_3Onward this is spends-disabled and cross-address-disabled.
-        let flags = bundle_type.flags(pool_restrictions);
+        let bundle_type = transactional(false);
+        let bundle_version = BundleVersion::orchard_v3();
+        // Under Orchard from NU6.3 onward this is spends-disabled and cross-address-disabled.
+        let flags = Flags::from_parts(
+            false,
+            true,
+            bundle_version.permits_cross_address_transfers(),
+        );
         assert!(!flags.spends_enabled());
         assert!(flags.outputs_enabled());
         assert!(!flags.cross_address_enabled());
@@ -2213,7 +2256,7 @@ mod tests {
             None,
             recipient,
             NoteValue::from_raw(5_000),
-            pool_restrictions.note_version(),
+            bundle_version.note_version(),
             [0u8; 512],
         )
         .unwrap();
@@ -2221,9 +2264,10 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
-                pool_restrictions,
-                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 bundle_type,
+                bundle_version,
+                flags,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 vec![],
                 vec![],
                 vec![change_output],
@@ -2238,7 +2282,7 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
-        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let bundle_version = BundleVersion::ironwood_v3();
         let mismatched_note_version = NoteVersion::V2;
 
         let (note, merkle_path, anchor) = note_with_path(
@@ -2247,7 +2291,13 @@ mod tests {
             NoteValue::from_raw(15_000),
             mismatched_note_version,
         );
-        let mut builder = Builder::new(pool_restrictions, BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
 
         let (note, merkle_path, anchor) = note_with_path(
@@ -2259,9 +2309,10 @@ mod tests {
         let spend = SpendInfo::new(fvk.clone(), note, merkle_path).unwrap();
         assert!(bundle::<i64>(
             &mut rng,
-            pool_restrictions,
-            anchor,
             BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
             vec![spend],
             vec![],
             vec![],
@@ -2278,9 +2329,10 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
-                pool_restrictions,
-                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 BundleType::DEFAULT,
+                bundle_version,
+                bundle_version.default_flags(),
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 vec![],
                 vec![output],
                 vec![],
@@ -2300,9 +2352,10 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
-                pool_restrictions,
-                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 BundleType::DEFAULT,
+                bundle_version,
+                bundle_version.default_flags(),
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 vec![],
                 vec![],
                 vec![change],
@@ -2318,16 +2371,14 @@ mod tests {
         let owned = fvk.address_at(0u32, Scope::Internal);
         let foreign =
             FullViewingKey::from(&SpendingKey::random(&mut rng)).address_at(0u32, Scope::External);
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
+        let bundle_version = BundleVersion::orchard_v2();
         let mut builder = Builder::new(
-            pool_restrictions,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
 
         // Even in a bundle that permits cross-address transfers, a change output's ownership
         // is validated eagerly (the fvk is no longer dead weight).
@@ -2363,15 +2414,18 @@ mod tests {
         // Orchard actions at all post NU6.3. So the case unsupported by the builder would only
         // happen by voluntarily disabling `enableSpends` and/or `enableCrossAddress` when
         // consensus does not require it.
+        let bundle_version = BundleVersion::orchard_v3();
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            BundleType::Transactional {
-                spends_enabled: false,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            transactional(false),
+            bundle_version,
+            Flags::from_parts(
+                false,
+                true,
+                bundle_version.permits_cross_address_transfers(),
+            ),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             builder.add_change_output(fvk, None, recipient, NoteValue::from_raw(5_000), [0u8; 512]),
@@ -2388,15 +2442,21 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let bundle_version = BundleVersion::orchard_v3();
         let (note, merkle_path, anchor) = note_with_path(
             &mut rng,
             spend_recipient,
             NoteValue::from_raw(15_000),
-            pool_restrictions.note_version(),
+            bundle_version.note_version(),
         );
 
-        let mut builder = Builder::new(pool_restrictions, restricted_bundle_type(false), anchor);
+        let mut builder = Builder::new(
+            transactional(false),
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(
@@ -2433,10 +2493,12 @@ mod tests {
         // A change-only bundle: the padding dummy spend is signed during `prepare`, so
         // a single `sign` call with the change key completes the actions.
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            restricted_bundle_type(false),
+            transactional(false),
+            BundleVersion::orchard_v3(),
+            BundleVersion::orchard_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_change_output(
                 change_fvk,
@@ -2470,15 +2532,21 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
+        let bundle_version = BundleVersion::orchard_v3();
         let (note, merkle_path, anchor) = note_with_path(
             &mut rng,
             spend_recipient,
             NoteValue::from_raw(15_000),
-            pool_restrictions.note_version(),
+            bundle_version.note_version(),
         );
 
-        let mut builder = Builder::new(pool_restrictions, restricted_bundle_type(false), anchor);
+        let mut builder = Builder::new(
+            transactional(false),
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(
@@ -2516,18 +2584,20 @@ mod tests {
 
     #[test]
     fn create_proof_supports_cross_address_disabled_only_for_post_nu6_3() {
-        // A cross-address-disabled bundle can only be built under `OrchardNu6_3Onward`
-        // (`BundlePoolRestrictions` owns the cross-address policy), which builds post-NU6.3
+        // A cross-address-disabled bundle can only be built under `BundleVersion::orchard_v3()`
+        // (`BundleVersion` owns the cross-address policy), which builds post-NU6.3
         // circuits. Proving therefore requires a matching post-NU6.3 key; a pre-NU6.3 key
         // is rejected as a circuit-version mismatch. The lower-level interlock that rejects
         // a restricted *instance* under an unsupporting key is covered by
         // `circuit::tests::restricted_statement_requires_supporting_key`.
         let build_restricted = |rng: &mut OsRng| {
             Builder::new(
-                BundlePoolRestrictions::OrchardNu6_3Onward,
-                restricted_bundle_type(true),
+                transactional(true),
+                BundleVersion::orchard_v3(),
+                BundleVersion::orchard_v3().default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
             )
+            .unwrap()
             .build::<i64>(rng)
             .unwrap()
             .unwrap()

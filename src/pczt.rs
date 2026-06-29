@@ -11,7 +11,7 @@ use zcash_note_encryption::OutgoingCipherKey;
 use zip32::ChildIndex;
 
 use crate::{
-    bundle::Flags,
+    bundle::{BundleVersion, Flags},
     keys::{FullViewingKey, SpendingKey},
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, Binding, SpendAuth},
@@ -64,6 +64,13 @@ pub struct Bundle {
     /// are consistent with these flags (i.e. are dummies as appropriate).
     pub(crate) flags: Flags,
 
+    /// The value pool and protocol version this bundle is encoded under.
+    ///
+    /// This is set by the Creator, and determines how the bundle's flags are interpreted and
+    /// which [`crate::Bundle`] the Transaction Extractor produces. The flags are always
+    /// consistent with this version (by parsing or construction).
+    pub(crate) bundle_version: BundleVersion,
+
     /// The sum of the values of all `actions`.
     ///
     /// This is initialized by the Creator, and updated by the Constructor as spends or
@@ -97,6 +104,16 @@ impl Bundle {
     /// fields of the bundle dependent on them, such as `value_sum` and `bsk`.
     pub fn actions_mut(&mut self) -> &mut [Action] {
         &mut self.actions
+    }
+
+    /// Returns the byte encoding of this bundle's flags under its own [`BundleVersion`].
+    ///
+    /// This is infallible: a PCZT bundle is only ever constructed (by parsing or by the builder)
+    /// with flags that are representable under its version.
+    pub fn flag_byte(&self) -> u8 {
+        self.flags
+            .to_byte(self.bundle_version)
+            .expect("flags are validated against the bundle version at construction")
     }
 }
 
@@ -357,7 +374,7 @@ mod tests {
 
     use crate::{
         builder::{Builder, BundleMetadata, BundleType},
-        bundle::{BundlePoolRestrictions, Flags},
+        bundle::{BundleVersion, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -392,8 +409,8 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_3Onward;
-        let note_version = pool_restrictions.note_version();
+        let bundle_version = BundleVersion::orchard_v3();
+        let note_version = bundle_version.note_version();
 
         let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
         let note = Note::new(
@@ -407,14 +424,12 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
-            pool_restrictions,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             anchor,
-        );
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(
@@ -442,10 +457,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_2Only,
             BundleType::DEFAULT,
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v2().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -461,10 +478,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
         let mut builder = Builder::new(
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
             BundleType::DEFAULT,
+            BundleVersion::ironwood_v3(),
+            BundleVersion::ironwood_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -478,8 +497,8 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
-        let pk = ProvingKey::build(pool_restrictions.circuit_version());
+        let bundle_version = BundleVersion::orchard_v2();
+        let pk = ProvingKey::build(bundle_version.circuit_version());
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -488,10 +507,12 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
-            pool_restrictions,
             BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -547,10 +568,12 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
             BundleType::DEFAULT,
+            BundleVersion::ironwood_v3(),
+            BundleVersion::ironwood_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -638,8 +661,14 @@ mod tests {
             (root.into(), merkle_path)
         };
 
-        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
-        let mut builder = Builder::new(pool_restrictions, BundleType::DEFAULT, anchor);
+        let bundle_version = BundleVersion::ironwood_v3();
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -677,8 +706,8 @@ mod tests {
 
     #[test]
     fn shielded_bundle() {
-        let pool_restrictions = BundlePoolRestrictions::OrchardNu6_2Only;
-        let pk = ProvingKey::build(pool_restrictions.circuit_version());
+        let bundle_version = BundleVersion::orchard_v2();
+        let pk = ProvingKey::build(bundle_version.circuit_version());
         let mut rng = OsRng;
 
         // Pretend we derived the spending key via ZIP 32.
@@ -698,7 +727,7 @@ mod tests {
                     value,
                     rho,
                     RandomSeed::random(&mut rng, &rho),
-                    pool_restrictions.note_version(),
+                    bundle_version.note_version(),
                 )
                 .into_option()
                 {
@@ -732,11 +761,14 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
+        let bundle_version = BundleVersion::orchard_v2();
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_2Only,
             BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             anchor,
-        );
+        )
+        .unwrap();
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -852,15 +884,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_uses_pool_restrictions_for_flags() {
+    fn parse_uses_bundle_version_for_flags() {
         let anchor: crate::Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
 
         // Bit 2 is reserved pre-NU6.3, and rejected for Orchard post-NU6.3 (which mandates
         // the cross-address restriction); only Ironwood may set it.
         for pr in [
-            BundlePoolRestrictions::OrchardPreNu6_2,
-            BundlePoolRestrictions::OrchardNu6_2Only,
-            BundlePoolRestrictions::OrchardNu6_3Onward,
+            BundleVersion::orchard_insecure_v1(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
         ] {
             assert!(matches!(
                 super::Bundle::parse(
@@ -879,7 +911,7 @@ mod tests {
         let parsed = super::Bundle::parse(
             vec![],
             0b0000_0100,
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
+            BundleVersion::ironwood_v3(),
             (0, false),
             anchor.to_bytes(),
             None,
@@ -889,22 +921,18 @@ mod tests {
 
         assert!(parsed.flags().cross_address_enabled());
         assert_eq!(
-            parsed
-                .flags()
-                .to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward),
+            parsed.flags().to_byte(BundleVersion::ironwood_v3()),
             Some(0b0000_0100)
         );
         assert_eq!(
-            parsed
-                .flags()
-                .to_byte(BundlePoolRestrictions::OrchardNu6_2Only),
+            parsed.flags().to_byte(BundleVersion::orchard_v2()),
             Some(0b0000_0000)
         );
 
         let restricted = super::Bundle::parse(
             vec![],
             0b0000_0011,
-            BundlePoolRestrictions::OrchardNu6_3Onward,
+            BundleVersion::orchard_v3(),
             (0, false),
             anchor.to_bytes(),
             None,
@@ -914,31 +942,27 @@ mod tests {
 
         assert!(!restricted.flags().cross_address_enabled());
         assert_eq!(
-            restricted
-                .flags()
-                .to_byte(BundlePoolRestrictions::OrchardNu6_3Onward),
+            restricted.flags().to_byte(BundleVersion::orchard_v3()),
             Some(0b0000_0011)
         );
         assert_eq!(
-            restricted
-                .flags()
-                .to_byte(BundlePoolRestrictions::OrchardNu6_2Only),
+            restricted.flags().to_byte(BundleVersion::orchard_v2()),
             None
         );
     }
 
     #[test]
     fn parse_preserves_note_versions() {
-        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let bundle_version = BundleVersion::ironwood_v3();
         let pczt_bundle = ironwood_output_pczt_bundle(OsRng);
-        let flags = pczt_bundle.flags.to_byte(pool_restrictions).unwrap();
+        let flags = pczt_bundle.flags.to_byte(bundle_version).unwrap();
         let anchor = pczt_bundle.anchor.to_bytes();
         let actions = pczt_bundle.actions;
 
         let parsed = super::Bundle::parse(
             actions,
             flags,
-            pool_restrictions,
+            bundle_version,
             (5000, true),
             anchor,
             None,
@@ -953,9 +977,9 @@ mod tests {
 
     #[test]
     fn parse_rejects_output_note_version_mismatch() {
-        let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+        let bundle_version = BundleVersion::ironwood_v3();
         let pczt_bundle = ironwood_output_pczt_bundle(OsRng);
-        let flags = pczt_bundle.flags.to_byte(pool_restrictions).unwrap();
+        let flags = pczt_bundle.flags.to_byte(bundle_version).unwrap();
         let anchor = pczt_bundle.anchor.to_bytes();
         let mut actions = pczt_bundle.actions;
         actions[0].output.note_version = NoteVersion::V2;
@@ -964,7 +988,7 @@ mod tests {
             super::Bundle::parse(
                 actions,
                 flags,
-                pool_restrictions,
+                bundle_version,
                 (5000, true),
                 anchor,
                 None,
@@ -1083,15 +1107,14 @@ mod tests {
         let merkle_path = MerklePath::dummy(&mut rng);
         let anchor = merkle_path.root(note.commitment().into());
 
+        let bundle_version = BundleVersion::orchard_v3();
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             anchor,
-        );
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
 
         let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
@@ -1182,6 +1205,10 @@ mod tests {
                 pczt_bundle.actions.len()
             )
         ]));
+        // Cross-address-disabled flags are only representable from NU6.3 onward, and the Orchard
+        // pool at NU6.3 mandates the restriction; that is the version under which an extracted
+        // bundle can legitimately carry these flags.
+        pczt_bundle.bundle_version = BundleVersion::orchard_v3();
         pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
 
         let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();

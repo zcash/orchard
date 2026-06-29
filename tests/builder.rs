@@ -3,7 +3,7 @@
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::{Authorized, BatchValidator, BundlePoolRestrictions, TxVersion},
+    bundle::{Authorized, BatchValidator, BundleVersion, Flags, TxVersion},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::{ExtractedNoteCommitment, NoteVersion},
@@ -40,15 +40,10 @@ fn single_leaf_witness(cmx: &ExtractedNoteCommitment) -> (MerkleHashOrchard, Mer
     (root, merkle_path.into())
 }
 
-fn verify_bundle(
-    bundle: &Bundle<Authorized, i64>,
-    vk: &VerifyingKey,
-    pool_restrictions: BundlePoolRestrictions,
-    tx_version: TxVersion,
-) {
+fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, tx_version: TxVersion) {
     assert!(matches!(bundle.verify_proof(vk), Ok(())));
     let sighash: [u8; 32] = bundle
-        .commitment(pool_restrictions, tx_version)
+        .commitment(tx_version)
         .expect("bundle flags are representable in this format")
         .into();
     let bvk = bundle.binding_validating_key();
@@ -61,22 +56,22 @@ fn verify_bundle(
     );
 }
 
-/// The output-only bundle type used by the shielding steps of these tests.
-const SHIELDING: BundleType = BundleType::Transactional {
-    spends_enabled: false,
-    outputs_enabled: true,
-    bundle_required: false,
-};
+/// The flags used by the output-only (shielding and coinbase) steps of these tests: spends
+/// disabled, outputs enabled, cross-address transfers enabled. Every output-only bundle here
+/// targets a pool that permits cross-address transfers (Orchard pre-NU6.3 and Ironwood).
+const SHIELDING_FLAGS: Flags = Flags::SPENDS_DISABLED;
 
-/// Creates a builder of the given `pool_restrictions` and `bundle_type` over the
-/// empty-tree anchor, with a single 5000-zat output to `recipient`.
+/// Creates a builder of the given `bundle_version` and `bundle_type` over the
+/// empty-tree anchor, with a single 5000-zat output to `recipient`. The builder disables
+/// spends, since these helpers build output-only (shielding or coinbase) bundles.
 fn output_only_builder(
-    pool_restrictions: BundlePoolRestrictions,
+    bundle_version: BundleVersion,
     bundle_type: BundleType,
     recipient: Address,
 ) -> Builder {
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new(pool_restrictions, bundle_type, anchor);
+    let mut builder = Builder::new(bundle_type, bundle_version, SHIELDING_FLAGS, anchor)
+        .expect("shielding flags are valid for the bundle version");
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
@@ -96,17 +91,13 @@ fn bundle_chain() {
 
     // Create a shielding bundle.
     let shielding_bundle: Bundle<_, i64> = {
-        let builder = output_only_builder(
-            BundlePoolRestrictions::OrchardNu6_2Only,
-            SHIELDING,
-            recipient,
-        );
+        let builder =
+            output_only_builder(BundleVersion::orchard_v2(), BundleType::DEFAULT, recipient);
         let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
 
         assert_eq!(
             unauthorized
                 .decrypt_output_with_key(
-                    BundlePoolRestrictions::OrchardNu6_2Only,
                     bundle_meta
                         .output_action_index(0)
                         .expect("Output 0 can be found"),
@@ -117,7 +108,7 @@ fn bundle_chain() {
         );
 
         let sighash = unauthorized
-            .commitment(BundlePoolRestrictions::OrchardNu6_2Only, TxVersion::V5)
+            .commitment(TxVersion::V5)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
@@ -125,12 +116,7 @@ fn bundle_chain() {
     };
 
     // Verify the shielding bundle.
-    verify_bundle(
-        &shielding_bundle,
-        &vk,
-        BundlePoolRestrictions::OrchardNu6_2Only,
-        TxVersion::V5,
-    );
+    verify_bundle(&shielding_bundle, &vk, TxVersion::V5);
 
     // Create a shielded bundle spending the previous output.
     let shielded_bundle: Bundle<_, i64> = {
@@ -149,10 +135,12 @@ fn bundle_chain() {
         let (root, merkle_path) = single_leaf_witness(&cmx);
 
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_2Only,
             BundleType::DEFAULT,
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v2().default_flags(),
             root.into(),
-        );
+        )
+        .unwrap();
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
@@ -160,7 +148,7 @@ fn bundle_chain() {
         );
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
-            .commitment(BundlePoolRestrictions::OrchardNu6_2Only, TxVersion::V5)
+            .commitment(TxVersion::V5)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
@@ -170,12 +158,7 @@ fn bundle_chain() {
     };
 
     // Verify the shielded bundle.
-    verify_bundle(
-        &shielded_bundle,
-        &vk,
-        BundlePoolRestrictions::OrchardNu6_2Only,
-        TxVersion::V5,
-    );
+    verify_bundle(&shielded_bundle, &vk, TxVersion::V5);
 }
 
 // A bundle built with the circuit version set to `InsecurePreNu6_2` produces a proof against
@@ -193,14 +176,14 @@ fn builder_builds_for_insecure_circuit_version() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let builder = output_only_builder(
-        BundlePoolRestrictions::OrchardPreNu6_2,
-        SHIELDING,
+        BundleVersion::orchard_insecure_v1(),
+        BundleType::DEFAULT,
         recipient,
     );
 
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let sighash: [u8; 32] = unauthorized
-        .commitment(BundlePoolRestrictions::OrchardPreNu6_2, TxVersion::V5)
+        .commitment(TxVersion::V5)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&insecure_pk, &mut rng).unwrap();
@@ -220,11 +203,7 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let builder = output_only_builder(
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
-        SHIELDING,
-        recipient,
-    );
+    let builder = output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
 
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     assert_eq!(
@@ -233,18 +212,13 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     );
 
     let sighash: [u8; 32] = unauthorized
-        .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6)
+        .commitment(TxVersion::V6)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
-    verify_bundle(
-        &bundle,
-        &post_nu6_3_vk,
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
-        TxVersion::V6,
-    );
+    verify_bundle(&bundle, &post_nu6_3_vk, TxVersion::V6);
 }
 
 #[test]
@@ -255,11 +229,7 @@ fn ironwood_builder_outputs_decrypt_with_ironwood_domain() {
     let recipient = fvk.address_at(0u32, Scope::External);
     let ivk = PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::External));
 
-    let builder = output_only_builder(
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
-        SHIELDING,
-        recipient,
-    );
+    let builder = output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
     let (bundle, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let action = &bundle.actions()[bundle_meta
         .output_action_index(0)
@@ -286,10 +256,11 @@ fn ironwood_bundle_helpers_decrypt_and_recover_outputs() {
     let recipient = fvk.address_at(0u32, Scope::External);
     let ivk = fvk.to_ivk(Scope::External);
     let ovk = fvk.to_ovk(Scope::External);
-    let pool_restrictions = BundlePoolRestrictions::IronwoodNu6_3Onward;
+    let bundle_version = BundleVersion::ironwood_v3();
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
-    let mut builder = Builder::new(pool_restrictions, SHIELDING, anchor);
+    let mut builder = Builder::new(BundleType::DEFAULT, bundle_version, SHIELDING_FLAGS, anchor)
+        .expect("shielding flags are valid for the bundle version");
     assert_eq!(
         builder.add_output(
             Some(ovk.clone()),
@@ -304,19 +275,15 @@ fn ironwood_bundle_helpers_decrypt_and_recover_outputs() {
         .output_action_index(0)
         .expect("Output 0 can be found");
 
-    assert!(bundle
-        .decrypt_output_with_key(BundlePoolRestrictions::OrchardNu6_2Only, action_idx, &ivk,)
-        .is_none());
-
     let (note, decrypted_to, memo) = bundle
-        .decrypt_output_with_key(pool_restrictions, action_idx, &ivk)
+        .decrypt_output_with_key(action_idx, &ivk)
         .expect("V3 output decrypts through the bundle helper");
     assert_eq!(note.version(), NoteVersion::V3);
     assert_eq!(note.value(), NoteValue::from_raw(5000));
     assert_eq!(decrypted_to, recipient);
     assert_eq!(memo, [0u8; 512]);
 
-    let decrypted = bundle.decrypt_outputs_with_keys(pool_restrictions, &[ivk]);
+    let decrypted = bundle.decrypt_outputs_with_keys(&[ivk]);
     assert_eq!(decrypted.len(), 1);
     assert_eq!(decrypted[0].0, action_idx);
     assert_eq!(decrypted[0].2.version(), NoteVersion::V3);
@@ -324,19 +291,15 @@ fn ironwood_bundle_helpers_decrypt_and_recover_outputs() {
     assert_eq!(decrypted[0].3, recipient);
     assert_eq!(decrypted[0].4, [0u8; 512]);
 
-    assert!(bundle
-        .recover_output_with_ovk(BundlePoolRestrictions::OrchardNu6_2Only, action_idx, &ovk,)
-        .is_none());
-
     let (note, recovered_to, memo) = bundle
-        .recover_output_with_ovk(pool_restrictions, action_idx, &ovk)
+        .recover_output_with_ovk(action_idx, &ovk)
         .expect("V3 output recovers through the bundle helper");
     assert_eq!(note.version(), NoteVersion::V3);
     assert_eq!(note.value(), NoteValue::from_raw(5000));
     assert_eq!(recovered_to, recipient);
     assert_eq!(memo, [0u8; 512]);
 
-    let recovered = bundle.recover_outputs_with_ovks(pool_restrictions, &[ovk]);
+    let recovered = bundle.recover_outputs_with_ovks(&[ovk]);
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0].0, action_idx);
     assert_eq!(recovered[0].2.version(), NoteVersion::V3);
@@ -361,7 +324,7 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let builder = output_only_builder(
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
+        BundleVersion::ironwood_v3(),
         BundleType::Coinbase,
         recipient,
     );
@@ -372,18 +335,13 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     assert!(unauthorized.flags().cross_address_enabled());
 
     let sighash: [u8; 32] = unauthorized
-        .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6)
+        .commitment(TxVersion::V6)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
     let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
 
-    verify_bundle(
-        &bundle,
-        &post_nu6_3_vk,
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
-        TxVersion::V6,
-    );
+    verify_bundle(&bundle, &post_nu6_3_vk, TxVersion::V6);
 }
 
 // A post-NU 6.3 restricted bundle chain: an ordinary shielding bundle, followed by a bundle
@@ -402,27 +360,19 @@ fn post_nu6_3_restricted_bundle_chain() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let shielding_bundle: Bundle<_, i64> = {
-        let builder = output_only_builder(
-            BundlePoolRestrictions::OrchardNu6_2Only,
-            SHIELDING,
-            recipient,
-        );
+        let builder =
+            output_only_builder(BundleVersion::orchard_v2(), BundleType::DEFAULT, recipient);
 
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
-            .commitment(BundlePoolRestrictions::OrchardNu6_2Only, TxVersion::V5)
+            .commitment(TxVersion::V5)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&fixed_pk, &mut rng).unwrap();
         proven.apply_signatures(rng, sighash, &[]).unwrap()
     };
 
-    verify_bundle(
-        &shielding_bundle,
-        &fixed_vk,
-        BundlePoolRestrictions::OrchardNu6_2Only,
-        TxVersion::V5,
-    );
+    verify_bundle(&shielding_bundle, &fixed_vk, TxVersion::V5);
 
     let change_addr = fvk.address_at(0u32, Scope::Internal);
     let restricted_bundle: Bundle<_, i64> = {
@@ -440,14 +390,12 @@ fn post_nu6_3_restricted_bundle_chain() {
         let (root, merkle_path) = single_leaf_witness(&cmx);
 
         let mut builder = Builder::new(
-            BundlePoolRestrictions::OrchardNu6_3Onward,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            BundleType::DEFAULT,
+            BundleVersion::orchard_v3(),
+            BundleVersion::orchard_v3().default_flags(),
             root.into(),
-        );
+        )
+        .unwrap();
         assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_change_output(
@@ -469,7 +417,6 @@ fn post_nu6_3_restricted_bundle_chain() {
         assert_eq!(
             unauthorized
                 .decrypt_output_with_key(
-                    BundlePoolRestrictions::OrchardNu6_3Onward,
                     bundle_meta
                         .output_action_index(0)
                         .expect("Output 0 can be found"),
@@ -485,7 +432,6 @@ fn post_nu6_3_restricted_bundle_chain() {
         // from anyone (including a quantum adversary) who recovers that ivk from the address.
         assert!(unauthorized
             .decrypt_output_with_key(
-                BundlePoolRestrictions::OrchardNu6_3Onward,
                 bundle_meta
                     .spend_action_index(0)
                     .expect("Spend 0 can be found"),
@@ -494,7 +440,7 @@ fn post_nu6_3_restricted_bundle_chain() {
             .is_none());
 
         let sighash = unauthorized
-            .commitment(BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5)
+            .commitment(TxVersion::V5)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
@@ -504,12 +450,7 @@ fn post_nu6_3_restricted_bundle_chain() {
     };
 
     assert_eq!(restricted_bundle.value_balance(), &2000);
-    verify_bundle(
-        &restricted_bundle,
-        &post_nu6_3_vk,
-        BundlePoolRestrictions::OrchardNu6_3Onward,
-        TxVersion::V5,
-    );
+    verify_bundle(&restricted_bundle, &post_nu6_3_vk, TxVersion::V5);
     assert!(restricted_bundle.verify_proof(&fixed_vk).is_err());
 
     let mut validator = BatchValidator::new(&post_nu6_3_vk);
@@ -517,7 +458,7 @@ fn post_nu6_3_restricted_bundle_chain() {
         .add_bundle(
             &restricted_bundle,
             restricted_bundle
-                .commitment(BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5)
+                .commitment(TxVersion::V5)
                 .expect("bundle flags are representable in this format")
                 .into(),
         )
@@ -531,23 +472,22 @@ fn post_nu6_3_restricted_bundle_chain() {
         .add_bundle(
             &restricted_bundle,
             restricted_bundle
-                .commitment(BundlePoolRestrictions::OrchardNu6_3Onward, TxVersion::V5)
+                .commitment(TxVersion::V5)
                 .expect("bundle flags are representable in this format")
                 .into(),
         )
         .is_err());
 }
 
-// `IronwoodNu6_3Onward` is the post-NU6.3 `BundlePoolRestrictions` variant that allows
-// any choice of the `enableCrossAddress` flag. It shares the post-NU6.3 circuit with the
-// `OrchardNU6_3Onward`, and uses V3 note plaintexts. A transactional
+// `BundleVersion::ironwood_v3()` is the post-NU6.3 Ironwood bundle version, which allows
+// any choice of the `enableCrossAddress` flag. It shares the post-NU6.3 circuit with
+// `BundleVersion::orchard_v3()`, and uses V3 note plaintexts. A transactional
 // Ironwood bundle is therefore an ordinary spend+output bundle on the post-NU6.3 circuit
 // whose NU6.3 flag byte sets bit 2.
 #[test]
 fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     let mut rng = OsRng;
-    let post_nu6_3_pk =
-        ProvingKey::build(BundlePoolRestrictions::IronwoodNu6_3Onward.circuit_version());
+    let post_nu6_3_pk = ProvingKey::build(BundleVersion::ironwood_v3().circuit_version());
     let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
@@ -556,14 +496,11 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
 
     // Shield a note to spend (an unrestricted, output-only post-NU6.3 bundle).
     let shielding_bundle: Bundle<_, i64> = {
-        let builder = output_only_builder(
-            BundlePoolRestrictions::IronwoodNu6_3Onward,
-            SHIELDING,
-            recipient,
-        );
+        let builder =
+            output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
-            .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6)
+            .commitment(TxVersion::V6)
             .expect("bundle flags are representable in this format")
             .into();
         let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
@@ -589,10 +526,12 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     // cross-address transfer, which Ironwood permits but post-NU6.3 Orchard would forbid.
     let change_addr = fvk.address_at(0u32, Scope::Internal);
     let mut builder = Builder::new(
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
         BundleType::DEFAULT,
+        BundleVersion::ironwood_v3(),
+        BundleVersion::ironwood_v3().default_flags(),
         root.into(),
-    );
+    )
+    .unwrap();
     assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
     assert_eq!(
         builder.add_output(None, change_addr, NoteValue::from_raw(5000), [0u8; 512]),
@@ -608,12 +547,12 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     assert!(unauthorized.flags().cross_address_enabled());
     let flag_byte = unauthorized
         .flags()
-        .to_byte(BundlePoolRestrictions::IronwoodNu6_3Onward)
+        .to_byte(BundleVersion::ironwood_v3())
         .expect("flags are representable under Ironwood");
     assert_eq!(flag_byte & 0b100, 0b100);
 
     let sighash = unauthorized
-        .commitment(BundlePoolRestrictions::IronwoodNu6_3Onward, TxVersion::V6)
+        .commitment(TxVersion::V6)
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
@@ -621,10 +560,5 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
         .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
         .unwrap();
 
-    verify_bundle(
-        &bundle,
-        &post_nu6_3_vk,
-        BundlePoolRestrictions::IronwoodNu6_3Onward,
-        TxVersion::V6,
-    );
+    verify_bundle(&bundle, &post_nu6_3_vk, TxVersion::V6);
 }

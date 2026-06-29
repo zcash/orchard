@@ -22,12 +22,12 @@ impl super::Bundle {
     ///
     /// # Errors
     ///
-    /// Returns [`ProverError::DisallowedCrossAddressTransfer`] if the bundle's
-    /// pool restrictions disable cross-address transfers, and any action's output
+    /// Returns [`ProverError::DisallowedCrossAddressTransfer`] if the bundle
+    /// disables cross-address transfers, and any action's output
     /// is addressed differently than its spent note.
     ///
     /// Returns [`ProverError::ProofFailed`] containing
-    /// [`plonk::Error::InvalidInstances`] if the bundle's pool restrictions disable
+    /// [`plonk::Error::InvalidInstances`] if the bundle disables
     /// cross-address transfers, and `pk` is not an
     /// [`OrchardCircuitVersion::PostNu6_3`] proving key.
     ///
@@ -188,7 +188,7 @@ impl fmt::Display for ProverError {
                 super::VerifyError::DisallowedCrossAddressTransfer => write!(
                     f,
                     "an action outputs to a different expanded receiver than it spends from, but the \
-                     bundle's pool restrictions disable cross-address transfers"
+                     bundle disables cross-address transfers"
                 ),
                 e => write!(f, "cross-address restriction verification failed: {e}"),
             },
