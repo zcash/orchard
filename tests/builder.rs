@@ -3,7 +3,7 @@
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
-    bundle::{Authorized, BatchValidator, BundleVersion, TxVersion},
+    bundle::{Authorized, BatchValidator, BundleVersion, Flags, TxVersion},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::{ExtractedNoteCommitment, NoteVersion},
@@ -56,22 +56,22 @@ fn verify_bundle(bundle: &Bundle<Authorized, i64>, vk: &VerifyingKey, tx_version
     );
 }
 
-/// The output-only bundle type used by the shielding steps of these tests.
-const SHIELDING: BundleType = BundleType::Transactional {
-    spends_enabled: false,
-    outputs_enabled: true,
-    bundle_required: false,
-};
+/// The flags used by the output-only (shielding and coinbase) steps of these tests: spends
+/// disabled, outputs enabled, cross-address transfers enabled. Every output-only bundle here
+/// targets a pool that permits cross-address transfers (Orchard pre-NU6.3 and Ironwood).
+const SHIELDING_FLAGS: Flags = Flags::SPENDS_DISABLED;
 
 /// Creates a builder of the given `bundle_version` and `bundle_type` over the
-/// empty-tree anchor, with a single 5000-zat output to `recipient`.
+/// empty-tree anchor, with a single 5000-zat output to `recipient`. The builder disables
+/// spends, since these helpers build output-only (shielding or coinbase) bundles.
 fn output_only_builder(
     bundle_version: BundleVersion,
     bundle_type: BundleType,
     recipient: Address,
 ) -> Builder {
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
-    let mut builder = Builder::new(bundle_version, bundle_type, anchor);
+    let mut builder = Builder::new(bundle_type, bundle_version, SHIELDING_FLAGS, anchor)
+        .expect("shielding flags are valid for the bundle version");
     assert_eq!(
         builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
         Ok(())
@@ -91,7 +91,8 @@ fn bundle_chain() {
 
     // Create a shielding bundle.
     let shielding_bundle: Bundle<_, i64> = {
-        let builder = output_only_builder(BundleVersion::orchard_v1(), SHIELDING, recipient);
+        let builder =
+            output_only_builder(BundleVersion::orchard_v1(), BundleType::DEFAULT, recipient);
         let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
 
         assert_eq!(
@@ -134,10 +135,12 @@ fn bundle_chain() {
         let (root, merkle_path) = single_leaf_witness(&cmx);
 
         let mut builder = Builder::new(
-            BundleVersion::orchard_v1(),
             BundleType::DEFAULT,
+            BundleVersion::orchard_v1(),
+            BundleVersion::orchard_v1().default_flags(),
             root.into(),
-        );
+        )
+        .unwrap();
         assert_eq!(builder.add_spend(fvk, note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512]),
@@ -172,7 +175,11 @@ fn builder_builds_for_insecure_circuit_version() {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let builder = output_only_builder(BundleVersion::orchard_insecure_v0(), SHIELDING, recipient);
+    let builder = output_only_builder(
+        BundleVersion::orchard_insecure_v0(),
+        BundleType::DEFAULT,
+        recipient,
+    );
 
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let sighash: [u8; 32] = unauthorized
@@ -196,7 +203,7 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let builder = output_only_builder(BundleVersion::ironwood_v2(), SHIELDING, recipient);
+    let builder = output_only_builder(BundleVersion::ironwood_v2(), BundleType::DEFAULT, recipient);
 
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     assert_eq!(
@@ -222,7 +229,7 @@ fn ironwood_builder_outputs_decrypt_with_ironwood_domain() {
     let recipient = fvk.address_at(0u32, Scope::External);
     let ivk = PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::External));
 
-    let builder = output_only_builder(BundleVersion::ironwood_v2(), SHIELDING, recipient);
+    let builder = output_only_builder(BundleVersion::ironwood_v2(), BundleType::DEFAULT, recipient);
     let (bundle, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let action = &bundle.actions()[bundle_meta
         .output_action_index(0)
@@ -252,7 +259,8 @@ fn ironwood_bundle_helpers_decrypt_and_recover_outputs() {
     let bundle_version = BundleVersion::ironwood_v2();
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
-    let mut builder = Builder::new(bundle_version, SHIELDING, anchor);
+    let mut builder = Builder::new(BundleType::DEFAULT, bundle_version, SHIELDING_FLAGS, anchor)
+        .expect("shielding flags are valid for the bundle version");
     assert_eq!(
         builder.add_output(
             Some(ovk.clone()),
@@ -352,7 +360,8 @@ fn post_nu6_3_restricted_bundle_chain() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let shielding_bundle: Bundle<_, i64> = {
-        let builder = output_only_builder(BundleVersion::orchard_v1(), SHIELDING, recipient);
+        let builder =
+            output_only_builder(BundleVersion::orchard_v1(), BundleType::DEFAULT, recipient);
 
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
@@ -381,14 +390,12 @@ fn post_nu6_3_restricted_bundle_chain() {
         let (root, merkle_path) = single_leaf_witness(&cmx);
 
         let mut builder = Builder::new(
+            BundleType::DEFAULT,
             BundleVersion::orchard_v2(),
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            BundleVersion::orchard_v2().default_flags(),
             root.into(),
-        );
+        )
+        .unwrap();
         assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
         assert_eq!(
             builder.add_change_output(
@@ -489,7 +496,8 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
 
     // Shield a note to spend (an unrestricted, output-only post-NU6.3 bundle).
     let shielding_bundle: Bundle<_, i64> = {
-        let builder = output_only_builder(BundleVersion::ironwood_v2(), SHIELDING, recipient);
+        let builder =
+            output_only_builder(BundleVersion::ironwood_v2(), BundleType::DEFAULT, recipient);
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
             .commitment(TxVersion::V6)
@@ -518,10 +526,12 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     // cross-address transfer, which Ironwood permits but post-NU6.3 Orchard would forbid.
     let change_addr = fvk.address_at(0u32, Scope::Internal);
     let mut builder = Builder::new(
-        BundleVersion::ironwood_v2(),
         BundleType::DEFAULT,
+        BundleVersion::ironwood_v2(),
+        BundleVersion::ironwood_v2().default_flags(),
         root.into(),
-    );
+    )
+    .unwrap();
     assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
     assert_eq!(
         builder.add_output(None, change_addr, NoteValue::from_raw(5000), [0u8; 512]),

@@ -14,8 +14,8 @@ non-serialized context, so a bundle can be serialized and committed to without s
 supplying a — possibly mismatching — version, and is encodable and committable by
 construction. The post-NU 6.3 Action circuit enforces the cross-address restriction.
 Existing callers keep the current behavior by constructing bundles with
-`BundleVersion::orchard_v1()` (and `OrchardCircuitVersion::FixedPostNu6_2` when building
-proving/verifying keys).
+`BundleVersion::orchard_v1()` and `BundleVersion::orchard_v1().default_flags()` (and
+`OrchardCircuitVersion::FixedPostNu6_2` when building proving/verifying keys).
 
 ### Added
 - NU6.3 and Ironwood bundle-version APIs:
@@ -34,7 +34,10 @@ proving/verifying keys).
     the value within that constraint). `BundleVersion::value_pool` and
     `BundleVersion::protocol_version` return the bundle's `ValuePool` and
     `ProtocolVersion`; the Ironwood pool (`ironwood_v2`) shares the post-NU6.3 circuit and
-    uses V3 note plaintexts.
+    uses V3 note plaintexts. `BundleVersion::default_flags` returns the least-restrictive
+    `Flags` consensus permits under the bundle version (spends and outputs enabled,
+    cross-address transfers enabled except where the version mandates the restriction),
+    the suitable default for the builder that a caller may restrict further.
   - `orchard::bundle::TxVersion`, the transaction version (`V5` or `V6`) a
     bundle's commitments are computed for. At NU6.3 an Orchard bundle may be
     encoded in a v5 or a v6 transaction; the two use different commitment
@@ -75,7 +78,7 @@ proving/verifying keys).
   - `orchard::builder::Builder::changes`
   - `impl orchard::builder::OutputView for ChangeInfo`
 - New builder errors:
-  - `orchard::builder::BuildError::{CrossAddressDisabled, InvalidNoteVersion}`
+  - `orchard::builder::BuildError::{CrossAddressDisabled, InvalidNoteVersion, UnrepresentableFlags, CoinbaseSpendsEnabled}`
   - `orchard::builder::OutputError::{SpendsDisabled, CrossAddressDisabled, RecipientNotOwned}`
 - Ironwood and note-version APIs:
   - `orchard::NoteVersion`, the note plaintext version selector, with variants
@@ -104,25 +107,34 @@ proving/verifying keys).
     underlying `orchard::pczt::VerifyError`.
 
 ### Changed
-- Bundle construction now requires an explicit `BundleVersion`:
+- Bundle construction now requires an explicit `BundleVersion` and `Flags`:
   - `orchard::builder::Builder::new` now takes
-    `(BundleVersion, BundleType, Anchor)`; the builder derives the circuit
-    version from the bundle version rather than from an explicit
+    `(BundleType, BundleVersion, Flags, Anchor)` and returns
+    `Result<Builder, BuildError>`; the `Flags` are validated against the
+    `BundleVersion` (rejected with `BuildError::UnrepresentableFlags`), and a
+    `BundleType::Coinbase` builder requires spends-disabled flags (rejected with
+    `BuildError::CoinbaseSpendsEnabled`). `BundleVersion::default_flags` supplies a
+    suitable default that the caller may restrict further. The builder derives the
+    circuit version from the bundle version rather than from an explicit
     `OrchardCircuitVersion`.
-  - `orchard::builder::bundle` now takes a `BundleVersion` in place of
+  - `orchard::builder::bundle` now takes a `BundleVersion` and `Flags` in place of
     the circuit-version argument, and takes the wallet-controlled change outputs
     as a separate `changes: Vec<ChangeInfo>` argument (plain `outputs` and
     `changes` are distinct). It rejects supplied `OutputInfo`/`ChangeInfo` values
     whose note version does not match the `BundleVersion`, returning
     `BuildError::InvalidNoteVersion`.
-  - `orchard::builder::BundleType::Transactional` no longer embeds a full
-    `Flags`; it now carries `{ spends_enabled, outputs_enabled, bundle_required }`.
-  - `orchard::builder::BundleType::{num_actions, flags}` now take a
-    `BundleVersion`. For bundles that disable cross-address transfers,
-    `num_actions` counts `num_spends + num_outputs` requested actions (a requested
-    spend and a requested output never share an action) rather than the maximum of
-    the two, and `BundleMetadata` maps them to distinct actions; wallets
-    estimating fees (e.g. per ZIP 317) must account for the larger action count.
+  - `orchard::builder::BundleType` no longer carries any flag settings; it is now
+    just the construction policy, `Transactional { bundle_required }` or
+    `Coinbase`. The bundle's `Flags` are supplied separately to the builder. `flags`
+    are no longer derived from the bundle type, so `BundleType::flags` has been
+    removed.
+  - `orchard::builder::BundleType::num_actions` now takes a `Flags` (in place of a
+    `BundleVersion`), reading the spend/output/cross-address policy directly from it.
+    For bundles that disable cross-address transfers, `num_actions` counts
+    `num_spends + num_outputs` requested actions (a requested spend and a requested
+    output never share an action) rather than the maximum of the two, and
+    `BundleMetadata` maps them to distinct actions; wallets estimating fees (e.g. per
+    ZIP 317) must account for the larger action count.
   - `orchard::builder::OutputInfo::{new, dummy}` now take an `orchard::NoteVersion`,
     so callers choose between V2 Orchard notes and V3 Ironwood notes;
     builder-created outputs use the note version associated with the selected
@@ -139,14 +151,13 @@ proving/verifying keys).
   (`Builder::add_output` returns `OutputError::CrossAddressDisabled`); retained
   shielded value must be added with `Builder::add_change_output`, which rejects a
   recipient not owned by the full viewing key (`OutputError::RecipientNotOwned`)
-  and requires spends to be enabled (`OutputError::SpendsDisabled`). The builder
-  chooses the cross-address bit as a prover-side default — the least-restrictive
-  value consensus permits: enabled, except for the Orchard pool under
-  `BundleVersion::orchard_v2()`, where consensus mandates the restriction.
-  `BundleVersion` exposes only that consensus constraint; the default lives in builder
-  logic. The `Flags` codec still represents NU6.3 `enableCrossAddress = 0` flag sets, so a
-  future builder could expose the choice where consensus leaves it free (e.g. Ironwood);
-  this branch does not. Coinbase bundles follow the same constraints as non-coinbase
+  and requires spends to be enabled (`OutputError::SpendsDisabled`). The cross-address
+  bit is now a caller-supplied flag rather than a builder-chosen default:
+  `BundleVersion::default_flags` returns the least-restrictive flag set consensus permits
+  — cross-address transfers enabled, except for the Orchard pool under
+  `BundleVersion::orchard_v2()`, where consensus mandates the restriction — and a caller
+  may restrict it further (a tighter choice the bundle version permits) before passing the
+  flags to the builder. Coinbase bundles follow the same constraints as non-coinbase
   bundles: post-NU6.3 Orchard coinbase transactions cannot contain Orchard actions, so
   post-NU6.3 coinbase bundle construction in this crate is only useful for
   `BundleVersion::ironwood_v2()`.
@@ -269,7 +280,7 @@ proving/verifying keys).
   canonical proof-size check from the `BundleVersion` (enforced for every version except
   `BundleVersion::orchard_insecure_v0`).
 - `orchard::builder::Builder::new_for_version`; use
-  `Builder::new(bundle_version, bundle_type, anchor)`.
+  `Builder::new(bundle_type, bundle_version, flags, anchor)`.
 - `orchard::builder::bundle_for_version`; use `builder::bundle` with
   `BundleVersion` and a `Vec<ChangeInfo>`.
 - Zero-argument `orchard::circuit::{ProvingKey, VerifyingKey}::build`; pass an

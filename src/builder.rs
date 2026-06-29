@@ -37,55 +37,36 @@ use {
 const MIN_ACTIONS: usize = 2;
 
 /// An enumeration of rules for Orchard bundle construction.
+///
+/// This selects only the construction discipline; the bundle's [`Flags`] are supplied separately
+/// to the builder (see [`Builder::new`] and [`BundleVersion::default_flags`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BundleType {
     /// A transactional bundle will be padded if necessary to contain at least 2 actions,
     /// irrespective of whether any genuine actions are required.
     Transactional {
-        /// Whether Orchard spends are enabled for the bundle.
-        spends_enabled: bool,
-        /// Whether Orchard outputs are enabled for the bundle.
-        outputs_enabled: bool,
         /// A flag that, when set to `true`, indicates that a bundle should be produced even if no
         /// spends or outputs have been added to the bundle; in such a circumstance, all of the
         /// actions in the resulting bundle will be dummies.
         bundle_required: bool,
     },
-    /// A coinbase bundle disables nonzero-valued Orchard spends, and is built with
-    /// `Flags::from_parts(false, true, bundle_version.permits_cross_address_transfers())`:
-    /// spends disabled, outputs enabled, and cross-address transfers enabled if
-    /// possible for this bundle's version. No padding is performed.
+    /// A coinbase bundle performs no padding and requires the bundle's flags to disable spends.
     ///
-    /// Since coinbase transactions have `enableSpends = 0`, every spend must be a
-    /// dummy. Coinbase transactions are not otherwise any different wrt cross-address
-    /// restrictions from other transactions that have dummy inputs. For simplicity, we
-    /// therefore set `enableCrossAddress` in the same way we would for a non-coinbase
-    /// transaction (which is allowed by the consensus rules).
+    /// Since coinbase transactions have `enableSpends = 0`, every spend must be a dummy. Coinbase
+    /// transactions are not otherwise any different wrt cross-address restrictions from other
+    /// transactions that have dummy inputs.
     Coinbase,
 }
 
 impl BundleType {
-    /// The default bundle type enables spends and outputs, and does not require a bundle to be
-    /// produced if no spends or outputs have been added to the bundle. The builder defaults the
-    /// cross-address bit to the least-restrictive value that the consensus rules implied
-    /// by the bundle's pool restrictions will permit: enabled, unless those rules mandate
-    /// the restriction.
+    /// The default bundle type: a transactional bundle that is not required to be produced if no
+    /// spends or outputs have been added.
     pub const DEFAULT: BundleType = BundleType::Transactional {
-        spends_enabled: true,
-        outputs_enabled: true,
         bundle_required: false,
     };
 
-    /// The DISABLED bundle type does not permit any bundle to be produced, and when used in the
-    /// builder will prevent any spends or outputs from being added.
-    pub const DISABLED: BundleType = BundleType::Transactional {
-        spends_enabled: false,
-        outputs_enabled: false,
-        bundle_required: false,
-    };
-
-    /// Returns the number of logical actions that builder will produce in constructing a bundle
-    /// of this type, given the specified numbers of spends and outputs.
+    /// Returns the number of logical actions that the builder will produce in constructing a bundle
+    /// of this type with the given `flags`, given the specified numbers of spends and outputs.
     ///
     /// In the current implementation, for a bundle (regardless of type) that disables
     /// cross-address transfers, a requested spend and a requested output do not share an
@@ -95,27 +76,22 @@ impl BundleType {
     /// count.
     ///
     /// Returns an error if the specified number of spends and outputs is incompatible with
-    /// this bundle type.
+    /// this bundle type and flags.
     ///
     /// [ZIP 317]: https://zips.z.cash/zip-0317
     pub fn num_actions(
         &self,
+        flags: Flags,
         num_spends: usize,
         num_outputs: usize,
-        bundle_version: BundleVersion,
     ) -> Result<usize, &'static str> {
         match self {
-            BundleType::Transactional {
-                spends_enabled,
-                outputs_enabled,
-                bundle_required,
-            } => {
-                let cross_address_enabled = bundle_version.permits_cross_address_transfers();
+            BundleType::Transactional { bundle_required } => {
                 // When cross-address transfers are disabled, every action's output is
                 // addressed to the note it spends. For this implementation, a requested
                 // spend and a requested output never share an action: each is paired with
                 // a fabricated zero-valued counterpart instead.
-                let num_requested_actions = if !cross_address_enabled {
+                let num_requested_actions = if !flags.cross_address_enabled() {
                     num_spends
                         .checked_add(num_outputs)
                         .ok_or("num_spends + num_outputs overflowed")?
@@ -123,9 +99,9 @@ impl BundleType {
                     core::cmp::max(num_spends, num_outputs)
                 };
 
-                if !*spends_enabled && num_spends > 0 {
+                if !flags.spends_enabled() && num_spends > 0 {
                     Err("Spends are disabled, so num_spends must be zero")
-                } else if !*outputs_enabled && num_outputs > 0 {
+                } else if !flags.outputs_enabled() && num_outputs > 0 {
                     Err("Outputs are disabled, so num_outputs must be zero")
                 } else {
                     Ok(if *bundle_required || num_requested_actions > 0 {
@@ -142,32 +118,6 @@ impl BundleType {
                     Ok(num_outputs)
                 }
             }
-        }
-    }
-
-    /// Returns the set of flags that will be used for bundle construction under
-    /// `bundle_version`.
-    ///
-    /// As a prover-side default, the builder enables cross-address transfers whenever the version
-    /// permits them (the least restrictive policy consensus allows). This is the bundle's
-    /// `cross_address_enabled` flag, not bit 2 of the wire `flags` byte: in v5 transactions bit 2
-    /// is reserved and always 0 regardless of epoch.
-    pub fn flags(&self, bundle_version: BundleVersion) -> Flags {
-        match self {
-            BundleType::Transactional {
-                spends_enabled,
-                outputs_enabled,
-                ..
-            } => Flags::from_parts(
-                *spends_enabled,
-                *outputs_enabled,
-                bundle_version.permits_cross_address_transfers(),
-            ),
-            BundleType::Coinbase => Flags::from_parts(
-                false,
-                true,
-                bundle_version.permits_cross_address_transfers(),
-            ),
         }
     }
 }
@@ -203,6 +153,10 @@ pub enum BuildError {
     /// A supplied output or change output has a note version that is
     /// inconsistent with the bundle version.
     InvalidNoteVersion,
+    /// The builder's flags cannot be encoded under its [`BundleVersion`].
+    UnrepresentableFlags,
+    /// A coinbase bundle was requested with flags that enable spends.
+    CoinbaseSpendsEnabled,
 }
 
 impl fmt::Display for BuildError {
@@ -239,6 +193,12 @@ impl fmt::Display for BuildError {
                 "A supplied output or change output has a note version that does not match \
                  the bundle version.",
             ),
+            UnrepresentableFlags => f.write_str(
+                "The requested flags cannot be encoded under the requested bundle version.",
+            ),
+            CoinbaseSpendsEnabled => {
+                f.write_str("A coinbase bundle was requested with flags that enable spends.")
+            }
         }
     }
 }
@@ -762,31 +722,53 @@ impl BundleMetadata {
 /// to receive funds.
 #[derive(Debug)]
 pub struct Builder {
+    bundle_type: BundleType,
+    bundle_version: BundleVersion,
+    flags: Flags,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     changes: Vec<ChangeInfo>,
-    bundle_version: BundleVersion,
-    bundle_type: BundleType,
     anchor: Anchor,
 }
 
 impl Builder {
-    /// Constructs a new empty builder for an Orchard bundle following `bundle_version`.
+    /// Constructs a new empty builder for an Orchard bundle following `bundle_version` with the
+    /// given `flags`.
     ///
-    /// `bundle_version` is the information needed to determine restrictions on bundles
-    /// created by this builder: its shielded pool (Orchard or Ironwood) and the epoch range
-    /// (pre-NU6.2, NU6.2 only, NU6.3 onward) that it targets. It influences the circuit version,
-    /// the flag-byte format, and the cross-address policy, and is threaded into building,
-    /// committing, and parsing. See [`BundleVersion`].
-    pub fn new(bundle_version: BundleVersion, bundle_type: BundleType, anchor: Anchor) -> Self {
-        Builder {
+    /// `bundle_version` is the [`ValuePool`](crate::ValuePool) (Orchard or Ironwood) and
+    /// [`ProtocolVersion`](crate::ProtocolVersion) of the bundles created by this builder. It
+    /// influences the circuit version, the flag-byte format, and the cross-address policy, and is
+    /// threaded into building, committing, and parsing. See [`BundleVersion`].
+    ///
+    /// `flags` are the bundle's flags; [`BundleVersion::default_flags`] provides a suitable default
+    /// that a caller may restrict further.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::UnrepresentableFlags`] if `flags` cannot be encoded under
+    /// `bundle_version`, or [`BuildError::CoinbaseSpendsEnabled`] if `bundle_type` is
+    /// [`BundleType::Coinbase`] but `flags` enable spends.
+    pub fn new(
+        bundle_type: BundleType,
+        bundle_version: BundleVersion,
+        flags: Flags,
+        anchor: Anchor,
+    ) -> Result<Self, BuildError> {
+        if flags.to_byte(bundle_version).is_none() {
+            return Err(BuildError::UnrepresentableFlags);
+        }
+        if matches!(bundle_type, BundleType::Coinbase) && flags.spends_enabled() {
+            return Err(BuildError::CoinbaseSpendsEnabled);
+        }
+        Ok(Builder {
+            bundle_type,
+            bundle_version,
+            flags,
             spends: vec![],
             outputs: vec![],
             changes: vec![],
-            bundle_version,
-            bundle_type,
             anchor,
-        }
+        })
     }
 
     /// Returns the note version associated with this builder's bundle version.
@@ -818,8 +800,7 @@ impl Builder {
         note: Note,
         merkle_path: MerklePath,
     ) -> Result<(), SpendError> {
-        let flags = self.bundle_type.flags(self.bundle_version);
-        if !flags.spends_enabled() {
+        if !self.flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
 
@@ -847,11 +828,10 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        let flags = self.bundle_type.flags(self.bundle_version);
-        if !flags.outputs_enabled() {
+        if !self.flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
-        if !flags.cross_address_enabled() {
+        if !self.flags.cross_address_enabled() {
             return Err(OutputError::CrossAddressDisabled);
         }
 
@@ -897,15 +877,14 @@ impl Builder {
         value: NoteValue,
         memo: [u8; 512],
     ) -> Result<(), OutputError> {
-        let flags = self.bundle_type.flags(self.bundle_version);
-        if !flags.outputs_enabled() {
+        if !self.flags.outputs_enabled() {
             return Err(OutputError::OutputsDisabled);
         }
         // In a bundle that disables cross-address transfers, every change output pairs with
         // a fabricated wallet-controlled spend, so spends must be enabled. (In a bundle that
         // permits cross-address transfers, a change output is just an owned output and does
         // not require spends.)
-        if !flags.cross_address_enabled() && !flags.spends_enabled() {
+        if !self.flags.cross_address_enabled() && !self.flags.spends_enabled() {
             return Err(OutputError::SpendsDisabled);
         }
 
@@ -979,6 +958,7 @@ impl Builder {
         bundle(
             rng,
             self.bundle_version,
+            self.flags,
             self.anchor,
             self.bundle_type,
             self.spends,
@@ -996,6 +976,7 @@ impl Builder {
         build_bundle(
             rng,
             self.bundle_version,
+            self.flags,
             self.anchor,
             self.bundle_type,
             self.spends,
@@ -1031,10 +1012,18 @@ impl Builder {
 ///
 /// In a bundle that disables cross-address transfers, `outputs` must be empty (every output
 /// is addressed to the note it spends); retained value must be supplied as `changes`.
+///
+/// # Errors
+///
+/// Returns [`BuildError::UnrepresentableFlags`] if `flags` cannot be encoded under
+/// `bundle_version`, or [`BuildError::CoinbaseSpendsEnabled`] if `bundle_type` is
+/// [`BundleType::Coinbase`] but `flags` enable spends.
+#[allow(clippy::too_many_arguments)]
 #[cfg(feature = "circuit")]
 pub fn bundle<V: TryFrom<i64>>(
     rng: impl RngCore,
     bundle_version: BundleVersion,
+    flags: Flags,
     anchor: Anchor,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
@@ -1044,6 +1033,7 @@ pub fn bundle<V: TryFrom<i64>>(
     build_bundle(
         rng,
         bundle_version,
+        flags,
         anchor,
         bundle_type,
         spends,
@@ -1124,6 +1114,7 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
 fn build_bundle<B, R: RngCore>(
     mut rng: R,
     bundle_version: BundleVersion,
+    flags: Flags,
     anchor: Anchor,
     bundle_type: BundleType,
     spends: Vec<SpendInfo>,
@@ -1131,7 +1122,17 @@ fn build_bundle<B, R: RngCore>(
     changes: Vec<ChangeInfo>,
     finisher: impl FnOnce(Vec<ActionInfo>, Flags, ValueSum, BundleMetadata, R) -> Result<B, BuildError>,
 ) -> Result<B, BuildError> {
-    let flags = bundle_type.flags(bundle_version);
+    // Every build path funnels through here (the free `bundle` function, `Builder::build`, and
+    // `Builder::build_for_pczt`), so validate the version-dependent invariants here rather than
+    // trusting each caller: the flags must be encodable under the bundle version, and a coinbase
+    // bundle must not enable spends. `Builder::new` also enforces both up front, for fail-fast
+    // construction.
+    if flags.to_byte(bundle_version).is_none() {
+        return Err(BuildError::UnrepresentableFlags);
+    }
+    if matches!(bundle_type, BundleType::Coinbase) && flags.spends_enabled() {
+        return Err(BuildError::CoinbaseSpendsEnabled);
+    }
     let note_version = bundle_version.note_version();
 
     let num_requested_spends = spends.len();
@@ -1173,7 +1174,7 @@ fn build_bundle<B, R: RngCore>(
     }
 
     let num_actions = bundle_type
-        .num_actions(num_requested_spends, num_requested_outputs, bundle_version)
+        .num_actions(flags, num_requested_spends, num_requested_outputs)
         .map_err(|_| BuildError::BundleTypeNotSatisfiable)?;
 
     let (pre_actions, bundle_meta) = if !flags.cross_address_enabled() {
@@ -1703,7 +1704,13 @@ pub mod testing {
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
             let bundle_version = BundleVersion::orchard_v1();
-            let mut builder = Builder::new(bundle_version, BundleType::DEFAULT, self.anchor);
+            let mut builder = Builder::new(
+                BundleType::DEFAULT,
+                bundle_version,
+                bundle_version.default_flags(),
+                self.anchor,
+            )
+            .unwrap();
 
             for (note, path) in self.notes.into_iter() {
                 builder.add_spend(fvk.clone(), note, path).unwrap();
@@ -1808,7 +1815,7 @@ mod tests {
     };
     use crate::{
         builder::BundleType,
-        bundle::{Authorized, Bundle, BundleVersion},
+        bundle::{Authorized, Bundle, BundleVersion, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
@@ -1833,43 +1840,45 @@ mod tests {
         (note, merkle_path, anchor)
     }
 
-    fn restricted_bundle_type(bundle_required: bool) -> BundleType {
-        BundleType::Transactional {
-            spends_enabled: true,
-            outputs_enabled: true,
-            bundle_required,
-        }
+    fn transactional(bundle_required: bool) -> BundleType {
+        BundleType::Transactional { bundle_required }
     }
 
     #[test]
-    fn transactional_cross_address_defaults_to_least_restrictive() {
-        let bundle_type = BundleType::Transactional {
-            spends_enabled: true,
-            outputs_enabled: true,
-            bundle_required: false,
-        };
-
-        // The builder defaults to the least-restrictive value consensus permits. Pool restrictions
-        // leave the choice free everywhere except Orchard post-NU6.3, so the default is enabled
-        // for every variant but that one.
-
-        // Orchard pre-NU6.3: free, so the default is enabled.
+    fn default_flags_match_pool_policy() {
+        // The builder's default flags enable spends and outputs and leave cross-address transfers
+        // as permissive as consensus allows. The bundle version leaves the cross-address choice free
+        // everywhere except Orchard from NU6.3 onward, where it is mandatorily disabled.
         for bundle_version in [
             BundleVersion::orchard_insecure_v0(),
             BundleVersion::orchard_v1(),
+            BundleVersion::ironwood_v2(),
         ] {
-            assert!(bundle_type.flags(bundle_version).cross_address_enabled());
+            let flags = bundle_version.default_flags();
+            assert!(flags.spends_enabled());
+            assert!(flags.outputs_enabled());
+            assert!(flags.cross_address_enabled());
         }
 
-        // Orchard post-NU6.3: consensus mandates the restriction, so the default is disabled.
-        assert!(!bundle_type
-            .flags(BundleVersion::orchard_v2())
-            .cross_address_enabled());
+        // Orchard from NU6.3 onward mandates the cross-address restriction.
+        let flags = BundleVersion::orchard_v2().default_flags();
+        assert!(flags.spends_enabled());
+        assert!(flags.outputs_enabled());
+        assert!(!flags.cross_address_enabled());
 
-        // Ironwood post-NU6.3: free, so the default is enabled (currently built unrestricted).
-        assert!(bundle_type
-            .flags(BundleVersion::ironwood_v2())
-            .cross_address_enabled());
+        // The default flag bytes follow from the settings above.
+        assert_eq!(
+            BundleVersion::orchard_v2()
+                .default_flags()
+                .to_byte(BundleVersion::orchard_v2()),
+            Some(0b011),
+        );
+        assert_eq!(
+            BundleVersion::ironwood_v2()
+                .default_flags()
+                .to_byte(BundleVersion::ironwood_v2()),
+            Some(0b111),
+        );
     }
 
     /// Creates a builder with the given `bundle_version` and `bundle_type` over the
@@ -1883,11 +1892,24 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
 
+        // Coinbase bundles must disable spends; transactional bundles use the version's defaults.
+        let flags = if matches!(bundle_type, BundleType::Coinbase) {
+            Flags::from_parts(
+                false,
+                true,
+                bundle_version.permits_cross_address_transfers(),
+            )
+        } else {
+            bundle_version.default_flags()
+        };
+
         let mut builder = Builder::new(
-            bundle_version,
             bundle_type,
+            bundle_version,
+            flags,
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .expect("flags are valid for the bundle version");
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .expect("output-only builders accept ordinary outputs");
@@ -1941,38 +1963,71 @@ mod tests {
     }
 
     #[test]
-    fn coinbase_is_not_exceptional_for_cross_address() {
-        // Coinbase bundles always disable spends, but are otherwise no different wrt the
-        // cross-address restriction: they set `enableCrossAddress` exactly as a non-coinbase
-        // transaction would for the same pool restrictions.
-        for pr in [
-            BundleVersion::orchard_insecure_v0(),
-            BundleVersion::orchard_v1(),
-            BundleVersion::orchard_v2(),
-            BundleVersion::ironwood_v2(),
-        ] {
-            let flags = BundleType::Coinbase.flags(pr);
-            assert!(!flags.spends_enabled());
-            assert!(flags.outputs_enabled());
-            assert_eq!(
-                flags.cross_address_enabled(),
-                pr.permits_cross_address_transfers()
-            );
-        }
-        // Orchard post-NU6.3 mandates the restriction, so the coinbase flag byte has bit 2
-        // clear; Ironwood leaves the builder default (set).
-        assert_eq!(
-            BundleType::Coinbase
-                .flags(BundleVersion::orchard_v2())
-                .to_byte(BundleVersion::orchard_v2()),
-            Some(0b010)
+    fn coinbase_rejects_spends_enabled_flags() {
+        let anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+        let bundle_version = BundleVersion::ironwood_v2();
+
+        // A coinbase bundle must disable spends; the builder rejects spends-enabled flags at
+        // construction rather than silently producing an invalid bundle.
+        assert!(matches!(
+            Builder::new(
+                BundleType::Coinbase,
+                bundle_version,
+                bundle_version.default_flags(),
+                anchor,
+            ),
+            Err(BuildError::CoinbaseSpendsEnabled)
+        ));
+
+        // Spends-disabled flags are accepted.
+        assert!(Builder::new(
+            BundleType::Coinbase,
+            bundle_version,
+            Flags::from_parts(
+                false,
+                true,
+                bundle_version.permits_cross_address_transfers()
+            ),
+            anchor,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn free_bundle_rejects_coinbase_spends_enabled() {
+        let mut rng = OsRng;
+        let anchor: Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+        let bundle_version = BundleVersion::ironwood_v2();
+
+        // The coinbase-spends invariant is enforced on every build path, not just at
+        // `Builder::new`: a direct caller of the free `bundle` function cannot silently produce a
+        // coinbase bundle with `enableSpends` set.
+        let result = bundle::<i64>(
+            &mut rng,
+            bundle_version,
+            bundle_version.default_flags(), // spends enabled
+            anchor,
+            BundleType::Coinbase,
+            vec![],
+            vec![],
+            vec![],
         );
-        assert_eq!(
-            BundleType::Coinbase
-                .flags(BundleVersion::ironwood_v2())
-                .to_byte(BundleVersion::ironwood_v2()),
-            Some(0b110)
-        );
+        assert!(matches!(result, Err(BuildError::CoinbaseSpendsEnabled)));
+    }
+
+    #[test]
+    fn new_rejects_unrepresentable_flags() {
+        // Orchard from NU6.3 onward cannot encode cross-address-enabled flags.
+        let bundle_version = BundleVersion::orchard_v2();
+        assert!(matches!(
+            Builder::new(
+                BundleType::DEFAULT,
+                bundle_version,
+                Flags::ENABLED,
+                EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+            ),
+            Err(BuildError::UnrepresentableFlags)
+        ));
     }
 
     #[test]
@@ -1992,7 +2047,13 @@ mod tests {
             bundle_version.note_version(),
         );
 
-        let mut builder = Builder::new(bundle_version, restricted_bundle_type(false), anchor);
+        let mut builder = Builder::new(
+            transactional(false),
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         assert_eq!(
             builder.add_output(
                 None,
@@ -2085,10 +2146,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::Internal);
         let mut builder = Builder::new(
+            transactional(true),
             BundleVersion::orchard_v2(),
-            restricted_bundle_type(true),
+            BundleVersion::orchard_v2().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
 
         builder
             .add_change_output(fvk, None, recipient, NoteValue::ZERO, [0u8; 512])
@@ -2128,8 +2191,9 @@ mod tests {
             bundle::<i64>(
                 &mut rng,
                 bundle_version,
+                bundle_version.default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-                restricted_bundle_type(false),
+                transactional(false),
                 vec![],
                 vec![OutputInfo::new(
                     None,
@@ -2155,8 +2219,9 @@ mod tests {
         let (bundle, bundle_meta) = bundle::<i64>(
             &mut rng,
             bundle_version,
+            bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-            restricted_bundle_type(false),
+            transactional(false),
             vec![],
             vec![],
             vec![change_output],
@@ -2174,14 +2239,14 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::Internal);
-        let bundle_type = BundleType::Transactional {
-            spends_enabled: false,
-            outputs_enabled: true,
-            bundle_required: false,
-        };
+        let bundle_type = transactional(false);
         let bundle_version = BundleVersion::orchard_v2();
-        // Under OrchardNu6_3Onward this is spends-disabled and cross-address-disabled.
-        let flags = bundle_type.flags(bundle_version);
+        // Under Orchard from NU6.3 onward this is spends-disabled and cross-address-disabled.
+        let flags = Flags::from_parts(
+            false,
+            true,
+            bundle_version.permits_cross_address_transfers(),
+        );
         assert!(!flags.spends_enabled());
         assert!(flags.outputs_enabled());
         assert!(!flags.cross_address_enabled());
@@ -2200,6 +2265,7 @@ mod tests {
             bundle::<i64>(
                 &mut rng,
                 bundle_version,
+                flags,
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 bundle_type,
                 vec![],
@@ -2225,7 +2291,13 @@ mod tests {
             NoteValue::from_raw(15_000),
             mismatched_note_version,
         );
-        let mut builder = Builder::new(bundle_version, BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
 
         let (note, merkle_path, anchor) = note_with_path(
@@ -2238,6 +2310,7 @@ mod tests {
         assert!(bundle::<i64>(
             &mut rng,
             bundle_version,
+            bundle_version.default_flags(),
             anchor,
             BundleType::DEFAULT,
             vec![spend],
@@ -2257,6 +2330,7 @@ mod tests {
             bundle::<i64>(
                 &mut rng,
                 bundle_version,
+                bundle_version.default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 BundleType::DEFAULT,
                 vec![],
@@ -2279,6 +2353,7 @@ mod tests {
             bundle::<i64>(
                 &mut rng,
                 bundle_version,
+                bundle_version.default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
                 BundleType::DEFAULT,
                 vec![],
@@ -2298,14 +2373,12 @@ mod tests {
             FullViewingKey::from(&SpendingKey::random(&mut rng)).address_at(0u32, Scope::External);
         let bundle_version = BundleVersion::orchard_v1();
         let mut builder = Builder::new(
+            BundleType::DEFAULT,
             bundle_version,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
 
         // Even in a bundle that permits cross-address transfers, a change output's ownership
         // is validated eagerly (the fvk is no longer dead weight).
@@ -2341,15 +2414,18 @@ mod tests {
         // Orchard actions at all post NU6.3. So the case unsupported by the builder would only
         // happen by voluntarily disabling `enableSpends` and/or `enableCrossAddress` when
         // consensus does not require it.
+        let bundle_version = BundleVersion::orchard_v2();
         let mut builder = Builder::new(
-            BundleVersion::orchard_v2(),
-            BundleType::Transactional {
-                spends_enabled: false,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            transactional(false),
+            bundle_version,
+            Flags::from_parts(
+                false,
+                true,
+                bundle_version.permits_cross_address_transfers(),
+            ),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             builder.add_change_output(fvk, None, recipient, NoteValue::from_raw(5_000), [0u8; 512]),
@@ -2374,7 +2450,13 @@ mod tests {
             bundle_version.note_version(),
         );
 
-        let mut builder = Builder::new(bundle_version, restricted_bundle_type(false), anchor);
+        let mut builder = Builder::new(
+            transactional(false),
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(
@@ -2411,10 +2493,12 @@ mod tests {
         // A change-only bundle: the padding dummy spend is signed during `prepare`, so
         // a single `sign` call with the change key completes the actions.
         let mut builder = Builder::new(
+            transactional(false),
             BundleVersion::orchard_v2(),
-            restricted_bundle_type(false),
+            BundleVersion::orchard_v2().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_change_output(
                 change_fvk,
@@ -2456,7 +2540,13 @@ mod tests {
             bundle_version.note_version(),
         );
 
-        let mut builder = Builder::new(bundle_version, restricted_bundle_type(false), anchor);
+        let mut builder = Builder::new(
+            transactional(false),
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(
@@ -2502,10 +2592,12 @@ mod tests {
         // `circuit::tests::restricted_statement_requires_supporting_key`.
         let build_restricted = |rng: &mut OsRng| {
             Builder::new(
+                transactional(true),
                 BundleVersion::orchard_v2(),
-                restricted_bundle_type(true),
+                BundleVersion::orchard_v2().default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
             )
+            .unwrap()
             .build::<i64>(rng)
             .unwrap()
             .unwrap()

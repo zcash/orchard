@@ -164,6 +164,18 @@ impl BundleVersion {
         )
     }
 
+    /// The default [`Flags`] for a bundle of this version: spends and outputs enabled, with the
+    /// cross-address bit set to the least-restrictive value the version permits (enabled unless
+    /// the version mandates the restriction).
+    ///
+    /// This is the prover-side default a builder uses when the caller does not restrict the bundle
+    /// further. Where the version leaves the cross-address choice free (e.g. the Ironwood pool), a
+    /// caller may instead pass a more restricted flag set such as
+    /// [`Flags::CROSS_ADDRESS_DISABLED`]; the chosen flags must be representable under the version.
+    pub fn default_flags(&self) -> Flags {
+        Flags::from_parts(true, true, self.permits_cross_address_transfers())
+    }
+
     /// Whether an authorized bundle of this version must carry a canonically-sized proof.
     ///
     /// The historical pre-NU6.2 Orchard pool ([`ProtocolVersion::InsecureV0`]) is only used to

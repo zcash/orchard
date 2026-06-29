@@ -424,14 +424,12 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
+            BundleType::DEFAULT,
             bundle_version,
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            bundle_version.default_flags(),
             anchor,
-        );
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
         builder
             .add_change_output(
@@ -459,10 +457,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
         let mut builder = Builder::new(
-            BundleVersion::orchard_v1(),
             BundleType::DEFAULT,
+            BundleVersion::orchard_v1(),
+            BundleVersion::orchard_v1().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -478,10 +478,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
         let mut builder = Builder::new(
-            BundleVersion::ironwood_v2(),
             BundleType::DEFAULT,
+            BundleVersion::ironwood_v2(),
+            BundleVersion::ironwood_v2().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -505,10 +507,12 @@ mod tests {
 
         // Run the Creator and Constructor roles.
         let mut builder = Builder::new(
-            bundle_version,
             BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -564,10 +568,12 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
 
         let mut builder = Builder::new(
-            BundleVersion::ironwood_v2(),
             BundleType::DEFAULT,
+            BundleVersion::ironwood_v2(),
+            BundleVersion::ironwood_v2().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-        );
+        )
+        .unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
             .unwrap();
@@ -656,7 +662,13 @@ mod tests {
         };
 
         let bundle_version = BundleVersion::ironwood_v2();
-        let mut builder = Builder::new(bundle_version, BundleType::DEFAULT, anchor);
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -749,7 +761,14 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let mut builder = Builder::new(BundleVersion::orchard_v1(), BundleType::DEFAULT, anchor);
+        let bundle_version = BundleVersion::orchard_v1();
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
@@ -1088,15 +1107,14 @@ mod tests {
         let merkle_path = MerklePath::dummy(&mut rng);
         let anchor = merkle_path.root(note.commitment().into());
 
+        let bundle_version = BundleVersion::orchard_v2();
         let mut builder = Builder::new(
-            BundleVersion::orchard_v2(),
-            BundleType::Transactional {
-                spends_enabled: true,
-                outputs_enabled: true,
-                bundle_required: false,
-            },
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             anchor,
-        );
+        )
+        .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
 
         let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
