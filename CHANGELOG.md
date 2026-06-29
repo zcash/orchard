@@ -283,6 +283,8 @@ Existing callers keep the current behavior by constructing bundles with
   `Builder::new(bundle_type, bundle_version, flags, anchor)`.
 - `orchard::builder::bundle_for_version`; use `builder::bundle` with
   `BundleVersion` and a `Vec<ChangeInfo>`.
+- `orchard::builder::BundleType::DISABLED`; construct the builder with a `Flags` value
+  that disables spends and outputs instead.
 - Zero-argument `orchard::circuit::{ProvingKey, VerifyingKey}::build`; pass an
   `OrchardCircuitVersion` explicitly.
 - `orchard::circuit::{ProvingKey, VerifyingKey}::build_for_version`; use

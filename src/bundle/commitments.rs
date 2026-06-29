@@ -129,6 +129,7 @@ fn hasher(personal: &[u8; 16]) -> State {
 /// bundle's [`BundleVersion`].
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
+/// [`BundleVersion`]: crate::bundle::BundleVersion
 pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     bundle: &Bundle<A, V>,
     tx_version: TxVersion,

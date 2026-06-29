@@ -957,10 +957,10 @@ impl Builder {
     ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
         bundle(
             rng,
+            self.bundle_type,
             self.bundle_version,
             self.flags,
             self.anchor,
-            self.bundle_type,
             self.spends,
             self.outputs,
             self.changes,
@@ -1022,10 +1022,10 @@ impl Builder {
 #[cfg(feature = "circuit")]
 pub fn bundle<V: TryFrom<i64>>(
     rng: impl RngCore,
+    bundle_type: BundleType,
     bundle_version: BundleVersion,
     flags: Flags,
     anchor: Anchor,
-    bundle_type: BundleType,
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     changes: Vec<ChangeInfo>,
@@ -2004,10 +2004,10 @@ mod tests {
         // coinbase bundle with `enableSpends` set.
         let result = bundle::<i64>(
             &mut rng,
+            BundleType::Coinbase,
             bundle_version,
             bundle_version.default_flags(), // spends enabled
             anchor,
-            BundleType::Coinbase,
             vec![],
             vec![],
             vec![],
@@ -2190,10 +2190,10 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
+                transactional(false),
                 bundle_version,
                 bundle_version.default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-                transactional(false),
                 vec![],
                 vec![OutputInfo::new(
                     None,
@@ -2218,10 +2218,10 @@ mod tests {
         .unwrap();
         let (bundle, bundle_meta) = bundle::<i64>(
             &mut rng,
+            transactional(false),
             bundle_version,
             bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-            transactional(false),
             vec![],
             vec![],
             vec![change_output],
@@ -2264,10 +2264,10 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
+                bundle_type,
                 bundle_version,
                 flags,
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-                bundle_type,
                 vec![],
                 vec![],
                 vec![change_output],
@@ -2309,10 +2309,10 @@ mod tests {
         let spend = SpendInfo::new(fvk.clone(), note, merkle_path).unwrap();
         assert!(bundle::<i64>(
             &mut rng,
+            BundleType::DEFAULT,
             bundle_version,
             bundle_version.default_flags(),
             anchor,
-            BundleType::DEFAULT,
             vec![spend],
             vec![],
             vec![],
@@ -2329,10 +2329,10 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
+                BundleType::DEFAULT,
                 bundle_version,
                 bundle_version.default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-                BundleType::DEFAULT,
                 vec![],
                 vec![output],
                 vec![],
@@ -2352,10 +2352,10 @@ mod tests {
         assert!(matches!(
             bundle::<i64>(
                 &mut rng,
+                BundleType::DEFAULT,
                 bundle_version,
                 bundle_version.default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
-                BundleType::DEFAULT,
                 vec![],
                 vec![],
                 vec![change],
