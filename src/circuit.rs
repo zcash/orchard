@@ -1568,7 +1568,7 @@ mod tests {
         let enable_spend = read_bool(&mut r);
         let enable_output = read_bool(&mut r);
         let (cross_address_bit, bundle_version) = match encoding {
-            ProofFixtureEncoding::LegacyTwoFlags => (0, BundleVersion::orchard_v1()),
+            ProofFixtureEncoding::LegacyTwoFlags => (0, BundleVersion::orchard_v2()),
             ProofFixtureEncoding::PostNu6_3ThreeFlags => {
                 // The fixture stores the instance-level *disable* bit; the NU6.3 flag
                 // byte carries the *enable* bit, so invert when reconstructing.
@@ -1579,7 +1579,7 @@ mod tests {
                 let cross_address_disabled = read_bool(&mut r);
                 (
                     u8::from(!cross_address_disabled) << 2,
-                    BundleVersion::ironwood_v2(),
+                    BundleVersion::ironwood_v3(),
                 )
             }
         };

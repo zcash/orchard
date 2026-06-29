@@ -28,8 +28,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     let create_bundle = |num_recipients| {
         let mut builder = Builder::new(
             BundleType::DEFAULT,
-            BundleVersion::orchard_v1(),
-            BundleVersion::orchard_v1().default_flags(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v2().default_flags(),
             Anchor::from_bytes([0; 32]).unwrap(),
         )
         .unwrap();

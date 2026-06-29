@@ -1703,7 +1703,7 @@ pub mod testing {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
             let fvk = FullViewingKey::from(&self.sk);
-            let bundle_version = BundleVersion::orchard_v1();
+            let bundle_version = BundleVersion::orchard_v2();
             let mut builder = Builder::new(
                 BundleType::DEFAULT,
                 bundle_version,
@@ -1850,9 +1850,9 @@ mod tests {
         // as permissive as consensus allows. The bundle version leaves the cross-address choice free
         // everywhere except Orchard from NU6.3 onward, where it is mandatorily disabled.
         for bundle_version in [
-            BundleVersion::orchard_insecure_v0(),
-            BundleVersion::orchard_v1(),
-            BundleVersion::ironwood_v2(),
+            BundleVersion::orchard_insecure_v1(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::ironwood_v3(),
         ] {
             let flags = bundle_version.default_flags();
             assert!(flags.spends_enabled());
@@ -1861,22 +1861,22 @@ mod tests {
         }
 
         // Orchard from NU6.3 onward mandates the cross-address restriction.
-        let flags = BundleVersion::orchard_v2().default_flags();
+        let flags = BundleVersion::orchard_v3().default_flags();
         assert!(flags.spends_enabled());
         assert!(flags.outputs_enabled());
         assert!(!flags.cross_address_enabled());
 
         // The default flag bytes follow from the settings above.
         assert_eq!(
-            BundleVersion::orchard_v2()
+            BundleVersion::orchard_v3()
                 .default_flags()
-                .to_byte(BundleVersion::orchard_v2()),
+                .to_byte(BundleVersion::orchard_v3()),
             Some(0b011),
         );
         assert_eq!(
-            BundleVersion::ironwood_v2()
+            BundleVersion::ironwood_v3()
                 .default_flags()
-                .to_byte(BundleVersion::ironwood_v2()),
+                .to_byte(BundleVersion::ironwood_v3()),
             Some(0b111),
         );
     }
@@ -1922,7 +1922,7 @@ mod tests {
         let mut rng = OsRng;
 
         let builder =
-            output_only_builder(&mut rng, BundleVersion::orchard_v1(), BundleType::DEFAULT);
+            output_only_builder(&mut rng, BundleVersion::orchard_v2(), BundleType::DEFAULT);
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);
 
@@ -1949,7 +1949,7 @@ mod tests {
         // be an Ironwood bundle. There the builder leaves cross-address enabled by default,
         // and therefore ordinary outputs build normally.
         let builder =
-            output_only_builder(&mut rng, BundleVersion::ironwood_v2(), BundleType::Coinbase);
+            output_only_builder(&mut rng, BundleVersion::ironwood_v3(), BundleType::Coinbase);
 
         let (bundle, _) = builder
             .build::<i64>(&mut rng)
@@ -1965,7 +1965,7 @@ mod tests {
     #[test]
     fn coinbase_rejects_spends_enabled_flags() {
         let anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
-        let bundle_version = BundleVersion::ironwood_v2();
+        let bundle_version = BundleVersion::ironwood_v3();
 
         // A coinbase bundle must disable spends; the builder rejects spends-enabled flags at
         // construction rather than silently producing an invalid bundle.
@@ -1997,7 +1997,7 @@ mod tests {
     fn free_bundle_rejects_coinbase_spends_enabled() {
         let mut rng = OsRng;
         let anchor: Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
-        let bundle_version = BundleVersion::ironwood_v2();
+        let bundle_version = BundleVersion::ironwood_v3();
 
         // The coinbase-spends invariant is enforced on every build path, not just at
         // `Builder::new`: a direct caller of the free `bundle` function cannot silently produce a
@@ -2018,7 +2018,7 @@ mod tests {
     #[test]
     fn new_rejects_unrepresentable_flags() {
         // Orchard from NU6.3 onward cannot encode cross-address-enabled flags.
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         assert!(matches!(
             Builder::new(
                 BundleType::DEFAULT,
@@ -2039,7 +2039,7 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         let (note, merkle_path, anchor) = note_with_path(
             &mut rng,
             spend_recipient,
@@ -2147,8 +2147,8 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::Internal);
         let mut builder = Builder::new(
             transactional(true),
-            BundleVersion::orchard_v2(),
-            BundleVersion::orchard_v2().default_flags(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::orchard_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         )
         .unwrap();
@@ -2185,7 +2185,7 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
 
         assert!(matches!(
             bundle::<i64>(
@@ -2240,7 +2240,7 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::Internal);
         let bundle_type = transactional(false);
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         // Under Orchard from NU6.3 onward this is spends-disabled and cross-address-disabled.
         let flags = Flags::from_parts(
             false,
@@ -2282,7 +2282,7 @@ mod tests {
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
-        let bundle_version = BundleVersion::ironwood_v2();
+        let bundle_version = BundleVersion::ironwood_v3();
         let mismatched_note_version = NoteVersion::V2;
 
         let (note, merkle_path, anchor) = note_with_path(
@@ -2371,7 +2371,7 @@ mod tests {
         let owned = fvk.address_at(0u32, Scope::Internal);
         let foreign =
             FullViewingKey::from(&SpendingKey::random(&mut rng)).address_at(0u32, Scope::External);
-        let bundle_version = BundleVersion::orchard_v1();
+        let bundle_version = BundleVersion::orchard_v2();
         let mut builder = Builder::new(
             BundleType::DEFAULT,
             bundle_version,
@@ -2414,7 +2414,7 @@ mod tests {
         // Orchard actions at all post NU6.3. So the case unsupported by the builder would only
         // happen by voluntarily disabling `enableSpends` and/or `enableCrossAddress` when
         // consensus does not require it.
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         let mut builder = Builder::new(
             transactional(false),
             bundle_version,
@@ -2442,7 +2442,7 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         let (note, merkle_path, anchor) = note_with_path(
             &mut rng,
             spend_recipient,
@@ -2494,8 +2494,8 @@ mod tests {
         // a single `sign` call with the change key completes the actions.
         let mut builder = Builder::new(
             transactional(false),
-            BundleVersion::orchard_v2(),
-            BundleVersion::orchard_v2().default_flags(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::orchard_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         )
         .unwrap();
@@ -2532,7 +2532,7 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         let (note, merkle_path, anchor) = note_with_path(
             &mut rng,
             spend_recipient,
@@ -2584,7 +2584,7 @@ mod tests {
 
     #[test]
     fn create_proof_supports_cross_address_disabled_only_for_post_nu6_3() {
-        // A cross-address-disabled bundle can only be built under `BundleVersion::orchard_v2()`
+        // A cross-address-disabled bundle can only be built under `BundleVersion::orchard_v3()`
         // (`BundleVersion` owns the cross-address policy), which builds post-NU6.3
         // circuits. Proving therefore requires a matching post-NU6.3 key; a pre-NU6.3 key
         // is rejected as a circuit-version mismatch. The lower-level interlock that rejects
@@ -2593,8 +2593,8 @@ mod tests {
         let build_restricted = |rng: &mut OsRng| {
             Builder::new(
                 transactional(true),
-                BundleVersion::orchard_v2(),
-                BundleVersion::orchard_v2().default_flags(),
+                BundleVersion::orchard_v3(),
+                BundleVersion::orchard_v3().default_flags(),
                 EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
             )
             .unwrap()

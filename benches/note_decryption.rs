@@ -47,8 +47,8 @@ fn bench_note_decryption(c: &mut Criterion) {
     let bundle = {
         let mut builder = Builder::new(
             BundleType::DEFAULT,
-            BundleVersion::orchard_v1(),
-            BundleVersion::orchard_v1().default_flags(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v2().default_flags(),
             Anchor::from_bytes([0; 32]).unwrap(),
         )
         .unwrap();

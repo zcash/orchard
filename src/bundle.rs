@@ -53,7 +53,7 @@ impl<T> Action<T> {
 
 /// A shielded [`ValuePool`] (Orchard or Ironwood) together with the [`ProtocolVersion`]
 /// under which a bundle in that pool is built. The Ironwood pool only exists from NU6.3
-/// onward, so it is only valid in combination with [`ProtocolVersion::V2`].
+/// onward, so it is only valid in combination with [`ProtocolVersion::V3`].
 ///
 /// This pins the `circuit_version` and the flag-byte format, and determines whether
 /// cross-address transfers are permitted (`permits_cross_address_transfers`).
@@ -77,25 +77,16 @@ pub struct BundleVersion {
 
 impl BundleVersion {
     /// The [`BundleVersion`] for the [`ValuePool::Orchard`] pool under
-    /// [`ProtocolVersion::InsecureV0`] (the Orchard pool prior to NU6.2).
-    pub const fn orchard_insecure_v0() -> Self {
+    /// [`ProtocolVersion::InsecureV1`] (the Orchard pool prior to NU6.2).
+    pub const fn orchard_insecure_v1() -> Self {
         Self {
             value_pool: ValuePool::Orchard,
-            protocol_version: ProtocolVersion::InsecureV0,
+            protocol_version: ProtocolVersion::InsecureV1,
         }
     }
 
     /// The [`BundleVersion`] for the [`ValuePool::Orchard`] pool under
-    /// [`ProtocolVersion::V1`] (the Orchard pool from NU6.2 until NU6.3).
-    pub const fn orchard_v1() -> Self {
-        Self {
-            value_pool: ValuePool::Orchard,
-            protocol_version: ProtocolVersion::V1,
-        }
-    }
-
-    /// The [`BundleVersion`] for the [`ValuePool::Orchard`] pool under
-    /// [`ProtocolVersion::V2`] (the Orchard pool at NU6.3 and later).
+    /// [`ProtocolVersion::V2`] (the Orchard pool from NU6.2 until NU6.3).
     pub const fn orchard_v2() -> Self {
         Self {
             value_pool: ValuePool::Orchard,
@@ -103,12 +94,21 @@ impl BundleVersion {
         }
     }
 
+    /// The [`BundleVersion`] for the [`ValuePool::Orchard`] pool under
+    /// [`ProtocolVersion::V3`] (the Orchard pool at NU6.3 and later).
+    pub const fn orchard_v3() -> Self {
+        Self {
+            value_pool: ValuePool::Orchard,
+            protocol_version: ProtocolVersion::V3,
+        }
+    }
+
     /// The [`BundleVersion`] for the [`ValuePool::Ironwood`] pool under
-    /// [`ProtocolVersion::V2`] (the Ironwood pool, introduced at NU6.3).
-    pub const fn ironwood_v2() -> Self {
+    /// [`ProtocolVersion::V3`] (the Ironwood pool, introduced at NU6.3).
+    pub const fn ironwood_v3() -> Self {
         Self {
             value_pool: ValuePool::Ironwood,
-            protocol_version: ProtocolVersion::V2,
+            protocol_version: ProtocolVersion::V3,
         }
     }
 
@@ -126,15 +126,15 @@ impl BundleVersion {
     /// with this bundle version.
     ///
     /// This is many-to-one: both the [`ValuePool::Orchard`] and [`ValuePool::Ironwood`] pools
-    /// under [`ProtocolVersion::V2`] share the post-NU6.3 circuit, so build a key with
+    /// under [`ProtocolVersion::V3`] share the post-NU6.3 circuit, so build a key with
     /// `ProvingKey::build(bundle_version.circuit_version())` /
     /// `VerifyingKey::build(bundle_version.circuit_version())`.
     #[cfg(feature = "circuit")]
     pub fn circuit_version(&self) -> OrchardCircuitVersion {
         match self.protocol_version {
-            ProtocolVersion::InsecureV0 => OrchardCircuitVersion::InsecurePreNu6_2,
-            ProtocolVersion::V1 => OrchardCircuitVersion::FixedPostNu6_2,
-            ProtocolVersion::V2 => OrchardCircuitVersion::PostNu6_3,
+            ProtocolVersion::InsecureV1 => OrchardCircuitVersion::InsecurePreNu6_2,
+            ProtocolVersion::V2 => OrchardCircuitVersion::FixedPostNu6_2,
+            ProtocolVersion::V3 => OrchardCircuitVersion::PostNu6_3,
         }
     }
 
@@ -153,14 +153,14 @@ impl BundleVersion {
     /// action (`enableCrossAddress = 1` in a v6 transaction).
     ///
     /// Every version permits them except the [`ValuePool::Orchard`] pool under
-    /// [`ProtocolVersion::V2`], which mandates the cross-address restriction. This is not
+    /// [`ProtocolVersion::V3`], which mandates the cross-address restriction. This is not
     /// necessarily the same cross-address-enabled decision the
     /// [`Builder`](crate::builder::Builder) makes; that is builder policy chosen within this
     /// constraint.
     pub(crate) fn permits_cross_address_transfers(&self) -> bool {
         !matches!(
             (self.protocol_version, self.value_pool),
-            (ProtocolVersion::V2, ValuePool::Orchard)
+            (ProtocolVersion::V3, ValuePool::Orchard)
         )
     }
 
@@ -178,12 +178,12 @@ impl BundleVersion {
 
     /// Whether an authorized bundle of this version must carry a canonically-sized proof.
     ///
-    /// The historical pre-NU6.2 Orchard pool ([`ProtocolVersion::InsecureV0`]) is only used to
+    /// The historical pre-NU6.2 Orchard pool ([`ProtocolVersion::InsecureV1`]) is only used to
     /// parse already-committed transactions, whose proofs cannot be re-canonicalized, so its
     /// proof size is not enforced. Every later version requires a canonical proof, rejecting
     /// non-canonical (e.g. padded) proofs (GHSA-2x4w-pxqw-58v9).
     pub(crate) fn enforces_canonical_proof_size(&self) -> bool {
-        !matches!(self.protocol_version, ProtocolVersion::InsecureV0)
+        !matches!(self.protocol_version, ProtocolVersion::InsecureV1)
     }
 }
 
@@ -352,26 +352,26 @@ impl Flags {
         // `cross_address_enabled` value is not representable in this context cannot be encoded.
         match (bundle_version.value_pool, bundle_version.protocol_version) {
             // Cross-address Orchard pool transfers are always permitted prior to
-            // ProtocolVersion::V2; there is no flag bit, so a disabled flag set cannot be
+            // ProtocolVersion::V3; there is no flag bit, so a disabled flag set cannot be
             // represented.
-            (ValuePool::Orchard, ProtocolVersion::InsecureV0 | ProtocolVersion::V1) => {
+            (ValuePool::Orchard, ProtocolVersion::InsecureV1 | ProtocolVersion::V2) => {
                 if !self.cross_address_enabled {
                     return None;
                 }
             }
-            // Cross-address Orchard pool transfers are disallowed in ProtocolVersion::V2.
-            (ValuePool::Orchard, ProtocolVersion::V2) => {
+            // Cross-address Orchard pool transfers are disallowed in ProtocolVersion::V3.
+            (ValuePool::Orchard, ProtocolVersion::V3) => {
                 if self.cross_address_enabled {
                     return None;
                 }
             }
             // The Ironwood pool encodes the caller's choice in bit 2.
-            (ValuePool::Ironwood, ProtocolVersion::V2) => {
+            (ValuePool::Ironwood, ProtocolVersion::V3) => {
                 if self.cross_address_enabled {
                     value |= FLAG_V6_CROSS_ADDRESS_ENABLED;
                 }
             }
-            // The Ironwood pool is not defined prior to ProtocolVersion::V2.
+            // The Ironwood pool is not defined prior to ProtocolVersion::V3.
             (ValuePool::Ironwood, _) => return None,
         }
 
@@ -389,8 +389,8 @@ impl Flags {
     /// design) parse and validate the flags knowing only `bundle_version`:
     /// bit 2 can only be 1 for a bundle in the [`ValuePool::Ironwood`] pool, and
     /// otherwise MUST be 0. Assuming that has been checked, cross-address
-    /// transfers are always enabled prior to [`ProtocolVersion::V2`], and under
-    /// [`ProtocolVersion::V2`] are taken to be enabled exactly when bit 2 is set.
+    /// transfers are always enabled prior to [`ProtocolVersion::V3`], and under
+    /// [`ProtocolVersion::V3`] are taken to be enabled exactly when bit 2 is set.
     ///
     /// Note: if the wrong value of `bundle_version` is passed for the actual
     /// pool and epoch of the transaction, then a consensus-invalid transaction
@@ -418,8 +418,8 @@ impl Flags {
 
         // We have already validated bit2 against the pool type
         let cross_address_enabled = match bundle_version.protocol_version {
-            ProtocolVersion::InsecureV0 | ProtocolVersion::V1 => true,
-            ProtocolVersion::V2 => bit2,
+            ProtocolVersion::InsecureV1 | ProtocolVersion::V2 => true,
+            ProtocolVersion::V3 => bit2,
         };
         Some(Self {
             spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
@@ -901,7 +901,7 @@ pub enum CommitmentError {
     /// The requested transaction version is not valid for the bundle's [`BundleVersion`].
     ///
     /// Ironwood bundles exist only in v6 transactions, so an Ironwood bundle
-    /// (`BundleVersion::ironwood_v2()`) cannot be committed with `TxVersion::V5`.
+    /// (`BundleVersion::ironwood_v3()`) cannot be committed with `TxVersion::V5`.
     InvalidTransactionVersion,
 }
 
@@ -922,7 +922,7 @@ impl<V> Bundle<Authorized, V> {
     /// Constructs an authorized `Bundle` from its constituent parts.
     ///
     /// This is the only constructor for an authorized bundle. For every version except the
-    /// historical pre-NU6.2 Orchard pool ([`BundleVersion::orchard_insecure_v0`]) it
+    /// historical pre-NU6.2 Orchard pool ([`BundleVersion::orchard_insecure_v1`]) it
     /// validates that the proof has exactly [`Proof::expected_proof_size`] bytes for
     /// `actions.len()`, so such an authorized bundle can never hold a non-canonical proof. This
     /// matters when building a bundle from untrusted input (e.g. deserializing from bytes), as it
@@ -1074,10 +1074,10 @@ pub mod testing {
     /// Create an arbitrary [`BundleVersion`].
     pub fn arb_bundle_version() -> impl Strategy<Value = BundleVersion> {
         prop_oneof![
-            Just(BundleVersion::orchard_insecure_v0()),
-            Just(BundleVersion::orchard_v1()),
+            Just(BundleVersion::orchard_insecure_v1()),
             Just(BundleVersion::orchard_v2()),
-            Just(BundleVersion::ironwood_v2()),
+            Just(BundleVersion::orchard_v3()),
+            Just(BundleVersion::ironwood_v3()),
         ]
     }
 
@@ -1307,11 +1307,11 @@ pub(crate) mod tests {
             ),
         ] {
             assert_eq!(
-                flags.to_byte(BundleVersion::orchard_v1()),
+                flags.to_byte(BundleVersion::orchard_v2()),
                 orchard_pre_nu6_3
             );
-            assert_eq!(flags.to_byte(BundleVersion::orchard_v2()), orchard_nu6_3);
-            assert_eq!(flags.to_byte(BundleVersion::ironwood_v2()), ironwood_nu6_3);
+            assert_eq!(flags.to_byte(BundleVersion::orchard_v3()), orchard_nu6_3);
+            assert_eq!(flags.to_byte(BundleVersion::ironwood_v3()), ironwood_nu6_3);
         }
     }
 
@@ -1320,9 +1320,9 @@ pub(crate) mod tests {
         // A byte with bit 2 clear parses as an unrestricted bundle for Orchard pre-NU6.3,
         // and a restricted bundle for Orchard or Ironwood post-NU6.3.
         for value in 0b000..=0b011 {
-            let pre_nu6_3_flags = Flags::from_byte(value, BundleVersion::orchard_v1()).unwrap();
-            let nu6_3_flags = Flags::from_byte(value, BundleVersion::orchard_v2()).unwrap();
-            let ironwood_flags = Flags::from_byte(value, BundleVersion::ironwood_v2()).unwrap();
+            let pre_nu6_3_flags = Flags::from_byte(value, BundleVersion::orchard_v2()).unwrap();
+            let nu6_3_flags = Flags::from_byte(value, BundleVersion::orchard_v3()).unwrap();
+            let ironwood_flags = Flags::from_byte(value, BundleVersion::ironwood_v3()).unwrap();
 
             assert_eq!(
                 pre_nu6_3_flags.spends_enabled(),
@@ -1339,26 +1339,26 @@ pub(crate) mod tests {
             // Each parse round-trips to the same byte under its own era, but the
             // restricted set is unrepresentable pre-NU6.3.
             assert_eq!(
-                pre_nu6_3_flags.to_byte(BundleVersion::orchard_v1()),
+                pre_nu6_3_flags.to_byte(BundleVersion::orchard_v2()),
                 Some(value)
             );
             assert_eq!(
-                nu6_3_flags.to_byte(BundleVersion::orchard_v2()),
+                nu6_3_flags.to_byte(BundleVersion::orchard_v3()),
                 Some(value)
             );
-            assert_eq!(nu6_3_flags.to_byte(BundleVersion::orchard_v1()), None);
+            assert_eq!(nu6_3_flags.to_byte(BundleVersion::orchard_v2()), None);
         }
 
         assert_eq!(
-            Flags::from_byte(0b011, BundleVersion::orchard_v1()),
+            Flags::from_byte(0b011, BundleVersion::orchard_v2()),
             Some(Flags::ENABLED)
         );
         assert_eq!(
-            Flags::from_byte(0b011, BundleVersion::orchard_v2()),
+            Flags::from_byte(0b011, BundleVersion::orchard_v3()),
             Some(Flags::CROSS_ADDRESS_DISABLED)
         );
         assert_eq!(
-            Flags::from_byte(0b011, BundleVersion::ironwood_v2()),
+            Flags::from_byte(0b011, BundleVersion::ironwood_v3()),
             Some(Flags::CROSS_ADDRESS_DISABLED)
         );
     }
@@ -1367,11 +1367,11 @@ pub(crate) mod tests {
     fn only_orchard_post_nu6_3_requires_the_cross_address_restriction() {
         // Consensus mandates the restriction only for the Orchard pool at NU6.3; every other
         // variant leaves the choice free (the builder then applies its prover-side default).
-        assert!(!BundleVersion::orchard_v2().permits_cross_address_transfers());
+        assert!(!BundleVersion::orchard_v3().permits_cross_address_transfers());
         for bundle_version in [
-            BundleVersion::orchard_insecure_v0(),
-            BundleVersion::orchard_v1(),
-            BundleVersion::ironwood_v2(),
+            BundleVersion::orchard_insecure_v1(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::ironwood_v3(),
         ] {
             assert!(bundle_version.permits_cross_address_transfers());
         }
@@ -1380,7 +1380,7 @@ pub(crate) mod tests {
     #[test]
     fn pre_nu6_3_flags_parsing_rejects_reserved_bits() {
         for value in 0b100..=u8::MAX {
-            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v1()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v2()), None);
         }
     }
 
@@ -1389,23 +1389,23 @@ pub(crate) mod tests {
         for value in 0b100..=0b111 {
             // Orchard post-NU6.3 mandates the restriction, so bit 2 (`enableCrossAddress`)
             // set is rejected there.
-            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v2()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v3()), None);
             // Bit 2 set is only valid for the Ironwood pool, where it is recognized as
             // cross-address enabled and round-trips.
-            let flags = Flags::from_byte(value, BundleVersion::ironwood_v2()).unwrap();
+            let flags = Flags::from_byte(value, BundleVersion::ironwood_v3()).unwrap();
             assert!(flags.cross_address_enabled());
-            assert_eq!(flags.to_byte(BundleVersion::ironwood_v2()), Some(value));
+            assert_eq!(flags.to_byte(BundleVersion::ironwood_v3()), Some(value));
             // Pre-NU6.3 formats encode the same flag set with bit 2 reserved zero.
             assert_eq!(
-                flags.to_byte(BundleVersion::orchard_v1()),
+                flags.to_byte(BundleVersion::orchard_v2()),
                 Some(value & 0b011)
             );
         }
 
         // Bits 3.. are always reserved, in every NU6.3 pool.
         for value in 0b1000..=u8::MAX {
-            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v2()), None);
-            assert_eq!(Flags::from_byte(value, BundleVersion::ironwood_v2()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v3()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::ironwood_v3()), None);
         }
     }
 
@@ -1467,10 +1467,10 @@ pub(crate) mod tests {
         #[test]
         fn arb_flags_ironwood_post_nu6_3_round_trips(flags in arb_flags_ironwood_post_nu6_3()) {
             let encoded = flags
-                .to_byte(BundleVersion::ironwood_v2())
+                .to_byte(BundleVersion::ironwood_v3())
                 .expect("all Ironwood post-NU6.3 flag strategy outputs encode under Ironwood post-NU6.3");
 
-            prop_assert_eq!(Flags::from_byte(encoded, BundleVersion::ironwood_v2()), Some(flags));
+            prop_assert_eq!(Flags::from_byte(encoded, BundleVersion::ironwood_v3()), Some(flags));
         }
 
         #[test]
@@ -1478,15 +1478,15 @@ pub(crate) mod tests {
             // `arb_flags` always enables cross-address transfers, which Orchard post-NU6.3
             // forbids, so encoding under those restrictions must fail. The cross-address-
             // disabled projection must still encode and round-trip.
-            prop_assert_eq!(flags.to_byte(BundleVersion::orchard_v2()), None);
+            prop_assert_eq!(flags.to_byte(BundleVersion::orchard_v3()), None);
 
             let mut disabled = flags;
             disabled.cross_address_enabled = false;
             let encoded = disabled
-                .to_byte(BundleVersion::orchard_v2())
+                .to_byte(BundleVersion::orchard_v3())
                 .expect("cross-address-disabled flags encode under Orchard post-NU6.3");
             prop_assert_eq!(
-                Flags::from_byte(encoded, BundleVersion::orchard_v2()),
+                Flags::from_byte(encoded, BundleVersion::orchard_v3()),
                 Some(disabled)
             );
         }
@@ -1517,8 +1517,8 @@ pub(crate) mod tests {
 
             // Orchard pre-NU6.3 has cross-address implicitly enabled and Orchard NU6.3 has it
             // disabled, but both encode to the same wire byte, so their commitments agree.
-            let legacy = build(enabled, BundleVersion::orchard_v1());
-            let restricted = build(disabled, BundleVersion::orchard_v2());
+            let legacy = build(enabled, BundleVersion::orchard_v2());
+            let restricted = build(disabled, BundleVersion::orchard_v3());
             prop_assert_eq!(restricted.flag_byte(), legacy.flag_byte());
 
             let restricted_commitment: [u8; 32] =
@@ -1528,13 +1528,13 @@ pub(crate) mod tests {
 
             // The unrestricted Ironwood encoding sets bit 2, producing a distinct digest. Only
             // the Ironwood pool may set it; Orchard post-NU6.3 prohibits cross-address transfers.
-            let unrestricted = build(enabled, BundleVersion::ironwood_v2());
+            let unrestricted = build(enabled, BundleVersion::ironwood_v3());
             let unrestricted_commitment: [u8; 32] =
                 unrestricted.commitment(TxVersion::V6).unwrap().into();
             prop_assert_ne!(unrestricted_commitment, restricted_commitment);
 
             // The restricted flag set has no pre-NU6.3 encoding, so no such bundle can be built.
-            prop_assert_eq!(disabled.to_byte(BundleVersion::orchard_v1()), None);
+            prop_assert_eq!(disabled.to_byte(BundleVersion::orchard_v2()), None);
         }
 
         #[test]
@@ -1545,7 +1545,7 @@ pub(crate) mod tests {
                 0i64,
                 *bundle.anchor(),
                 bundle.authorization().clone(),
-                BundleVersion::ironwood_v2(),
+                BundleVersion::ironwood_v3(),
             );
             let ironwood = Bundle::from_parts_unchecked(
                 bundle.actions().clone(),
@@ -1553,7 +1553,7 @@ pub(crate) mod tests {
                 *bundle.value_balance(),
                 *bundle.anchor(),
                 bundle.authorization().clone(),
-                BundleVersion::ironwood_v2(),
+                BundleVersion::ironwood_v3(),
             );
 
             prop_assert!(matches!(
@@ -1594,9 +1594,9 @@ pub(crate) mod tests {
             let anchor_b = crate::Anchor::from_bytes([6u8; 32]).unwrap();
 
             for (bundle_version, tx, anchor_in_txid_digest) in [
-                (BundleVersion::orchard_v2(), TxVersion::V5, true),
-                (BundleVersion::orchard_v2(), TxVersion::V6, false),
-                (BundleVersion::ironwood_v2(), TxVersion::V6, false),
+                (BundleVersion::orchard_v3(), TxVersion::V5, true),
+                (BundleVersion::orchard_v3(), TxVersion::V6, false),
+                (BundleVersion::ironwood_v3(), TxVersion::V6, false),
             ] {
                 let a = with_anchor(anchor_a, bundle_version);
                 let b = with_anchor(anchor_b, bundle_version);
@@ -1615,7 +1615,7 @@ pub(crate) mod tests {
 
             // The v5 and v6 Orchard formats are domain-separated, so the same bundle commits to
             // distinct transaction-ID digests under each.
-            let a_v2 = with_anchor(anchor_a, BundleVersion::orchard_v2());
+            let a_v2 = with_anchor(anchor_a, BundleVersion::orchard_v3());
             let orchard_v5: [u8; 32] = a_v2.commitment(TxVersion::V5).unwrap().into();
             let orchard_v6: [u8; 32] = a_v2.commitment(TxVersion::V6).unwrap().into();
             prop_assert_ne!(orchard_v5, orchard_v6);
@@ -1629,7 +1629,7 @@ pub(crate) mod tests {
             let expected = Proof::expected_proof_size(actions.len());
             let flags = *bundle.flags();
             // Ironwood enforces canonical proof size and accepts any cross-address flag value.
-            let bundle_version = BundleVersion::ironwood_v2();
+            let bundle_version = BundleVersion::ironwood_v3();
             let value_balance = *bundle.value_balance();
             let anchor = *bundle.anchor();
             let binding_signature = bundle.authorization().binding_signature().clone();
@@ -1681,7 +1681,7 @@ pub(crate) mod tests {
                     value_balance,
                     anchor,
                     authorization,
-                    BundleVersion::orchard_v2(),
+                    BundleVersion::orchard_v3(),
                 )
                 .expect("canonical proof size is accepted");
             prop_assert!(!bundle.flags().cross_address_enabled());
@@ -1709,7 +1709,7 @@ pub(crate) mod tests {
                         Proof::new(vec![0u8; expected + 1]),
                         binding_signature,
                     ),
-                    BundleVersion::orchard_v2(),
+                    BundleVersion::orchard_v3(),
                 )
                 .err(),
                 Some(BundleError::NonCanonicalProofSize { expected, actual: expected + 1 })
@@ -1717,7 +1717,7 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn insecure_v0_skips_proof_size_enforcement(bundle in arb_bundle(3)) {
+        fn insecure_v1_skips_proof_size_enforcement(bundle in arb_bundle(3)) {
             // The historical pre-NU6.2 Orchard pool does not enforce canonical proof size, so a
             // padded proof is accepted: its transaction is already committed and cannot be
             // re-canonicalized.
@@ -1731,7 +1731,7 @@ pub(crate) mod tests {
                     Proof::new(vec![0u8; expected + 1]),
                     bundle.authorization().binding_signature().clone(),
                 ),
-                BundleVersion::orchard_insecure_v0(),
+                BundleVersion::orchard_insecure_v1(),
             );
             prop_assert!(padded.is_ok());
         }
@@ -1741,7 +1741,7 @@ pub(crate) mod tests {
     #[test]
     fn from_parts_rejects_unrepresentable_flags() {
         // A cross-address-disabled flag set has no pre-NU6.3 Orchard encoding, so a bundle
-        // carrying that combination cannot be constructed under `orchard_v1()`.
+        // carrying that combination cannot be constructed under `orchard_v2()`.
         let bundle = sample_authorized_bundle(1);
         let flags = Flags::from_parts(
             bundle.flags().spends_enabled(),
@@ -1756,7 +1756,7 @@ pub(crate) mod tests {
                 *bundle.value_balance(),
                 *bundle.anchor(),
                 bundle.authorization().clone(),
-                BundleVersion::orchard_v1(),
+                BundleVersion::orchard_v2(),
             )
             .err(),
             Some(BundleError::UnrepresentableFlags)

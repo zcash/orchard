@@ -92,7 +92,7 @@ fn bundle_chain() {
     // Create a shielding bundle.
     let shielding_bundle: Bundle<_, i64> = {
         let builder =
-            output_only_builder(BundleVersion::orchard_v1(), BundleType::DEFAULT, recipient);
+            output_only_builder(BundleVersion::orchard_v2(), BundleType::DEFAULT, recipient);
         let (unauthorized, bundle_meta) = builder.build(&mut rng).unwrap().unwrap();
 
         assert_eq!(
@@ -136,8 +136,8 @@ fn bundle_chain() {
 
         let mut builder = Builder::new(
             BundleType::DEFAULT,
-            BundleVersion::orchard_v1(),
-            BundleVersion::orchard_v1().default_flags(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v2().default_flags(),
             root.into(),
         )
         .unwrap();
@@ -176,7 +176,7 @@ fn builder_builds_for_insecure_circuit_version() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let builder = output_only_builder(
-        BundleVersion::orchard_insecure_v0(),
+        BundleVersion::orchard_insecure_v1(),
         BundleType::DEFAULT,
         recipient,
     );
@@ -203,7 +203,7 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let builder = output_only_builder(BundleVersion::ironwood_v2(), BundleType::DEFAULT, recipient);
+    let builder = output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
 
     let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     assert_eq!(
@@ -229,7 +229,7 @@ fn ironwood_builder_outputs_decrypt_with_ironwood_domain() {
     let recipient = fvk.address_at(0u32, Scope::External);
     let ivk = PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::External));
 
-    let builder = output_only_builder(BundleVersion::ironwood_v2(), BundleType::DEFAULT, recipient);
+    let builder = output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
     let (bundle, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     let action = &bundle.actions()[bundle_meta
         .output_action_index(0)
@@ -256,7 +256,7 @@ fn ironwood_bundle_helpers_decrypt_and_recover_outputs() {
     let recipient = fvk.address_at(0u32, Scope::External);
     let ivk = fvk.to_ivk(Scope::External);
     let ovk = fvk.to_ovk(Scope::External);
-    let bundle_version = BundleVersion::ironwood_v2();
+    let bundle_version = BundleVersion::ironwood_v3();
     let anchor = MerkleHashOrchard::empty_root(32.into()).into();
 
     let mut builder = Builder::new(BundleType::DEFAULT, bundle_version, SHIELDING_FLAGS, anchor)
@@ -324,7 +324,7 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     let recipient = fvk.address_at(0u32, Scope::External);
 
     let builder = output_only_builder(
-        BundleVersion::ironwood_v2(),
+        BundleVersion::ironwood_v3(),
         BundleType::Coinbase,
         recipient,
     );
@@ -361,7 +361,7 @@ fn post_nu6_3_restricted_bundle_chain() {
 
     let shielding_bundle: Bundle<_, i64> = {
         let builder =
-            output_only_builder(BundleVersion::orchard_v1(), BundleType::DEFAULT, recipient);
+            output_only_builder(BundleVersion::orchard_v2(), BundleType::DEFAULT, recipient);
 
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
@@ -391,8 +391,8 @@ fn post_nu6_3_restricted_bundle_chain() {
 
         let mut builder = Builder::new(
             BundleType::DEFAULT,
-            BundleVersion::orchard_v2(),
-            BundleVersion::orchard_v2().default_flags(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::orchard_v3().default_flags(),
             root.into(),
         )
         .unwrap();
@@ -479,15 +479,15 @@ fn post_nu6_3_restricted_bundle_chain() {
         .is_err());
 }
 
-// `BundleVersion::ironwood_v2()` is the post-NU6.3 Ironwood bundle version, which allows
+// `BundleVersion::ironwood_v3()` is the post-NU6.3 Ironwood bundle version, which allows
 // any choice of the `enableCrossAddress` flag. It shares the post-NU6.3 circuit with
-// `BundleVersion::orchard_v2()`, and uses V3 note plaintexts. A transactional
+// `BundleVersion::orchard_v3()`, and uses V3 note plaintexts. A transactional
 // Ironwood bundle is therefore an ordinary spend+output bundle on the post-NU6.3 circuit
 // whose NU6.3 flag byte sets bit 2.
 #[test]
 fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     let mut rng = OsRng;
-    let post_nu6_3_pk = ProvingKey::build(BundleVersion::ironwood_v2().circuit_version());
+    let post_nu6_3_pk = ProvingKey::build(BundleVersion::ironwood_v3().circuit_version());
     let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
 
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
@@ -497,7 +497,7 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     // Shield a note to spend (an unrestricted, output-only post-NU6.3 bundle).
     let shielding_bundle: Bundle<_, i64> = {
         let builder =
-            output_only_builder(BundleVersion::ironwood_v2(), BundleType::DEFAULT, recipient);
+            output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
         let (unauthorized, _) = builder.build(&mut rng).unwrap().unwrap();
         let sighash = unauthorized
             .commitment(TxVersion::V6)
@@ -527,8 +527,8 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     let change_addr = fvk.address_at(0u32, Scope::Internal);
     let mut builder = Builder::new(
         BundleType::DEFAULT,
-        BundleVersion::ironwood_v2(),
-        BundleVersion::ironwood_v2().default_flags(),
+        BundleVersion::ironwood_v3(),
+        BundleVersion::ironwood_v3().default_flags(),
         root.into(),
     )
     .unwrap();
@@ -547,7 +547,7 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
     assert!(unauthorized.flags().cross_address_enabled());
     let flag_byte = unauthorized
         .flags()
-        .to_byte(BundleVersion::ironwood_v2())
+        .to_byte(BundleVersion::ironwood_v3())
         .expect("flags are representable under Ironwood");
     assert_eq!(flag_byte & 0b100, 0b100);
 

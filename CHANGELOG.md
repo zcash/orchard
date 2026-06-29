@@ -14,18 +14,18 @@ non-serialized context, so a bundle can be serialized and committed to without s
 supplying a — possibly mismatching — version, and is encodable and committable by
 construction. The post-NU 6.3 Action circuit enforces the cross-address restriction.
 Existing callers keep the current behavior by constructing bundles with
-`BundleVersion::orchard_v1()` and `BundleVersion::orchard_v1().default_flags()` (and
+`BundleVersion::orchard_v2()` and `BundleVersion::orchard_v2().default_flags()` (and
 `OrchardCircuitVersion::FixedPostNu6_2` when building proving/verifying keys).
 
 ### Added
 - NU6.3 and Ironwood bundle-version APIs:
   - `orchard::ValuePool`, the value pool an Orchard bundle belongs to (`Orchard` or
     `Ironwood`), and `orchard::ProtocolVersion`, the Orchard protocol version
-    (`InsecureV0`, the historical pre-NU6.2 protocol that uses the unsound circuit; `V1`,
-    NU6.2; `V2`, NU6.3, which also instantiates the Ironwood pool).
+    (`InsecureV1`, the historical pre-NU6.2 protocol that uses the unsound circuit; `V2`,
+    NU6.2; `V3`, NU6.3, which also instantiates the Ironwood pool).
   - `orchard::bundle::BundleVersion`, the `(value pool, protocol version)` of an Orchard
-    bundle. Its `const fn` constructors `orchard_insecure_v0`, `orchard_v1`, `orchard_v2`,
-    and `ironwood_v2` make only the valid combinations representable. It determines the
+    bundle. Its `const fn` constructors `orchard_insecure_v1`, `orchard_v2`, `orchard_v3`,
+    and `ironwood_v3` make only the valid combinations representable. It determines the
     note plaintext version (`BundleVersion::note_version`), the circuit version
     (`BundleVersion::circuit_version`, when the `circuit` feature is enabled), the
     flag-byte interpretation (pre-NU6.3 rules, where bit 2 is reserved and cross-address
@@ -33,7 +33,7 @@ Existing callers keep the current behavior by constructing bundles with
     and whether consensus mandates the cross-address restriction (the builder then chooses
     the value within that constraint). `BundleVersion::value_pool` and
     `BundleVersion::protocol_version` return the bundle's `ValuePool` and
-    `ProtocolVersion`; the Ironwood pool (`ironwood_v2`) shares the post-NU6.3 circuit and
+    `ProtocolVersion`; the Ironwood pool (`ironwood_v3`) shares the post-NU6.3 circuit and
     uses V3 note plaintexts. `BundleVersion::default_flags` returns the least-restrictive
     `Flags` consensus permits under the bundle version (spends and outputs enabled,
     cross-address transfers enabled except where the version mandates the restriction),
@@ -141,7 +141,7 @@ Existing callers keep the current behavior by constructing bundles with
     `BundleVersion`.
   - `orchard::builder::BundleMetadata::output_action_index` now indexes the plain
     outputs first, followed by the wallet-controlled change outputs.
-- For `BundleVersion::orchard_v2()`, the builder constructs
+- For `BundleVersion::orchard_v3()`, the builder constructs
   withdrawal/change bundles that disable cross-address transfers: every action's
   output is addressed to the expanded receiver of the note it spends. The
   fabricated zero-value output paired with each real spend carries a randomized,
@@ -155,12 +155,12 @@ Existing callers keep the current behavior by constructing bundles with
   bit is now a caller-supplied flag rather than a builder-chosen default:
   `BundleVersion::default_flags` returns the least-restrictive flag set consensus permits
   — cross-address transfers enabled, except for the Orchard pool under
-  `BundleVersion::orchard_v2()`, where consensus mandates the restriction — and a caller
+  `BundleVersion::orchard_v3()`, where consensus mandates the restriction — and a caller
   may restrict it further (a tighter choice the bundle version permits) before passing the
   flags to the builder. Coinbase bundles follow the same constraints as non-coinbase
   bundles: post-NU6.3 Orchard coinbase transactions cannot contain Orchard actions, so
   post-NU6.3 coinbase bundle construction in this crate is only useful for
-  `BundleVersion::ironwood_v2()`.
+  `BundleVersion::ironwood_v3()`.
 - `orchard::bundle::Flags::{to_byte, from_byte}` now take a
   `BundleVersion`. Bit 2 (`enableCrossAddress`) is only representable for
   the Ironwood pool post-NU6.3; it is rejected for pre-NU6.3 (where bit 2 is
@@ -204,7 +204,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `try_from_parts` no longer takes an `orchard::bundle::ProofSizeEnforcement`: the
     canonical proof-size check (GHSA-2x4w-pxqw-58v9) is derived from the bundle version,
     enforced for every version except the historical pre-NU6.2 Orchard pool
-    (`BundleVersion::orchard_insecure_v0`), whose already-committed transactions may carry
+    (`BundleVersion::orchard_insecure_v1`), whose already-committed transactions may carry
     non-canonical proofs.
 - Circuit APIs now require explicit circuit versions:
   - `orchard::circuit::Circuit::from_action_context` now takes an
@@ -278,7 +278,7 @@ Existing callers keep the current behavior by constructing bundles with
 ### Removed
 - `orchard::bundle::ProofSizeEnforcement`; `Bundle::try_from_parts` now derives the
   canonical proof-size check from the `BundleVersion` (enforced for every version except
-  `BundleVersion::orchard_insecure_v0`).
+  `BundleVersion::orchard_insecure_v1`).
 - `orchard::builder::Builder::new_for_version`; use
   `Builder::new(bundle_type, bundle_version, flags, anchor)`.
 - `orchard::builder::bundle_for_version`; use `builder::bundle` with

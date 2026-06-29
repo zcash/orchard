@@ -409,7 +409,7 @@ mod tests {
         let change_sk = SpendingKey::random(&mut rng);
         let change_fvk = FullViewingKey::from(&change_sk);
         let change_recipient = change_fvk.address_at(0u32, Scope::Internal);
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         let note_version = bundle_version.note_version();
 
         let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
@@ -458,8 +458,8 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
         let mut builder = Builder::new(
             BundleType::DEFAULT,
-            BundleVersion::orchard_v1(),
-            BundleVersion::orchard_v1().default_flags(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v2().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         )
         .unwrap();
@@ -479,8 +479,8 @@ mod tests {
         let recipient = fvk.address_at(0u32, Scope::External);
         let mut builder = Builder::new(
             BundleType::DEFAULT,
-            BundleVersion::ironwood_v2(),
-            BundleVersion::ironwood_v2().default_flags(),
+            BundleVersion::ironwood_v3(),
+            BundleVersion::ironwood_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         )
         .unwrap();
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let bundle_version = BundleVersion::orchard_v1();
+        let bundle_version = BundleVersion::orchard_v2();
         let pk = ProvingKey::build(bundle_version.circuit_version());
         let mut rng = OsRng;
 
@@ -569,8 +569,8 @@ mod tests {
 
         let mut builder = Builder::new(
             BundleType::DEFAULT,
-            BundleVersion::ironwood_v2(),
-            BundleVersion::ironwood_v2().default_flags(),
+            BundleVersion::ironwood_v3(),
+            BundleVersion::ironwood_v3().default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
         )
         .unwrap();
@@ -661,7 +661,7 @@ mod tests {
             (root.into(), merkle_path)
         };
 
-        let bundle_version = BundleVersion::ironwood_v2();
+        let bundle_version = BundleVersion::ironwood_v3();
         let mut builder = Builder::new(
             BundleType::DEFAULT,
             bundle_version,
@@ -706,7 +706,7 @@ mod tests {
 
     #[test]
     fn shielded_bundle() {
-        let bundle_version = BundleVersion::orchard_v1();
+        let bundle_version = BundleVersion::orchard_v2();
         let pk = ProvingKey::build(bundle_version.circuit_version());
         let mut rng = OsRng;
 
@@ -761,7 +761,7 @@ mod tests {
         };
 
         // Run the Creator and Constructor roles.
-        let bundle_version = BundleVersion::orchard_v1();
+        let bundle_version = BundleVersion::orchard_v2();
         let mut builder = Builder::new(
             BundleType::DEFAULT,
             bundle_version,
@@ -890,9 +890,9 @@ mod tests {
         // Bit 2 is reserved pre-NU6.3, and rejected for Orchard post-NU6.3 (which mandates
         // the cross-address restriction); only Ironwood may set it.
         for pr in [
-            BundleVersion::orchard_insecure_v0(),
-            BundleVersion::orchard_v1(),
+            BundleVersion::orchard_insecure_v1(),
             BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
         ] {
             assert!(matches!(
                 super::Bundle::parse(
@@ -911,7 +911,7 @@ mod tests {
         let parsed = super::Bundle::parse(
             vec![],
             0b0000_0100,
-            BundleVersion::ironwood_v2(),
+            BundleVersion::ironwood_v3(),
             (0, false),
             anchor.to_bytes(),
             None,
@@ -921,18 +921,18 @@ mod tests {
 
         assert!(parsed.flags().cross_address_enabled());
         assert_eq!(
-            parsed.flags().to_byte(BundleVersion::ironwood_v2()),
+            parsed.flags().to_byte(BundleVersion::ironwood_v3()),
             Some(0b0000_0100)
         );
         assert_eq!(
-            parsed.flags().to_byte(BundleVersion::orchard_v1()),
+            parsed.flags().to_byte(BundleVersion::orchard_v2()),
             Some(0b0000_0000)
         );
 
         let restricted = super::Bundle::parse(
             vec![],
             0b0000_0011,
-            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
             (0, false),
             anchor.to_bytes(),
             None,
@@ -942,18 +942,18 @@ mod tests {
 
         assert!(!restricted.flags().cross_address_enabled());
         assert_eq!(
-            restricted.flags().to_byte(BundleVersion::orchard_v2()),
+            restricted.flags().to_byte(BundleVersion::orchard_v3()),
             Some(0b0000_0011)
         );
         assert_eq!(
-            restricted.flags().to_byte(BundleVersion::orchard_v1()),
+            restricted.flags().to_byte(BundleVersion::orchard_v2()),
             None
         );
     }
 
     #[test]
     fn parse_preserves_note_versions() {
-        let bundle_version = BundleVersion::ironwood_v2();
+        let bundle_version = BundleVersion::ironwood_v3();
         let pczt_bundle = ironwood_output_pczt_bundle(OsRng);
         let flags = pczt_bundle.flags.to_byte(bundle_version).unwrap();
         let anchor = pczt_bundle.anchor.to_bytes();
@@ -977,7 +977,7 @@ mod tests {
 
     #[test]
     fn parse_rejects_output_note_version_mismatch() {
-        let bundle_version = BundleVersion::ironwood_v2();
+        let bundle_version = BundleVersion::ironwood_v3();
         let pczt_bundle = ironwood_output_pczt_bundle(OsRng);
         let flags = pczt_bundle.flags.to_byte(bundle_version).unwrap();
         let anchor = pczt_bundle.anchor.to_bytes();
@@ -1107,7 +1107,7 @@ mod tests {
         let merkle_path = MerklePath::dummy(&mut rng);
         let anchor = merkle_path.root(note.commitment().into());
 
-        let bundle_version = BundleVersion::orchard_v2();
+        let bundle_version = BundleVersion::orchard_v3();
         let mut builder = Builder::new(
             BundleType::DEFAULT,
             bundle_version,
@@ -1208,7 +1208,7 @@ mod tests {
         // Cross-address-disabled flags are only representable from NU6.3 onward, and the Orchard
         // pool at NU6.3 mandates the restriction; that is the version under which an extracted
         // bundle can legitimately carry these flags.
-        pczt_bundle.bundle_version = BundleVersion::orchard_v2();
+        pczt_bundle.bundle_version = BundleVersion::orchard_v3();
         pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
 
         let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();

@@ -136,13 +136,13 @@ pub enum ProtocolVersion {
     /// Uses the historical unsound Orchard circuit. Cross-address transfers are permitted and
     /// notes use the V2 plaintext format. Used to reconstruct the historical verifying key and to
     /// parse/verify historical bundles, not to build new ones.
-    InsecureV0,
+    InsecureV1,
     /// The version of the Orchard protocol used in Zcash for NU6.2, only instantiated for the
     /// Orchard value pool.
     ///
     /// Uses the post-NU6.2 fixed Orchard circuit. Cross-address transfers are permitted and notes
     /// use the V2 plaintext format.
-    V1,
+    V2,
     /// The version of the Orchard protocol used in Zcash NU6.3, instantiated for both the Orchard
     /// and Ironwood value pools.
     ///
@@ -154,5 +154,5 @@ pub enum ProtocolVersion {
     ///
     /// For transactional bundles affecting the [`ValuePool::Ironwood`] value pool, cross-address
     /// transfers are permitted and notes use V3 plaintexts.
-    V2,
+    V3,
 }
