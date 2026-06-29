@@ -34,6 +34,8 @@ use crate::{
 
 impl OrchardPrimitives for OrchardZSA {
     const COMPACT_NOTE_SIZE: usize = COMPACT_NOTE_SIZE_ZSA;
+    const BASE_PROOF_SIZE: usize = 2848;
+    const PER_ACTION_PROOF_SIZE: usize = 2272;
 
     type NotePlaintextBytes = NoteBytesData<{ Self::NOTE_PLAINTEXT_SIZE }>;
     type NoteCiphertextBytes = NoteBytesData<{ Self::ENC_CIPHERTEXT_SIZE }>;
@@ -279,7 +281,7 @@ mod tests {
             let action = Action::from_parts(
                 // nf_old is the nullifier revealed by the receiving Action.
                 nf_old,
-                // We don't need a valid rk for this test.
+                // We don't need a real rk for this test.
                 redpallas::VerificationKey::dummy(),
                 cmx,
                 TransmittedNoteCiphertext::<OrchardZSA> {
@@ -289,7 +291,7 @@ mod tests {
                 },
                 cv_net.clone(),
                 (),
-            );
+            ).expect("a key returned by VerificationKey::dummy() is vanishingly unlikely to be the identity");
 
             //
             // Test decryption

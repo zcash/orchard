@@ -9,7 +9,7 @@ use crate::{
     note::AssetBase,
 };
 use halo2_gadgets::{
-    ecc::chip::EccChip,
+    ecc::{chip::EccChip, CircuitVersion},
     poseidon::Pow5Chip as PoseidonChip,
     sinsemilla::{chip::SinsemillaChip, merkle::chip::MerkleChip},
     utilities::{cond_swap::CondSwapChip, lookup_range_check::PallasLookupRangeCheck},
@@ -19,7 +19,11 @@ use halo2_proofs::{
     plonk::{self, Advice, Assigned, Column},
 };
 
+#[cfg(not(feature = "unstable-voting-circuits"))]
 pub(in crate::circuit) mod add_chip;
+/// Addition chip for constraining `a + b = c` in-circuit.
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod add_chip;
 
 impl<Lookup: PallasLookupRangeCheck> Config<Lookup> {
     pub(super) fn add_chip(&self) -> add_chip::AddChip {
@@ -30,8 +34,11 @@ impl<Lookup: PallasLookupRangeCheck> Config<Lookup> {
         CommitIvkChip::construct(self.commit_ivk_config.clone())
     }
 
-    pub(super) fn ecc_chip(&self) -> EccChip<OrchardFixedBases, Lookup> {
-        EccChip::construct(self.ecc_config.clone())
+    pub(super) fn ecc_chip(
+        &self,
+        circuit_version: CircuitVersion,
+    ) -> EccChip<OrchardFixedBases, Lookup> {
+        EccChip::construct(self.ecc_config.clone(), circuit_version)
     }
 
     pub(super) fn sinsemilla_chip_1(
@@ -76,6 +83,7 @@ impl<Lookup: PallasLookupRangeCheck> Config<Lookup> {
 }
 
 /// An instruction set for adding two circuit words (field elements).
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(in crate::circuit) trait AddInstruction<F: Field>: Chip<F> {
     /// Constraints `a + b` and returns the sum.
     fn add(
@@ -91,6 +99,7 @@ pub(in crate::circuit) trait AddInstruction<F: Field>: Chip<F> {
 /// Usages of this helper are technically superfluous, as the single-cell region is only
 /// ever used in equality constraints. We could eliminate them with a
 /// [write-on-copy abstraction](https://github.com/zcash/halo2/issues/334).
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(in crate::circuit) fn assign_free_advice<F: Field, V: Copy>(
     mut layouter: impl Layouter<F>,
     column: Column<Advice>,

@@ -115,6 +115,7 @@ impl From<incrementalmerkletree::MerklePath<MerkleHashOrchard, 32>> for MerklePa
 
 impl MerklePath {
     /// Generates a dummy Merkle path for use in dummy spent notes.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn dummy(mut rng: &mut impl RngCore) -> Self {
         MerklePath {
             position: rng.next_u32(),
@@ -183,6 +184,7 @@ impl MerkleHashOrchard {
     }
 
     /// Only used in the circuit.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn inner(&self) -> pallas::Base {
         self.0
     }

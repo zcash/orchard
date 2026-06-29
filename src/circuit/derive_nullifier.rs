@@ -30,6 +30,7 @@ pub(in crate::circuit) mod gadgets {
     ///
     /// [Section 4.16: Note Commitments and Nullifiers]: https://zips.z.cash/protocol/protocol.pdf#commitmentsandnullifiers
     #[allow(clippy::too_many_arguments)]
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn derive_nullifier<
         PoseidonChip: PoseidonSpongeInstructions<pallas::Base, poseidon::P128Pow5T3, ConstantLength<2>, 3, 2>,
         AddChip: AddInstruction<pallas::Base>,
@@ -72,7 +73,7 @@ pub(in crate::circuit) mod gadgets {
         // Multiply scalar by NullifierK
         // `product` = [poseidon_hash(nk, rho) + psi] NullifierK.
         let product = {
-            let nullifier_k = FixedPointBaseField::from_inner(ecc_chip.clone(), NullifierK);
+            let nullifier_k = FixedPointBaseField::from_inner(ecc_chip.clone(), NullifierK.into());
             nullifier_k.mul(
                 layouter.namespace(|| "[poseidon_output + psi] NullifierK"),
                 scalar,

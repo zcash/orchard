@@ -15,7 +15,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 
 #[macro_use]
 extern crate alloc;
@@ -31,7 +31,10 @@ pub mod builder;
 pub mod bundle;
 #[cfg(feature = "circuit")]
 pub mod circuit;
+#[cfg(not(feature = "unstable-voting-circuits"))]
 mod constants;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod constants;
 pub mod flavor;
 #[cfg(feature = "zsa-issuance")]
 pub mod issuance;
@@ -40,7 +43,10 @@ pub mod note;
 pub mod pczt;
 pub mod primitives;
 pub mod sighash_kind;
+#[cfg(not(feature = "unstable-voting-circuits"))]
 mod spec;
+#[cfg(feature = "unstable-voting-circuits")]
+pub mod spec;
 pub mod tree;
 pub mod value;
 pub mod zip32;
@@ -48,10 +54,12 @@ pub mod zip32;
 #[cfg(test)]
 mod test_vectors;
 
-pub use action::Action;
+use crate::primitives::OrchardPrimitives;
+pub use action::{Action, ActionFromPartsError};
 pub use address::Address;
 pub use bundle::Bundle;
 pub use constants::MERKLE_DEPTH_ORCHARD as NOTE_COMMITMENT_TREE_DEPTH;
+pub use constants::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE};
 pub use note::Note;
 pub use tree::Anchor;
 
@@ -94,5 +102,17 @@ impl Proof {
     /// Constructs a new Proof value.
     pub fn new(bytes: Vec<u8>) -> Self {
         Proof(bytes)
+    }
+
+    /// The canonical byte length of a proof authorizing a bundle of `num_actions` actions.
+    ///
+    /// A valid Orchard proof always has exactly this length. The constants are fixed by the
+    /// halo2 action circuit; they are cross-checked against [`halo2_proofs::dev::CircuitCost`]
+    /// in the circuit tests. Use this to reject non-canonical (e.g. padded) proofs when
+    /// constructing a bundle from untrusted bytes; see [`Bundle::try_from_parts`].
+    ///
+    /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
+    pub const fn expected_proof_size<Pr: OrchardPrimitives>(num_actions: usize) -> usize {
+        Pr::BASE_PROOF_SIZE + Pr::PER_ACTION_PROOF_SIZE * num_actions
     }
 }

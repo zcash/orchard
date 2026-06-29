@@ -230,7 +230,7 @@ impl IssueAction {
         let value_sum = self
             .notes
             .iter()
-            .try_fold(NoteValue::zero(), |value_sum, &note| {
+            .try_fold(NoteValue::ZERO, |value_sum, &note| {
                 // All assets should be derived correctly
                 if note.asset() != issue_asset {
                     return Err(IssueBundleIkMismatchAssetBase);
@@ -568,12 +568,7 @@ impl IssueBundle<AwaitingSighash> {
 }
 
 fn create_reference_note(asset: AssetBase, mut rng: impl RngCore) -> Note {
-    Note::new_issue_note(
-        ReferenceKeys::recipient(),
-        NoteValue::zero(),
-        asset,
-        &mut rng,
-    )
+    Note::new_issue_note(ReferenceKeys::recipient(), NoteValue::ZERO, asset, &mut rng)
 }
 
 impl IssueBundle<Prepared> {
@@ -778,7 +773,7 @@ pub fn verify_issue_bundle(
 /// - The note's value is zero.
 /// - The note's recipient matches the reference recipient.
 fn is_reference_note(note: &Note) -> bool {
-    note.value() == NoteValue::zero() && note.recipient() == ReferenceKeys::recipient()
+    note.value() == NoteValue::ZERO && note.recipient() == ReferenceKeys::recipient()
 }
 
 /// Represents aggregated information about an asset, including its supply, finalization status,

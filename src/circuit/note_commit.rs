@@ -1,4 +1,10 @@
-//! Note commitment logic for the Orchard circuit.
+//! Sub-circuit implementing the `NoteCommit` gadget.
+//!
+//! `NoteCommit` is the Sinsemilla-based commitment that binds the note's
+//! diversified transmission key `(g_d, pk_d)`, value `v`, ρ, and ψ, with
+//! canonicity checks on each component field element. This module provides
+//! the Halo 2 chip that enforces that commitment inside the Orchard Action
+//! circuit.
 
 use core::iter;
 
@@ -1719,6 +1725,9 @@ impl YCanonicity {
     }
 }
 
+/// Configuration for the [`NoteCommitChip`], aggregating the per-field
+/// decomposition and canonicity sub-configurations and the underlying
+/// Sinsemilla configuration.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
 pub struct NoteCommitConfig<Lookup: PallasLookupRangeCheck> {
@@ -1739,30 +1748,33 @@ pub struct NoteCommitConfig<Lookup: PallasLookupRangeCheck> {
 }
 
 #[derive(Clone, Debug)]
-pub enum SpecificConfigForCircuit<Lookup: PallasLookupRangeCheck> {
+pub(crate) enum SpecificConfigForCircuit<Lookup: PallasLookupRangeCheck> {
     Vanilla(NoteCommitConfigForVanillaCircuit<Lookup>),
     Zsa(NoteCommitConfigForZsaCircuit<Lookup>),
 }
 
 #[derive(Clone, Debug)]
-pub struct NoteCommitConfigForVanillaCircuit<Lookup: PallasLookupRangeCheck> {
+pub(crate) struct NoteCommitConfigForVanillaCircuit<Lookup: PallasLookupRangeCheck> {
     h_vanilla: DecomposeHVanilla<Lookup>,
 }
 
 #[derive(Clone, Debug)]
-pub struct NoteCommitConfigForZsaCircuit<Lookup: PallasLookupRangeCheck> {
+pub(crate) struct NoteCommitConfigForZsaCircuit<Lookup: PallasLookupRangeCheck> {
     h_zsa: DecomposeHZsa<Lookup>,
     j: DecomposeJ<Lookup>,
 }
 
+/// A Halo 2 chip that proves correct evaluation of the `NoteCommit` gadget.
 #[derive(Clone, Debug)]
 pub struct NoteCommitChip<Lookup: PallasLookupRangeCheck> {
     config: NoteCommitConfig<Lookup>,
 }
 
 impl<Lookup: PallasLookupRangeCheck> NoteCommitChip<Lookup> {
+    /// Configures the chip's gates, Sinsemilla instances, and canonicity checks.
     #[allow(non_snake_case)]
     #[allow(clippy::many_single_char_names)]
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn configure(
         meta: &mut ConstraintSystem<pallas::Base>,
         advices: [Column<Advice>; 10],
@@ -1891,31 +1903,41 @@ impl<Lookup: PallasLookupRangeCheck> NoteCommitChip<Lookup> {
         }
     }
 
+    /// Constructs the chip from a [`NoteCommitConfig`].
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn construct(config: NoteCommitConfig<Lookup>) -> Self {
         Self { config }
     }
 }
 
-pub struct ZsaNoteCommitParams {
-    pub cond_swap_chip: CondSwapChip<pallas::Base>,
-    pub asset: NonIdentityEccPoint,
-    pub is_zatoshi_asset: AssignedCell<pallas::Base, pallas::Base>,
-}
-pub struct ZsaFinalDecomposition<Lookup: PallasLookupRangeCheck> {
-    pub h_zsa: NoteCommitPiece<Lookup>,
-    pub h_2_zsa: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
-    pub i: NoteCommitPiece<Lookup>,
-    pub j: NoteCommitPiece<Lookup>,
-    pub j_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
-    pub j_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+/// ZSA-specific inputs required by the `NoteCommit` gadget.
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+#[derive(Debug)]
+pub(crate) struct ZsaNoteCommitParams {
+    pub(crate) cond_swap_chip: CondSwapChip<pallas::Base>,
+    pub(crate) asset: NonIdentityEccPoint,
+    pub(crate) is_zatoshi_asset: AssignedCell<pallas::Base, pallas::Base>,
 }
 
+pub(crate) struct ZsaFinalDecomposition<Lookup: PallasLookupRangeCheck> {
+    pub(crate) h_zsa: NoteCommitPiece<Lookup>,
+    pub(crate) h_2_zsa: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+    pub(crate) i: NoteCommitPiece<Lookup>,
+    pub(crate) j: NoteCommitPiece<Lookup>,
+    pub(crate) j_0: RangeConstrained<pallas::Base, Value<pallas::Base>>,
+    pub(crate) j_1: RangeConstrained<pallas::Base, AssignedCell<pallas::Base, pallas::Base>>,
+}
+
+/// Gadget functions for `NoteCommit` operations.
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(in crate::circuit) mod gadgets {
     use super::*;
 
+    /// Computes the note commitment in-circuit.
     #[allow(clippy::many_single_char_names)]
     #[allow(clippy::type_complexity)]
     #[allow(clippy::too_many_arguments)]
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(in crate::circuit) fn note_commit<Lookup: PallasLookupRangeCheck>(
         mut layouter: impl Layouter<pallas::Base>,
         chip: SinsemillaChip<OrchardHashDomains, OrchardCommitDomains, OrchardFixedBases, Lookup>,
@@ -2625,7 +2647,7 @@ mod tests {
     };
     use halo2_gadgets::{
         ecc::{
-            chip::{EccChip, EccConfig},
+            chip::{CircuitVersion, EccChip, EccConfig},
             NonIdentityPoint, ScalarFixed,
         },
         sinsemilla::chip::SinsemillaChip,
@@ -2758,7 +2780,7 @@ mod tests {
                     SinsemillaChip::construct(note_commit_config.sinsemilla_config.clone());
 
                 // Construct an ECC chip
-                let ecc_chip = EccChip::construct(ecc_config);
+                let ecc_chip = EccChip::construct(ecc_config, CircuitVersion::AnchoredBase);
 
                 // Construct a NoteCommit chip
                 let note_commit_chip = NoteCommitChip::construct(note_commit_config.clone());
@@ -3087,7 +3109,7 @@ mod tests {
                     SinsemillaChip::construct(note_commit_config.sinsemilla_config.clone());
 
                 // Construct an ECC chip
-                let ecc_chip = EccChip::construct(ecc_config);
+                let ecc_chip = EccChip::construct(ecc_config, CircuitVersion::AnchoredBase);
 
                 // Construct a NoteCommit chip
                 let note_commit_chip = NoteCommitChip::construct(note_commit_config.clone());
@@ -3187,7 +3209,7 @@ mod tests {
                                 asset,
                                 rho,
                                 psi,
-                                NoteCommitTrapdoor(rcm),
+                                NoteCommitTrapdoor::new(rcm),
                             )
                             .unwrap()
                             .inner()

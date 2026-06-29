@@ -172,7 +172,7 @@ mod tests {
             .map(|AssetSupply { asset, supply }| {
                 let reference_note = Note::new_issue_note(
                     ReferenceKeys::recipient(),
-                    NoteValue::zero(),
+                    NoteValue::ZERO,
                     *asset,
                     &mut rng,
                 );

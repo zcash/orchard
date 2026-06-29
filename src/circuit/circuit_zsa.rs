@@ -9,7 +9,9 @@ use group::Curve;
 use pasta_curves::{arithmetic::CurveAffine, pallas};
 
 use halo2_gadgets::{
-    ecc::{chip::EccChip, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar},
+    ecc::{
+        chip::EccChip, CircuitVersion, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarVar,
+    },
     poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip},
     sinsemilla::{
         chip::SinsemillaChip,
@@ -329,6 +331,11 @@ impl OrchardCircuit for OrchardZSA {
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
+        // Prevent synthesis of insecure ZSA circuits.
+        if circuit.circuit_version.halo2_version() == CircuitVersion::InsecureUnanchoredBase {
+            return Err(plonk::Error::Synthesis);
+        }
+
         // Load the Sinsemilla generator lookup table used by the whole circuit.
         SinsemillaChip::load(config.sinsemilla_config_1.clone(), &mut layouter)?;
 
@@ -337,7 +344,7 @@ impl OrchardCircuit for OrchardZSA {
             unpack(circuit.additional_zsa_witnesses.clone());
 
         // Construct the ECC chip.
-        let ecc_chip = config.ecc_chip();
+        let ecc_chip = config.ecc_chip(circuit.circuit_version.halo2_version());
 
         // Witness private inputs that are used across multiple checks.
         let (psi_nf, psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new, asset) = {
@@ -460,7 +467,7 @@ impl OrchardCircuit for OrchardZSA {
                 //   v_old - v_new if split_flag = false
                 let v_net = split_flag_value.and_then(|split_flag| {
                     if split_flag {
-                        Value::known(crate::value::NoteValue::zero()) - circuit.v_new
+                        Value::known(crate::value::NoteValue::ZERO) - circuit.v_new
                     } else {
                         circuit.v_old - circuit.v_new
                     }
@@ -632,7 +639,7 @@ impl OrchardCircuit for OrchardZSA {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_1(),
-                config.ecc_chip(),
+                config.ecc_chip(circuit.circuit_version.halo2_version()),
                 config.note_commit_chip_old(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
@@ -700,7 +707,7 @@ impl OrchardCircuit for OrchardZSA {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_2(),
-                config.ecc_chip(),
+                config.ecc_chip(circuit.circuit_version.halo2_version()),
                 config.note_commit_chip_new(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
@@ -880,8 +887,8 @@ mod tests {
         builder::SpendInfo,
         bundle::Flags,
         circuit::{
-            AdditionalZsaWitnesses, Circuit, Instance, Proof, ProvingKey, VerifyingKey, Witnesses,
-            K,
+            AdditionalZsaWitnesses, Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey,
+            VerifyingKey, Witnesses, K,
         },
         flavor::OrchardZSA,
         keys::{FullViewingKey, Scope, SpendValidatingKey, SpendingKey},
@@ -918,6 +925,7 @@ mod tests {
         (
             Circuit {
                 witnesses: Witnesses {
+                    circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
                     path: Value::known(path.auth_path()),
                     pos: Value::known(path.position()),
                     g_d_old: Value::known(sender_address.g_d()),
@@ -959,6 +967,56 @@ mod tests {
         )
     }
 
+    fn write_test_case<W: std::io::Write>(
+        mut w: W,
+        instance: &Instance,
+        proof: &Proof,
+    ) -> std::io::Result<()> {
+        w.write_all(&instance.anchor().to_bytes())?;
+        w.write_all(&instance.cv_net().to_bytes())?;
+        w.write_all(&instance.nf_old().to_bytes())?;
+        w.write_all(&<[u8; 32]>::from(instance.rk()))?;
+        w.write_all(&instance.cmx().to_bytes())?;
+        w.write_all(&[
+            u8::from(instance.enable_spend()),
+            u8::from(instance.enable_output()),
+            u8::from(instance.enable_zsa()),
+        ])?;
+        w.write_all(proof.as_ref())?;
+        Ok(())
+    }
+    fn read_test_case<R: std::io::Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
+        let read_32_bytes = |r: &mut R| {
+            let mut ret = [0u8; 32];
+            r.read_exact(&mut ret).unwrap();
+            ret
+        };
+        let read_bool = |r: &mut R| {
+            let mut byte = [0u8; 1];
+            r.read_exact(&mut byte).unwrap();
+            match byte {
+                [0] => false,
+                [1] => true,
+                _ => panic!("Unexpected non-boolean byte"),
+            }
+        };
+        let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
+        let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let rk = read_32_bytes(&mut r).try_into().unwrap();
+        let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
+        let enable_spend = read_bool(&mut r);
+        let enable_output = read_bool(&mut r);
+        let enable_zsa = read_bool(&mut r);
+        let flags = Flags::from_parts(enable_spend, enable_output, enable_zsa);
+        let instance = Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, flags)
+            .expect("test vectors were generated with non-identity rk");
+        let mut proof_bytes = vec![];
+        r.read_to_end(&mut proof_bytes)?;
+        let proof = Proof::new(proof_bytes);
+        Ok((instance, proof))
+    }
+
     // TODO: recast as a proptest
     #[test]
     fn round_trip() {
@@ -970,14 +1028,21 @@ mod tests {
 
         let vk = VerifyingKey::build::<OrchardZSA>();
 
-        // Test that the pinned verification key (representing the circuit)
-        // is as expected.
+        // Test that the pinned verification key (representing the circuit) is as expected.
+        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate it (and the proof below).
         {
-            // panic!("{:#?}", vk.vk.pinned());
-            assert_eq!(
-                format!("{:#?}\n", vk.vk.pinned()),
-                include_str!("circuit_description_zsa").replace("\r\n", "\n")
-            );
+            if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+                std::fs::write(
+                    "src/circuit_data/circuit_description_zsa",
+                    format!("{:#?}\n", vk.vk.pinned()),
+                )
+                .expect("should be able to write new circuit description");
+            } else {
+                assert_eq!(
+                    format!("{:#?}\n", vk.vk.pinned()),
+                    include_str!("../circuit_data/circuit_description_zsa").replace("\r\n", "\n")
+                );
+            }
         }
 
         // Test that the proof size is as expected.
@@ -989,6 +1054,14 @@ mod tests {
                 );
             assert_eq!(usize::from(circuit_cost.proof_size(1)), 5120);
             assert_eq!(usize::from(circuit_cost.proof_size(2)), 7392);
+            // The constants in `Proof::expected_proof_size` must track the circuit's actual
+            // proof size; this guards them against drift if the circuit ever changes.
+            assert_eq!(Proof::expected_proof_size::<OrchardZSA>(1), 5120);
+            assert_eq!(Proof::expected_proof_size::<OrchardZSA>(2), 7392);
+            assert_eq!(
+                Proof::expected_proof_size::<OrchardZSA>(instances.len()),
+                usize::from(circuit_cost.proof_size(instances.len())),
+            );
             usize::from(circuit_cost.proof_size(instances.len()))
         };
 
@@ -1017,71 +1090,7 @@ mod tests {
 
     #[test]
     fn serialized_proof_test_case() {
-        use std::fs;
-        use std::io::{Read, Write};
-
         let vk = VerifyingKey::build::<OrchardZSA>();
-
-        fn write_test_case<W: Write>(
-            mut w: W,
-            instance: &Instance,
-            proof: &Proof,
-        ) -> std::io::Result<()> {
-            w.write_all(&instance.anchor.to_bytes())?;
-            w.write_all(&instance.cv_net.to_bytes())?;
-            w.write_all(&instance.nf_old.to_bytes())?;
-            w.write_all(&<[u8; 32]>::from(instance.rk.clone()))?;
-            w.write_all(&instance.cmx.to_bytes())?;
-            w.write_all(&[
-                u8::from(instance.enable_spend),
-                u8::from(instance.enable_output),
-                u8::from(instance.enable_zsa),
-            ])?;
-
-            w.write_all(proof.as_ref())?;
-            Ok(())
-        }
-
-        fn read_test_case<R: Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
-            let read_32_bytes = |r: &mut R| {
-                let mut ret = [0u8; 32];
-                r.read_exact(&mut ret).unwrap();
-                ret
-            };
-            let read_bool = |r: &mut R| {
-                let mut byte = [0u8; 1];
-                r.read_exact(&mut byte).unwrap();
-                match byte {
-                    [0] => false,
-                    [1] => true,
-                    _ => panic!("Unexpected non-boolean byte"),
-                }
-            };
-
-            let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
-            let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let rk = read_32_bytes(&mut r).try_into().unwrap();
-            let cmx =
-                crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
-            let enable_spend = read_bool(&mut r);
-            let enable_output = read_bool(&mut r);
-            let enable_zsa = read_bool(&mut r);
-            let instance = Instance::from_parts(
-                anchor,
-                cv_net,
-                nf_old,
-                rk,
-                cmx,
-                Flags::from_parts(enable_spend, enable_output, enable_zsa),
-            );
-
-            let mut proof_bytes = vec![];
-            r.read_to_end(&mut proof_bytes)?;
-            let proof = Proof::new(proof_bytes);
-
-            Ok((instance, proof))
-        }
 
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
             let create_proof = || -> std::io::Result<()> {
@@ -1094,15 +1103,19 @@ mod tests {
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
-                let file = std::fs::File::create("src/circuit/circuit_proof_test_case_zsa.bin")?;
+                let file =
+                    std::fs::File::create("src/circuit_data/circuit_proof_test_case_zsa.bin")?;
                 write_test_case(file, &instance, &proof)
             };
             create_proof().expect("should be able to write new proof");
+            // Regeneration only writes the fixture; the non-generate run below embeds and
+            // verifies it.
+            return;
         }
 
         // Parse the hardcoded proof test case.
         let (instance, proof) = {
-            let test_case_bytes = fs::read("src/circuit/circuit_proof_test_case_zsa.bin").unwrap();
+            let test_case_bytes = include_bytes!("../circuit_data/circuit_proof_test_case_zsa.bin");
             read_test_case(&test_case_bytes[..]).expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 5120);
@@ -1122,7 +1135,10 @@ mod tests {
             .unwrap();
 
         let circuit = Circuit::<OrchardZSA> {
-            witnesses: Witnesses::default(),
+            witnesses: Witnesses {
+                circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
+                ..Default::default()
+            },
             phantom: core::marker::PhantomData,
         };
         halo2_proofs::dev::CircuitLayout::default()
@@ -1158,6 +1174,7 @@ mod tests {
     fn generate_circuit_instance<R: CryptoRngCore>(
         is_zatoshi_asset: bool,
         split_flag: bool,
+        orchard_circuit_version: OrchardCircuitVersion,
         mut rng: R,
     ) -> (Circuit<OrchardZSA>, Instance) {
         // We cannot create a split note with a zatoshi asset.
@@ -1199,7 +1216,7 @@ mod tests {
                 Scope::External,
                 // Split notes do not contribute to v_net.
                 // Therefore, if split_flag is true, v_net = - output_value
-                NoteValue::zero() - output_value,
+                NoteValue::ZERO - output_value,
             )
         } else {
             (
@@ -1248,6 +1265,7 @@ mod tests {
                     output_note,
                     alpha,
                     rcv,
+                    orchard_circuit_version,
                 ),
                 phantom: core::marker::PhantomData,
             },
@@ -1272,7 +1290,7 @@ mod tests {
             AssetBase::random(&mut rng),
             pallas::Base::random(&mut rng),
             pallas::Base::random(&mut rng),
-            NoteCommitTrapdoor(pallas::Scalar::random(&mut rng)),
+            NoteCommitTrapdoor::new(pallas::Scalar::random(&mut rng)),
         )
         .unwrap()
     }
@@ -1282,8 +1300,12 @@ mod tests {
         let mut rng = OsRng;
 
         for (is_zatoshi_asset, split_flag) in [(true, false), (false, true), (false, false)] {
-            let (circuit, instance) =
-                generate_circuit_instance(is_zatoshi_asset, split_flag, &mut rng);
+            let (circuit, instance) = generate_circuit_instance(
+                is_zatoshi_asset,
+                split_flag,
+                OrchardCircuitVersion::FixedPostNu6_2,
+                &mut rng,
+            );
 
             let should_pass = !(matches!((is_zatoshi_asset, split_flag), (true, true)));
 
@@ -1321,6 +1343,7 @@ mod tests {
             // The proof should fail
             let circuit_wrong_cm_old = Circuit {
                 witnesses: Witnesses {
+                    circuit_version: circuit.witnesses.circuit_version,
                     path: circuit.witnesses.path,
                     pos: circuit.witnesses.pos,
                     g_d_old: circuit.witnesses.g_d_old,
@@ -1380,6 +1403,7 @@ mod tests {
             if !split_flag {
                 let circuit_wrong_psi_nf = Circuit {
                     witnesses: Witnesses {
+                        circuit_version: circuit.witnesses.circuit_version,
                         path: circuit.witnesses.path,
                         pos: circuit.witnesses.pos,
                         g_d_old: circuit.witnesses.g_d_old,
@@ -1430,5 +1454,18 @@ mod tests {
                 check_proof_of_orchard_circuit(&circuit, &instance_wrong_enable_zsa, false);
             }
         }
+    }
+
+    #[test]
+    fn cannot_create_insecure_zsa_proof() {
+        let mut rng = OsRng;
+        let (circuit, instance) = generate_circuit_instance(
+            true,
+            false,
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            &mut rng,
+        );
+        let pk = ProvingKey::build::<OrchardZSA>();
+        assert!(Proof::create(&pk, &[circuit], &[instance], &mut rng).is_err());
     }
 }

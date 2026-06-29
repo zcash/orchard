@@ -27,6 +27,17 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
     /// The size of an encrypted note ciphertext, accounting for additional AEAD tag space.
     const ENC_CIPHERTEXT_SIZE: usize = Self::NOTE_PLAINTEXT_SIZE + AEAD_TAG_SIZE;
 
+    /// Fixed base overhead (in bytes) of a proof, independent of the number of actions.
+    ///
+    /// Together with `PER_ACTION_PROOF_SIZE`, determines the canonical proof length via
+    /// BASE_PROOF_SIZE + PER_ACTION_PROOF_SIZE * num_actions.
+    const BASE_PROOF_SIZE: usize;
+
+    /// Per-action contribution (in bytes) to the proof size.
+    ///
+    /// See [`BASE_PROOF_SIZE`][Self::BASE_PROOF_SIZE].
+    const PER_ACTION_PROOF_SIZE: usize;
+
     /// The raw bytes of a note plaintext.
     type NotePlaintextBytes: NoteBytes;
     /// The raw bytes of an encrypted note plaintext.
