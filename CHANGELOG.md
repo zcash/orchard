@@ -96,6 +96,10 @@ Existing callers keep the current behavior by constructing bundles with
   - `orchard::pczt::Bundle::bundle_version`, the generated getter for the bundle's
     `BundleVersion`, and `orchard::pczt::Bundle::flag_byte`, the infallible byte encoding of
     its flags under that version.
+  - `orchard::pczt::{Bundle, Action, Spend}::parse_preverified_for_signing`,
+    PCZT parse entry points for a preverified signing pass. They skip FVK
+    derivation and do not validate or preserve the wire `fvk`; callers must have
+    already run the full Verifier checks over the same PCZT bytes.
   - `orchard::pczt::Bundle::verify_cross_address_restriction`, so that Signers can
     check the cross-address restriction's same-expanded-receiver structural
     property before signing. It is a no-op for bundles that permit cross-address
