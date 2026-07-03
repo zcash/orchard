@@ -109,6 +109,13 @@ Existing callers keep the current behavior by constructing bundles with
   - `orchard::pczt::IoFinalizerError::CrossAddressRestriction`
   - `orchard::pczt::ProverError::DisallowedCrossAddressTransfer`, wrapping the
     underlying `orchard::pczt::VerifyError`.
+- `orchard::pczt::recompute`, byte-level helpers that recompute an action's derived
+  fields (`cv_net`, `nullifier`, `rk`, `cmx`, and `ephemeral_key` together with
+  `enc_ciphertext` under a caller-supplied memo) from the note component fields, so a
+  PCZT producer can omit those fields from the serialized encoding and the receiver can
+  repopulate them byte-identically before parsing.
+- `orchard::pczt::ParseError::Recompute`, wrapping the `orchard::pczt::VerifyError` from
+  a failed recomputation of an omitted derived field.
 
 ### Changed
 - Bundle construction now requires an explicit `BundleVersion` and `Flags`:

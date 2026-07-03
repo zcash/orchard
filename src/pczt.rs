@@ -24,7 +24,7 @@ mod parse;
 pub use parse::ParseError;
 
 mod verify;
-pub use verify::VerifyError;
+pub use verify::{recompute, VerifyError};
 
 mod io_finalizer;
 pub use io_finalizer::IoFinalizerError;
