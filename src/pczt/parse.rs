@@ -112,6 +112,14 @@ impl Action {
     }
 }
 
+/// Whether [`Spend::parse_inner`] derives the on-wire `fvk` (the full parse) or ignores it,
+/// leaving the parsed `fvk` as `None` (the preverified signing parse). See
+/// [`Spend::parse_preverified_for_signing`] for why skipping is sound.
+enum FvkHandling {
+    Derive,
+    Skip,
+}
+
 impl Spend {
     /// Parses a PCZT spend from its component parts.
     ///
@@ -155,7 +163,7 @@ impl Spend {
             dummy_sk,
             note_version,
             proprietary,
-            false,
+            FvkHandling::Derive,
         )
     }
 
@@ -216,14 +224,14 @@ impl Spend {
             dummy_sk,
             note_version,
             proprietary,
-            true,
+            FvkHandling::Skip,
         )
     }
 
     /// The shared body of [`Spend::parse`] and [`Spend::parse_preverified_for_signing`].
-    /// With `skip_fvk` false the on-wire `fvk` is derived via [`FullViewingKey::from_bytes`];
-    /// with `skip_fvk` true it is ignored and the parsed `fvk` is left `None`. Every other
-    /// field is parsed identically.
+    /// With [`FvkHandling::Derive`] the on-wire `fvk` is derived via
+    /// [`FullViewingKey::from_bytes`]; with [`FvkHandling::Skip`] it is ignored and the
+    /// parsed `fvk` is left `None`. Every other field is parsed identically.
     #[allow(clippy::too_many_arguments)]
     fn parse_inner(
         nullifier: [u8; 32],
@@ -240,7 +248,7 @@ impl Spend {
         dummy_sk: Option<[u8; 32]>,
         note_version: NoteVersion,
         proprietary: BTreeMap<String, Vec<u8>>,
-        skip_fvk: bool,
+        fvk_handling: FvkHandling,
     ) -> Result<Self, ParseError> {
         let nullifier = Nullifier::from_bytes(&nullifier)
             .into_option()
@@ -281,11 +289,13 @@ impl Spend {
 
         // Skip the (relatively expensive) FVK derivation in the preverified signing parse;
         // see `parse_preverified_for_signing` for why it is sound. The full parse derives it.
-        let fvk = if skip_fvk {
-            None
-        } else {
-            fvk.map(|fvk| FullViewingKey::from_bytes(&fvk).ok_or(ParseError::InvalidFullViewingKey))
-                .transpose()?
+        let fvk = match fvk_handling {
+            FvkHandling::Skip => None,
+            FvkHandling::Derive => fvk
+                .map(|fvk| {
+                    FullViewingKey::from_bytes(&fvk).ok_or(ParseError::InvalidFullViewingKey)
+                })
+                .transpose()?,
         };
 
         let witness = witness
