@@ -1126,6 +1126,39 @@ mod tests {
         );
     }
 
+    /// [`super::Bundle::parse_preverified_for_signing`] is a pure delegation to
+    /// [`super::Bundle::parse`] — the FVK elision lives entirely in the per-spend parse — so
+    /// on identical bundle-level bytes the two entry points must agree. An empty action list
+    /// keeps this focused on the bundle-level path.
+    #[test]
+    fn bundle_preverified_parse_delegates_to_full_parse() {
+        use super::Bundle;
+
+        let full = Bundle::parse(
+            alloc::vec::Vec::new(),
+            0,
+            BundleVersion::orchard_v2(),
+            (0, false),
+            [0u8; 32],
+            None,
+            None,
+        );
+        let preverified = Bundle::parse_preverified_for_signing(
+            alloc::vec::Vec::new(),
+            0,
+            BundleVersion::orchard_v2(),
+            (0, false),
+            [0u8; 32],
+            None,
+            None,
+        );
+        assert_eq!(
+            full.is_ok(),
+            preverified.is_ok(),
+            "preverified bundle parse must delegate to the full bundle parse",
+        );
+    }
+
     #[test]
     fn create_proof_rejects_identity_rk() {
         let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
