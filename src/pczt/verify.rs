@@ -1,11 +1,167 @@
+use alloc::vec::Vec;
 use core::fmt;
+
+use ff::PrimeField;
+use pasta_curves::pallas;
 
 use crate::{
     keys::{FullViewingKey, SpendValidatingKey},
-    note::{ExtractedNoteCommitment, Rho},
-    value::ValueCommitment,
-    Note,
+    note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
+    note_encryption::OrchardNoteEncryption,
+    value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
+    Address, Note,
 };
+
+/// Byte-level recompute helpers for the derived fields of a PCZT action.
+///
+/// A PCZT producer may omit an action's derived fields (`cv_net`, `nullifier`, `rk`,
+/// `cmx`, `ephemeral_key`, `enc_ciphertext`) to shrink the serialized encoding, leaving
+/// the receiver to recompute them from the note component fields it already holds. These
+/// functions perform the same derivations as the builder, directly on the PCZT wire byte
+/// encodings, so the receiver can repopulate an omitted field -- with a value
+/// byte-identical to the one the producer elided -- before the protocol structs are
+/// parsed, keeping every downstream consumer working with fully-populated actions.
+///
+/// Errors identify the note component that was missing or could not be decoded.
+pub mod recompute {
+    use super::*;
+
+    /// Reconstructs a note from its raw component byte fields.
+    fn note_from_bytes(
+        recipient: &[u8; 43],
+        value: u64,
+        rho: Rho,
+        rseed: &[u8; 32],
+        note_version: NoteVersion,
+    ) -> Result<Note, VerifyError> {
+        let recipient = Address::from_raw_address_bytes(recipient)
+            .into_option()
+            .ok_or(VerifyError::MissingRecipient)?;
+        let rseed = RandomSeed::from_bytes(*rseed, &rho)
+            .into_option()
+            .ok_or(VerifyError::MissingRandomSeed)?;
+        Note::from_parts(
+            recipient,
+            NoteValue::from_raw(value),
+            rho,
+            rseed,
+            note_version,
+        )
+        .into_option()
+        .ok_or(VerifyError::InvalidSpendNote)
+    }
+
+    /// Recomputes `cv_net` from the spend and output values and the value commitment
+    /// trapdoor, returning its byte encoding.
+    pub fn cv_net(
+        spend_value: u64,
+        output_value: u64,
+        rcv: &[u8; 32],
+    ) -> Result<[u8; 32], VerifyError> {
+        let rcv = ValueCommitTrapdoor::from_bytes(*rcv)
+            .into_option()
+            .ok_or(VerifyError::MissingValueCommitTrapdoor)?;
+        let value = NoteValue::from_raw(spend_value) - NoteValue::from_raw(output_value);
+        Ok(ValueCommitment::derive(value, rcv).to_bytes())
+    }
+
+    /// Recomputes a spent note's `nullifier` from its component fields and full viewing
+    /// key, returning its byte encoding.
+    pub fn nullifier(
+        recipient: &[u8; 43],
+        value: u64,
+        rho: &[u8; 32],
+        rseed: &[u8; 32],
+        fvk: &[u8; 96],
+        note_version: NoteVersion,
+    ) -> Result<[u8; 32], VerifyError> {
+        let rho = Rho::from_bytes(rho)
+            .into_option()
+            .ok_or(VerifyError::MissingRho)?;
+        let note = note_from_bytes(recipient, value, rho, rseed, note_version)?;
+        let fvk = FullViewingKey::from_bytes(fvk).ok_or(VerifyError::MissingFullViewingKey)?;
+        // The nullifier only constrains `nk` within the FVK; we additionally confirm the
+        // FVK owns the note, matching `Spend::verify_nullifier`.
+        fvk.scope_for_address(&note.recipient())
+            .ok_or(VerifyError::WrongFvkForNote)?;
+        Ok(note.nullifier(&fvk).to_bytes())
+    }
+
+    /// Recomputes a spend's randomized verification key `rk` from its full viewing key
+    /// and spend authorization randomizer, returning its byte encoding.
+    pub fn rk(fvk: &[u8; 96], alpha: &[u8; 32]) -> Result<[u8; 32], VerifyError> {
+        let fvk = FullViewingKey::from_bytes(fvk).ok_or(VerifyError::MissingFullViewingKey)?;
+        let alpha = pallas::Scalar::from_repr(*alpha)
+            .into_option()
+            .ok_or(VerifyError::MissingSpendAuthRandomizer)?;
+        let ak = SpendValidatingKey::from(fvk);
+        Ok((&ak.randomize(&alpha)).into())
+    }
+
+    /// Reconstructs an output note from its component fields. The output note's `rho` is
+    /// derived from the spent note's nullifier, so `spend_nullifier` must be the already
+    /// recomputed (or supplied) nullifier of the same action.
+    fn output_note(
+        recipient: &[u8; 43],
+        value: u64,
+        spend_nullifier: &[u8; 32],
+        rseed: &[u8; 32],
+        note_version: NoteVersion,
+    ) -> Result<Note, VerifyError> {
+        let nf = Nullifier::from_bytes(spend_nullifier)
+            .into_option()
+            .ok_or(VerifyError::InvalidNullifier)?;
+        let rho = Rho::from_nf_old(nf);
+        note_from_bytes(recipient, value, rho, rseed, note_version).map_err(|_| {
+            // Distinguish output-note reconstruction failure from spend-note failure.
+            VerifyError::InvalidOutputNote
+        })
+    }
+
+    /// Recomputes an output's note commitment `cmx` from its component fields, returning
+    /// its byte encoding.
+    pub fn cmx(
+        recipient: &[u8; 43],
+        value: u64,
+        spend_nullifier: &[u8; 32],
+        rseed: &[u8; 32],
+        note_version: NoteVersion,
+    ) -> Result<[u8; 32], VerifyError> {
+        let note = output_note(recipient, value, spend_nullifier, rseed, note_version)?;
+        Ok(ExtractedNoteCommitment::from(note.commitment()).to_bytes())
+    }
+
+    /// Recomputes an output's `ephemeral_key` and `enc_ciphertext` from its component
+    /// fields and the note's `memo`, returning `(ephemeral_key, enc_ciphertext)`.
+    ///
+    /// This reproduces the builder's deterministic note encryption byte-for-byte for any
+    /// memo; `note_version` selects the note plaintext lead byte, and `ephemeral_key` is
+    /// memo-independent. (Migration wallets use two memo constants: the all-zero memo
+    /// carried by dummy outputs, and the ZIP 302 empty memo, `0xF6` followed by zeroes,
+    /// carried by the real migrated output.) The encryption is independent of the
+    /// sender's `ovk`, which affects only `out_ciphertext`; that field is RNG-derived and
+    /// can never be recomputed. The one `enc_ciphertext` that also cannot be recomputed
+    /// is the zero-valued output paired with a real spend by a builder that disables
+    /// cross-address transfers, which is deliberately randomized.
+    pub fn ephemeral_key_and_enc_ciphertext(
+        recipient: &[u8; 43],
+        value: u64,
+        spend_nullifier: &[u8; 32],
+        rseed: &[u8; 32],
+        memo: &[u8; 512],
+        note_version: NoteVersion,
+    ) -> Result<([u8; 32], Vec<u8>), VerifyError> {
+        let note = output_note(recipient, value, spend_nullifier, rseed, note_version)?;
+        // The Orchard and Ironwood encryptor aliases share encryption behavior (the
+        // note's version selects the lead byte), so a single alias serves both note
+        // versions, exactly as in `OutputInfo::build`.
+        let encryptor = OrchardNoteEncryption::new(None, note, *memo);
+        Ok((
+            encryptor.epk().to_bytes().0,
+            encryptor.encrypt_note_plaintext().to_vec(),
+        ))
+    }
+}
 
 impl super::Bundle {
     /// If this bundle disables cross-address transfers, verifies that every action's
@@ -265,3 +421,216 @@ impl fmt::Display for VerifyError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for VerifyError {}
+
+#[cfg(test)]
+mod tests {
+    use ff::PrimeField;
+    use rand::rngs::OsRng;
+
+    use super::recompute;
+    use crate::{
+        builder::{Builder, BundleType},
+        bundle::BundleVersion,
+        constants::MERKLE_DEPTH_ORCHARD,
+        keys::{FullViewingKey, Scope, SpendingKey},
+        note::{NoteVersion, Nullifier, Rho},
+        tree::{MerklePath, EMPTY_ROOTS},
+        value::NoteValue,
+        Note,
+    };
+
+    /// Asserts that every derived field of `action` is byte-identical to its
+    /// recomputation from the action's note component fields, using `memo` for the
+    /// output's note plaintext.
+    ///
+    /// Pass `expect_enc_match: false` for the fabricated output paired with a real spend
+    /// in a bundle that disables cross-address transfers: its `enc_ciphertext` is
+    /// deliberately randomized, so `ephemeral_key` must still match but `enc_ciphertext`
+    /// must not.
+    fn assert_action_recomputes(
+        action: &crate::pczt::Action,
+        memo: &[u8; 512],
+        expect_enc_match: bool,
+    ) {
+        let spend = action.spend();
+        let output = action.output();
+
+        let spend_value = spend.value().expect("builder sets spend value").inner();
+        let output_value = output.value().expect("builder sets output value").inner();
+        let rcv = action.rcv().as_ref().expect("builder sets rcv").to_bytes();
+        assert_eq!(
+            recompute::cv_net(spend_value, output_value, &rcv).unwrap(),
+            action.cv_net().to_bytes(),
+        );
+
+        let spend_recipient = spend
+            .recipient()
+            .expect("builder sets spend recipient")
+            .to_raw_address_bytes();
+        let rho = spend.rho().expect("builder sets rho").to_bytes();
+        let spend_rseed = *spend
+            .rseed()
+            .as_ref()
+            .expect("builder sets spend rseed")
+            .as_bytes();
+        let fvk = spend
+            .fvk()
+            .as_ref()
+            .expect("builder sets spend fvk")
+            .to_bytes();
+        assert_eq!(
+            recompute::nullifier(
+                &spend_recipient,
+                spend_value,
+                &rho,
+                &spend_rseed,
+                &fvk,
+                *spend.note_version(),
+            )
+            .unwrap(),
+            spend.nullifier().to_bytes(),
+        );
+
+        let alpha = spend.alpha().expect("builder sets alpha").to_repr();
+        assert_eq!(
+            recompute::rk(&fvk, &alpha).unwrap(),
+            <[u8; 32]>::from(spend.rk()),
+        );
+
+        let output_recipient = output
+            .recipient()
+            .expect("builder sets output recipient")
+            .to_raw_address_bytes();
+        let output_rseed = *output
+            .rseed()
+            .as_ref()
+            .expect("builder sets output rseed")
+            .as_bytes();
+        let spend_nullifier = spend.nullifier().to_bytes();
+        assert_eq!(
+            recompute::cmx(
+                &output_recipient,
+                output_value,
+                &spend_nullifier,
+                &output_rseed,
+                *output.note_version(),
+            )
+            .unwrap(),
+            output.cmx().to_bytes(),
+        );
+
+        let (ephemeral_key, enc_ciphertext) = recompute::ephemeral_key_and_enc_ciphertext(
+            &output_recipient,
+            output_value,
+            &spend_nullifier,
+            &output_rseed,
+            memo,
+            *output.note_version(),
+        )
+        .unwrap();
+        assert_eq!(ephemeral_key, output.encrypted_note().epk_bytes);
+        if expect_enc_match {
+            assert_eq!(
+                enc_ciphertext[..],
+                output.encrypted_note().enc_ciphertext[..],
+            );
+        } else {
+            assert_ne!(
+                enc_ciphertext[..],
+                output.encrypted_note().enc_ciphertext[..],
+            );
+        }
+    }
+
+    /// Pins the Ironwood (V3) `enc_ciphertext` encoding of a real migration-style output:
+    /// a builder-built output carrying the ZIP 302 empty memo (`0xF6` followed by zeroes)
+    /// must be byte-identical to its recomputation, which is the precondition for eliding
+    /// it from a wire PCZT. Building with `Some(ovk)` and recomputing without it also
+    /// pins that `enc_ciphertext` is independent of the sender's `ovk`. The padding
+    /// action covers the all-zero dummy memo under V3.
+    #[test]
+    fn recompute_reproduces_ironwood_empty_memo_output() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let bundle_version = BundleVersion::ironwood_v3();
+
+        // The ZIP 302 encoding of "no memo", as `MemoBytes::empty()` produces for the
+        // real migration output.
+        let mut empty_memo = [0u8; 512];
+        empty_memo[0] = 0xF6;
+
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
+        )
+        .unwrap();
+        builder
+            .add_output(
+                Some(fvk.to_ovk(Scope::Internal)),
+                recipient,
+                NoteValue::from_raw(5_000),
+                empty_memo,
+            )
+            .unwrap();
+        let (bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        let real_index = bundle_meta.output_action_index(0).unwrap();
+
+        assert_eq!(bundle.actions().len(), 2);
+        for (index, action) in bundle.actions().iter().enumerate() {
+            assert_eq!(*action.output().note_version(), NoteVersion::V3);
+            let memo = if index == real_index {
+                &empty_memo
+            } else {
+                &[0u8; 512]
+            };
+            assert_action_recomputes(action, memo, true);
+        }
+    }
+
+    /// In a bundle that disables cross-address transfers (post-NU6.3 Orchard, V2 notes),
+    /// every derived field recomputes byte-identically, except the `enc_ciphertext` of
+    /// the fabricated output paired with the real spend, which is deliberately randomized
+    /// and must not be reproducible. The padding action covers the all-zero dummy memo
+    /// under V2.
+    #[test]
+    fn recompute_reproduces_restricted_orchard_bundle() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let bundle_version = BundleVersion::orchard_v3();
+        let note_version = bundle_version.note_version();
+
+        let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+        let note = Note::new(
+            recipient,
+            NoteValue::from_raw(15_000),
+            rho,
+            note_version,
+            &mut rng,
+        );
+        let merkle_path = MerklePath::dummy(&mut rng);
+        let anchor = merkle_path.root(note.commitment().into());
+
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
+        builder.add_spend(fvk, note, merkle_path).unwrap();
+        let (bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        let spend_index = bundle_meta.spend_action_index(0).unwrap();
+
+        assert_eq!(bundle.actions().len(), 2);
+        for (index, action) in bundle.actions().iter().enumerate() {
+            assert_eq!(*action.output().note_version(), NoteVersion::V2);
+            assert_action_recomputes(action, &[0u8; 512], index != spend_index);
+        }
+    }
+}
