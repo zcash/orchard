@@ -29,10 +29,6 @@ impl Bundle {
     /// See [`BundleVersion`] for the choice of `bundle_version`.
     ///
     /// `value_sum` is represented as `(magnitude, is_negative)`.
-    ///
-    /// The `actions` must have been parsed via [`Action::parse`] (the full parse). Use
-    /// this for the Verifier, Prover, Updater, or any caller that needs to validate or
-    /// preserve the wire `fvk`.
     pub fn parse(
         actions: Vec<Action>,
         flags: u8,
@@ -85,40 +81,10 @@ impl Bundle {
             bsk,
         })
     }
-
-    /// Parses a PCZT bundle for a preverified signing pass, from `actions` parsed via
-    /// [`Action::parse_preverified_for_signing`].
-    ///
-    /// Bundle-level fields are parsed identically to [`Bundle::parse`]; the only difference
-    /// is that each action's spend omits its [`FullViewingKey`]. See
-    /// [`Spend::parse_preverified_for_signing`] for the invariant and usage constraints.
-    pub fn parse_preverified_for_signing(
-        actions: Vec<Action>,
-        flags: u8,
-        bundle_version: BundleVersion,
-        value_sum: (u64, bool),
-        anchor: [u8; 32],
-        zkproof: Option<Vec<u8>>,
-        bsk: Option<[u8; 32]>,
-    ) -> Result<Self, ParseError> {
-        // Bundle-level parsing does no FVK work; the elision is entirely in the spend parse.
-        Self::parse(
-            actions,
-            flags,
-            bundle_version,
-            value_sum,
-            anchor,
-            zkproof,
-            bsk,
-        )
-    }
 }
 
 impl Action {
     /// Parses a PCZT action from its component parts.
-    ///
-    /// This performs the full parse: the `spend` must have been parsed via
-    /// [`Spend::parse`], which validates and preserves the wire `fvk` when present.
     pub fn parse(
         cv_net: [u8; 32],
         spend: Spend,
@@ -143,22 +109,6 @@ impl Action {
             output,
             rcv,
         })
-    }
-
-    /// Parses a PCZT action for a preverified signing pass, skipping the spend's
-    /// [`FullViewingKey`] derivation.
-    ///
-    /// Identical to [`Action::parse`] except that `spend` must have been parsed via
-    /// [`Spend::parse_preverified_for_signing`] (leaving `spend.fvk` as `None`); see that
-    /// method for the invariant and usage constraints.
-    pub fn parse_preverified_for_signing(
-        cv_net: [u8; 32],
-        spend: Spend,
-        output: Output,
-        rcv: Option<[u8; 32]>,
-    ) -> Result<Self, ParseError> {
-        // The FVK skip happens inside the spend parse, not here, so reuse `parse`.
-        Self::parse(cv_net, spend, output, rcv)
     }
 }
 

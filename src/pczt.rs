@@ -1034,13 +1034,8 @@ mod tests {
             preverified_spend.fvk().is_none(),
             "preverified signing parse must omit the fvk",
         );
-        let mut preverified_action = Action::parse_preverified_for_signing(
-            cv_net_bytes,
-            preverified_spend,
-            build_output(),
-            rcv_bytes,
-        )
-        .unwrap();
+        let mut preverified_action =
+            Action::parse(cv_net_bytes, preverified_spend, build_output(), rcv_bytes).unwrap();
 
         // Sign both with the SAME ask, sighash, and an identically-seeded RNG. RedPallas
         // signing is randomized, so the RNGs must match for the signatures to be comparable.
@@ -1123,39 +1118,6 @@ mod tests {
         assert!(
             preverified_bad_fvk.fvk().is_none(),
             "the preverified signing parse must leave fvk None even when the wire fvk bytes are malformed",
-        );
-    }
-
-    /// [`super::Bundle::parse_preverified_for_signing`] is a pure delegation to
-    /// [`super::Bundle::parse`] — the FVK elision lives entirely in the per-spend parse — so
-    /// on identical bundle-level bytes the two entry points must agree. An empty action list
-    /// keeps this focused on the bundle-level path.
-    #[test]
-    fn bundle_preverified_parse_delegates_to_full_parse() {
-        use super::Bundle;
-
-        let full = Bundle::parse(
-            alloc::vec::Vec::new(),
-            0,
-            BundleVersion::orchard_v2(),
-            (0, false),
-            [0u8; 32],
-            None,
-            None,
-        );
-        let preverified = Bundle::parse_preverified_for_signing(
-            alloc::vec::Vec::new(),
-            0,
-            BundleVersion::orchard_v2(),
-            (0, false),
-            [0u8; 32],
-            None,
-            None,
-        );
-        assert_eq!(
-            full.is_ok(),
-            preverified.is_ok(),
-            "preverified bundle parse must delegate to the full bundle parse",
         );
     }
 
