@@ -112,8 +112,25 @@ impl Action {
     }
 }
 
+/// Whether [`Spend::parse_inner`] derives the on-wire `fvk` (the full parse) or ignores it,
+/// leaving the parsed `fvk` as `None` (the preverified signing parse). See
+/// [`Spend::parse_preverified_for_signing`] for why skipping is sound.
+enum FvkHandling {
+    Derive,
+    Skip,
+}
+
 impl Spend {
     /// Parses a PCZT spend from its component parts.
+    ///
+    /// This is the **full** parse used when the caller needs to validate or preserve the
+    /// wire `fvk`: when `fvk` is provided, it derives the [`FullViewingKey`] via
+    /// [`FullViewingKey::from_bytes`] (a relatively expensive operation involving Pallas
+    /// point decompression and two `commit_ivk` Sinsemilla hashes).
+    ///
+    /// The byte-for-byte behaviour of this method is part of the full verification contract
+    /// and must not change. The preverified signing variant lives in
+    /// [`Spend::parse_preverified_for_signing`].
     #[allow(clippy::too_many_arguments)]
     pub fn parse(
         nullifier: [u8; 32],
@@ -130,6 +147,108 @@ impl Spend {
         dummy_sk: Option<[u8; 32]>,
         note_version: NoteVersion,
         proprietary: BTreeMap<String, Vec<u8>>,
+    ) -> Result<Self, ParseError> {
+        Self::parse_inner(
+            nullifier,
+            rk,
+            spend_auth_sig,
+            recipient,
+            value,
+            rho,
+            rseed,
+            fvk,
+            witness,
+            alpha,
+            zip32_derivation,
+            dummy_sk,
+            note_version,
+            proprietary,
+            FvkHandling::Derive,
+        )
+    }
+
+    /// Parses a PCZT spend for a preverified signing pass, deliberately skipping the
+    /// [`FullViewingKey`] derivation.
+    ///
+    /// The resulting `Spend` has `fvk: None` even when an `fvk` was present on the wire. It
+    /// retains everything the spend-authorization signature depends on (`rk`, `alpha`, and
+    /// the nullifier), so [`Action::sign`](super::Action::sign) produces a byte-identical
+    /// `spend_auth_sig` to one produced from a full parse. Unlike [`Spend::parse`], the
+    /// on-wire `fvk` bytes are not validated: a malformed `fvk` still parses (as `fvk: None`),
+    /// making this the one respect in which the parse is more permissive.
+    ///
+    /// # Invariant (why this is sound)
+    ///
+    /// Skipping FVK derivation is valid because [`Action::sign`](super::Action::sign) never
+    /// reads `spend.fvk` (only `alpha`, `rk`, and the seed-derived `ask`), and because callers
+    /// MUST have already run the full verifier checks (`verify_nullifier` / `verify_rk`) over
+    /// the identical PCZT bytes before signing — which do derive and check the FVK (including
+    /// the malformed-`fvk` case above). The signer therefore need not re-derive it.
+    ///
+    /// A `Spend` produced by this method must not be:
+    /// - passed to the Verifier check path
+    ///   ([`verify_nullifier`](super::Spend::verify_nullifier),
+    ///   [`verify_rk`](super::Spend::verify_rk)): with `fvk: None` it can no longer cross-check
+    ///   the on-wire `fvk`, and dummy-note verification fails;
+    /// - passed to the Prover, which requires `fvk`;
+    /// - re-serialized where the `fvk` field must be preserved, as it would be dropped.
+    #[allow(clippy::too_many_arguments)]
+    pub fn parse_preverified_for_signing(
+        nullifier: [u8; 32],
+        rk: [u8; 32],
+        spend_auth_sig: Option<[u8; 64]>,
+        recipient: Option<[u8; 43]>,
+        value: Option<u64>,
+        rho: Option<[u8; 32]>,
+        rseed: Option<[u8; 32]>,
+        fvk: Option<[u8; 96]>,
+        witness: Option<(u32, [[u8; 32]; NOTE_COMMITMENT_TREE_DEPTH])>,
+        alpha: Option<[u8; 32]>,
+        zip32_derivation: Option<Zip32Derivation>,
+        dummy_sk: Option<[u8; 32]>,
+        note_version: NoteVersion,
+        proprietary: BTreeMap<String, Vec<u8>>,
+    ) -> Result<Self, ParseError> {
+        Self::parse_inner(
+            nullifier,
+            rk,
+            spend_auth_sig,
+            recipient,
+            value,
+            rho,
+            rseed,
+            fvk,
+            witness,
+            alpha,
+            zip32_derivation,
+            dummy_sk,
+            note_version,
+            proprietary,
+            FvkHandling::Skip,
+        )
+    }
+
+    /// The shared body of [`Spend::parse`] and [`Spend::parse_preverified_for_signing`].
+    /// With [`FvkHandling::Derive`] the on-wire `fvk` is derived via
+    /// [`FullViewingKey::from_bytes`]; with [`FvkHandling::Skip`] it is ignored and the
+    /// parsed `fvk` is left `None`. Every other field is parsed identically.
+    #[allow(clippy::too_many_arguments)]
+    fn parse_inner(
+        nullifier: [u8; 32],
+        rk: [u8; 32],
+        spend_auth_sig: Option<[u8; 64]>,
+        recipient: Option<[u8; 43]>,
+        value: Option<u64>,
+        rho: Option<[u8; 32]>,
+        rseed: Option<[u8; 32]>,
+        fvk: Option<[u8; 96]>,
+        witness: Option<(u32, [[u8; 32]; NOTE_COMMITMENT_TREE_DEPTH])>,
+        alpha: Option<[u8; 32]>,
+        zip32_derivation: Option<Zip32Derivation>,
+        dummy_sk: Option<[u8; 32]>,
+        note_version: NoteVersion,
+        proprietary: BTreeMap<String, Vec<u8>>,
+        fvk_handling: FvkHandling,
     ) -> Result<Self, ParseError> {
         let nullifier = Nullifier::from_bytes(&nullifier)
             .into_option()
@@ -168,9 +287,16 @@ impl Spend {
             })
             .transpose()?;
 
-        let fvk = fvk
-            .map(|fvk| FullViewingKey::from_bytes(&fvk).ok_or(ParseError::InvalidFullViewingKey))
-            .transpose()?;
+        // Skip the (relatively expensive) FVK derivation in the preverified signing parse;
+        // see `parse_preverified_for_signing` for why it is sound. The full parse derives it.
+        let fvk = match fvk_handling {
+            FvkHandling::Skip => None,
+            FvkHandling::Derive => fvk
+                .map(|fvk| {
+                    FullViewingKey::from_bytes(&fvk).ok_or(ParseError::InvalidFullViewingKey)
+                })
+                .transpose()?,
+        };
 
         let witness = witness
             .map(|(position, auth_path)| {
