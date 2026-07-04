@@ -66,11 +66,11 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type: a transactional bundle, padded to the 2-action minimum, that
-    /// is not required to be produced if no spends or outputs have been added.
+    /// The default bundle type: an unpadded transactional bundle that is not required to be
+    /// produced if no spends or outputs have been added.
     pub const DEFAULT: BundleType = BundleType::Transactional {
         bundle_required: false,
-        pad_to_minimum: true,
+        pad_to_minimum: false,
     };
 
     /// Returns the number of logical actions that the builder will produce in constructing a bundle
@@ -1875,10 +1875,14 @@ mod tests {
         let flags = BundleVersion::ironwood_v3().default_flags();
         assert_eq!(padded.num_actions(flags, 0, 1), Ok(2));
         assert_eq!(unpadded.num_actions(flags, 0, 1), Ok(1));
+        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(1));
         assert_eq!(unpadded.num_actions(flags, 2, 3), Ok(3));
         assert_eq!(unpadded.num_actions(flags, 0, 0), Ok(0));
         // `bundle_required` still guarantees a bundle exists: a single all-dummy action.
         assert_eq!(required_unpadded.num_actions(flags, 0, 0), Ok(1));
+
+        let flags = BundleVersion::orchard_v2().default_flags();
+        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(1));
 
         // Cross-address transfers disabled: requested actions = spends + outputs.
         let flags = BundleVersion::orchard_v3().default_flags();

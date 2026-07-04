@@ -546,7 +546,7 @@ mod tests {
     /// a builder-built output carrying the ZIP 302 empty memo (`0xF6` followed by zeroes)
     /// must be byte-identical to its recomputation, which is the precondition for eliding
     /// it from a wire PCZT. Building with `Some(ovk)` and recomputing without it also
-    /// pins that `enc_ciphertext` is independent of the sender's `ovk`. The padding
+    /// pins that `enc_ciphertext` is independent of the sender's `ovk`. An explicit padded
     /// action covers the all-zero dummy memo under V3.
     #[test]
     fn recompute_reproduces_ironwood_empty_memo_output() {
@@ -562,7 +562,10 @@ mod tests {
         empty_memo[0] = 0xF6;
 
         let mut builder = Builder::new(
-            BundleType::DEFAULT,
+            BundleType::Transactional {
+                bundle_required: false,
+                pad_to_minimum: true,
+            },
             bundle_version,
             bundle_version.default_flags(),
             EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into(),
@@ -594,8 +597,8 @@ mod tests {
     /// In a bundle that disables cross-address transfers (post-NU6.3 Orchard, V2 notes),
     /// every derived field recomputes byte-identically, except the `enc_ciphertext` of
     /// the fabricated output paired with the real spend, which is deliberately randomized
-    /// and must not be reproducible. The padding action covers the all-zero dummy memo
-    /// under V2.
+    /// and must not be reproducible. An explicit padded action covers the all-zero dummy
+    /// memo under V2.
     #[test]
     fn recompute_reproduces_restricted_orchard_bundle() {
         let mut rng = OsRng;
@@ -617,7 +620,10 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         let mut builder = Builder::new(
-            BundleType::DEFAULT,
+            BundleType::Transactional {
+                bundle_required: false,
+                pad_to_minimum: true,
+            },
             bundle_version,
             bundle_version.default_flags(),
             anchor,

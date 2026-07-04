@@ -344,12 +344,12 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     verify_bundle(&bundle, &post_nu6_3_vk, TxVersion::V6);
 }
 
-// An unpadded transactional bundle: `pad_to_minimum: false` builds exactly the requested
-// single action instead of padding to the 2-action minimum, and the result proves and
-// verifies on the post-NU6.3 circuit like any other bundle (coinbase bundles already
-// demonstrate that consensus accepts 1-action bundles).
+// The default transactional bundle type builds exactly the requested single action instead
+// of padding to the 2-action minimum, and the result proves and verifies on the post-NU6.3
+// circuit like any other bundle (coinbase bundles already demonstrate that consensus accepts
+// 1-action bundles).
 #[test]
-fn unpadded_ironwood_bundle_builds_single_action_and_verifies() {
+fn default_ironwood_bundle_builds_single_action_and_verifies() {
     let mut rng = OsRng;
     let post_nu6_3_pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
     let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
@@ -358,14 +358,7 @@ fn unpadded_ironwood_bundle_builds_single_action_and_verifies() {
     let fvk = FullViewingKey::from(&sk);
     let recipient = fvk.address_at(0u32, Scope::External);
 
-    let builder = output_only_builder(
-        BundleVersion::ironwood_v3(),
-        BundleType::Transactional {
-            bundle_required: false,
-            pad_to_minimum: false,
-        },
-        recipient,
-    );
+    let builder = output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
 
     let (unauthorized, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     assert_eq!(unauthorized.actions().len(), 1);
