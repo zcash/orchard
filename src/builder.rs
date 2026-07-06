@@ -408,8 +408,8 @@ pub struct OutputInfo {
     note_version: NoteVersion,
     /// When set, `build` fills `enc_ciphertext` with random bytes instead of encrypting the
     /// note to `recipient`. This is used only for the zero-valued output that a builder with
-    /// cross-address actions disabled pairs with a real spend, which is addressed to the
-    /// spent note's own receiver. A real ciphertext there would trial-decrypt under that
+    /// cross-address actions disabled pairs with a real external-scope spend, which is addressed
+    /// to the spent note's own receiver. A real ciphertext there would trial-decrypt under that
     /// receiver's incoming viewing key in the same action that carries the spend's nullifier,
     /// letting anyone who holds the ivk -- including a quantum adversary who recovered it from
     /// the published address -- detect the spend. The note and its commitment are unchanged.
@@ -443,16 +443,22 @@ impl OutputInfo {
     /// Constructs the zero-valued output that a builder with cross-address actions
     /// disabled pairs with a real spend.
     ///
-    /// `recipient` is the spent note's own receiver, so the output's `enc_ciphertext` is
-    /// randomized rather than encrypted to it (see the `randomized_ciphertext` field).
-    fn fabricated_for_spend(note_version: NoteVersion, recipient: Address) -> Self {
+    /// `recipient` is the spent note's own receiver. For external-scope spends, the output's
+    /// `enc_ciphertext` is randomized rather than encrypted to it (see the
+    /// `randomized_ciphertext` field). Internal-scope spends do not have the same external-address
+    /// exposure, so the deterministic ciphertext remains recomputable.
+    fn fabricated_for_spend(
+        note_version: NoteVersion,
+        recipient: Address,
+        spent_scope: Scope,
+    ) -> Self {
         Self {
             ovk: None,
             recipient,
             value: NoteValue::ZERO,
             memo: [0u8; 512],
             note_version,
-            randomized_ciphertext: true,
+            randomized_ciphertext: matches!(spent_scope, Scope::External),
         }
     }
 
@@ -799,11 +805,12 @@ impl Builder {
     /// the given note.
     ///
     /// In a bundle that disables cross-address transfers, each spend is paired with a
-    /// fabricated zero-valued output addressed to the spent note's own receiver. That output's
-    /// note ciphertext is randomized rather than encrypted to the receiver, so it is
-    /// undecryptable: the owning wallet does not see it when scanning, and no holder of the
-    /// receiver's incoming viewing key -- including a quantum adversary who recovered it from
-    /// the published address -- can use it to detect the spend.
+    /// fabricated zero-valued output addressed to the spent note's own receiver. For
+    /// external-scope spends, that output's note ciphertext is randomized rather than encrypted
+    /// to the receiver, so it is undecryptable: the owning wallet does not see it when scanning,
+    /// and no holder of the receiver's incoming viewing key -- including a quantum adversary who
+    /// recovered it from the published address -- can use it to detect the spend. Internal-scope
+    /// spends do not need this randomization.
     ///
     /// [`MerkleHashOrchard`]: crate::tree::MerkleHashOrchard
     pub fn add_spend(
@@ -1209,7 +1216,8 @@ fn build_bundle<B, R: RngCore>(
         let mut pairs = Vec::with_capacity(num_actions);
 
         for (spend_idx, spend) in spends.into_iter().enumerate() {
-            let output = OutputInfo::fabricated_for_spend(note_version, spend.note.recipient());
+            let output =
+                OutputInfo::fabricated_for_spend(note_version, spend.note.recipient(), spend.scope);
             pairs.push((Some(spend_idx), None, spend, output));
         }
 
@@ -2156,10 +2164,11 @@ mod tests {
         assert_eq!(spend_action.output.recipient, Some(spend_recipient));
         assert_eq!(spend_action.output.value, Some(NoteValue::ZERO));
 
-        // The spend-paired output's ciphertext is randomized, so signers (e.g. Keystone) must be
-        // able to classify it as a zero-valued dummy and tolerate the undecryptable ciphertext
-        // rather than reconstructing and rejecting it. That requires the explicit note fields to
-        // be present (so the commitment verifies), no `user_address`, and a zero value.
+        // This external-scope spend's paired output ciphertext is randomized, so signers
+        // (e.g. Keystone) must be able to classify it as a zero-valued dummy and tolerate the
+        // undecryptable ciphertext rather than reconstructing and rejecting it. That requires the
+        // explicit note fields to be present (so the commitment verifies), no `user_address`, and
+        // a zero value.
         assert!(spend_action.output.user_address.is_none());
         assert!(spend_action.output.rseed.is_some());
         assert!(spend_action

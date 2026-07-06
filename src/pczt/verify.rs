@@ -141,8 +141,8 @@ pub mod recompute {
     /// carried by the real migrated output.) The encryption is independent of the
     /// sender's `ovk`, which affects only `out_ciphertext`; that field is RNG-derived and
     /// can never be recomputed. The one `enc_ciphertext` that also cannot be recomputed
-    /// is the zero-valued output paired with a real spend by a builder that disables
-    /// cross-address transfers, which is deliberately randomized.
+    /// is the zero-valued output paired with a real external-scope spend by a builder that
+    /// disables cross-address transfers, which is deliberately randomized.
     pub fn ephemeral_key_and_enc_ciphertext(
         recipient: &[u8; 43],
         value: u64,
@@ -443,10 +443,10 @@ mod tests {
     /// recomputation from the action's note component fields, using `memo` for the
     /// output's note plaintext.
     ///
-    /// Pass `expect_enc_match: false` for the fabricated output paired with a real spend
-    /// in a bundle that disables cross-address transfers: its `enc_ciphertext` is
-    /// deliberately randomized, so `ephemeral_key` must still match but `enc_ciphertext`
-    /// must not.
+    /// Pass `expect_enc_match: false` for the fabricated output paired with a real
+    /// external-scope spend in a bundle that disables cross-address transfers: its
+    /// `enc_ciphertext` is deliberately randomized, so `ephemeral_key` must still match but
+    /// `enc_ciphertext` must not.
     fn assert_action_recomputes(
         action: &crate::pczt::Action,
         memo: &[u8; 512],
@@ -594,17 +594,14 @@ mod tests {
         }
     }
 
-    /// In a bundle that disables cross-address transfers (post-NU6.3 Orchard, V2 notes),
-    /// every derived field recomputes byte-identically, except the `enc_ciphertext` of
-    /// the fabricated output paired with the real spend, which is deliberately randomized
-    /// and must not be reproducible. An explicit padded action covers the all-zero dummy
-    /// memo under V2.
-    #[test]
-    fn recompute_reproduces_restricted_orchard_bundle() {
+    fn assert_restricted_orchard_spend_recomputes(
+        spend_scope: Scope,
+        expect_spend_output_enc_match: bool,
+    ) {
         let mut rng = OsRng;
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
-        let recipient = fvk.address_at(0u32, Scope::External);
+        let recipient = fvk.address_at(0u32, spend_scope);
         let bundle_version = BundleVersion::orchard_v3();
         let note_version = bundle_version.note_version();
 
@@ -636,7 +633,28 @@ mod tests {
         assert_eq!(bundle.actions().len(), 2);
         for (index, action) in bundle.actions().iter().enumerate() {
             assert_eq!(*action.output().note_version(), NoteVersion::V2);
-            assert_action_recomputes(action, &[0u8; 512], index != spend_index);
+            assert_action_recomputes(
+                action,
+                &[0u8; 512],
+                index != spend_index || expect_spend_output_enc_match,
+            );
         }
+    }
+
+    /// In a bundle that disables cross-address transfers (post-NU6.3 Orchard, V2 notes),
+    /// every derived field recomputes byte-identically, except the `enc_ciphertext` of
+    /// the fabricated output paired with an external-scope real spend, which is deliberately
+    /// randomized and must not be reproducible. An explicit padded action covers the all-zero
+    /// dummy memo under V2.
+    #[test]
+    fn recompute_reproduces_restricted_external_orchard_bundle_except_ciphertext() {
+        assert_restricted_orchard_spend_recomputes(Scope::External, false);
+    }
+
+    /// Internal-scope spends do not have the same external-address exposure, so the fabricated
+    /// zero-valued output paired with the spend remains deterministic and recomputable.
+    #[test]
+    fn recompute_reproduces_restricted_internal_orchard_bundle() {
+        assert_restricted_orchard_spend_recomputes(Scope::Internal, true);
     }
 }
