@@ -80,6 +80,11 @@ Existing callers keep the current behavior by constructing bundles with
 - New builder errors:
   - `orchard::builder::BuildError::{CrossAddressDisabled, InvalidNoteVersion, UnrepresentableFlags, CoinbaseSpendsEnabled}`
   - `orchard::builder::OutputError::{SpendsDisabled, CrossAddressDisabled, RecipientNotOwned}`
+- `orchard::builder::BundleType::DEFAULT_UNPADDED`, a transactional bundle type that
+  disables padding for transactions whose shape is already public (e.g. pool
+  migrations).
+- `orchard::builder::Builder::bundle_type`, returning the `BundleType` the builder
+  was constructed with.
 - Ironwood and note-version APIs:
   - `orchard::NoteVersion`, the note plaintext version selector, with variants
     `V2` (the ZIP 212 Orchard note plaintext format) and `V3` (the
@@ -155,7 +160,7 @@ Existing callers keep the current behavior by constructing bundles with
 - `orchard::builder::BundleType::Transactional` now carries a `pad_to_minimum` flag;
   when `false`, the bundle is not padded to the 2-action minimum and contains exactly
   the requested actions (at least one, if `bundle_required` is set).
-  `BundleType::DEFAULT` uses this unpadded transactional behavior.
+  `BundleType::DEFAULT` keeps the existing padded behavior.
 - For `BundleVersion::orchard_v3()`, the builder constructs
   withdrawal/change bundles that disable cross-address transfers: every action's
   output is addressed to the expanded receiver of the note it spends. The

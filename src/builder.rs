@@ -66,9 +66,19 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type: an unpadded transactional bundle that is not required to be
+    /// The default bundle type: a padded transactional bundle that is not required to be
     /// produced if no spends or outputs have been added.
     pub const DEFAULT: BundleType = BundleType::Transactional {
+        bundle_required: false,
+        pad_to_minimum: true,
+    };
+
+    /// [`BundleType::DEFAULT`] without padding: the bundle contains exactly the requested
+    /// actions. Intended for transactions whose shape is already public — such as pool
+    /// migrations, where the per-pool value balances reveal the transfer — since the
+    /// action count reveals the transaction shape (see
+    /// [`BundleType::Transactional::pad_to_minimum`]).
+    pub const DEFAULT_UNPADDED: BundleType = BundleType::Transactional {
         bundle_required: false,
         pad_to_minimum: false,
     };
@@ -781,6 +791,15 @@ impl Builder {
             changes: vec![],
             anchor,
         })
+    }
+
+    /// Returns the bundle type this builder was constructed with.
+    ///
+    /// Lets callers that must predict the builder's action count (e.g. fee
+    /// calculation) read back the exact [`BundleType`] the bundle will be built
+    /// with, so the two cannot drift.
+    pub fn bundle_type(&self) -> BundleType {
+        self.bundle_type
     }
 
     /// Returns the note version associated with this builder's bundle version.
@@ -1875,14 +1894,16 @@ mod tests {
         let flags = BundleVersion::ironwood_v3().default_flags();
         assert_eq!(padded.num_actions(flags, 0, 1), Ok(2));
         assert_eq!(unpadded.num_actions(flags, 0, 1), Ok(1));
-        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(1));
+        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(2));
+        assert_eq!(BundleType::DEFAULT_UNPADDED.num_actions(flags, 0, 1), Ok(1));
         assert_eq!(unpadded.num_actions(flags, 2, 3), Ok(3));
         assert_eq!(unpadded.num_actions(flags, 0, 0), Ok(0));
         // `bundle_required` still guarantees a bundle exists: a single all-dummy action.
         assert_eq!(required_unpadded.num_actions(flags, 0, 0), Ok(1));
 
         let flags = BundleVersion::orchard_v2().default_flags();
-        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(1));
+        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(2));
+        assert_eq!(BundleType::DEFAULT_UNPADDED.num_actions(flags, 0, 1), Ok(1));
 
         // Cross-address transfers disabled: requested actions = spends + outputs.
         let flags = BundleVersion::orchard_v3().default_flags();
