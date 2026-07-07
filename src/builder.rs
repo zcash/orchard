@@ -42,13 +42,20 @@ const MIN_ACTIONS: usize = 2;
 /// to the builder (see [`Builder::new`] and [`BundleVersion::default_flags`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BundleType {
-    /// A transactional bundle will be padded if necessary to contain at least 2 actions,
-    /// irrespective of whether any genuine actions are required.
+    /// A transactional bundle is padded, when `pad_to_minimum` is set, to contain at least
+    /// 2 actions, irrespective of whether any genuine actions are required.
     Transactional {
         /// A flag that, when set to `true`, indicates that a bundle should be produced even if no
         /// spends or outputs have been added to the bundle; in such a circumstance, all of the
         /// actions in the resulting bundle will be dummies.
         bundle_required: bool,
+        /// A flag that, when set to `false`, disables padding of the bundle to the 2-action
+        /// minimum: the bundle contains exactly the requested actions (at least one, if
+        /// `bundle_required` is set). One-action bundles are consensus-valid
+        /// ([`BundleType::Coinbase`] bundles are never padded); the minimum exists to improve
+        /// indistinguishability, so disabling it lets the action count reveal the
+        /// transaction shape.
+        pad_to_minimum: bool,
     },
     /// A coinbase bundle performs no padding and requires the bundle's flags to disable spends.
     ///
@@ -59,10 +66,21 @@ pub enum BundleType {
 }
 
 impl BundleType {
-    /// The default bundle type: a transactional bundle that is not required to be produced if no
-    /// spends or outputs have been added.
+    /// The default bundle type: a padded transactional bundle that is not required to be
+    /// produced if no spends or outputs have been added.
     pub const DEFAULT: BundleType = BundleType::Transactional {
         bundle_required: false,
+        pad_to_minimum: true,
+    };
+
+    /// [`BundleType::DEFAULT`] without padding: the bundle contains exactly the requested
+    /// actions. Intended for transactions whose shape is already public — such as pool
+    /// migrations, where the per-pool value balances reveal the transfer — since the
+    /// action count reveals the transaction shape (see
+    /// [`BundleType::Transactional::pad_to_minimum`]).
+    pub const DEFAULT_UNPADDED: BundleType = BundleType::Transactional {
+        bundle_required: false,
+        pad_to_minimum: false,
     };
 
     /// Returns the number of logical actions that the builder will produce in constructing a bundle
@@ -86,7 +104,10 @@ impl BundleType {
         num_outputs: usize,
     ) -> Result<usize, &'static str> {
         match self {
-            BundleType::Transactional { bundle_required } => {
+            BundleType::Transactional {
+                bundle_required,
+                pad_to_minimum,
+            } => {
                 // When cross-address transfers are disabled, every action's output is
                 // addressed to the note it spends. For this implementation, a requested
                 // spend and a requested output never share an action: each is paired with
@@ -104,8 +125,9 @@ impl BundleType {
                 } else if !flags.outputs_enabled() && num_outputs > 0 {
                     Err("Outputs are disabled, so num_outputs must be zero")
                 } else {
+                    let min_actions = if *pad_to_minimum { MIN_ACTIONS } else { 1 };
                     Ok(if *bundle_required || num_requested_actions > 0 {
-                        core::cmp::max(num_requested_actions, MIN_ACTIONS)
+                        core::cmp::max(num_requested_actions, min_actions)
                     } else {
                         0
                     })
@@ -775,6 +797,15 @@ impl Builder {
             changes: vec![],
             anchor,
         })
+    }
+
+    /// Returns the bundle type this builder was constructed with.
+    ///
+    /// Lets callers that must predict the builder's action count (e.g. fee
+    /// calculation) read back the exact [`BundleType`] the bundle will be built
+    /// with, so the two cannot drift.
+    pub fn bundle_type(&self) -> BundleType {
+        self.bundle_type
     }
 
     /// Returns the note version associated with this builder's bundle version.
@@ -1853,7 +1884,43 @@ mod tests {
     }
 
     fn transactional(bundle_required: bool) -> BundleType {
-        BundleType::Transactional { bundle_required }
+        BundleType::Transactional {
+            bundle_required,
+            pad_to_minimum: true,
+        }
+    }
+
+    #[test]
+    fn num_actions_respects_pad_to_minimum() {
+        let padded = transactional(false);
+        let unpadded = BundleType::Transactional {
+            bundle_required: false,
+            pad_to_minimum: false,
+        };
+        let required_unpadded = BundleType::Transactional {
+            bundle_required: true,
+            pad_to_minimum: false,
+        };
+
+        // Cross-address transfers enabled: requested actions = max(spends, outputs).
+        let flags = BundleVersion::ironwood_v3().default_flags();
+        assert_eq!(padded.num_actions(flags, 0, 1), Ok(2));
+        assert_eq!(unpadded.num_actions(flags, 0, 1), Ok(1));
+        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(2));
+        assert_eq!(BundleType::DEFAULT_UNPADDED.num_actions(flags, 0, 1), Ok(1));
+        assert_eq!(unpadded.num_actions(flags, 2, 3), Ok(3));
+        assert_eq!(unpadded.num_actions(flags, 0, 0), Ok(0));
+        // `bundle_required` still guarantees a bundle exists: a single all-dummy action.
+        assert_eq!(required_unpadded.num_actions(flags, 0, 0), Ok(1));
+
+        let flags = BundleVersion::orchard_v2().default_flags();
+        assert_eq!(BundleType::DEFAULT.num_actions(flags, 0, 1), Ok(2));
+        assert_eq!(BundleType::DEFAULT_UNPADDED.num_actions(flags, 0, 1), Ok(1));
+
+        // Cross-address transfers disabled: requested actions = spends + outputs.
+        let flags = BundleVersion::orchard_v3().default_flags();
+        assert_eq!(unpadded.num_actions(flags, 1, 0), Ok(1));
+        assert_eq!(unpadded.num_actions(flags, 1, 1), Ok(2));
     }
 
     #[test]
