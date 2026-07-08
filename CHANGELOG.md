@@ -80,6 +80,10 @@ Existing callers keep the current behavior by constructing bundles with
 - New builder errors:
   - `orchard::builder::BuildError::{CrossAddressDisabled, InvalidNoteVersion, UnrepresentableFlags, CoinbaseSpendsEnabled}`
   - `orchard::builder::OutputError::{SpendsDisabled, CrossAddressDisabled, RecipientNotOwned}`
+- `orchard::builder::BundleType::UNPADDED`, a transactional bundle type that disables
+  padding for transactions whose shape is already public (e.g. pool migrations).
+- `orchard::builder::Builder::bundle_type`, returning the `BundleType` the builder
+  was constructed with.
 - Ironwood and note-version APIs:
   - `orchard::NoteVersion`, the note plaintext version selector, with variants
     `V2` (the ZIP 212 Orchard note plaintext format) and `V3` (the
@@ -145,6 +149,13 @@ Existing callers keep the current behavior by constructing bundles with
     `BundleVersion`.
   - `orchard::builder::BundleMetadata::output_action_index` now indexes the plain
     outputs first, followed by the wallet-controlled change outputs.
+- `orchard::builder::BundleType::Transactional` now carries a required
+  `pad_to_minimum: Option<u8>` field, so callers that directly construct or
+  pattern-match this public enum variant must update their code. When set to
+  `Some(1)`, the bundle is not padded to the 2-action minimum and contains
+  exactly the requested actions (at least one, if `bundle_required` is set).
+  When set to `None`, the default 2-action minimum is used.
+  `BundleType::DEFAULT` keeps the existing padded behavior.
 - For `BundleVersion::orchard_v3()`, the builder constructs
   withdrawal/change bundles that disable cross-address transfers: every action's
   output is addressed to the expanded receiver of the note it spends. The

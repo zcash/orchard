@@ -344,6 +344,41 @@ fn post_nu6_3_coinbase_bundle_proves_and_verifies() {
     verify_bundle(&bundle, &post_nu6_3_vk, TxVersion::V6);
 }
 
+// An explicitly unpadded transactional bundle builds exactly the requested single action
+// instead of padding to the 2-action minimum, and the result proves and verifies on the
+// post-NU6.3 circuit like any other bundle (coinbase bundles already demonstrate that
+// consensus accepts 1-action bundles).
+#[test]
+fn unpadded_ironwood_bundle_builds_single_action_and_verifies() {
+    let mut rng = OsRng;
+    let post_nu6_3_pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let post_nu6_3_vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let recipient = fvk.address_at(0u32, Scope::External);
+
+    let builder = output_only_builder(
+        BundleVersion::ironwood_v3(),
+        BundleType::UNPADDED,
+        recipient,
+    );
+    assert_eq!(builder.bundle_type(), BundleType::UNPADDED);
+
+    let (unauthorized, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+    assert_eq!(unauthorized.actions().len(), 1);
+    assert_eq!(bundle_meta.output_action_index(0), Some(0));
+
+    let sighash: [u8; 32] = unauthorized
+        .commitment(TxVersion::V6)
+        .expect("bundle flags are representable in this format")
+        .into();
+    let proven = unauthorized.create_proof(&post_nu6_3_pk, &mut rng).unwrap();
+    let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+    verify_bundle(&bundle, &post_nu6_3_vk, TxVersion::V6);
+}
+
 // A post-NU 6.3 restricted bundle chain: an ordinary shielding bundle, followed by a bundle
 // that disables cross-address transfers, withdraws part of the shielded value,
 // and retains the rest as wallet-controlled change.
