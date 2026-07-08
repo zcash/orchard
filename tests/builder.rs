@@ -360,7 +360,7 @@ fn unpadded_ironwood_bundle_builds_single_action_and_verifies() {
 
     let builder = output_only_builder(
         BundleVersion::ironwood_v3(),
-        BundleType::DEFAULT_UNPADDED,
+        BundleType::UNPADDED,
         recipient,
     );
 
