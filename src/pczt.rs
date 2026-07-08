@@ -1408,7 +1408,7 @@ mod tests {
         let mut builder = Builder::new(
             BundleType::Transactional {
                 bundle_required: false,
-                pad_to_minimum: true,
+                pad_to_minimum: None,
             },
             bundle_version,
             bundle_version.default_flags(),
