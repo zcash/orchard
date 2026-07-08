@@ -514,6 +514,8 @@ mod tests {
         rcm_new_repr: [u8; 32],
         cmx_old_bytes: [u8; 32],
         cmx_qr_bytes: [u8; 32],
+        nf_old_bytes: [u8; 32],
+        nf_qr_bytes: [u8; 32],
     }
 
     fn qr_rcm_from_key_test_vector(tv: &TestVector) -> QrRcmDerivation {
@@ -539,17 +541,21 @@ mod tests {
 
         let cmx_old =
             NoteCommitment::derive(g_d_bytes, pk_d_bytes, value, rho_inner, psi, rcm_old).unwrap();
-        let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
+        let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old.clone()).to_bytes();
+        let nf_old_bytes = Nullifier::derive(fvk.nk(), rho_inner, psi, cmx_old).to_bytes();
 
         let cmx_qr =
             NoteCommitment::derive(g_d_bytes, pk_d_bytes, value, rho_inner, psi, rcm_new).unwrap();
-        let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
+        let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr.clone()).to_bytes();
+        let nf_qr_bytes = Nullifier::derive(fvk.nk(), rho_inner, psi, cmx_qr).to_bytes();
 
         QrRcmDerivation {
             rcm_old_repr,
             rcm_new_repr,
             cmx_old_bytes,
             cmx_qr_bytes,
+            nf_old_bytes,
+            nf_qr_bytes,
         }
     }
 
@@ -563,7 +569,12 @@ mod tests {
             derived.cmx_old_bytes, tv.note_cmx,
             "old cmx must match known test vector"
         );
+        assert_eq!(
+            derived.nf_old_bytes, tv.note_nf,
+            "old nf must match known test vector"
+        );
         assert_ne!(derived.cmx_old_bytes, derived.cmx_qr_bytes);
+        assert_ne!(derived.nf_old_bytes, derived.nf_qr_bytes);
     }
 
     #[test]
@@ -582,6 +593,14 @@ mod tests {
             assert_eq!(
                 derived.cmx_qr_bytes, key_tv.note_qr_cmx,
                 "vector {i}: cmx_qr mismatch"
+            );
+            assert_eq!(
+                derived.nf_old_bytes, key_tv.note_nf,
+                "vector {i}: nf_old mismatch"
+            );
+            assert_eq!(
+                derived.nf_qr_bytes, key_tv.note_qr_nf,
+                "vector {i}: nf_qr mismatch"
             );
         }
     }
