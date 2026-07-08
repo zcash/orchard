@@ -363,6 +363,7 @@ fn unpadded_ironwood_bundle_builds_single_action_and_verifies() {
         BundleType::UNPADDED,
         recipient,
     );
+    assert_eq!(builder.bundle_type(), BundleType::UNPADDED);
 
     let (unauthorized, bundle_meta) = builder.build::<i64>(&mut rng).unwrap().unwrap();
     assert_eq!(unauthorized.actions().len(), 1);
