@@ -7,6 +7,20 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- Batched trial decryption (the `zcash_note_encryption::batch` APIs) is
+  significantly faster. Ephemeral keys are now prepared with GLV endomorphism
+  windows built across the whole batch with a single shared normalization, and
+  each viewing key's GLV decomposition is computed once per batch and reused
+  against every ephemeral key. The GLV primitive lives in `pasta_curves::glv`
+  (`Table` / `Decomposed` / `Table::mul_decomposed`); orchard consumes it
+  through the `BatchDomain::batch_ka_agree_dec` hook added in
+  `zcash_note_encryption` 0.4.2. Shared secrets are unchanged (byte-identical
+  to the per-item path), and the per-output decryption entry points are
+  unaffected. Like the existing `group::Wnaf`-based preparation, the new path
+  is variable-time with respect to the (wallet-local) viewing key scalar.
+- MSRV-compatible bump: the minimum `zcash_note_encryption` version is now 0.4.2.
+
 ## [0.15.3] - 2026-07-22
 
 ### Changed
