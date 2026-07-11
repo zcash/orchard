@@ -1,7 +1,8 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use orchard::{
     builder::{Builder, BundleType},
-    circuit::ProvingKey,
+    bundle::BundleVersion,
+    circuit::{OrchardCircuitVersion, ProvingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note_encryption::{CompactAction, OrchardDomain},
     value::NoteValue,
@@ -15,7 +16,7 @@ use pprof::criterion::{Output, PProfProfiler};
 
 fn bench_note_decryption(c: &mut Criterion) {
     let rng = OsRng;
-    let pk = ProvingKey::build();
+    let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
 
     let fvk = FullViewingKey::from(&SpendingKey::from_bytes([7; 32]).unwrap());
     let valid_ivk = fvk.to_ivk(Scope::External);
@@ -44,7 +45,13 @@ fn bench_note_decryption(c: &mut Criterion) {
         .collect();
 
     let bundle = {
-        let mut builder = Builder::new(BundleType::DEFAULT, Anchor::from_bytes([0; 32]).unwrap());
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v2().default_flags(),
+            Anchor::from_bytes([0; 32]).unwrap(),
+        )
+        .unwrap();
         // The builder pads to two actions, and shuffles their order. Add two recipients
         // so the first action is always decryptable.
         builder

@@ -201,7 +201,7 @@ pub(crate) mod testing {
         note_encryption::{OrchardDomain, OrchardNoteEncryption},
         primitives::redpallas::{self, testing::arb_valid_spendauth_keypair},
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
-        Note,
+        Note, NoteVersion,
     };
 
     use super::Action;
@@ -228,10 +228,10 @@ pub(crate) mod testing {
 
     prop_compose! {
         /// Generate an action without authorization data.
-        pub fn arb_unauthorized_action(spend_value: NoteValue, output_value: NoteValue)(
+        pub fn arb_unauthorized_action(note_version: NoteVersion, spend_value: NoteValue, output_value: NoteValue)(
             nf in arb_nullifier(),
             (_, rk) in arb_valid_spendauth_keypair(),
-            note in arb_note(output_value),
+            note in arb_note(output_value, note_version),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
         ) -> Action<()> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
@@ -254,10 +254,10 @@ pub(crate) mod testing {
 
     prop_compose! {
         /// Generate an action with invalid (random) authorization data.
-        pub fn arb_action(spend_value: NoteValue, output_value: NoteValue)(
+        pub fn arb_action(note_version: NoteVersion, spend_value: NoteValue, output_value: NoteValue)(
             nf in arb_nullifier(),
             (rsk, rk) in arb_valid_spendauth_keypair(),
-            note in arb_note(output_value),
+            note in arb_note(output_value, note_version),
             enc_rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),

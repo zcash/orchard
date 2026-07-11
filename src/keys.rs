@@ -989,7 +989,7 @@ mod tests {
         *,
     };
     use crate::{
-        note::{ExtractedNoteCommitment, RandomSeed, Rho},
+        note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
         value::NoteValue,
         Note,
     };
@@ -1070,18 +1070,19 @@ mod tests {
             assert_eq!(&addr.pk_d().to_bytes(), &tv.default_pk_d);
 
             let rho = Rho::from_bytes(&tv.note_rho).unwrap();
-            let note = Note::from_parts(
+            let orchard_note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
+                NoteVersion::V2,
             )
             .unwrap();
 
-            let cmx: ExtractedNoteCommitment = note.commitment().into();
+            let cmx: ExtractedNoteCommitment = orchard_note.commitment().into();
             assert_eq!(cmx.to_bytes(), tv.note_cmx);
 
-            assert_eq!(note.nullifier(&fvk).to_bytes(), tv.note_nf);
+            assert_eq!(orchard_note.nullifier(&fvk).to_bytes(), tv.note_nf);
 
             let internal_rivk = fvk.rivk(Scope::Internal);
             assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);

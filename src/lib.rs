@@ -56,7 +56,7 @@ pub use address::Address;
 pub use bundle::Bundle;
 pub use constants::MERKLE_DEPTH_ORCHARD as NOTE_COMMITMENT_TREE_DEPTH;
 pub use constants::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE};
-pub use note::Note;
+pub use note::{Note, NoteVersion};
 pub use tree::Anchor;
 
 /// A proof of the validity of an Orchard [`Bundle`].
@@ -110,10 +110,49 @@ impl Proof {
     /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
     pub const fn expected_proof_size(num_actions: usize) -> usize {
         // The proof is a fixed base size plus a fixed contribution per action. These constants
-        // are determined by the halo2 action circuit; see the `circuit` module's `round_trip`
-        // test, which cross-checks them against `CircuitCost::proof_size`.
+        // are determined by the halo2 action circuit; see the `circuit` module's round-trip
+        // tests, which cross-check them against `CircuitCost::proof_size`.
         const BASE: usize = 2720;
         const PER_ACTION: usize = 2272;
         BASE + PER_ACTION * num_actions
     }
+}
+
+/// The set of value pools supported by the Orchard protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ValuePool {
+    /// The Orchard value pool.
+    Orchard,
+    /// The Ironwood value pool.
+    Ironwood,
+}
+
+/// The versions of the Orchard protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ProtocolVersion {
+    /// The original version of the protocol, used in Zcash prior to NU6.2, only instantiated for
+    /// the Orchard value pool.
+    ///
+    /// Uses the historical unsound Orchard circuit. Cross-address transfers are permitted and
+    /// notes use the V2 plaintext format. Used to reconstruct the historical verifying key and to
+    /// parse/verify historical bundles, not to build new ones.
+    InsecureV1,
+    /// The version of the Orchard protocol used in Zcash for NU6.2, only instantiated for the
+    /// Orchard value pool.
+    ///
+    /// Uses the post-NU6.2 fixed Orchard circuit. Cross-address transfers are permitted and notes
+    /// use the V2 plaintext format.
+    V2,
+    /// The version of the Orchard protocol used in Zcash NU6.3, instantiated for both the Orchard
+    /// and Ironwood value pools.
+    ///
+    /// Uses the post-NU6.3 circuit for both the Orchard and Ironwood value pools.
+    ///
+    /// For transactional bundles affecting the [`ValuePool::Orchard`] value pool,
+    /// `enableCrossAddress = 0` is required by consensus, so cross-address transfers are
+    /// prohibited and Orchard actions are disallowed in coinbase. Notes use V2 plaintexts.
+    ///
+    /// For transactional bundles affecting the [`ValuePool::Ironwood`] value pool, cross-address
+    /// transfers are permitted and notes use V3 plaintexts.
+    V3,
 }
