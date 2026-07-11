@@ -48,6 +48,18 @@ impl NonIdentityPallasPoint {
         pallas::Point::from_bytes(bytes)
             .and_then(|p| CtOption::new(NonIdentityPallasPoint(p), !p.is_identity()))
     }
+
+    /// Constructs a wrapper for a point that is guaranteed to be non-identity
+    /// (such as the product of a non-zero scalar and a non-identity point in
+    /// the prime-order Pallas group).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `p.is_identity()`.
+    pub(crate) fn guaranteed(p: pallas::Point) -> Self {
+        assert!(!bool::from(p.is_identity()));
+        NonIdentityPallasPoint(p)
+    }
 }
 
 impl Deref for NonIdentityPallasPoint {
@@ -160,7 +172,12 @@ impl PreparedNonIdentityBase {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct PreparedNonZeroScalar(WnafScalar<pallas::Scalar, PREPARED_WINDOW_SIZE>);
+pub(crate) struct PreparedNonZeroScalar(
+    WnafScalar<pallas::Scalar, PREPARED_WINDOW_SIZE>,
+    // The scalar itself, retained for the GLV ladder in `crate::endo`, which
+    // decomposes the scalar rather than consuming the wNAF form.
+    pallas::Scalar,
+);
 
 #[cfg(feature = "std")]
 impl DynamicUsage for PreparedNonZeroScalar {
@@ -175,7 +192,12 @@ impl DynamicUsage for PreparedNonZeroScalar {
 
 impl PreparedNonZeroScalar {
     pub(crate) fn new(scalar: &NonZeroPallasScalar) -> Self {
-        PreparedNonZeroScalar(WnafScalar::new(scalar))
+        PreparedNonZeroScalar(WnafScalar::new(scalar), **scalar)
+    }
+
+    /// The raw scalar, for the GLV ladder in `crate::endo`.
+    pub(crate) fn raw_scalar(&self) -> pallas::Scalar {
+        self.1
     }
 }
 

@@ -1,5 +1,6 @@
 //! Key structures for Orchard.
 
+use alloc::boxed::Box;
 use alloc::vec::Vec;
 use corez::io::{self, Read, Write};
 
@@ -714,6 +715,12 @@ impl PreparedIncomingViewingKey {
     fn new_inner(ivk: &KeyAgreementPrivateKey) -> Self {
         Self(PreparedNonZeroScalar::new(&ivk.0))
     }
+
+    /// The raw ivk scalar, for the GLV ladder in `crate::endo` (which
+    /// decomposes the scalar rather than consuming the prepared wNAF form).
+    pub(crate) fn raw_scalar(&self) -> pallas::Scalar {
+        self.0.raw_scalar()
+    }
 }
 
 /// A key that provides the capability to recover outgoing transaction information from
@@ -852,17 +859,81 @@ impl EphemeralPublicKey {
     }
 }
 
+/// What a prepared ephemeral key carries.
+///
+/// Individually-prepared keys carry a `group::Wnaf` window table, consumed by
+/// the per-item multiplication. Batch-prepared keys carry a GLV odd-multiples
+/// window instead (see `crate::endo`), which is cheaper to build across a
+/// batch (one shared normalization) and cheaper to multiply against (a
+/// shared-doubling ladder over the endomorphism split). Both produce
+/// identical shared secrets.
+#[derive(Clone, Debug)]
+enum PreparedEpkInner {
+    /// A `group::Wnaf` window table.
+    Wnaf(PreparedNonIdentityBase),
+    /// A GLV odd-multiples window, boxed to keep the enum small (512 bytes,
+    /// the same heap-allocation shape as the wNAF table it replaces).
+    Tabled(Box<crate::endo::EndoTable>),
+}
+
 /// An Orchard ephemeral public key that has been precomputed for trial decryption.
 #[derive(Clone, Debug)]
-pub struct PreparedEphemeralPublicKey(PreparedNonIdentityBase);
+pub struct PreparedEphemeralPublicKey(PreparedEpkInner);
 
 impl PreparedEphemeralPublicKey {
     pub(crate) fn new(epk: EphemeralPublicKey) -> Self {
-        PreparedEphemeralPublicKey(PreparedNonIdentityBase::new(epk.0))
+        PreparedEphemeralPublicKey(PreparedEpkInner::Wnaf(PreparedNonIdentityBase::new(epk.0)))
+    }
+
+    /// Prepares every ephemeral key in a batch by building its GLV window,
+    /// sharing one batch normalization (a single field inversion) across the
+    /// whole set, where individual preparation pays one inversion per key.
+    /// `None` lanes (ephemeral keys that failed to decode) pass through as
+    /// `None`.
+    pub(crate) fn batch_tabled(
+        epks: Vec<Option<EphemeralPublicKey>>,
+    ) -> Vec<Option<PreparedEphemeralPublicKey>> {
+        let live: Vec<pallas::Point> = epks
+            .iter()
+            .filter_map(|e| e.as_ref().map(|e| *e.0))
+            .collect();
+        let mut tables = crate::endo::endo_tables(&live).into_iter();
+        epks.into_iter()
+            .map(|e| {
+                e.map(|_| {
+                    PreparedEphemeralPublicKey(PreparedEpkInner::Tabled(Box::new(
+                        tables.next().expect("one table per live epk"),
+                    )))
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn agree(&self, ivk: &PreparedIncomingViewingKey) -> SharedSecret {
-        SharedSecret(ka_orchard_prepared(&ivk.0, &self.0))
+        match &self.0 {
+            PreparedEpkInner::Wnaf(base) => SharedSecret(ka_orchard_prepared(&ivk.0, base)),
+            // The product of a non-zero scalar and a non-identity point in the
+            // prime-order Pallas group is non-identity.
+            PreparedEpkInner::Tabled(table) => SharedSecret(NonIdentityPallasPoint::guaranteed(
+                crate::endo::mul(table, &ivk.raw_scalar()),
+            )),
+        }
+    }
+
+    /// Like `agree`, but with the viewing key's GLV decomposition
+    /// precomputed. Used by the batched agreement path, which hoists the
+    /// decomposition and digit recoding out of the per-output loop.
+    pub(crate) fn agree_with(
+        &self,
+        ivk: &PreparedIncomingViewingKey,
+        decomposed: &crate::endo::DecomposedScalar,
+    ) -> SharedSecret {
+        match &self.0 {
+            PreparedEpkInner::Wnaf(base) => SharedSecret(ka_orchard_prepared(&ivk.0, base)),
+            PreparedEpkInner::Tabled(table) => SharedSecret(NonIdentityPallasPoint::guaranteed(
+                crate::endo::mul_with_table(table, decomposed),
+            )),
+        }
     }
 }
 

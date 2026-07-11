@@ -350,6 +350,36 @@ impl<P: DomainPolicy> BatchDomain for NoteEncryptionDomain<P> {
     ) -> Vec<Option<Self::SymmetricKey>> {
         batch_kdf(items)
     }
+
+    fn batch_epk(
+        ephemeral_keys: impl Iterator<Item = EphemeralKeyBytes>,
+    ) -> Vec<(Option<Self::PreparedEphemeralPublicKey>, EphemeralKeyBytes)> {
+        // Prepare the whole batch with GLV windows, sharing one batch
+        // normalization across every key (a single field inversion, where
+        // per-item preparation pays one per key).
+        let (epks, ephemeral_keys): (Vec<_>, Vec<_>) = ephemeral_keys
+            .map(|ephemeral_key| (Self::epk(&ephemeral_key), ephemeral_key))
+            .unzip();
+        PreparedEphemeralPublicKey::batch_tabled(epks)
+            .into_iter()
+            .zip(ephemeral_keys)
+            .collect()
+    }
+
+    fn batch_ka_agree_dec<'a>(
+        ivk: &Self::IncomingViewingKey,
+        epks: impl Iterator<Item = Option<&'a Self::PreparedEphemeralPublicKey>>,
+    ) -> Vec<Option<Self::SharedSecret>>
+    where
+        Self::PreparedEphemeralPublicKey: 'a,
+    {
+        // One GLV decomposition and digit recoding of the viewing key for the
+        // whole batch; each ephemeral key's window is then consumed by a
+        // shared-doubling ladder.
+        let decomposed = crate::endo::DecomposedScalar::new(&ivk.raw_scalar());
+        epks.map(|epk| epk.map(|epk| epk.agree_with(ivk, &decomposed)))
+            .collect()
+    }
 }
 
 fn batch_kdf<'a>(
@@ -548,21 +578,24 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use rand::rngs::OsRng;
     use zcash_note_encryption::{
-        try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk, Domain,
-        EphemeralKeyBytes,
+        batch, try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk,
+        BatchDomain, Domain, EphemeralKeyBytes, NoteEncryption,
     };
 
     use super::{
-        prf_ock_orchard, CompactAction, IronwoodDomain, IronwoodNoteEncryption, OrchardDomain,
-        OrchardNoteEncryption,
+        prf_ock_orchard, CompactAction, DomainVersion, IronwoodDomain, IronwoodNoteEncryption,
+        IronwoodVersion, NoteEncryptionDomain, OrchardDomain, OrchardNoteEncryption,
+        OrchardVersion,
     };
     use crate::{
         action::Action,
         keys::{
-            DiversifiedTransmissionKey, Diversifier, EphemeralSecretKey, IncomingViewingKey,
-            OutgoingViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
+            DiversifiedTransmissionKey, Diversifier, EphemeralSecretKey, FullViewingKey,
+            IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
         },
         note::{
             ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho,
@@ -807,5 +840,185 @@ mod tests {
             try_compact_note_decryption(&domain, &ivk, &compact),
             Some((note, recipient))
         );
+    }
+
+    /// Encrypts a compact output of the domain's note plaintext version to
+    /// `recipient`, using a fresh ephemeral key.
+    fn encrypted_compact_action<V: DomainVersion>(
+        rng: &mut OsRng,
+        recipient: Address,
+    ) -> CompactAction {
+        let nf_old = Nullifier::dummy(rng);
+        let rho = Rho::from_nf_old(nf_old);
+        let note = Note::new(
+            recipient,
+            NoteValue::from_raw(42),
+            rho,
+            V::NOTE_VERSION,
+            rng,
+        );
+        let encryptor = NoteEncryption::<NoteEncryptionDomain<V>>::new(None, note, [0u8; 512]);
+        let ephemeral_key = NoteEncryptionDomain::<V>::epk_bytes(encryptor.epk());
+        let enc_ciphertext = encryptor.encrypt_note_plaintext();
+        CompactAction::from_parts(
+            nf_old,
+            ExtractedNoteCommitment::from(note.commitment()),
+            ephemeral_key,
+            enc_ciphertext.as_ref()[..52].try_into().unwrap(),
+        )
+    }
+
+    /// The batched trial-decryption pipeline (GLV-window preparation and
+    /// per-batch scalar decomposition) must produce exactly the per-item
+    /// results, over hits on multiple viewing keys, misses, and an
+    /// undecodable ephemeral key.
+    fn check_batched_compact_decryption_matches_per_item<V: DomainVersion>() {
+        let mut rng = OsRng;
+
+        // Two accounts with external and internal scope each — the wallet
+        // shape batched trial decryption runs with — plus a foreign account
+        // whose outputs must not decrypt.
+        let our_fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        let other_fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        let foreign_fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        let ivks: Vec<PreparedIncomingViewingKey> = [
+            (&our_fvk, Scope::External),
+            (&our_fvk, Scope::Internal),
+            (&other_fvk, Scope::External),
+            (&other_fvk, Scope::Internal),
+        ]
+        .into_iter()
+        .map(|(fvk, scope)| PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)))
+        .collect();
+
+        let mut actions = vec![
+            encrypted_compact_action::<V>(&mut rng, our_fvk.address_at(0u32, Scope::External)),
+            encrypted_compact_action::<V>(&mut rng, our_fvk.address_at(0u32, Scope::Internal)),
+            encrypted_compact_action::<V>(&mut rng, other_fvk.address_at(0u32, Scope::External)),
+        ];
+        for i in 0..5u32 {
+            actions.push(encrypted_compact_action::<V>(
+                &mut rng,
+                foreign_fvk.address_at(i, Scope::External),
+            ));
+        }
+        // An ephemeral key that decodes to the identity is rejected during
+        // preparation; its lane must pass through as `None`.
+        actions.push(CompactAction::from_parts(
+            Nullifier::dummy(&mut rng),
+            actions[0].cmx(),
+            EphemeralKeyBytes([0u8; 32]),
+            [0u8; 52],
+        ));
+
+        let items: Vec<(NoteEncryptionDomain<V>, CompactAction)> = actions
+            .iter()
+            .map(|a| (NoteEncryptionDomain::<V>::for_compact_action(a), a.clone()))
+            .collect();
+        let batched = batch::try_compact_note_decryption(&ivks, &items);
+
+        let per_item: Vec<Option<((Note, Address), usize)>> = actions
+            .iter()
+            .map(|a| {
+                let domain = NoteEncryptionDomain::<V>::for_compact_action(a);
+                ivks.iter().enumerate().find_map(|(i, ivk)| {
+                    try_compact_note_decryption(&domain, ivk, a).map(|r| (r, i))
+                })
+            })
+            .collect();
+
+        assert_eq!(batched, per_item);
+
+        // The interesting lanes actually decrypted (guards against both
+        // paths failing identically).
+        assert_eq!(batched[0].as_ref().map(|(_, i)| *i), Some(0));
+        assert_eq!(batched[1].as_ref().map(|(_, i)| *i), Some(1));
+        assert_eq!(batched[2].as_ref().map(|(_, i)| *i), Some(2));
+        assert!(batched[3..].iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn batched_compact_decryption_matches_per_item_orchard() {
+        check_batched_compact_decryption_matches_per_item::<OrchardVersion>();
+    }
+
+    #[test]
+    fn batched_compact_decryption_matches_per_item_ironwood() {
+        check_batched_compact_decryption_matches_per_item::<IronwoodVersion>();
+    }
+
+    /// The batched agreement must produce byte-identical shared secrets to
+    /// the per-item path, for both preparation routes (batch-built GLV
+    /// windows and individually-built wNAF tables), on hit and miss lanes
+    /// alike.
+    #[test]
+    fn batched_agreement_matches_per_item() {
+        let mut rng = OsRng;
+
+        let our_fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        let foreign_fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        let ivks: Vec<PreparedIncomingViewingKey> = [
+            (&our_fvk, Scope::External),
+            (&our_fvk, Scope::Internal),
+            (&foreign_fvk, Scope::External),
+        ]
+        .into_iter()
+        .map(|(fvk, scope)| PreparedIncomingViewingKey::new(&fvk.to_ivk(scope)))
+        .collect();
+
+        // Real ephemeral keys from real encryptions, plus an undecodable lane.
+        let mut keys: Vec<EphemeralKeyBytes> = (0..12u32)
+            .map(|i| {
+                encrypted_compact_action::<OrchardVersion>(
+                    &mut rng,
+                    our_fvk.address_at(i, Scope::External),
+                )
+                .ephemeral_key
+            })
+            .collect();
+        keys.push(EphemeralKeyBytes([0u8; 32]));
+
+        let batch_prepared = <OrchardDomain as BatchDomain>::batch_epk(keys.iter().cloned());
+        // The undecodable lane passes through preparation as `None`.
+        assert!(batch_prepared.last().unwrap().0.is_none());
+        assert!(batch_prepared[..12].iter().all(|(p, _)| p.is_some()));
+
+        let wnaf_prepared: Vec<Option<crate::keys::PreparedEphemeralPublicKey>> = keys
+            .iter()
+            .map(|key| OrchardDomain::epk(key).map(OrchardDomain::prepare_epk))
+            .collect();
+
+        for ivk in &ivks {
+            let expected: Vec<Option<[u8; 32]>> = keys
+                .iter()
+                .map(|key| {
+                    OrchardDomain::epk(key)
+                        .map(OrchardDomain::prepare_epk)
+                        .map(|epk| OrchardDomain::ka_agree_dec(ivk, &epk).to_bytes())
+                })
+                .collect();
+
+            let batched: Vec<Option<[u8; 32]>> =
+                <OrchardDomain as BatchDomain>::batch_ka_agree_dec(
+                    ivk,
+                    batch_prepared.iter().map(|(p, _)| p.as_ref()),
+                )
+                .into_iter()
+                .map(|s| s.map(|s| s.to_bytes()))
+                .collect();
+            assert_eq!(batched, expected);
+
+            // The batched agreement's fallback arm (individually-prepared
+            // inputs) must also match.
+            let batched_wnaf: Vec<Option<[u8; 32]>> =
+                <OrchardDomain as BatchDomain>::batch_ka_agree_dec(
+                    ivk,
+                    wnaf_prepared.iter().map(|p| p.as_ref()),
+                )
+                .into_iter()
+                .map(|s| s.map(|s| s.to_bytes()))
+                .collect();
+            assert_eq!(batched_wnaf, expected);
+        }
     }
 }

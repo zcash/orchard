@@ -5,6 +5,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Batched trial decryption (the `zcash_note_encryption::batch` APIs) is
+  significantly faster. Ephemeral keys are now prepared with GLV endomorphism
+  windows built across the whole batch with a single shared normalization, and
+  each viewing key's GLV decomposition is computed once per batch via the new
+  `BatchDomain::batch_ka_agree_dec` hook. Shared secrets are unchanged
+  (byte-identical to the per-item path), and the per-output decryption entry
+  points are unaffected. Like the existing `group::Wnaf`-based preparation,
+  the new path is variable-time with respect to the (wallet-local) viewing
+  key scalar.
+- MSRV-compatible bump: the minimum `zcash_note_encryption` version is now
+  0.4.2 (for `BatchDomain::batch_ka_agree_dec`).
+
 ## [0.15.0] 2026-07-09
 
 This release introduces `orchard::bundle::BundleVersion`, the `(value pool, protocol

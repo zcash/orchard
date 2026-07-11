@@ -42,7 +42,7 @@ poseidon = { package = "halo2_poseidon", version = "0.1" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 sinsemilla = "0.1"
 subtle = { version = "2.6", default-features = false }
-zcash_note_encryption = "0.4"
+zcash_note_encryption = "0.4.2"
 incrementalmerkletree = "0.8.1"
 zcash_spec = "0.2.1"
 zip32 = { version = "0.2.0", default-features = false }
@@ -70,7 +70,7 @@ criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
 halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
-zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
+zcash_note_encryption = { version = "0.4.2", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
 shardtree = "0.6"
 

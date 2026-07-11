@@ -35,6 +35,7 @@ pub mod circuit;
 mod constants;
 #[cfg(feature = "unstable-voting-circuits")]
 pub mod constants;
+mod endo;
 pub mod keys;
 pub mod note;
 pub mod note_encryption;
