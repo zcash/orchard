@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Changed
+- MSRV is now 1.88.0.
+- The crate now uses Rust edition 2024.
+
 ## [0.15.0] 2026-07-09
 
 This release introduces `orchard::bundle::BundleVersion`, the `(value pool, protocol
