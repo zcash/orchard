@@ -11,8 +11,11 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Temporary until we have more of the crate implemented.
 #![allow(dead_code)]
-// Catch documentation errors caused by code changes.
-#![deny(rustdoc::broken_intra_doc_links)]
+// The first two concern the library's public API, so they cannot move to the `[lints]`
+// table in Cargo.toml, which would also apply them to the benches. `unsafe_code` is
+// forbidden there as well, so that it covers every target; it is repeated here because
+// "this crate contains no unsafe code" is a property a reader should see in the source.
+// The rest of the lint configuration lives in Cargo.toml.
 #![deny(missing_debug_implementations)]
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]

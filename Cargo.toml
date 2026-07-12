@@ -111,3 +111,39 @@ debug = true
 [profile.bench]
 debug = true
 
+# Lints that should hold for every target in the package (lib, tests, benches).
+# Lints that only concern the library's public API (`missing_docs`,
+# `missing_debug_implementations`), and the `dead_code` allow, stay as crate
+# attributes in `src/lib.rs`.
+[lints.rust]
+# `docsrs` is set by docs.rs and by the intra-doc-links CI job; any other cfg
+# reaching the compiler is a typo.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(docsrs)'] }
+unsafe_code = "forbid"
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[lints.clippy]
+# Debugging and placeholder constructs have no place in a published crate.
+dbg_macro = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+todo = "deny"
+unimplemented = "deny"
+# Readability and correctness lints beyond `clippy::all`, all of which this
+# crate already satisfies; they are enabled to keep it that way.
+#
+# `needless_pass_by_value` and `unused_qualifications` are deliberately NOT here.
+# The former would require changing public signatures to take references; the
+# latter is per-feature-config, and its fix under `--all-features` breaks the
+# other configs (a name re-exported only behind `unstable-voting-circuits` looks
+# unqualified-able with all features on, but does not resolve without them).
+cast_lossless = "warn"
+checked_conversions = "warn"
+explicit_iter_loop = "warn"
+manual_assert = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+unnested_or_patterns = "warn"
