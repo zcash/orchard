@@ -4,20 +4,23 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-  deployments: write
+permissions: {}
 
 jobs:
   benchmark:
     name: Performance regression check
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to push the benchmark results to gh-pages.
+      deployments: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Run benchmark
         run: cargo bench -- --output-format bencher | tee output.txt
       - name: Store benchmark result
-        uses: benchmark-action/github-action-benchmark@v1
+        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba # v1.22.1
         with:
           name: Orchard Benchmarks
           tool: 'cargo'

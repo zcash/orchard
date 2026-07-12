@@ -5,26 +5,37 @@ on:
     branches:
       - main
 
+permissions: {}
+
 jobs:
   deploy:
+    # Only deploy from the canonical upstream, so a fork's GitHub Pages is not
+    # overwritten by the Orchard book.
+    if: github.repository == 'zcash/orchard'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to push to the gh-pages branch.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - name: Install mdbook and mdbook-katex
-        run: |
-          mkdir mdbook
-          curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.35/mdbook-v0.4.35-x86_64-unknown-linux-gnu.tar.gz | tar -xz --directory=./mdbook
-          curl -sSL https://github.com/lzanini/mdbook-katex/releases/download/v0.5.8pub/mdbook-katex-v0.5.8-x86_64-unknown-linux-gnu.tar.gz | tar -xz --directory=./mdbook
-          echo `pwd`/mdbook >> $GITHUB_PATH
+      # These were previously downloaded as release tarballs and piped straight into
+      # `tar`; install them through a pinned action and cargo instead.
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@ee69d230fe19748b7abf22df32acaa93833fad08 # v2.0.0
+        with:
+          mdbook-version: '0.4.35'
+
+      - name: Install mdbook-katex
+        run: cargo install mdbook-katex --locked
 
       - name: Build Orchard book
         run: mdbook build book/
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./book/book
