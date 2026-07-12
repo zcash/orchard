@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use orchard::keys::{FullViewingKey, Scope, SpendingKey};
 
 fn key_derivation(c: &mut Criterion) {
@@ -13,7 +13,7 @@ fn key_derivation(c: &mut Criterion) {
 
     c.bench_function("derive_fvk", |b| b.iter(|| FullViewingKey::from(&sk)));
     c.bench_function("default_address", |b| {
-        b.iter(|| fvk.address_at(0u32, Scope::External))
+        b.iter(|| fvk.address_at(0u32, Scope::External));
     });
 }
 

@@ -17,9 +17,9 @@ use pasta_curves::pallas;
 
 use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
 use halo2_gadgets::{
-    ecc::{chip::EccChip, ScalarFixed, X},
-    sinsemilla::{chip::SinsemillaChip, CommitDomain, Message, MessagePiece},
-    utilities::{bool_check, RangeConstrained},
+    ecc::{ScalarFixed, X, chip::EccChip},
+    sinsemilla::{CommitDomain, Message, MessagePiece, chip::SinsemillaChip},
+    utilities::{RangeConstrained, bool_check},
 };
 
 /// Configuration for the [`CommitIvkChip`], including its selector and advice columns.
@@ -244,8 +244,8 @@ impl CommitIvkChip {
 #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(in crate::circuit) mod gadgets {
     use halo2_gadgets::utilities::{
-        lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
         RangeConstrained,
+        lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
     };
     use halo2_proofs::circuit::Chip;
 
@@ -682,24 +682,24 @@ struct GateCells {
 mod tests {
     use core::iter;
 
-    use super::{gadgets, CommitIvkChip, CommitIvkConfig};
+    use super::{CommitIvkChip, CommitIvkConfig, gadgets};
     use crate::constants::{
-        fixed_bases::COMMIT_IVK_PERSONALIZATION, OrchardCommitDomains, OrchardFixedBases,
-        OrchardHashDomains, L_ORCHARD_BASE, T_Q,
+        L_ORCHARD_BASE, OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_Q,
+        fixed_bases::COMMIT_IVK_PERSONALIZATION,
     };
     use group::ff::{Field, PrimeField, PrimeFieldBits};
     use halo2_gadgets::{
         ecc::{
-            chip::{CircuitVersion, EccChip, EccConfig},
             ScalarFixed,
+            chip::{CircuitVersion, EccChip, EccConfig},
         },
         sinsemilla::{
             chip::{SinsemillaChip, SinsemillaConfig},
             primitives::CommitDomain,
         },
         utilities::{
-            lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
             UtilitiesInstructions,
+            lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
         },
     };
     use halo2_proofs::{
@@ -751,7 +751,7 @@ mod tests {
                 let constants = meta.fixed_column();
                 meta.enable_constant(constants);
 
-                for advice in advices.iter() {
+                for advice in &advices {
                     meta.enable_equality(*advice);
                 }
 
@@ -917,7 +917,7 @@ mod tests {
             },
         ];
 
-        for circuit in circuits.iter() {
+        for circuit in &circuits {
             let prover = MockProver::<pallas::Base>::run(11, circuit, vec![]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }

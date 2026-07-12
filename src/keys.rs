@@ -8,9 +8,9 @@ use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
 use group::{
+    Curve, GroupEncoding,
     ff::{Field, PrimeField},
     prime::PrimeCurveAffine,
-    Curve, GroupEncoding,
 };
 use pasta_curves::pallas;
 use rand::RngCore;
@@ -21,9 +21,9 @@ use crate::{
     address::Address,
     primitives::redpallas::{self, SpendAuth},
     spec::{
-        commit_ivk, diversify_hash, extract_p, ka_orchard, ka_orchard_prepared, prf_nf, to_base,
-        to_scalar, NonIdentityPallasPoint, NonZeroPallasBase, NonZeroPallasScalar,
-        PreparedNonIdentityBase, PreparedNonZeroScalar, PrfExpand,
+        NonIdentityPallasPoint, NonZeroPallasBase, NonZeroPallasScalar, PreparedNonIdentityBase,
+        PreparedNonZeroScalar, PrfExpand, commit_ivk, diversify_hash, extract_p, ka_orchard,
+        ka_orchard_prepared, prf_nf, to_base, to_scalar,
     },
     zip32::{self, ExtendedSpendingKey},
 };
@@ -806,7 +806,7 @@ impl ConditionallySelectable for DiversifiedTransmissionKey {
 pub struct EphemeralSecretKey(pub(crate) NonZeroPallasScalar);
 
 impl ConstantTimeEq for EphemeralSecretKey {
-    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+    fn ct_eq(&self, other: &Self) -> Choice {
         self.0.ct_eq(&other.0)
     }
 }
@@ -893,7 +893,7 @@ impl SharedSecret {
 
         // Batch-normalize the shared secrets.
         let mut secrets_affine = vec![pallas::Affine::identity(); secrets.len()];
-        group::Curve::batch_normalize(&secrets, &mut secrets_affine);
+        Curve::batch_normalize(&secrets, &mut secrets_affine);
 
         // Re-insert the invalid ephemeral_key positions.
         let mut secrets_affine = secrets_affine.into_iter();
@@ -989,9 +989,9 @@ mod tests {
         *,
     };
     use crate::{
+        Note,
         note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
         value::NoteValue,
-        Note,
     };
 
     #[test]

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use group::{Curve, GroupEncoding};
 use halo2_proofs::{
-    circuit::{floor_planner, Layouter, Value},
+    circuit::{Layouter, Value, floor_planner},
     plonk::{
         self, Advice, BatchVerifier, Column, Constraints, Expression, Instance as InstanceColumn,
         Selector, SingleVerifier,
@@ -27,16 +27,16 @@ use crate::{
     builder::SpendInfo,
     bundle::Flags,
     constants::{
-        OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains,
-        MERKLE_DEPTH_ORCHARD,
+        MERKLE_DEPTH_ORCHARD, OrchardCommitDomains, OrchardFixedBases, OrchardFixedBasesFull,
+        OrchardHashDomains,
     },
     keys::{
         CommitIvkRandomness, DiversifiedTransmissionKey, NullifierDerivingKey, SpendValidatingKey,
     },
     note::{
+        ExtractedNoteCommitment, Note, Rho,
         commitment::{NoteCommitTrapdoor, NoteCommitment},
         nullifier::Nullifier,
-        ExtractedNoteCommitment, Note, Rho,
     },
     primitives::redpallas::{SpendAuth, VerificationKey},
     spec::NonIdentityPallasPoint,
@@ -45,16 +45,16 @@ use crate::{
 };
 use halo2_gadgets::{
     ecc::{
-        chip::{EccChip, EccConfig},
         CircuitVersion, FixedPoint, NonIdentityPoint, Point, ScalarFixed, ScalarFixedShort,
         ScalarVar,
+        chip::{EccChip, EccConfig},
     },
-    poseidon::{primitives as poseidon, Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig},
+    poseidon::{Pow5Chip as PoseidonChip, Pow5Config as PoseidonConfig, primitives as poseidon},
     sinsemilla::{
         chip::{SinsemillaChip, SinsemillaConfig},
         merkle::{
-            chip::{MerkleChip, MerkleConfig},
             MerklePath,
+            chip::{MerkleChip, MerkleConfig},
         },
     },
     utilities::lookup_range_check::{LookupRangeCheck, LookupRangeCheckConfig},
@@ -376,7 +376,7 @@ impl Config {
         meta.enable_equality(primary);
 
         // Permutation over all advice columns.
-        for advice in advices.iter() {
+        for advice in &advices {
             meta.enable_equality(*advice);
         }
 
@@ -532,7 +532,7 @@ impl Circuit {
             let rho_old = assign_free_advice(
                 layouter.namespace(|| "witness rho_old"),
                 config.advices[0],
-                self.rho_old.map(|rho| rho.into_inner()),
+                self.rho_old.map(Rho::into_inner),
             )?;
 
             // Witness cm_old
@@ -550,7 +550,7 @@ impl Circuit {
             )?;
 
             // Witness ak_P.
-            let ak_P: Value<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
+            let ak_P: Value<pallas::Point> = self.ak.as_ref().map(Into::into);
             let ak_P = NonIdentityPoint::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "witness ak_P"),
@@ -636,7 +636,7 @@ impl Circuit {
             let rcv = ScalarFixed::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "rcv"),
-                self.rcv.as_ref().map(|rcv| rcv.inner()),
+                self.rcv.as_ref().map(ValueCommitTrapdoor::inner),
             )?;
 
             let cv_net = gadget::value_commit_orchard(
@@ -744,7 +744,7 @@ impl Circuit {
             let rcm_old = ScalarFixed::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "rcm_old"),
-                self.rcm_old.as_ref().map(|rcm_old| rcm_old.inner()),
+                self.rcm_old.as_ref().map(NoteCommitTrapdoor::inner),
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
@@ -804,7 +804,7 @@ impl Circuit {
             let rcm_new = ScalarFixed::new(
                 ecc_chip,
                 layouter.namespace(|| "rcm_new"),
-                self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner()),
+                self.rcm_new.as_ref().map(NoteCommitTrapdoor::inner),
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
@@ -1310,7 +1310,7 @@ impl Proof {
             return Err(plonk::Error::InvalidInstances);
         }
 
-        let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
+        let instances: Vec<_> = instances.iter().map(Instance::to_halo2_instance).collect();
         let instances: Vec<Vec<_>> = instances
             .iter()
             .map(|i| i.iter().map(|c| &c[..]).collect())
@@ -1345,7 +1345,7 @@ impl Proof {
             return Err(plonk::Error::InvalidInstances);
         }
 
-        let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
+        let instances: Vec<_> = instances.iter().map(Instance::to_halo2_instance).collect();
         let instances: Vec<Vec<_>> = instances
             .iter()
             .map(|i| i.iter().map(|c| &c[..]).collect())
@@ -1397,9 +1397,9 @@ mod tests {
     use ff::Field;
     use halo2_proofs::{circuit::Value, dev::MockProver};
     use pasta_curves::{pallas, vesta};
-    use rand::{rngs::OsRng, RngCore};
+    use rand::{RngCore, rngs::OsRng};
 
-    use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
+    use super::{Circuit, Instance, K, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey};
     use crate::{
         bundle::{BundleVersion, Flags},
         keys::SpendValidatingKey,
@@ -1711,14 +1711,16 @@ mod tests {
 
         let strategy = super::SingleVerifier::new(&vk.params);
         let mut transcript = Blake2bRead::init(&proof_bytes[..]);
-        assert!(super::plonk::verify_proof(
-            &vk.params,
-            &vk.vk,
-            strategy,
-            &raw_instances,
-            &mut transcript,
-        )
-        .is_ok());
+        assert!(
+            super::plonk::verify_proof(
+                &vk.params,
+                &vk.vk,
+                strategy,
+                &raw_instances,
+                &mut transcript,
+            )
+            .is_ok()
+        );
 
         assert!(matches!(
             Proof::create(
@@ -1770,10 +1772,7 @@ mod tests {
         // Test that the proof size is as expected.
         let expected_proof_size = {
             let circuit_cost =
-                halo2_proofs::dev::CircuitCost::<pasta_curves::vesta::Point, _>::measure(
-                    K,
-                    &circuits[0],
-                );
+                halo2_proofs::dev::CircuitCost::<vesta::Point, _>::measure(K, &circuits[0]);
             // These sizes are identical for every circuit version: the post-NU 6.3 circuit reuses the
             // existing Orchard checks gate on spare rows and adds no columns or
             // commitments, leaving the proof shape unchanged.

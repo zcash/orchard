@@ -146,16 +146,16 @@ mod tests {
         fixed_bases::{COMMIT_IVK_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION},
         sinsemilla::MERKLE_CRH_PERSONALIZATION,
     };
-    use group::{ff::PrimeField, Curve};
+    use group::{Curve, ff::PrimeField};
     use halo2_gadgets::sinsemilla::primitives::{CommitDomain, HashDomain};
     use halo2_proofs::arithmetic::CurveAffine;
     use halo2_proofs::pasta::pallas;
-    use rand::{self, rngs::OsRng, Rng};
+    use rand::{self, Rng, rngs::OsRng};
 
     #[test]
     // Nodes in the Merkle tree are Pallas base field elements.
     fn l_orchard_merkle() {
-        assert_eq!(super::L_ORCHARD_MERKLE, pallas::Base::NUM_BITS as usize);
+        assert_eq!(L_ORCHARD_MERKLE, pallas::Base::NUM_BITS as usize);
     }
 
     #[test]

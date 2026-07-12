@@ -2,6 +2,7 @@
 
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
+    Address, Bundle,
     builder::{Builder, BundleType},
     bundle::{Authorized, BatchValidator, BundleVersion, Flags, TxVersion},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
@@ -10,10 +11,9 @@ use orchard::{
     note_encryption::{IronwoodDomain, OrchardDomain},
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
-    Address, Bundle,
 };
 use rand::rngs::OsRng;
-use shardtree::{store::memory::MemoryShardStore, ShardTree};
+use shardtree::{ShardTree, store::memory::MemoryShardStore};
 use zcash_note_encryption::try_note_decryption;
 
 /// Builds a single-leaf note commitment tree containing `cmx`, returning the tree
@@ -465,14 +465,16 @@ fn post_nu6_3_restricted_bundle_chain() {
         // note's own (external) receiver, but its ciphertext is randomized, so even the owning
         // wallet's external ivk cannot trial-decrypt it -- which is what keeps the spend hidden
         // from anyone (including a quantum adversary) who recovers that ivk from the address.
-        assert!(unauthorized
-            .decrypt_output_with_key(
-                bundle_meta
-                    .spend_action_index(0)
-                    .expect("Spend 0 can be found"),
-                &fvk.to_ivk(Scope::External),
-            )
-            .is_none());
+        assert!(
+            unauthorized
+                .decrypt_output_with_key(
+                    bundle_meta
+                        .spend_action_index(0)
+                        .expect("Spend 0 can be found"),
+                    &fvk.to_ivk(Scope::External),
+                )
+                .is_none()
+        );
 
         let sighash = unauthorized
             .commitment(TxVersion::V5)
@@ -503,15 +505,17 @@ fn post_nu6_3_restricted_bundle_chain() {
     // A validator backed by a key that cannot constrain the cross-address restriction
     // rejects the restricted bundle at insertion, rather than deferring the failure.
     let mut validator = BatchValidator::new(&fixed_vk);
-    assert!(validator
-        .add_bundle(
-            &restricted_bundle,
-            restricted_bundle
-                .commitment(TxVersion::V5)
-                .expect("bundle flags are representable in this format")
-                .into(),
-        )
-        .is_err());
+    assert!(
+        validator
+            .add_bundle(
+                &restricted_bundle,
+                restricted_bundle
+                    .commitment(TxVersion::V5)
+                    .expect("bundle flags are representable in this format")
+                    .into(),
+            )
+            .is_err()
+    );
 }
 
 // `BundleVersion::ironwood_v3()` is the post-NU6.3 Ironwood bundle version, which allows

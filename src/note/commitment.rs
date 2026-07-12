@@ -14,7 +14,7 @@ use pasta_curves::pallas;
 use subtle::{ConstantTimeEq, CtOption};
 
 use crate::{
-    constants::{fixed_bases::NOTE_COMMITMENT_PERSONALIZATION, L_ORCHARD_BASE},
+    constants::{L_ORCHARD_BASE, fixed_bases::NOTE_COMMITMENT_PERSONALIZATION},
     spec::extract_p,
     value::NoteValue,
 };

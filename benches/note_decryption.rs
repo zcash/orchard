@@ -1,12 +1,12 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use orchard::{
+    Anchor, Bundle,
     builder::{Builder, BundleType},
     bundle::BundleVersion,
     circuit::{OrchardCircuitVersion, ProvingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note_encryption::{CompactAction, OrchardDomain},
     value::NoteValue,
-    Anchor, Bundle,
 };
 use rand::rngs::OsRng;
 use zcash_note_encryption::{batch, try_compact_note_decryption, try_note_decryption};
@@ -76,18 +76,18 @@ fn bench_note_decryption(c: &mut Criterion) {
         group.throughput(Throughput::Elements(1));
 
         group.bench_function("valid", |b| {
-            b.iter(|| try_note_decryption(&domain, &valid_ivk, action).unwrap())
+            b.iter(|| try_note_decryption(&domain, &valid_ivk, action).unwrap());
         });
 
         // Non-compact actions will always early-reject at the same point: AEAD decryption.
         group.bench_function("invalid", |b| {
-            b.iter(|| try_note_decryption(&domain, &invalid_ivks[0], action))
+            b.iter(|| try_note_decryption(&domain, &invalid_ivks[0], action));
         });
 
         let compact = CompactAction::from(action);
 
         group.bench_function("compact-valid", |b| {
-            b.iter(|| try_compact_note_decryption(&domain, &valid_ivk, &compact).unwrap())
+            b.iter(|| try_compact_note_decryption(&domain, &valid_ivk, &compact).unwrap());
         });
 
         compact
@@ -101,7 +101,7 @@ fn bench_note_decryption(c: &mut Criterion) {
                 for ivk in &invalid_ivks {
                     try_compact_note_decryption(&domain, ivk, &compact);
                 }
-            })
+            });
         });
     }
 
@@ -127,21 +127,21 @@ fn bench_note_decryption(c: &mut Criterion) {
             group.throughput(Throughput::Elements((ivks * size) as u64));
 
             group.bench_function(BenchmarkId::new("valid", size), |b| {
-                b.iter(|| batch::try_note_decryption(&valid_ivks, &actions[..size]))
+                b.iter(|| batch::try_note_decryption(&valid_ivks, &actions[..size]));
             });
 
             group.bench_function(BenchmarkId::new("invalid", size), |b| {
-                b.iter(|| batch::try_note_decryption(&invalid_ivks[..ivks], &actions[..size]))
+                b.iter(|| batch::try_note_decryption(&invalid_ivks[..ivks], &actions[..size]));
             });
 
             group.bench_function(BenchmarkId::new("compact-valid", size), |b| {
-                b.iter(|| batch::try_compact_note_decryption(&valid_ivks, &compact[..size]))
+                b.iter(|| batch::try_compact_note_decryption(&valid_ivks, &compact[..size]));
             });
 
             group.bench_function(BenchmarkId::new("compact-invalid", size), |b| {
                 b.iter(|| {
                     batch::try_compact_note_decryption(&invalid_ivks[..ivks], &compact[..size])
-                })
+                });
             });
         }
     }

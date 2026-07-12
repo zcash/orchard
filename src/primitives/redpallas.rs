@@ -203,7 +203,7 @@ pub mod testing {
         pub fn arb_spendauth_signing_key()(
             sk in prop::array::uniform32(prop::num::u8::ANY)
                 .prop_map(reddsa::SigningKey::try_from)
-                .prop_filter("Values must be parseable as valid signing keys", |r| r.is_ok())
+                .prop_filter("Values must be parseable as valid signing keys", Result::is_ok)
         ) -> SigningKey<SpendAuth> {
             SigningKey(sk.unwrap())
         }
@@ -214,7 +214,7 @@ pub mod testing {
         pub fn arb_binding_signing_key()(
             sk in prop::array::uniform32(prop::num::u8::ANY)
                 .prop_map(reddsa::SigningKey::try_from)
-                .prop_filter("Values must be parseable as valid signing keys", |r| r.is_ok())
+                .prop_filter("Values must be parseable as valid signing keys", Result::is_ok)
         ) -> SigningKey<Binding> {
             SigningKey(sk.unwrap())
         }

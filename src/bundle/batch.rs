@@ -129,7 +129,7 @@ impl<'a> BatchValidator<'a> {
         }
 
         let mut validator = redpallas::batch::Verifier::new();
-        for sig in self.signatures.iter() {
+        for sig in &self.signatures {
             validator.queue(sig.signature.clone());
         }
 

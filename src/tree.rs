@@ -5,8 +5,8 @@ use core::iter;
 
 use crate::{
     constants::{
-        sinsemilla::{i2lebsp_k, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
         MERKLE_DEPTH_ORCHARD,
+        sinsemilla::{L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION, i2lebsp_k},
     },
     note::commitment::ExtractedNoteCommitment,
 };
@@ -269,8 +269,8 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
 pub mod testing {
     use ff::Field;
     use rand::{
-        distributions::{Distribution, Standard},
         RngCore,
+        distributions::{Distribution, Standard},
     };
 
     use super::MerkleHashOrchard;
@@ -292,11 +292,11 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use {
-        crate::tree::{MerkleHashOrchard, EMPTY_ROOTS},
+        crate::tree::{EMPTY_ROOTS, MerkleHashOrchard},
         group::ff::PrimeField,
-        incrementalmerkletree::{frontier::Frontier, Level, Marking, MerklePath, Retention},
+        incrementalmerkletree::{Level, Marking, MerklePath, Retention, frontier::Frontier},
         pasta_curves::pallas,
-        shardtree::{store::memory::MemoryShardStore, ShardTree},
+        shardtree::{ShardTree, store::memory::MemoryShardStore},
     };
 
     #[test]
@@ -360,8 +360,7 @@ mod tests {
                     .0
                     .to_repr(),
                 *tv_root,
-                "Empty root mismatch at level {}",
-                level
+                "Empty root mismatch at level {level}"
             );
         }
     }
@@ -408,7 +407,7 @@ mod tests {
         ];
 
         let mut frontier: Frontier<MerkleHashOrchard, 32> = Frontier::empty();
-        for commitment in commitments.iter() {
+        for commitment in &commitments {
             let cmx = MerkleHashOrchard(pallas::Base::from_repr(*commitment).unwrap());
             frontier.append(cmx);
         }

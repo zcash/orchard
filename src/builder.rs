@@ -7,10 +7,11 @@ use core::iter;
 
 use ff::Field;
 use pasta_curves::pallas;
-use rand::{prelude::SliceRandom, CryptoRng, RngCore};
+use rand::{CryptoRng, RngCore, prelude::SliceRandom};
 use zcash_note_encryption::ENC_CIPHERTEXT_SIZE;
 
 use crate::{
+    Proof,
     address::Address,
     bundle::{Authorization, Authorized, Bundle, BundleVersion, Flags},
     keys::{
@@ -21,8 +22,7 @@ use crate::{
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
-    value::{self, BalanceError, NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
-    Proof,
+    value::{BalanceError, NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
 };
 
 #[cfg(feature = "circuit")]
@@ -176,7 +176,7 @@ pub enum BuildError {
     Proof(halo2_proofs::plonk::Error),
     /// An overflow error occurred while attempting to construct the value
     /// for a bundle.
-    ValueSum(value::BalanceError),
+    ValueSum(BalanceError),
     /// External signature is not valid.
     InvalidExternalSignature,
     /// A signature is valid for more than one input. This should never happen if `alpha`
@@ -250,8 +250,8 @@ impl From<halo2_proofs::plonk::Error> for BuildError {
     }
 }
 
-impl From<value::BalanceError> for BuildError {
-    fn from(e: value::BalanceError) -> Self {
+impl From<BalanceError> for BuildError {
+    fn from(e: BalanceError) -> Self {
         BuildError::ValueSum(e)
     }
 }
@@ -949,19 +949,19 @@ impl Builder {
 
     /// Returns the action spend components that will be produced by the
     /// transaction being constructed
-    pub fn spends(&self) -> &Vec<impl InputView<()>> {
+    pub fn spends(&self) -> &Vec<impl InputView<()> + use<>> {
         &self.spends
     }
 
     /// Returns the action output components that will be produced by the
     /// transaction being constructed
-    pub fn outputs(&self) -> &Vec<impl OutputView> {
+    pub fn outputs(&self) -> &Vec<impl OutputView + use<>> {
         &self.outputs
     }
 
     /// Returns the wallet-controlled change outputs that will be produced by the
     /// transaction being constructed.
-    pub fn changes(&self) -> &Vec<impl OutputView> {
+    pub fn changes(&self) -> &Vec<impl OutputView + use<>> {
         &self.changes
     }
 
@@ -975,7 +975,7 @@ impl Builder {
     ///
     /// [added]: https://zips.z.cash/protocol/protocol.pdf#orchardbalance
     /// [must not have a negative value]: https://zips.z.cash/protocol/protocol.pdf#transactions
-    pub fn value_balance<V: TryFrom<i64>>(&self) -> Result<V, value::BalanceError> {
+    pub fn value_balance<V: TryFrom<i64>>(&self) -> Result<V, BalanceError> {
         let value_balance = self
             .spends
             .iter()
@@ -993,7 +993,7 @@ impl Builder {
             .try_fold(ValueSum::zero(), |acc, note_value| acc + note_value)
             .ok_or(BalanceError::Overflow)?;
         i64::try_from(value_balance)
-            .and_then(|i| V::try_from(i).map_err(|_| value::BalanceError::Overflow))
+            .and_then(|i| V::try_from(i).map_err(|_| BalanceError::Overflow))
     }
 
     /// Builds a bundle containing the given spent notes and outputs, under this builder's
@@ -1119,9 +1119,7 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
     let circuit_version = bundle_version.circuit_version();
     let result_value_balance: V = i64::try_from(value_balance)
         .map_err(BuildError::ValueSum)
-        .and_then(|i| {
-            V::try_from(i).map_err(|_| BuildError::ValueSum(value::BalanceError::Overflow))
-        })?;
+        .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(BalanceError::Overflow)))?;
 
     // Compute the transaction binding signing key.
     let bsk = pre_actions
@@ -1137,7 +1135,7 @@ fn finish_unauthorized_bundle<V: TryFrom<i64>, R: RngCore>(
         .unzip();
 
     // Verify that bsk and bvk are consistent.
-    let bvk = (actions.iter().map(|a| a.cv_net()).sum::<ValueCommitment>()
+    let bvk = (actions.iter().map(Action::cv_net).sum::<ValueCommitment>()
         - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
     .into_bvk();
     assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
@@ -1717,21 +1715,21 @@ pub mod testing {
     use alloc::vec::Vec;
     use core::fmt::Debug;
 
-    use incrementalmerkletree::{frontier::Frontier, Hashable};
-    use rand::{rngs::StdRng, CryptoRng, SeedableRng};
+    use incrementalmerkletree::{Hashable, frontier::Frontier};
+    use rand::{CryptoRng, SeedableRng, rngs::StdRng};
 
     use proptest::collection::vec;
     use proptest::prelude::*;
 
     use crate::{
+        Address, Note, NoteVersion,
         address::testing::arb_address,
         bundle::{Authorized, Bundle, BundleVersion},
         circuit::{OrchardCircuitVersion, ProvingKey},
-        keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
+        keys::{FullViewingKey, SpendAuthorizingKey, SpendingKey, testing::arb_spending_key},
         note::testing::arb_note,
         tree::{Anchor, MerkleHashOrchard, MerklePath},
-        value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
-        Address, Note, NoteVersion,
+        value::{MAX_NOTE_VALUE, NoteValue, testing::arb_positive_note_value},
     };
 
     use super::{Builder, BundleType};
@@ -1822,7 +1820,7 @@ pub mod testing {
             let mut frontier = Frontier::<MerkleHashOrchard, { MERKLE_DEPTH_ORCHARD as u8 }>::empty();
             let mut notes_and_auth_paths: Vec<(Note, MerklePath)> = Vec::new();
 
-            for note in notes.iter() {
+            for note in &notes {
                 let leaf = MerkleHashOrchard::from_cmx(&note.commitment().into());
                 frontier.append(leaf);
 
@@ -1848,27 +1846,28 @@ pub mod testing {
     pub fn arb_bundle<V: TryFrom<i64> + Debug>() -> impl Strategy<Value = Bundle<Authorized, V>> {
         arb_spending_key()
             .prop_flat_map(arb_bundle_inputs)
-            .prop_map(|inputs| inputs.into_bundle::<V>())
+            .prop_map(ArbitraryBundleInputs::into_bundle::<V>)
     }
 
     /// Produce an arbitrary valid Orchard bundle using a specified spending key.
     pub fn arb_bundle_with_key<V: TryFrom<i64> + Debug>(
         k: SpendingKey,
     ) -> impl Strategy<Value = Bundle<Authorized, V>> {
-        arb_bundle_inputs(k).prop_map(|inputs| inputs.into_bundle::<V>())
+        arb_bundle_inputs(k).prop_map(ArbitraryBundleInputs::into_bundle::<V>)
     }
 }
 
 #[cfg(all(test, feature = "circuit"))]
 mod tests {
-    use rand::rngs::OsRng;
     use rand::RngCore;
+    use rand::rngs::OsRng;
 
     use super::{
-        bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo, SpendInfo,
-        DEFAULT_MIN_ACTIONS,
+        BuildError, Builder, ChangeInfo, DEFAULT_MIN_ACTIONS, MaybeSigned, OutputError, OutputInfo,
+        SpendInfo, bundle,
     };
     use crate::{
+        Address, Anchor, Note,
         builder::BundleType,
         bundle::{Authorized, Bundle, BundleVersion, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey},
@@ -1879,9 +1878,8 @@ mod tests {
         note::{NoteVersion, Nullifier, Rho},
         note_encryption::OrchardDomain,
         pczt::{ProverError, VerifyError},
-        tree::{MerklePath, EMPTY_ROOTS},
+        tree::{EMPTY_ROOTS, MerklePath},
         value::NoteValue,
-        Address, Anchor, Note,
     };
     use zcash_note_encryption::try_note_decryption;
 
@@ -2046,7 +2044,7 @@ mod tests {
             .prepare(rng, [0; 32])
             .finalize()
             .unwrap();
-        assert_eq!(bundle.value_balance(), &(-5000))
+        assert_eq!(bundle.value_balance(), &(-5000));
     }
 
     #[test]
@@ -2090,17 +2088,19 @@ mod tests {
         ));
 
         // Spends-disabled flags are accepted.
-        assert!(Builder::new(
-            BundleType::Coinbase,
-            bundle_version,
-            Flags::from_parts(
-                false,
-                true,
-                bundle_version.permits_cross_address_transfers()
-            ),
-            anchor,
-        )
-        .is_ok());
+        assert!(
+            Builder::new(
+                BundleType::Coinbase,
+                bundle_version,
+                Flags::from_parts(
+                    false,
+                    true,
+                    bundle_version.permits_cross_address_transfers()
+                ),
+                anchor,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -2226,10 +2226,12 @@ mod tests {
         // be present (so the commitment verifies), no `user_address`, and a zero value.
         assert!(spend_action.output.user_address.is_none());
         assert!(spend_action.output.rseed.is_some());
-        assert!(spend_action
-            .output
-            .verify_note_commitment(&spend_action.spend)
-            .is_ok());
+        assert!(
+            spend_action
+                .output
+                .verify_note_commitment(&spend_action.spend)
+                .is_ok()
+        );
 
         let change_action = &pczt_bundle.actions()[change_action_index];
         assert_eq!(change_action.spend.recipient, Some(change_recipient));
@@ -2240,12 +2242,14 @@ mod tests {
         assert_eq!(change_action.output.value, Some(NoteValue::from_raw(5_000)));
 
         for action in pczt_bundle.actions() {
-            assert!(action
-                .spend
-                .recipient
-                .as_ref()
-                .unwrap()
-                .same_expanded_receiver(action.output.recipient.as_ref().unwrap()));
+            assert!(
+                action
+                    .spend
+                    .recipient
+                    .as_ref()
+                    .unwrap()
+                    .same_expanded_receiver(action.output.recipient.as_ref().unwrap())
+            );
         }
     }
 
@@ -2319,12 +2323,14 @@ mod tests {
 
         assert_eq!(padding_action.spend.value, Some(NoteValue::ZERO));
         assert_eq!(padding_action.output.value, Some(NoteValue::ZERO));
-        assert!(padding_action
-            .spend
-            .recipient
-            .as_ref()
-            .unwrap()
-            .same_expanded_receiver(padding_action.output.recipient.as_ref().unwrap()));
+        assert!(
+            padding_action
+                .spend
+                .recipient
+                .as_ref()
+                .unwrap()
+                .same_expanded_receiver(padding_action.output.recipient.as_ref().unwrap())
+        );
     }
 
     #[test]
@@ -2455,17 +2461,19 @@ mod tests {
             mismatched_note_version,
         );
         let spend = SpendInfo::new(fvk.clone(), note, merkle_path).unwrap();
-        assert!(bundle::<i64>(
-            &mut rng,
-            BundleType::DEFAULT,
-            bundle_version,
-            bundle_version.default_flags(),
-            anchor,
-            vec![spend],
-            vec![],
-            vec![],
-        )
-        .is_ok());
+        assert!(
+            bundle::<i64>(
+                &mut rng,
+                BundleType::DEFAULT,
+                bundle_version,
+                bundle_version.default_flags(),
+                anchor,
+                vec![spend],
+                vec![],
+                vec![],
+            )
+            .is_ok()
+        );
 
         let output = OutputInfo::new(
             None,

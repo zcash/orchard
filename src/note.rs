@@ -10,10 +10,10 @@ use rand::RngCore;
 use subtle::CtOption;
 
 use crate::{
-    keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
-    spec::{to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar, PrfExpand},
-    value::NoteValue,
     Address,
+    keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
+    spec::{NonIdentityPallasPoint, NonZeroPallasScalar, PrfExpand, to_base, to_scalar},
+    value::NoteValue,
 };
 
 const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";

@@ -16,8 +16,8 @@ use pasta_curves::{
 use subtle::{ConditionallySelectable, CtOption};
 
 use crate::constants::{
-    fixed_bases::COMMIT_IVK_PERSONALIZATION, util::gen_const_array,
-    KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE,
+    KEY_DIVERSIFICATION_PERSONALIZATION, L_ORCHARD_BASE, fixed_bases::COMMIT_IVK_PERSONALIZATION,
+    util::gen_const_array,
 };
 
 pub(crate) use zcash_spec::PrfExpand;
@@ -323,7 +323,7 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
 mod tests {
     use super::{i2lebsp, lebs2ip};
 
-    use rand::{rngs::OsRng, RngCore};
+    use rand::{RngCore, rngs::OsRng};
 
     #[test]
     #[cfg(feature = "circuit")]

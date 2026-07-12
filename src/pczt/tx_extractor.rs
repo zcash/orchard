@@ -5,9 +5,9 @@ use rand::{CryptoRng, RngCore};
 
 use super::Action;
 use crate::{
+    Proof,
     bundle::{Authorization, Authorized, EffectsOnly},
     primitives::redpallas::{self, Binding, SpendAuth},
-    Proof,
 };
 
 impl super::Bundle {

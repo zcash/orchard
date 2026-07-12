@@ -6,8 +6,8 @@ use blake2b_simd::Params as Blake2bParams;
 use subtle::{Choice, ConstantTimeEq, CtOption};
 use zcash_spec::VariableLengthSlice;
 use zip32::{
-    hardened_only::{self, HardenedOnlyKey},
     ChainCode,
+    hardened_only::{self, HardenedOnlyKey},
 };
 
 use crate::{

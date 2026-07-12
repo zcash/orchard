@@ -48,7 +48,7 @@ impl super::Bundle {
         let bvk = (self
             .actions
             .iter()
-            .map(|a| a.cv_net())
+            .map(super::Action::cv_net)
             .sum::<ValueCommitment>()
             - ValueCommitment::derive(self.value_sum, ValueCommitTrapdoor::zero()))
         .into_bvk();
@@ -58,7 +58,7 @@ impl super::Bundle {
         self.bsk = Some(bsk);
 
         // Add signatures to dummy spends.
-        for action in self.actions.iter_mut() {
+        for action in &mut self.actions {
             // The `Option::take` ensures we don't have any spend authorizing keys in the
             // PCZT after the IO Finalizer has run.
             if let Some(sk) = action.spend.dummy_sk.take() {

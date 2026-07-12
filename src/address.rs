@@ -2,7 +2,7 @@ use subtle::CtOption;
 
 use crate::{
     keys::{DiversifiedTransmissionKey, Diversifier},
-    spec::{diversify_hash, NonIdentityPallasPoint},
+    spec::{NonIdentityPallasPoint, diversify_hash},
 };
 
 /// A shielded payment address.
@@ -85,8 +85,8 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::keys::{
-        testing::{arb_diversifier_index, arb_spending_key},
         FullViewingKey, Scope,
+        testing::{arb_diversifier_index, arb_spending_key},
     };
 
     use super::Address;

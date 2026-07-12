@@ -12,6 +12,7 @@ use zip32::ChildIndex;
 
 use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
+    Address, Anchor, NOTE_COMMITMENT_TREE_DEPTH, Proof,
     bundle::{BundleVersion, Flags},
     keys::{FullViewingKey, SpendingKey},
     note::{
@@ -20,7 +21,6 @@ use crate::{
     primitives::redpallas::{self, SpendAuth},
     tree::{MerkleHashOrchard, MerklePath},
     value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
-    Address, Anchor, Proof, NOTE_COMMITMENT_TREE_DEPTH,
 };
 
 impl Bundle {
@@ -42,7 +42,7 @@ impl Bundle {
             Flags::from_byte(flags, bundle_version).ok_or(ParseError::UnexpectedFlagBitsSet)?;
 
         let note_version = bundle_version.note_version();
-        for action in actions.iter() {
+        for action in &actions {
             if *action.output.note_version() != note_version {
                 return Err(ParseError::InvalidNoteVersion);
             }

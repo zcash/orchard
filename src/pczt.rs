@@ -11,13 +11,13 @@ use zcash_note_encryption::OutgoingCipherKey;
 use zip32::ChildIndex;
 
 use crate::{
+    Address, Anchor, NoteVersion, Proof,
     bundle::{BundleVersion, Flags},
     keys::{FullViewingKey, SpendingKey},
     note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::MerklePath,
     value::{NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum},
-    Address, Anchor, NoteVersion, Proof,
 };
 
 mod parse;
@@ -345,13 +345,12 @@ impl Zip32Derivation {
     pub fn extract_account_index(
         &self,
         seed_fp: &zip32::fingerprint::SeedFingerprint,
-        expected_coin_type: zip32::ChildIndex,
+        expected_coin_type: ChildIndex,
     ) -> Option<zip32::AccountId> {
         if self.seed_fingerprint == seed_fp.to_bytes() {
             match &self.derivation_path[..] {
                 [purpose, coin_type, account_index]
-                    if purpose == &zip32::ChildIndex::hardened(32)
-                        && coin_type == &expected_coin_type =>
+                    if purpose == &ChildIndex::hardened(32) && coin_type == &expected_coin_type =>
                 {
                     Some(
                         zip32::AccountId::try_from(account_index.index() - (1 << 31))
@@ -372,9 +371,10 @@ mod tests {
     use incrementalmerkletree::{Marking, Retention};
     use pasta_curves::pallas;
     use rand::rngs::OsRng;
-    use shardtree::{store::memory::MemoryShardStore, ShardTree};
+    use shardtree::{ShardTree, store::memory::MemoryShardStore};
 
     use crate::{
+        Note,
         builder::{Builder, BundleMetadata, BundleType},
         bundle::{BundleVersion, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
@@ -386,9 +386,8 @@ mod tests {
             Zip32Derivation,
         },
         primitives::redpallas::{self, SpendAuth},
-        tree::{MerkleHashOrchard, MerklePath, EMPTY_ROOTS},
+        tree::{EMPTY_ROOTS, MerkleHashOrchard, MerklePath},
         value::NoteValue,
-        Note,
     };
 
     /// Builds a cross-address-restricted pczt bundle with one real spend (15_000 at an
@@ -839,7 +838,7 @@ mod tests {
     #[test]
     fn preverified_parse_signs_identically_to_full_parse() {
         use super::{Action, Spend};
-        use rand::{rngs::StdRng, SeedableRng};
+        use rand::{SeedableRng, rngs::StdRng};
 
         let bundle_version = BundleVersion::orchard_v2();
         let mut rng = OsRng;
@@ -950,16 +949,16 @@ mod tests {
         let rk_bytes: [u8; 32] = spend.rk().into();
         let recipient_bytes = spend.recipient().map(|r| r.to_raw_address_bytes());
         let value_raw = spend.value().map(|v| v.inner());
-        let rho_bytes = spend.rho().map(|rho| rho.to_bytes());
+        let rho_bytes = spend.rho().map(Rho::to_bytes);
         let rseed_bytes = spend.rseed().map(|rseed| *rseed.as_bytes());
-        let fvk_bytes = spend.fvk().as_ref().map(|fvk| fvk.to_bytes());
+        let fvk_bytes = spend.fvk().as_ref().map(FullViewingKey::to_bytes);
         let witness_bytes = spend.witness().as_ref().map(|witness| {
             (
                 u32::try_from(u64::from(witness.position())).unwrap(),
                 witness
                     .auth_path()
                     .iter()
-                    .map(|node| node.to_bytes())
+                    .map(MerkleHashOrchard::to_bytes)
                     .collect::<alloc::vec::Vec<_>>()[..]
                     .try_into()
                     .expect("path is length 32"),
@@ -990,7 +989,10 @@ mod tests {
             )
             .expect("output re-parses")
         };
-        let rcv_bytes = action.rcv().as_ref().map(|rcv| rcv.to_bytes());
+        let rcv_bytes = action
+            .rcv()
+            .as_ref()
+            .map(super::super::value::ValueCommitTrapdoor::to_bytes);
 
         // === FULL parse path (derives the FVK) ===
         let full_spend = Spend::parse(
@@ -1096,7 +1098,7 @@ mod tests {
                     note_version,
                     alloc::collections::BTreeMap::new(),
                 ),
-                Err(super::ParseError::InvalidFullViewingKey)
+                Err(ParseError::InvalidFullViewingKey)
             ),
             "the full parse must reject malformed fvk bytes",
         );
@@ -1419,10 +1421,12 @@ mod tests {
 
         let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
         let padding_action_index = 1 - spend_action_index;
-        assert!(pczt_bundle.actions()[padding_action_index]
-            .spend
-            .dummy_sk
-            .is_some());
+        assert!(
+            pczt_bundle.actions()[padding_action_index]
+                .spend
+                .dummy_sk
+                .is_some()
+        );
 
         let sighash = [0; 32];
         pczt_bundle.finalize_io(sighash, rng).unwrap();
@@ -1432,10 +1436,12 @@ mod tests {
         let padding_action = &pczt_bundle.actions()[padding_action_index];
         assert!(padding_action.spend.dummy_sk.is_none());
         assert!(padding_action.spend.spend_auth_sig.is_some());
-        assert!(pczt_bundle.actions()[spend_action_index]
-            .spend
-            .spend_auth_sig
-            .is_none());
+        assert!(
+            pczt_bundle.actions()[spend_action_index]
+                .spend
+                .spend_auth_sig
+                .is_none()
+        );
 
         pczt_bundle.actions_mut()[spend_action_index]
             .sign(sighash, &SpendAuthorizingKey::from(&spend_sk), rng)

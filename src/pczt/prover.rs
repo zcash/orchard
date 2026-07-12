@@ -6,10 +6,10 @@ use halo2_proofs::plonk;
 use rand::{CryptoRng, RngCore};
 
 use crate::{
+    Note, Proof,
     builder::SpendInfo,
     circuit::{Circuit, Instance, ProvingKey},
     note::Rho,
-    Note, Proof,
 };
 
 impl super::Bundle {
@@ -214,7 +214,7 @@ impl fmt::Display for ProverError {
                 write!(f, "`rcv` must be set for the Prover role")
             }
             ProverError::MissingWitness => write!(f, "`witness` must be set for the Prover role"),
-            ProverError::ProofFailed(halo2_proofs::plonk::Error::InvalidInstances) => {
+            ProverError::ProofFailed(plonk::Error::InvalidInstances) => {
                 write!(
                     f,
                     "Failed to create proof: provided instances do not match the circuit, or \

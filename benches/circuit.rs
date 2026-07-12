@@ -7,12 +7,12 @@ use criterion::{BenchmarkId, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
 use orchard::{
+    Anchor, Bundle,
     builder::{Builder, BundleType},
     bundle::BundleVersion,
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, Scope, SpendingKey},
     value::NoteValue,
-    Anchor, Bundle,
 };
 use rand::rngs::OsRng;
 

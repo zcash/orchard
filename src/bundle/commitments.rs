@@ -3,8 +3,8 @@
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
 
 use crate::{
-    bundle::{Authorization, Authorized, Bundle, CommitmentError, TxVersion},
     ValuePool,
+    bundle::{Authorization, Authorized, Bundle, CommitmentError, TxVersion},
 };
 
 const ZCASH_ORCHARD_V5_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrchardHash";

@@ -6,7 +6,7 @@
 //! commitment, in a way that keeps them unlinkable without the viewing key
 //! but uniquely tied to the note.
 
-use group::{ff::PrimeField, Group};
+use group::{Group, ff::PrimeField};
 use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveExt, pallas};
 use rand::RngCore;
@@ -91,7 +91,7 @@ impl ConstantTimeEq for Nullifier {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use group::{ff::FromUniformBytes, Group};
+    use group::{Group, ff::FromUniformBytes};
     use pasta_curves::pallas;
     use proptest::collection::vec;
     use proptest::prelude::*;

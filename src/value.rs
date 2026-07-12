@@ -143,8 +143,8 @@ impl Sub for NoteValue {
 
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: Self) -> Self::Output {
-        let a = self.0 as i128;
-        let b = rhs.0 as i128;
+        let a = i128::from(self.0);
+        let b = i128::from(rhs.0);
         a.checked_sub(b)
             .filter(|v| VALUE_SUM_RANGE.contains(v))
             .map(ValueSum)
@@ -178,14 +178,14 @@ impl ValueSum {
     /// `valueBalance` type that enforces any additional constraints on the value's valid
     /// range.
     pub(crate) fn from_raw(value: i64) -> Self {
-        ValueSum(value as i128)
+        ValueSum(i128::from(value))
     }
 
     /// Constructs a value sum from its magnitude and sign.
     pub(crate) fn from_magnitude_sign(magnitude: u64, sign: Sign) -> Self {
         Self(match sign {
-            Sign::Positive => magnitude as i128,
-            Sign::Negative => -(magnitude as i128),
+            Sign::Positive => i128::from(magnitude),
+            Sign::Negative => -i128::from(magnitude),
         })
     }
 
@@ -412,7 +412,7 @@ pub mod testing {
     use pasta_curves::pallas;
     use proptest::prelude::*;
 
-    use super::{NoteValue, ValueCommitTrapdoor, ValueSum, MAX_NOTE_VALUE, VALUE_SUM_RANGE};
+    use super::{MAX_NOTE_VALUE, NoteValue, VALUE_SUM_RANGE, ValueCommitTrapdoor, ValueSum};
 
     prop_compose! {
         /// Generate an arbitrary Pallas scalar.
@@ -433,7 +433,7 @@ pub mod testing {
 
     prop_compose! {
         /// Generate an arbitrary [`ValueSum`] in the range of valid Zcash values.
-        pub fn arb_value_sum_bounded(bound: NoteValue)(value in -(bound.0 as i128)..=(bound.0 as i128)) -> ValueSum {
+        pub fn arb_value_sum_bounded(bound: NoteValue)(value in -i128::from(bound.0)..=i128::from(bound.0)) -> ValueSum {
             ValueSum(value)
         }
     }
@@ -474,8 +474,8 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{
+        BalanceError, MAX_NOTE_VALUE, ValueCommitTrapdoor, ValueCommitment, ValueSum,
         testing::{arb_note_value_bounded, arb_trapdoor, arb_value_sum_bounded},
-        BalanceError, ValueCommitTrapdoor, ValueCommitment, ValueSum, MAX_NOTE_VALUE,
     };
     use crate::primitives::redpallas;
 
