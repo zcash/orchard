@@ -1389,6 +1389,9 @@ impl Proof {
     }
 }
 
+#[cfg(all(test, feature = "verifier-fingerprint"))]
+mod fingerprint;
+
 #[cfg(test)]
 mod tests {
     use alloc::vec::Vec;

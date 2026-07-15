@@ -70,6 +70,7 @@ criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
 halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
+rand_chacha = "0.3"
 zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
 shardtree = "0.6"
@@ -89,6 +90,7 @@ unstable-frost = []
 unstable-voting-circuits = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
+verifier-fingerprint = ["circuit", "halo2_proofs/verifier-fingerprint"]
 test-dependencies = ["proptest", "rand/std"]
 
 [[bench]]
@@ -110,3 +112,9 @@ debug = true
 
 [profile.bench]
 debug = true
+
+[patch.crates-io]
+# All builds in this checkout resolve Halo2 to the helper fork. Only Orchard's opt-in
+# `verifier-fingerprint` feature enables its capture tooling; downstream users do not inherit a
+# package's root-level patch.
+halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "cd63cdf3826d2b274810b6c314950cccaa4139d3" }
