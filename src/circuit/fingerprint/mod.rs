@@ -17,6 +17,8 @@ use crate::{
     tree::MerkleHashOrchard,
 };
 
+mod rejected;
+
 fn fixture_rng(seed: u8) -> ChaCha20Rng {
     ChaCha20Rng::from_seed([seed; 32])
 }
