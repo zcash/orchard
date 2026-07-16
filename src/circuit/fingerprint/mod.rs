@@ -1,4 +1,25 @@
 //! Feature-gated Orchard fixtures for Halo2 verifier fingerprints.
+//!
+//! # What these fixtures do and do not establish
+//!
+//! Each capture runs the deployed verifier once and exports the assembled MSM, transcript, and
+//! challenges as a Lean fixture. This checks that Ironwood's Lean model reproduces one *concrete*
+//! Rust verifier run; it is not a verifier soundness proof.
+//!
+//! Two limitations are load-bearing for anyone consuming the exported fixtures:
+//!
+//! * **Only accepting runs are exported to Lean.** The negative captures in `rejected` confirm in
+//!   Rust that a tampered/short/desynchronized proof assembles a non-identity MSM and is rejected by
+//!   the deployed verifier, but they are never handed to Lean. The Lean `MsmMatch` theorem is only
+//!   ever checked against *identity* (accepting) runs, so a Lean `assemble` that trivially accepts
+//!   would still pass every exported fixture. Extending the cross-check to a rejecting run needs a
+//!   Halo2 dumper variant that emits `capturedMsm.evalNat capturedURS ≠ 0` instead of the hardcoded
+//!   `= 0` (tracked upstream against the `dump_vesta_lean_fixture` tooling).
+//! * **The exported Fiat–Shamir schedule is not injective with respect to real transcripts.** The
+//!   dumper models each squeeze by appending the challenge as a `TranscriptElt.scalar`, the same
+//!   constructor used for proof-read scalars, whereas the deployed Blake2b transcript uses a
+//!   domain-separator byte and never absorbs the challenge. The schedule faithfully pins one
+//!   concrete run but must not be relied on downstream as a transcript-binding / uniqueness model.
 
 use alloc::vec::Vec;
 
@@ -116,11 +137,7 @@ fn capture_fixture(seed: u8, num_actions: u8, namespace: &str, output_var: &str)
         "PostNu6_3",
         K,
         usize::from(num_actions),
-        &transcript.common_points,
-        &transcript.points,
-        &transcript.scalars,
-        &transcript.challenges,
-        &transcript.events,
+        &transcript,
         &msm,
     );
     if let Some(path) = std::env::var_os(output_var) {

@@ -81,7 +81,14 @@ fn fingerprint_rejected_capture_two_actions() {
         "captured read events should reserialize the original proof exactly"
     );
 
+    // Instance evaluations are read first. `instances.len()` is the number of instance-eval scalars
+    // only because the pinned Post-NU6.3 key has exactly one instance query per proof
+    // (`num_instance_columns == 1`, locked by `assert_pinned_verifying_key` above); a key with more
+    // instance queries would break this identity.
     let n_instance_evals = instances.len();
+    // Add one to the first advice evaluation. Every proof byte is still present and well-formed, so
+    // the verifier parses the whole stream and rejects only at the final MSM identity check. This is
+    // the one genuinely semantic rejection here (contrast the truncated/desynced cases below).
     let first_advice_eval = n_instance_evals;
     let tampered_proof = proof_from_read_events(&transcript.events, |idx, scalar| {
         ScalarEventEdit::Write(if idx == first_advice_eval {
@@ -100,6 +107,9 @@ fn fingerprint_rejected_capture_two_actions() {
         &mut tampered_transcript,
     )
     .unwrap();
+    // This non-identity MSM is only checked here in Rust; it is not exported to Lean, so the Lean
+    // model is never cross-checked against a rejecting run. See the trust-boundary note in the
+    // module docs (`super`) for the Halo2-side follow-up needed to close that gap.
     assert!(
         !tampered_msm.eval(),
         "tampered advice-eval capture should assemble a non-identity fingerprint"
@@ -121,7 +131,10 @@ fn fingerprint_rejected_capture_two_actions() {
 
     // These are the Orchard action-circuit shape counts emitted by the Lean fixture dumper
     // (`shape` in `Fixture2.lean`). Keeping them explicit avoids reaching into Halo2's private
-    // verifying-key internals from this crate-local negative capture test.
+    // verifying-key internals from this crate-local negative capture test. They are pinned to the
+    // circuit asserted above by `assert_pinned_verifying_key`, so they cannot drift silently; the
+    // `assert_eq!(n_multiopen_u, 5)` below is the cross-check that catches any arithmetic error in
+    // the derived offsets that does not happen to cancel out.
     let n_advice_queries = 25;
     let n_fixed_evals = 29;
     let n_permutation_common_evals = 15;
@@ -139,6 +152,11 @@ fn fingerprint_rejected_capture_two_actions() {
     let n_multiopen_u = transcript.scalars.len() - first_multiopen_u - 2;
     assert_eq!(n_multiopen_u, 5);
 
+    // Truncate the proof just before its final multiopen evaluation. The stream is now one scalar
+    // short, so the verifier exhausts the transcript mid-multiopen and halo2 surfaces `Error::Opening`
+    // (every multiopen error is mapped to `Opening` in `plonk::verify_proof`). This exercises a
+    // short/malformed stream, not a failed polynomial-opening check; we only assert that the deployed
+    // verifier reaches the multiopen stage (>= 8 challenges: through the `x3` squeeze) and rejects.
     let truncated_u_proof = proof_from_read_events(&transcript.events, |idx, scalar| {
         if idx + 1 == first_multiopen_u + n_multiopen_u {
             ScalarEventEdit::Stop
@@ -164,6 +182,10 @@ fn fingerprint_rejected_capture_two_actions() {
         "malformed-u capture should reach the multiopen x3 challenge before rejection"
     );
 
+    // Drop one permutation-set evaluation from the middle of the read-scalar stream. Skipping a
+    // scalar desynchronizes every later read and leaves the stream one element short, so rejection
+    // follows from the misaligned/exhausted transcript rather than from a permutation-specific
+    // consistency check. We therefore assert only that the deployed verifier fails (`is_err()`).
     let first_permutation_set_eval = n_instance_evals
         + instances.len() * n_advice_queries
         + n_fixed_evals

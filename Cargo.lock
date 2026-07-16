@@ -993,7 +993,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.3.2"
-source = "git+https://github.com/zcash/halo2?rev=cd63cdf3826d2b274810b6c314950cccaa4139d3#cd63cdf3826d2b274810b6c314950cccaa4139d3"
+source = "git+https://github.com/zcash/halo2?rev=4789f7ebc7ceefc6c13d6a24e633b54291c1eeaf#4789f7ebc7ceefc6c13d6a24e633b54291c1eeaf"
 dependencies = [
  "blake2b_simd",
  "ff",
