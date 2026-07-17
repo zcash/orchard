@@ -189,6 +189,14 @@ impl BundleVersion {
         )
     }
 
+    /// Whether the consensus rules for this version *permit* vanilla transfers.
+    pub(crate) fn permits_vanilla(&self) -> bool {
+        matches!(
+            (self.value_pool, self.protocol_version),
+            (ValuePool::Orchard, _) | (ValuePool::Ironwood, ProtocolVersion::V3)
+        )
+    }
+
     /// The default [`Flags`] for a bundle of this version: spends and outputs enabled, with the
     /// cross-address bit set to the least-restrictive value the version permits (enabled unless
     /// the version mandates the restriction).
@@ -941,6 +949,9 @@ impl<V, Pr: OrchardPrimitives> Bundle<EffectsOnly, V, Pr> {
         authorization: EffectsOnly,
         bundle_version: BundleVersion,
     ) -> Result<Self, BundleError> {
+        if !Pr::is_valid_bundle_version(bundle_version) {
+            return Err(BundleError::InvalidBundleVersion);
+        }
         validate_flags(&flags, bundle_version)?;
         Ok(Bundle::from_parts_unchecked(
             actions,
@@ -1010,6 +1021,8 @@ pub enum BundleError {
     /// * cross-address transfers are enabled but the version specifies a post-NU6.3 Orchard pool
     ///   (where cross-address transfers are forbidden).
     UnrepresentableFlags,
+    /// The bundle version is incompatible with the flavor (OrchardVanilla or OrchardZSA)
+    InvalidBundleVersion,
 }
 
 impl fmt::Display for BundleError {
@@ -1023,6 +1036,9 @@ impl fmt::Display for BundleError {
                 f,
                 "bundle flags are not representable under the bundle's value pool and protocol version",
             ),
+            BundleError::InvalidBundleVersion => {
+                f.write_str("The bundle version is incompatible with the flavor (OrchardVanilla or OrchardZSA).")
+            }
         }
     }
 }
@@ -1083,6 +1099,9 @@ impl<V, Pr: OrchardPrimitives> Bundle<Authorized, V, Pr> {
         authorization: Authorized,
         bundle_version: BundleVersion,
     ) -> Result<Self, BundleError> {
+        if !Pr::is_valid_bundle_version(bundle_version) {
+            return Err(BundleError::InvalidBundleVersion);
+        }
         if bundle_version.enforces_canonical_proof_size() {
             validate_proof_size::<Pr>(authorization.proof(), actions.len())?;
         }
@@ -1203,10 +1222,7 @@ pub mod testing {
             asset_base::testing::{arb_asset_base, arb_zsa_asset_base},
             AssetBase,
         },
-        primitives::{
-            redpallas::{testing::arb_binding_signing_key},
-            OrchardPrimitives,
-        },
+        primitives::{redpallas::testing::arb_binding_signing_key, OrchardPrimitives},
         sighash_kind::{OrchardBindingSig, OrchardSighashKind, OrchardSpendAuthSig},
         value::{
             testing::{arb_note_value, arb_note_value_bounded},

@@ -82,4 +82,9 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
         tx_version: TxVersion,
         sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
     ) -> Result<Blake2bHash, CommitmentError>;
+
+    /// Returns true if the bundle version is equal to
+    /// - (Orchard, *) or (Ironwodd, V3) for OrchardVanilla, or
+    /// - (Ironwood, ZSA) for OrchardZSA.
+    fn is_valid_bundle_version(bundle_version: BundleVersion) -> bool;
 }

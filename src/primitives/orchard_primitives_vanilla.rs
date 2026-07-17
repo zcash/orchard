@@ -149,6 +149,11 @@ impl OrchardPrimitives for OrchardVanilla {
         }
         Ok(h.finalize())
     }
+
+    /// Returns true if the bundle version is equal to (Orchard, *) or (Ironwood, V3).
+    fn is_valid_bundle_version(bundle_version: BundleVersion) -> bool {
+        bundle_version.permits_vanilla()
+    }
 }
 
 #[cfg(test)]

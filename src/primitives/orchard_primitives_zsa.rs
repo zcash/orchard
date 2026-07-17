@@ -173,6 +173,11 @@ impl OrchardPrimitives for OrchardZSA {
 
         Ok(h.finalize())
     }
+
+    /// Returns true if the bundle version is equal to (Ironwood, ZSA).
+    fn is_valid_bundle_version(bundle_version: BundleVersion) -> bool {
+        bundle_version.permits_zsa()
+    }
 }
 
 #[cfg(test)]

@@ -149,6 +149,8 @@ pub enum TxExtractorError {
     },
     /// The bundle's flags cannot be encoded under its value pool and protocol version.
     UnrepresentableFlags,
+    /// The bundle version is incompatible with the flavor (OrchardVanilla or OrchardZSA)
+    InvalidBundleVersion,
 }
 
 impl From<crate::ActionFromPartsError> for TxExtractorError {
@@ -168,6 +170,9 @@ impl From<crate::bundle::BundleError> for TxExtractorError {
             }
             crate::bundle::BundleError::UnrepresentableFlags => {
                 TxExtractorError::UnrepresentableFlags
+            }
+            crate::bundle::BundleError::InvalidBundleVersion => {
+                TxExtractorError::InvalidBundleVersion
             }
         }
     }
@@ -204,6 +209,10 @@ impl fmt::Display for TxExtractorError {
             TxExtractorError::UnrepresentableFlags => write!(
                 f,
                 "Orchard bundle flags are not representable under its value pool and protocol version",
+            ),
+            TxExtractorError::InvalidBundleVersion => write!(
+                f,
+                "The bundle version is incompatible with the flavor (OrchardVanilla or OrchardZSA)",
             ),
         }
     }

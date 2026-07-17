@@ -332,7 +332,9 @@ impl OrchardCircuit for OrchardZSA {
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
-        assert_eq!(circuit.circuit_version, OrchardCircuitVersion::ZSA);
+        if circuit.circuit_version != OrchardCircuitVersion::ZSA {
+            return Err(plonk::Error::Synthesis);
+        }
 
         // Prevent synthesis of insecure ZSA circuits.
         if circuit.circuit_version.halo2_version() == CircuitVersion::InsecureUnanchoredBase {

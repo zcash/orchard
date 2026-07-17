@@ -36,9 +36,7 @@ use {
     crate::{
         action::Action,
         bundle::derive_bvk,
-        circuit::{
-            Circuit, Instance, OrchardCircuitVersion, ProvingKey, Witnesses,
-        },
+        circuit::{Circuit, Instance, OrchardCircuitVersion, ProvingKey, Witnesses},
         flavor::OrchardFlavor,
     },
     nonempty::NonEmpty,
@@ -208,6 +206,8 @@ pub enum BuildError {
     UnrepresentableFlags,
     /// A coinbase bundle was requested with flags that enable spends.
     CoinbaseSpendsEnabled,
+    /// The bundle version is incompatible with the flavor (OrchardVanilla or OrchardZSA)
+    InvalidBundleVersion,
 }
 
 impl fmt::Display for BuildError {
@@ -251,6 +251,9 @@ impl fmt::Display for BuildError {
             ),
             CoinbaseSpendsEnabled => {
                 f.write_str("A coinbase bundle was requested with flags that enable spends.")
+            }
+            InvalidBundleVersion => {
+                f.write_str("The bundle version is incompatible with the flavor (OrchardVanilla or OrchardZSA).")
             }
         }
     }
@@ -1271,6 +1274,10 @@ pub fn bundle<V: TryFrom<i64>, FL: OrchardFlavor>(
     changes: Vec<ChangeInfo>,
     burn: BTreeMap<AssetBase, NoteValue>,
 ) -> Result<Option<UnauthorizedBundleWithMetadata<V, FL>>, BuildError> {
+    if !FL::is_valid_bundle_version(bundle_version) {
+        return Err(BuildError::InvalidBundleVersion);
+    }
+
     build_bundle(
         rng,
         bundle_version,

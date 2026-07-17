@@ -786,7 +786,9 @@ impl OrchardCircuit for OrchardVanilla {
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
-        assert_ne!(circuit.circuit_version, OrchardCircuitVersion::ZSA);
+        if circuit.circuit_version == OrchardCircuitVersion::ZSA {
+            return Err(plonk::Error::Synthesis);
+        }
 
         let addrs = circuit.synthesize_base(&config, &mut layouter)?;
 
@@ -1452,7 +1454,8 @@ mod tests {
         let vk = VerifyingKey::build::<OrchardVanilla>(OrchardCircuitVersion::InsecurePreNu6_2);
         assert_eq!(
             format!("{:#?}\n", vk.vk.pinned()),
-            include_str!("../circuit_data/circuit_description_insecure_vanilla").replace("\r\n", "\n")
+            include_str!("../circuit_data/circuit_description_insecure_vanilla")
+                .replace("\r\n", "\n")
         );
 
         let (instance, proof) = {
