@@ -7,27 +7,16 @@ use zcash_note_encryption::note_bytes::NoteBytesData;
 
 use crate::{
     bundle::{
-        commitments::{
-            get_compact_size, hasher, ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION_V6,
-            ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION_V6,
-            ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_HASH_PERSONALIZATION, ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_SPEND_AUTH_SIGS_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION,
-        },
-        Authorization, Authorized,
+        commitments::{get_compact_size, hasher, BundleCommitmentFormat},
+        Authorization, Authorized, BundleVersion, CommitmentError, TxVersion,
     },
     flavor::OrchardZSA,
     note::{AssetBase, Note},
-    primitives::{
-        orchard_primitives::OrchardPrimitives,
-        zcash_note_encryption_domain::{
-            build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA,
-            COMPACT_NOTE_SIZE_ZSA, MEMO_SIZE, NOTE_VERSION_BYTE_V3,
-        },
+    note_encryption::{
+        build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA, COMPACT_NOTE_SIZE_ZSA,
+        MEMO_SIZE,
     },
+    primitives::orchard_primitives::OrchardPrimitives,
     sighash_kind::OrchardSighashKind,
     Bundle,
 };
@@ -43,7 +32,7 @@ impl OrchardPrimitives for OrchardZSA {
     type CompactNoteCiphertextBytes = NoteBytesData<{ Self::COMPACT_NOTE_SIZE }>;
 
     fn build_note_plaintext_bytes(note: &Note, memo: &Memo) -> Self::NotePlaintextBytes {
-        let mut np = build_base_note_plaintext_bytes(NOTE_VERSION_BYTE_V3, note);
+        let mut np = build_base_note_plaintext_bytes(note);
 
         np[COMPACT_NOTE_SIZE_VANILLA..COMPACT_NOTE_SIZE_ZSA]
             .copy_from_slice(&note.asset().to_bytes());
@@ -66,14 +55,27 @@ impl OrchardPrimitives for OrchardZSA {
     /// [zip246]: https://zips.z.cash/zip-0246
     fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
         bundle: &Bundle<A, V, OrchardZSA>,
-    ) -> Blake2bHash {
-        let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
-        let mut agh = hasher(ZCASH_ORCHARD_ACTION_GROUPS_HASH_PERSONALIZATION);
+        tx_version: TxVersion,
+    ) -> Result<Blake2bHash, CommitmentError> {
+        let format = bundle
+            .bundle_version()
+            .value_pool()
+            .commitment_format(tx_version)?;
 
-        let mut ch = hasher(ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION_V6);
+        if format != BundleCommitmentFormat::ZSA {
+            return Err(CommitmentError::InvalidTransactionVersion);
+        }
+
+        let personalizations = format.personalizations();
+        let zsa_personalizations = personalizations.zsa.unwrap();
+
+        let mut h = hasher(personalizations.bundle);
+        let mut agh = hasher(zsa_personalizations.action_groups);
+
+        let mut ch = hasher(personalizations.actions_compact);
         // TODO Remove mh once new Memo Bundles are implemented (ZIP-231).
-        let mut mh = hasher(ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION);
-        let mut nh = hasher(ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION_V6);
+        let mut mh = hasher(personalizations.actions_memos);
+        let mut nh = hasher(personalizations.actions_noncompact);
 
         for action in bundle.actions().iter() {
             ch.update(&action.nullifier().to_bytes());
@@ -105,12 +107,12 @@ impl OrchardPrimitives for OrchardZSA {
         agh.update(mh.finalize().as_bytes());
         agh.update(nh.finalize().as_bytes());
 
-        agh.update(&[bundle.flags().to_byte()]);
-        agh.update(&bundle.anchor().to_bytes());
+        agh.update(&[bundle.flag_byte()]);
+        //agh.update(&bundle.anchor().to_bytes());
         // For the OrchardZSA protocol, `expiry_height` is set to 0, indicating no expiry.
         agh.update(&0u32.to_le_bytes());
 
-        let mut burn_hasher = hasher(ZCASH_ORCHARD_ZSA_BURN_HASH_PERSONALIZATION);
+        let mut burn_hasher = hasher(zsa_personalizations.ironwood_burn);
         for burn_item in bundle.burn() {
             burn_hasher.update(&burn_item.0.to_bytes());
             burn_hasher.update(&burn_item.1.to_bytes());
@@ -119,7 +121,7 @@ impl OrchardPrimitives for OrchardZSA {
         h.update(agh.finalize().as_bytes());
 
         h.update(&(*bundle.value_balance()).into().to_le_bytes());
-        h.finalize()
+        Ok(h.finalize())
     }
 
     /// Evaluate `orchard_auth_digest` for the bundle as defined in
@@ -131,12 +133,25 @@ impl OrchardPrimitives for OrchardZSA {
     /// [zip246]: https://zips.z.cash/zip-0246
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, OrchardZSA>,
+        tx_version: TxVersion,
         sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
-    ) -> Blake2bHash {
-        let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
-        let mut agh = hasher(ZCASH_ORCHARD_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION);
+    ) -> Result<Blake2bHash, CommitmentError> {
+        let format = bundle
+            .bundle_version()
+            .value_pool()
+            .commitment_format(tx_version)?;
+
+        if format != BundleCommitmentFormat::ZSA {
+            return Err(CommitmentError::InvalidTransactionVersion);
+        }
+
+        let personalizations = format.personalizations();
+        let zsa_personalizations = personalizations.zsa.unwrap();
+
+        let mut h = hasher(personalizations.auth);
+        let mut agh = hasher(zsa_personalizations.action_groups_auth);
         agh.update(bundle.authorization().proof().as_ref());
-        let mut sash = hasher(ZCASH_ORCHARD_SPEND_AUTH_SIGS_HASH_PERSONALIZATION);
+        let mut sash = hasher(zsa_personalizations.zsa_spend_auth);
         for action in bundle.actions().iter() {
             let sighash_info = sighash_info_for_kind(action.authorization().sighash_kind());
             sash.update(&get_compact_size(sighash_info.len()));
@@ -153,12 +168,10 @@ impl OrchardPrimitives for OrchardZSA {
         h.update(&<[u8; 64]>::from(
             bundle.authorization().binding_signature().sig(),
         ));
-        h.finalize()
-    }
 
-    /// Returns true if the note plaintext leadByte is equal to 0x03.
-    fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool {
-        plaintext.first() == Some(&NOTE_VERSION_BYTE_V3)
+        h.update(&bundle.anchor().to_bytes());
+
+        Ok(h.finalize())
     }
 }
 
@@ -182,39 +195,32 @@ mod tests {
             OutgoingViewingKey, PreparedIncomingViewingKey,
         },
         note::{
-            testing::arb_note, AssetBase, ExtractedNoteCommitment, Note, Nullifier, RandomSeed,
-            Rho, TransmittedNoteCiphertext,
+            testing::arb_note, AssetBase, ExtractedNoteCommitment, Note, NoteVersion, Nullifier,
+            RandomSeed, Rho, TransmittedNoteCiphertext,
         },
-        primitives::{
-            compact_action::CompactAction,
-            orchard_domain::OrchardDomain,
-            redpallas,
-            zcash_note_encryption_domain::{parse_note_plaintext_without_memo, prf_ock_orchard},
-            OrchardPrimitives,
+        note_encryption::{
+            parse_note_plaintext_without_memo, prf_ock_orchard, CompactAction, ZSADomain,
         },
+        primitives::redpallas,
         value::{NoteValue, ValueCommitment},
     };
-
-    type OrchardDomainZSA = OrchardDomain<OrchardZSA>;
 
     proptest! {
         #[test]
         fn encoding_roundtrip(
-            note in arb_note(NoteValue::from_raw(100)),
+            note in arb_note(NoteValue::from_raw(100), NoteVersion::ZSA),
         ) {
             let memo = &crate::test_vectors::note_encryption_zsa::TEST_VECTORS[0].memo;
             let rho = note.rho();
 
             // Encode.
-            let plaintext = OrchardDomainZSA::note_plaintext_bytes(&note, memo);
+            let plaintext = ZSADomain::note_plaintext_bytes(&note, memo);
 
             // Decode.
-            let domain = OrchardDomainZSA::for_rho(rho);
+            let domain = ZSADomain::from_rho(rho);
             let (compact, parsed_memo) = domain.split_plaintext_at_memo(&plaintext).unwrap();
 
-            assert!(<OrchardZSA as OrchardPrimitives>::is_valid_note_plaintext_lead_byte(compact.as_ref()));
-
-            let (parsed_note, parsed_recipient) = parse_note_plaintext_without_memo::<OrchardZSA, _>(rho, &compact,
+            let (parsed_note, parsed_recipient) = parse_note_plaintext_without_memo::<OrchardZSA, _>(rho, &compact, NoteVersion::ZSA,
                 |diversifier| {
                     assert_eq!(diversifier, &note.recipient().diversifier());
                     Some(*note.recipient().pk_d())
@@ -275,7 +281,8 @@ mod tests {
 
             let asset = AssetBase::from_bytes(&tv.asset).unwrap();
 
-            let note = Note::from_parts(recipient, value, asset, rho, rseed).unwrap();
+            let note =
+                Note::from_parts(recipient, value, asset, rho, rseed, NoteVersion::ZSA).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(
@@ -298,7 +305,7 @@ mod tests {
             // (Tested first because it only requires immutable references.)
             //
 
-            let domain = OrchardDomain::for_rho(rho);
+            let domain = ZSADomain::from_rho(rho);
 
             match try_note_decryption(&domain, &ivk, &action) {
                 Some((decrypted_note, decrypted_to, decrypted_memo)) => {
@@ -330,7 +337,7 @@ mod tests {
             // Test encryption
             //
 
-            let ne = zcash_note_encryption::NoteEncryption::<OrchardDomainZSA>::new_with_esk(
+            let ne = zcash_note_encryption::NoteEncryption::<ZSADomain>::new_with_esk(
                 esk,
                 Some(ovk),
                 note,

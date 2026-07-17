@@ -191,21 +191,21 @@ impl<Pr: OrchardPrimitives> DynamicUsage for Action<OrchardSpendAuthSig, Pr> {
 pub(crate) mod testing {
     use alloc::vec::Vec;
     use rand::{rngs::StdRng, RngCore, SeedableRng};
-    use zcash_note_encryption::Domain as _;
+    use zcash_note_encryption::{Domain as _, NoteEncryption};
 
     use proptest::prelude::*;
-
-    use zcash_note_encryption::NoteEncryption;
 
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
-            testing::arb_note, AssetBase, Note, TransmittedNoteCiphertext,
+            testing::arb_note, AssetBase, TransmittedNoteCiphertext,
         },
+        note_encryption::{NoteEncryptionDomain, OrchardVersion},
         primitives::redpallas::testing::arb_valid_spendauth_keypair,
-        primitives::{OrchardDomain, OrchardPrimitives},
+        primitives::OrchardPrimitives,
         sighash_kind::{OrchardSighashKind, OrchardSpendAuthSig},
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
+        Note, NoteVersion,
     };
 
     use super::Action;
@@ -231,11 +231,14 @@ pub(crate) mod testing {
             cmx: &ExtractedNoteCommitment,
             mut rng: impl RngCore,
         ) -> TransmittedNoteCiphertext<Pr> {
-            let encryptor =
-                NoteEncryption::<OrchardDomain<Pr>>::new(None, note, memo.try_into().unwrap());
+            let encryptor = NoteEncryption::<NoteEncryptionDomain<OrchardVersion, Pr>>::new(
+                None,
+                note,
+                memo.try_into().unwrap(),
+            );
 
             TransmittedNoteCiphertext {
-                epk_bytes: OrchardDomain::<Pr>::epk_bytes(encryptor.epk()).0,
+                epk_bytes: NoteEncryptionDomain::<OrchardVersion, Pr>::epk_bytes(encryptor.epk()).0,
                 enc_ciphertext: encryptor.encrypt_note_plaintext(),
                 out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, cmx, &mut rng),
             }
@@ -244,13 +247,14 @@ pub(crate) mod testing {
         prop_compose! {
             /// Generate an action without authorization data.
             pub fn arb_unauthorized_action(
+                note_version: NoteVersion,
                 spend_value: NoteValue,
                 output_value: NoteValue,
                 asset: AssetBase)
             (
                 nf in arb_nullifier(),
                 (_, rk) in arb_valid_spendauth_keypair(),
-                note in arb_note(output_value),
+                note in arb_note(output_value, note_version),
                 rng_seed in prop::array::uniform32(prop::num::u8::ANY),
                 memo in prop::collection::vec(prop::num::u8::ANY, 512),
             ) -> Action<(), Pr> {
@@ -275,13 +279,14 @@ pub(crate) mod testing {
         prop_compose! {
             /// Generate an action with invalid (random) authorization data.
             pub fn arb_action(
+                note_version: NoteVersion,
                 spend_value: NoteValue,
                 output_value: NoteValue,
                 asset: AssetBase,
             )(
                 nf in arb_nullifier(),
                 (rsk, rk) in arb_valid_spendauth_keypair(),
-                note in arb_note(output_value),
+                note in arb_note(output_value, note_version),
                 enc_rng_seed in prop::array::uniform32(prop::num::u8::ANY),
                 rng_seed in prop::array::uniform32(prop::num::u8::ANY),
                 fake_sighash in prop::array::uniform32(prop::num::u8::ANY),

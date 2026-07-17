@@ -8,9 +8,9 @@ use blake2b_simd::Hash as Blake2bHash;
 use zcash_note_encryption::{note_bytes::NoteBytes, AEAD_TAG_SIZE};
 
 use crate::{
-    bundle::{Authorization, Authorized},
+    bundle::{Authorization, Authorized, BundleVersion, CommitmentError, TxVersion},
     note::AssetBase,
-    primitives::zcash_note_encryption_domain::{Memo, MEMO_SIZE},
+    note_encryption::{Memo, MEMO_SIZE},
     sighash_kind::OrchardSighashKind,
     Bundle, Note,
 };
@@ -63,7 +63,8 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
     /// [zip246]: https://zips.z.cash/zip-0246
     fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
         bundle: &Bundle<A, V, Self>,
-    ) -> Blake2bHash;
+        tx_version: TxVersion,
+    ) -> Result<Blake2bHash, CommitmentError>;
 
     /// Evaluate `orchard_auth_digest` for the bundle as defined in
     /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
@@ -78,11 +79,7 @@ pub trait OrchardPrimitives: fmt::Debug + Clone {
     /// [zip246]: https://zips.z.cash/zip-0246
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, Self>,
+        tx_version: TxVersion,
         sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
-    ) -> Blake2bHash;
-
-    /// Returns true if the note plaintext leadByte is equal to
-    /// - 0x02 for V5 transactions (OrchardVanilla), or
-    /// - 0x03 for V6 transactions (OrchardZSA).
-    fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool;
+    ) -> Result<Blake2bHash, CommitmentError>;
 }

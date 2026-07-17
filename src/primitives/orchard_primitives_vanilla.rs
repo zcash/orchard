@@ -7,23 +7,15 @@ use zcash_note_encryption::note_bytes::NoteBytesData;
 
 use crate::{
     bundle::{
-        commitments::{
-            hasher, ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION,
-            ZCASH_ORCHARD_HASH_PERSONALIZATION, ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION,
-        },
-        Authorization, Authorized,
+        commitments::{hasher, BundleCommitmentFormat},
+        Authorization, Authorized, BundleVersion, CommitmentError, TxVersion,
     },
     flavor::OrchardVanilla,
     note::{AssetBase, Note},
-    primitives::{
-        orchard_primitives::OrchardPrimitives,
-        zcash_note_encryption_domain::{
-            build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA, MEMO_SIZE,
-            NOTE_VERSION_BYTE_V2,
-        },
+    note_encryption::{
+        build_base_note_plaintext_bytes, Memo, COMPACT_NOTE_SIZE_VANILLA, MEMO_SIZE,
     },
+    primitives::orchard_primitives::OrchardPrimitives,
     sighash_kind::OrchardSighashKind,
     Bundle,
 };
@@ -39,7 +31,7 @@ impl OrchardPrimitives for OrchardVanilla {
     type CompactNoteCiphertextBytes = NoteBytesData<{ Self::COMPACT_NOTE_SIZE }>;
 
     fn build_note_plaintext_bytes(note: &Note, memo: &Memo) -> Self::NotePlaintextBytes {
-        let mut np = build_base_note_plaintext_bytes(NOTE_VERSION_BYTE_V2, note);
+        let mut np = build_base_note_plaintext_bytes(note);
 
         np[COMPACT_NOTE_SIZE_VANILLA..].copy_from_slice(memo);
 
@@ -49,19 +41,43 @@ impl OrchardPrimitives for OrchardVanilla {
     fn extract_asset(_plaintext: &Self::CompactNotePlaintextBytes) -> Option<AssetBase> {
         Some(AssetBase::zatoshi())
     }
-
-    /// Evaluate `orchard_digest` for the bundle as defined in
-    /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
+    /// Write disjoint parts of each bundle action as 3 separate hashes
+    /// as defined in [ZIP-244: Transaction Identifier Non-Malleability][zip244]:
+    /// * \[(nullifier, cmx, ephemeral_key, enc_ciphertext\[..52\])*\] personalized
+    ///   with the format's compact-action personalization string
+    /// * \[enc_ciphertext\[52..564\]*\] (memo ciphertexts) personalized
+    ///   with the format's action-memos personalization string
+    /// * \[(cv, rk, enc_ciphertext\[564..\], out_ciphertext)*\] personalized
+    ///   with the format's non-compact-action personalization string
+    ///
+    /// Then, hash these together along with (flags, value_balance_orchard, and — for the v5
+    /// transaction format only — anchor_orchard), personalized with the format's bundle
+    /// personalization string. In the v6 format the anchor is included by
+    /// `hash_bundle_auth_data` instead.
+    ///
+    /// Returns [`CommitmentError::InvalidTransactionVersion`] if `tx_version` is not valid for the
+    /// bundle's [`BundleVersion`].
     ///
     /// [zip244]: https://zips.z.cash/zip-0244
+    /// [`BundleVersion`]: crate::bundle::BundleVersion
     fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
         bundle: &Bundle<A, V, OrchardVanilla>,
-    ) -> Blake2bHash {
-        let mut h = hasher(ZCASH_ORCHARD_HASH_PERSONALIZATION);
+        tx_version: TxVersion,
+    ) -> Result<Blake2bHash, CommitmentError> {
+        let format = bundle
+            .bundle_version()
+            .value_pool()
+            .commitment_format(tx_version)?;
 
-        let mut ch = hasher(ZCASH_ORCHARD_ACTIONS_COMPACT_HASH_PERSONALIZATION);
-        let mut mh = hasher(ZCASH_ORCHARD_ACTIONS_MEMOS_HASH_PERSONALIZATION);
-        let mut nh = hasher(ZCASH_ORCHARD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION);
+        if format == BundleCommitmentFormat::ZSA {
+            return Err(CommitmentError::InvalidTransactionVersion);
+        }
+
+        let personalizations = format.personalizations();
+        let mut h = hasher(personalizations.bundle);
+        let mut ch = hasher(personalizations.actions_compact);
+        let mut mh = hasher(personalizations.actions_memos);
+        let mut nh = hasher(personalizations.actions_noncompact);
 
         for action in bundle.actions().iter() {
             ch.update(&action.nullifier().to_bytes());
@@ -86,28 +102,33 @@ impl OrchardPrimitives for OrchardVanilla {
         h.update(ch.finalize().as_bytes());
         h.update(mh.finalize().as_bytes());
         h.update(nh.finalize().as_bytes());
-
-        h.update(&[bundle.flags().to_byte()]);
+        h.update(&[bundle.flag_byte()]);
         h.update(&(*bundle.value_balance()).into().to_le_bytes());
-        h.update(&bundle.anchor().to_bytes());
-        h.finalize()
+        if format.includes_anchor_in_txid_digest() {
+            h.update(&bundle.anchor().to_bytes());
+        }
+        Ok(h.finalize())
     }
 
-    /// Evaluate `orchard_auth_digest` for the bundle as defined in
-    /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
-    ///
-    /// # Panics
-    ///
-    /// Panics if any signature in the bundle uses a sighash kind different from
-    /// `OrchardSighashKind::AllEffecting`. In Orchard v5 transactions, this is the
-    /// only defined sighash kind.
+    /// Construct the commitment to the authorizing data of an
+    /// authorized bundle as defined in [ZIP-244: Transaction
+    /// Identifier Non-Malleability][zip244]
     ///
     /// [zip244]: https://zips.z.cash/zip-0244
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, OrchardVanilla>,
+        tx_version: TxVersion,
         _sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
-    ) -> Blake2bHash {
-        let mut h = hasher(ZCASH_ORCHARD_SIGS_HASH_PERSONALIZATION);
+    ) -> Result<Blake2bHash, CommitmentError> {
+        let format = bundle
+            .bundle_version()
+            .value_pool()
+            .commitment_format(tx_version)?;
+
+        if format == BundleCommitmentFormat::ZSA {
+            return Err(CommitmentError::InvalidTransactionVersion);
+        }
+        let mut h = hasher(format.personalizations().auth);
         h.update(bundle.authorization().proof().as_ref());
         for action in bundle.actions().iter() {
             assert_eq!(
@@ -123,12 +144,10 @@ impl OrchardPrimitives for OrchardVanilla {
         h.update(&<[u8; 64]>::from(
             bundle.authorization().binding_signature().sig(),
         ));
-        h.finalize()
-    }
-
-    /// Returns true if the note plaintext leadByte is equal to 0x02.
-    fn is_valid_note_plaintext_lead_byte(plaintext: &[u8]) -> bool {
-        plaintext.first() == Some(&NOTE_VERSION_BYTE_V2)
+        if format.includes_anchor_in_authorizing_digest() {
+            h.update(&bundle.anchor().to_bytes());
+        }
+        Ok(h.finalize())
     }
 }
 
@@ -155,36 +174,30 @@ mod tests {
             testing::arb_zatoshi_note, AssetBase, ExtractedNoteCommitment, Note, Nullifier,
             RandomSeed, Rho, TransmittedNoteCiphertext,
         },
-        primitives::{
-            compact_action::CompactAction,
-            orchard_domain::OrchardDomain,
-            redpallas,
-            zcash_note_encryption_domain::{parse_note_plaintext_without_memo, prf_ock_orchard},
-            OrchardPrimitives,
+        note_encryption::{
+            parse_note_plaintext_without_memo, prf_ock_orchard, CompactAction, OrchardDomain,
         },
+        primitives::redpallas,
         value::{NoteValue, ValueCommitment},
+        NoteVersion,
     };
-
-    type OrchardDomainVanilla = OrchardDomain<OrchardVanilla>;
 
     proptest! {
         #[test]
         fn encoding_roundtrip(
-            note in arb_zatoshi_note(),
+            note in arb_zatoshi_note(NoteVersion::V3),
         ) {
             let memo = &crate::test_vectors::note_encryption_vanilla::TEST_VECTORS[0].memo;
             let rho = note.rho();
 
             // Encode.
-            let plaintext = OrchardDomainVanilla::note_plaintext_bytes(&note, memo);
+            let plaintext = OrchardDomain::note_plaintext_bytes(&note, memo);
 
             // Decode.
-            let domain = OrchardDomainVanilla::for_rho(rho);
+            let domain = OrchardDomain::from_rho(rho);
             let (compact, parsed_memo) = domain.split_plaintext_at_memo(&plaintext).unwrap();
 
-            assert!(<OrchardVanilla as OrchardPrimitives>::is_valid_note_plaintext_lead_byte(compact.as_ref()));
-
-            let (parsed_note, parsed_recipient) = parse_note_plaintext_without_memo::<OrchardVanilla, _>(rho, &compact,
+            let (parsed_note, parsed_recipient) = parse_note_plaintext_without_memo::<OrchardVanilla, _>(rho, &compact, NoteVersion::V3,
                 |diversifier| {
                     assert_eq!(diversifier, &note.recipient().diversifier());
                     Some(*note.recipient().pk_d())
@@ -245,7 +258,8 @@ mod tests {
 
             let asset = AssetBase::zatoshi();
 
-            let note = Note::from_parts(recipient, value, asset, rho, rseed).unwrap();
+            let note =
+                Note::from_parts(recipient, value, asset, rho, rseed, NoteVersion::V2).unwrap();
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(
@@ -268,7 +282,7 @@ mod tests {
             // (Tested first because it only requires immutable references.)
             //
 
-            let domain = OrchardDomain::for_rho(rho);
+            let domain = OrchardDomain::from_rho(rho);
 
             match try_note_decryption(&domain, &ivk, &action) {
                 Some((decrypted_note, decrypted_to, decrypted_memo)) => {
@@ -300,7 +314,7 @@ mod tests {
             // Test encryption
             //
 
-            let ne = zcash_note_encryption::NoteEncryption::<OrchardDomainVanilla>::new_with_esk(
+            let ne = zcash_note_encryption::NoteEncryption::<OrchardDomain>::new_with_esk(
                 esk,
                 Some(ovk),
                 note,

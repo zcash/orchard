@@ -23,7 +23,7 @@ use rand::RngCore;
 
 use crate::{
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
-    note::{rho_for_issuance_note, AssetBase, AssetId, ExtractedNoteCommitment, Nullifier},
+    note::{rho_for_issuance_note, AssetBase, AssetId, ExtractedNoteCommitment, NoteVersion, Nullifier},
     value::NoteValue,
     Address, Note,
 };
@@ -433,8 +433,13 @@ impl IssueBundle<AwaitingNullifier> {
                 flags: IssuanceFlags::from_parts(true),
             },
             Some(issue_info) => {
-                let note =
-                    Note::new_issue_note(issue_info.recipient, issue_info.value, asset, &mut rng);
+                let note = Note::new_issue_note(
+                    issue_info.recipient,
+                    issue_info.value,
+                    asset,
+                    NoteVersion::ZSA,
+                    &mut rng,
+                );
 
                 notes.push(note);
 
@@ -471,7 +476,7 @@ impl IssueBundle<AwaitingNullifier> {
     ) -> Result<AssetBase, Error> {
         let asset = AssetBase::custom(&AssetId::new_v0(&self.ik, &asset_desc_hash));
 
-        let note = Note::new_issue_note(recipient, value, asset, &mut rng);
+        let note = Note::new_issue_note(recipient, value, asset, NoteVersion::ZSA, &mut rng);
 
         let notes = if first_issuance {
             vec![create_reference_note(asset, &mut rng), note]
@@ -568,7 +573,13 @@ impl IssueBundle<AwaitingSighash> {
 }
 
 fn create_reference_note(asset: AssetBase, mut rng: impl RngCore) -> Note {
-    Note::new_issue_note(ReferenceKeys::recipient(), NoteValue::ZERO, asset, &mut rng)
+    Note::new_issue_note(
+        ReferenceKeys::recipient(),
+        NoteValue::ZERO,
+        asset,
+        NoteVersion::ZSA,
+        &mut rng,
+    )
 }
 
 impl IssueBundle<Prepared> {
@@ -912,7 +923,7 @@ mod tests {
             IssueBundle, IssueInfo, Signed,
         },
         keys::{FullViewingKey, Scope, SpendingKey},
-        note::{rho_for_issuance_note, AssetBase, AssetId, Nullifier, Rho},
+        note::{rho_for_issuance_note, AssetBase, AssetId, Nullifier, NoteVersion, Rho},
         value::NoteValue,
         Address, Note,
     };
@@ -1038,10 +1049,20 @@ mod tests {
         let hash = asset_desc_hash(asset_desc);
         let asset = AssetBase::custom(&AssetId::new_v0(&ik, &hash));
 
-        let note1 =
-            Note::new_issue_note(recipient, NoteValue::from_raw(note1_value), asset, &mut rng);
-        let note2 =
-            Note::new_issue_note(recipient, NoteValue::from_raw(note2_value), asset, &mut rng);
+        let note1 = Note::new_issue_note(
+            recipient,
+            NoteValue::from_raw(note1_value),
+            asset,
+            NoteVersion::ZSA,
+            &mut rng,
+        );
+        let note2 = Note::new_issue_note(
+            recipient,
+            NoteValue::from_raw(note2_value),
+            asset,
+            NoteVersion::ZSA,
+            &mut rng,
+        );
 
         (
             ik,
@@ -1076,8 +1097,20 @@ mod tests {
         let asset = AssetBase::custom(&AssetId::new_v0(&ik, &hash));
         let wrong_asset = AssetBase::custom(&AssetId::new_v0(&ik, &asset_desc_hash(b"Asset 2")));
 
-        let note1 = Note::new_issue_note(recipient, NoteValue::from_raw(10), asset, &mut rng);
-        let note2 = Note::new_issue_note(recipient, NoteValue::from_raw(20), wrong_asset, &mut rng);
+        let note1 = Note::new_issue_note(
+            recipient,
+            NoteValue::from_raw(10),
+            asset,
+            NoteVersion::ZSA,
+            &mut rng,
+        );
+        let note2 = Note::new_issue_note(
+            recipient,
+            NoteValue::from_raw(20),
+            wrong_asset,
+            NoteVersion::ZSA,
+            &mut rng,
+        );
 
         let action = IssueAction::from_parts(hash, vec![note1, note2], false);
         assert_eq!(action.verify(&ik), Err(IssueBundleIkMismatchAssetBase));
@@ -1307,6 +1340,7 @@ mod tests {
                 bundle.ik(),
                 &asset_desc_hash(b"zsa_asset"),
             )),
+            NoteVersion::ZSA,
             &mut rng,
         );
         bundle.actions.first_mut().notes.push(note);
@@ -1600,6 +1634,7 @@ mod tests {
                 &asset_desc_hash(b"zsa_asset"),
             )),
             rho_for_issuance_note(&params.first_nullifier, 0, 2),
+            NoteVersion::ZSA,
             &mut rng,
         );
 
@@ -1626,6 +1661,7 @@ mod tests {
             NoteValue::from_raw(55),
             AssetBase::custom(&AssetId::new_v0(&incorrect_ik, &asset_desc_hash(b"Asset"))),
             rho_for_issuance_note(&params.first_nullifier, 0, 0),
+            NoteVersion::ZSA,
             &mut rng,
         );
 
@@ -1641,7 +1677,7 @@ mod tests {
     #[test]
     fn finalize_flag_serialization() {
         let mut rng = OsRng;
-        let (_, _, note) = Note::dummy(&mut rng, None);
+        let (_, _, note) = Note::dummy(&mut rng, None, NoteVersion::ZSA);
 
         let asset_desc_hash = asset_desc_hash(b"Asset description");
 
@@ -1862,6 +1898,7 @@ mod tests {
     fn verify_rho_computation_for_issuance_notes() {
         use crate::{
             builder::{Builder, BundleType},
+            bundle::{BundleVersion, TxVersion},
             circuit::ProvingKey,
             flavor::OrchardZSA,
             keys::SpendAuthorizingKey,
@@ -1874,8 +1911,10 @@ mod tests {
         use shardtree::store::memory::MemoryShardStore;
         use shardtree::ShardTree;
 
+        let bundle_version = BundleVersion::zsa();
+
         // Setup keys
-        let pk = ProvingKey::build::<OrchardZSA>();
+        let pk = ProvingKey::build::<OrchardZSA>(bundle_version.circuit_version());
         let sk = SpendingKey::from_bytes([1; 32]).unwrap();
         let fvk = FullViewingKey::from(&sk);
         let recipient = fvk.address_at(0u32, Scope::External);
@@ -1890,6 +1929,7 @@ mod tests {
             NoteValue::from_raw(10),
             asset1,
             Rho::from_nf_old(Nullifier::dummy(&mut rng)),
+            bundle_version.note_version(),
             &mut rng,
         );
         // Build the merkle tree with only note1
@@ -1918,7 +1958,13 @@ mod tests {
         };
 
         // Create a transfer bundle
-        let mut builder = Builder::new(BundleType::DEFAULT_ZSA, anchor);
+        let mut builder = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor,
+        )
+        .unwrap();
         builder.add_spend(fvk, note1, merkle_path).unwrap();
         builder
             .add_output(None, recipient, NoteValue::from_raw(5), asset1, [0u8; 512])
@@ -1926,8 +1972,12 @@ mod tests {
         builder
             .add_output(None, recipient, NoteValue::from_raw(5), asset1, [0u8; 512])
             .unwrap();
-        let unauthorized = builder.build(&mut rng).unwrap().unwrap().0;
-        let sighash = unauthorized.commitment().into();
+        let unauthorized = builder
+            .build::<i64, OrchardZSA>(&mut rng)
+            .unwrap()
+            .unwrap()
+            .0;
+        let sighash = unauthorized.commitment(TxVersion::ZSA).unwrap().into();
         let proven = unauthorized.create_proof(&pk, &mut rng).unwrap();
         let authorized: Bundle<_, i64, OrchardZSA> = proven
             .apply_signatures(rng, sighash, &[SpendAuthorizingKey::from(&sk)])
@@ -2042,7 +2092,7 @@ pub mod testing {
             AwaitingNullifier, BIP340IssueAuthSig, IssuanceFlags, IssueAction, IssueBundle,
             Prepared, Signed,
         },
-        note::testing::arb_zsa_note,
+        note::{testing::arb_zsa_note, NoteVersion},
     };
     use nonempty::NonEmpty;
     use proptest::collection::vec;
@@ -2068,7 +2118,7 @@ pub mod testing {
             asset_desc_hash in prop::array::uniform32(prop::num::u8::ANY),
         )
         (
-            note in arb_zsa_note(ik.clone(), asset_desc_hash),
+            note in arb_zsa_note(ik.clone(), asset_desc_hash, NoteVersion::ZSA),
             asset_desc_hash in Just(asset_desc_hash),
         )-> IssueAction {
             IssueAction{
