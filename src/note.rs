@@ -741,12 +741,15 @@ pub mod testing {
     }
 }
 
-/*#[cfg(test)]
+// TODO Constance: update the zcash_test_vectors repository so that keys.rs can be
+// generated with post-quantum keys and issuance keys.
+/*
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         keys::{FullViewingKey, Scope, SpendingKey},
-        //test_vectors::keys::TestVector,
+        test_vectors::keys::TestVector,
     };
     use ff::PrimeField;
     use group::GroupEncoding;
@@ -843,4 +846,5 @@ mod tests {
             );
         }
     }
-}*/
+}
+*/

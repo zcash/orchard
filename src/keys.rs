@@ -987,7 +987,6 @@ mod tests {
         testing::{arb_diversifier_index, arb_diversifier_key, arb_esk, arb_spending_key},
         *,
     };
-    
 
     #[test]
     fn spend_validating_key_from_bytes() {
@@ -1034,6 +1033,8 @@ mod tests {
         }
     }
 
+    // TODO Constance: update the zcash_test_vectors repository so that keys.rs can be
+    // generated with post-quantum keys and issuance keys.
     /*
     #[cfg(feature = "zsa-issuance")]
     #[test]
@@ -1107,5 +1108,6 @@ mod tests {
             let internal_ovk = fvk.to_ovk(Scope::Internal);
             assert_eq!(internal_ovk.0, tv.internal_ovk);
         }
-    }*/
+    }
+    */
 }
