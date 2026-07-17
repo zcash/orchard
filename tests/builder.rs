@@ -89,8 +89,6 @@ trait BundleOrchardFlavor: OrchardFlavor {
     const DEFAULT_BUNDLE_VERSION: BundleVersion;
     const TX_VERSION: TxVersion;
     const SPENDS_DISABLED_FLAGS: Flags;
-    /// The note encryption domain policy matching this flavor's default bundle version's
-    /// note version, so that decryption uses the same note version the builder encrypted with.
     type DomainVersion: DomainVersion;
 }
 
@@ -181,7 +179,7 @@ fn bundle_chain<FL: BundleOrchardFlavor>() -> ([u8; 32], [u8; 32]) {
                     &fvk.to_ivk(Scope::External)
                 )
                 .map(|(note, _, _)| note.value()),
-            Some(NoteValue::from_raw(5000))
+            Some(note_value)
         );
 
         let sighash = unauthorized

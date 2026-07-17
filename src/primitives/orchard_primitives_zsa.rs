@@ -108,7 +108,6 @@ impl OrchardPrimitives for OrchardZSA {
         agh.update(nh.finalize().as_bytes());
 
         agh.update(&[bundle.flag_byte()]);
-        //agh.update(&bundle.anchor().to_bytes());
         // For the OrchardZSA protocol, `expiry_height` is set to 0, indicating no expiry.
         agh.update(&0u32.to_le_bytes());
 
@@ -242,7 +241,7 @@ mod tests {
             let (parsed_note, parsed_recipient) = parse_note_plaintext_without_memo::<OrchardZSA, _>(rho, &compact, NoteVersion::ZSA,
                 |diversifier| {
                     assert_eq!(diversifier, &note.recipient().diversifier());
-                    Some(*note.recipient().pk_d())
+                    *note.recipient().pk_d()
                 }
             ).expect("Plaintext parsing failed");
 

@@ -129,7 +129,12 @@ fn bench_note_decryption<FL: OrchardFlavorBench>(c: &mut Criterion) {
         let ivks = 2;
         let valid_ivks = vec![valid_ivk; ivks];
         let actions: Vec<_> = (0..100)
-            .map(|_| (NoteEncryptionDomain::<FL::DomainVersion, FL>::for_action(action), action.clone()))
+            .map(|_| {
+                (
+                    NoteEncryptionDomain::<FL::DomainVersion, FL>::for_action(action),
+                    action.clone(),
+                )
+            })
             .collect();
         let compact: Vec<_> = (0..100)
             .map(|_| {

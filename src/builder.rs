@@ -789,7 +789,7 @@ impl ActionInfo {
 ///
 /// This is returned by [`Builder::build`].
 #[cfg(feature = "circuit")]
-pub type UnauthorizedBundle<V, P> = Bundle<InProgress<Unproven, Unauthorized>, V, P>;
+pub type UnauthorizedBundle<V, Pr> = Bundle<InProgress<Unproven, Unauthorized>, V, Pr>;
 
 /// Metadata about a bundle created by [`bundle`] or [`Builder::build`] that is not necessarily
 /// recoverable from the bundle itself.
@@ -1927,7 +1927,7 @@ impl<P: fmt::Debug, V, Pr: OrchardPrimitives> Bundle<InProgress<P, PartiallyAuth
         )
     }
 
-    /// Appends externally computed signatures.
+    /// Appends externally computed [`Signature`]s.
     ///
     /// Each signature will be applied to the one input for which it is valid. An error
     /// will be returned if the signature is not valid for any inputs, or if it is valid
@@ -2079,7 +2079,6 @@ pub mod testing {
             mut self,
         ) -> Bundle<Authorized, V, FL> {
             let fvk = FullViewingKey::from(&self.sk);
-
             let bundle_version = BundleVersion::orchard_v2();
             let mut builder = Builder::new(
                 BundleType::DEFAULT,
@@ -2208,7 +2207,7 @@ mod tests {
         bundle::{Authorized, Bundle, BundleVersion, Flags},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
-        flavor::OrchardVanilla,
+        flavor::{OrchardFlavor, OrchardVanilla, OrchardZSA},
         keys::{
             FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey,
         },
@@ -2376,17 +2375,15 @@ mod tests {
         builder
     }
 
-    #[test]
-    fn shielding_bundle() {
-        let pk = ProvingKey::build::<OrchardVanilla>(OrchardCircuitVersion::FixedPostNu6_2);
+    fn shielding_bundle<FL: OrchardFlavor>(bundle_version: BundleVersion) {
+        let pk = ProvingKey::build::<FL>(bundle_version.circuit_version());
         let mut rng = OsRng;
 
-        let builder =
-            output_only_builder(&mut rng, BundleVersion::orchard_v2(), BundleType::DEFAULT);
+        let builder = output_only_builder(&mut rng, bundle_version, BundleType::DEFAULT);
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);
 
-        let bundle: Bundle<Authorized, i64, OrchardVanilla> = builder
+        let bundle: Bundle<Authorized, i64, FL> = builder
             .build(&mut rng)
             .unwrap()
             .unwrap()
@@ -2397,6 +2394,21 @@ mod tests {
             .finalize()
             .unwrap();
         assert_eq!(bundle.value_balance(), &(-5000))
+    }
+
+    #[test]
+    fn shielding_bundle_orchard_v2() {
+        shielding_bundle::<OrchardVanilla>(BundleVersion::orchard_v2())
+    }
+
+    #[test]
+    fn shielding_bundle_ironwood_v3() {
+        shielding_bundle::<OrchardVanilla>(BundleVersion::ironwood_v3())
+    }
+
+    #[test]
+    fn shielding_bundle_zsa() {
+        shielding_bundle::<OrchardZSA>(BundleVersion::zsa())
     }
 
     fn coinbase_bundle_builds_for_post_nu6_3() {

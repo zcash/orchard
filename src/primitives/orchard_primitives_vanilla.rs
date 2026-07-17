@@ -114,6 +114,12 @@ impl OrchardPrimitives for OrchardVanilla {
     /// authorized bundle as defined in [ZIP-244: Transaction
     /// Identifier Non-Malleability][zip244]
     ///
+    /// # Panics
+    ///
+    /// Panics if any signature in the bundle uses a sighash kind different from
+    /// `OrchardSighashKind::AllEffecting`. In Orchard/Ironwood v5/v6 transactions, this is the
+    /// only defined sighash kind.
+    ///
     /// [zip244]: https://zips.z.cash/zip-0244
     fn hash_bundle_auth_data<V>(
         bundle: &Bundle<Authorized, V, OrchardVanilla>,
@@ -205,7 +211,7 @@ mod tests {
             let (parsed_note, parsed_recipient) = parse_note_plaintext_without_memo::<OrchardVanilla, _>(rho, &compact, NoteVersion::V3,
                 |diversifier| {
                     assert_eq!(diversifier, &note.recipient().diversifier());
-                    Some(*note.recipient().pk_d())
+                    *note.recipient().pk_d()
                 }
             ).expect("Plaintext parsing failed");
 
@@ -216,6 +222,8 @@ mod tests {
         }
     }
 
+    // TODO Constance: create also note_encryption_{orchard_v3/ironwood_v3} files to test Orchard V3
+    // and Ironwood V3 note encryption
     #[test]
     fn test_vectors() {
         let test_vectors = crate::test_vectors::note_encryption_vanilla::TEST_VECTORS;

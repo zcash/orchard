@@ -23,7 +23,9 @@ use rand::RngCore;
 
 use crate::{
     bundle::commitments::{hash_issue_bundle_auth_data, hash_issue_bundle_txid_data},
-    note::{rho_for_issuance_note, AssetBase, AssetId, ExtractedNoteCommitment, NoteVersion, Nullifier},
+    note::{
+        rho_for_issuance_note, AssetBase, AssetId, ExtractedNoteCommitment, NoteVersion, Nullifier,
+    },
     value::NoteValue,
     Address, Note,
 };
@@ -923,7 +925,7 @@ mod tests {
             IssueBundle, IssueInfo, Signed,
         },
         keys::{FullViewingKey, Scope, SpendingKey},
-        note::{rho_for_issuance_note, AssetBase, AssetId, Nullifier, NoteVersion, Rho},
+        note::{rho_for_issuance_note, AssetBase, AssetId, NoteVersion, Nullifier, Rho},
         value::NoteValue,
         Address, Note,
     };

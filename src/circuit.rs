@@ -742,9 +742,6 @@ impl Proof {
 #[cfg(test)]
 mod tests {
 
-    
-    
-
     mod from_parts_rk_identity {
         use ff::{Field as _, PrimeField as _};
         use pasta_curves::pallas;

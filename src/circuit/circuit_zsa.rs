@@ -29,7 +29,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-use crate::circuit::OrchardCircuitVersion;
 use crate::{
     circuit::{
         commit_ivk::{gadgets::commit_ivk, CommitIvkChip},
@@ -40,8 +39,8 @@ use crate::{
         note_commit::{gadgets::note_commit, NoteCommitChip, ZsaNoteCommitParams},
         unpack,
         value_commit_orchard::{gadgets::value_commit_orchard, ZsaValueCommitParams},
-        AdditionalZsaWitnesses, Config, OrchardCircuit, Witnesses, ANCHOR, CMX, CV_NET_X, CV_NET_Y,
-        ENABLE_OUTPUT, ENABLE_SPEND, ENABLE_ZSA, NF_OLD, RK_X, RK_Y,
+        AdditionalZsaWitnesses, Config, OrchardCircuit, OrchardCircuitVersion, Witnesses, ANCHOR,
+        CMX, CV_NET_X, CV_NET_Y, ENABLE_OUTPUT, ENABLE_SPEND, ENABLE_ZSA, NF_OLD, RK_X, RK_Y,
     },
     constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
     flavor::OrchardZSA,

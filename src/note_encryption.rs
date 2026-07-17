@@ -52,7 +52,7 @@ pub(crate) type Memo = [u8; MEMO_SIZE];
 /// Defined in [Zcash Protocol Spec § 5.4.2: Pseudo Random Functions][concreteprfs].
 ///
 /// [concreteprfs]: https://zips.z.cash/protocol/nu5.pdf#concreteprfs
-pub(super) fn prf_ock_orchard(
+pub(crate) fn prf_ock_orchard(
     ovk: &OutgoingViewingKey,
     cv: &ValueCommitment,
     cmx_bytes: &[u8; 32],
@@ -74,17 +74,14 @@ pub(super) fn prf_ock_orchard(
     )
 }
 
-/// Parses the note plaintext (excluding the memo) and extracts the note and address if valid.
-/// Domain-specific requirements:
-/// - If the note version is 3, the `plaintext` must contain a valid encoding of a ZSA asset type.
-pub(super) fn parse_note_plaintext_without_memo<Pr: OrchardPrimitives, F>(
+pub(crate) fn parse_note_plaintext_without_memo<Pr: OrchardPrimitives, F>(
     rho: Rho,
     plaintext: &Pr::CompactNotePlaintextBytes,
     note_version: NoteVersion,
     get_pk_d: F,
 ) -> Option<(Note, Address)>
 where
-    F: FnOnce(&Diversifier) -> Option<DiversifiedTransmissionKey>,
+    F: FnOnce(&Diversifier) -> DiversifiedTransmissionKey,
 {
     // The unwraps below are guaranteed to succeed
     let diversifier = Diversifier::from_bytes(
@@ -106,7 +103,7 @@ where
         &rho,
     ))?;
 
-    let pk_d = get_pk_d(&diversifier)?;
+    let pk_d = get_pk_d(&diversifier);
     let recipient = Address::from_parts(diversifier, pk_d);
     let asset = Pr::extract_asset(plaintext)?;
     let note = Option::from(Note::from_parts(
@@ -181,7 +178,7 @@ impl DomainVersion for ZSAVersion {
 
 #[derive(Debug)]
 pub(crate) struct BundleDomainPolicy {
-    pub(crate) note_version: NoteVersion,
+    note_version: NoteVersion,
 }
 
 impl DomainPolicy for BundleDomainPolicy {
@@ -381,7 +378,7 @@ impl<P: DomainPolicy, Pr: OrchardPrimitives> Domain for NoteEncryptionDomain<P, 
             self.rho,
             plaintext,
             note_version,
-            |diversifier| Some(DiversifiedTransmissionKey::derive(ivk, diversifier)),
+            |diversifier| DiversifiedTransmissionKey::derive(ivk, diversifier),
         )
     }
 
@@ -391,9 +388,7 @@ impl<P: DomainPolicy, Pr: OrchardPrimitives> Domain for NoteEncryptionDomain<P, 
         plaintext: &Pr::CompactNotePlaintextBytes,
     ) -> Option<(Self::Note, Self::Recipient)> {
         let note_version = self.policy.note_version(plaintext.as_ref())?;
-        parse_note_plaintext_without_memo::<Pr, _>(self.rho, plaintext, note_version, |_| {
-            Some(*pk_d)
-        })
+        parse_note_plaintext_without_memo::<Pr, _>(self.rho, plaintext, note_version, |_| *pk_d)
     }
 
     fn split_plaintext_at_memo(
@@ -418,7 +413,7 @@ impl<P: DomainPolicy, Pr: OrchardPrimitives> Domain for NoteEncryptionDomain<P, 
 }
 
 // Constructs a note plaintext bytes array given note information.
-pub(super) fn build_base_note_plaintext_bytes<const NOTE_PLAINTEXT_SIZE: usize>(
+pub(crate) fn build_base_note_plaintext_bytes<const NOTE_PLAINTEXT_SIZE: usize>(
     note: &Note,
 ) -> [u8; NOTE_PLAINTEXT_SIZE] {
     let mut np = [0; NOTE_PLAINTEXT_SIZE];
@@ -453,7 +448,7 @@ fn batch_kdf<'a>(
         .collect()
 }
 
-impl<A, P: DomainPolicy, Pr: OrchardPrimitives> ShieldedOutput<NoteEncryptionDomain<P, Pr>>
+impl<P: DomainPolicy, Pr: OrchardPrimitives, A> ShieldedOutput<NoteEncryptionDomain<P, Pr>>
     for Action<A, Pr>
 {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
@@ -584,8 +579,6 @@ impl<Pr: OrchardPrimitives> fmt::Debug for CompactAction<Pr> {
 
 impl<A, Pr: OrchardPrimitives> From<&Action<A, Pr>> for CompactAction<Pr> {
     fn from(action: &Action<A, Pr>) -> Self {
-        // Accesses the fields directly: the `ShieldedOutput` methods are now
-        // implemented for every domain policy, so method calls would be ambiguous.
         CompactAction {
             nullifier: *action.nullifier(),
             cmx: *action.cmx(),
@@ -644,7 +637,9 @@ pub mod testing {
         value::NoteValue,
     };
 
-    use super::{CompactAction, NoteEncryptionDomain, OrchardPrimitives, OrchardVersion, MEMO_SIZE};
+    use super::{
+        CompactAction, NoteEncryptionDomain, OrchardPrimitives, OrchardVersion, MEMO_SIZE,
+    };
 
     /// Creates a fake `CompactAction` paying the given recipient the specified value.
     ///
@@ -678,8 +673,11 @@ pub mod testing {
             note_version,
         )
         .unwrap();
-        let encryptor =
-            NoteEncryption::<NoteEncryptionDomain<OrchardVersion, Pr>>::new(ovk, note, [0u8; MEMO_SIZE]);
+        let encryptor = NoteEncryption::<NoteEncryptionDomain<OrchardVersion, Pr>>::new(
+            ovk,
+            note,
+            [0u8; MEMO_SIZE],
+        );
         let cmx = ExtractedNoteCommitment::from(note.commitment());
         let ephemeral_key = NoteEncryptionDomain::<OrchardVersion, Pr>::epk_bytes(encryptor.epk());
         let enc_ciphertext = encryptor.encrypt_note_plaintext();
@@ -834,20 +832,20 @@ mod tests {
             assert_eq!(ExtractedNoteCommitment::from(note.commitment()), cmx);
 
             let action = Action::from_parts(
-                    // nf_old is the nullifier revealed by the receiving Action.
-                    nf_old,
-                    // We don't need a real rk for this test.
-                    redpallas::VerificationKey::dummy(),
-                    cmx,
-                    TransmittedNoteCiphertext {
-                        epk_bytes: ephemeral_key.0,
-                        enc_ciphertext: NoteBytesData(tv.c_enc),
-                        out_ciphertext: tv.c_out,
-                    },
-                    cv_net.clone(),
-                    (),
-                )
-                    .expect("a key returned by VerificationKey::dummy() is vanishingly unlikely to be the identity");
+                // nf_old is the nullifier revealed by the receiving Action.
+                nf_old,
+                // We don't need a real rk for this test.
+                redpallas::VerificationKey::dummy(),
+                cmx,
+                TransmittedNoteCiphertext {
+                    epk_bytes: ephemeral_key.0,
+                    enc_ciphertext: NoteBytesData(tv.c_enc),
+                    out_ciphertext: tv.c_out,
+                },
+                cv_net.clone(),
+                (),
+            )
+                .expect("a key returned by VerificationKey::dummy() is vanishingly unlikely to be the identity");
 
             //
             // Test decryption

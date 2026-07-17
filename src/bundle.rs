@@ -153,9 +153,9 @@ impl BundleVersion {
 
     /// The [`NoteVersion`] associated with this bundle version.
     ///
-    /// Orchard pools use V2 note plaintexts, Ironwood pools use V3 note plaintexts, and
-    /// the Ironwood pool under [`ProtocolVersion::ZSA`] uses ZSA note plaintexts (which
-    /// additionally embed the note's [`AssetBase`](crate::note::AssetBase)).
+    /// Orchard pools use V2 note plaintexts for all protocol versions.
+    /// Ironwood pools use V3 note plaintexts for all protocol versions except
+    /// [`ProtocolVersion::ZSA`], which uses ZSA note plaintexts.
     pub fn note_version(&self) -> NoteVersion {
         match (self.value_pool, self.protocol_version) {
             (ValuePool::Ironwood, ProtocolVersion::ZSA) => NoteVersion::ZSA,
@@ -507,6 +507,12 @@ impl Flags {
             return None;
         }
 
+        // We have already validated bit2 against the pool type
+        let cross_address_enabled = match bundle_version.protocol_version {
+            ProtocolVersion::InsecureV1 | ProtocolVersion::V2 => true,
+            ProtocolVersion::V3 | ProtocolVersion::ZSA => bit2,
+        };
+
         // Bit 3 (`zsa_enabled`) can only be 1 for a bundle version that permits ZSA
         // transfers (the Ironwood pool under `ProtocolVersion::ZSA`); it MUST be 0
         // otherwise.
@@ -515,11 +521,6 @@ impl Flags {
             return None;
         }
 
-        // We have already validated bit2 against the pool type
-        let cross_address_enabled = match bundle_version.protocol_version {
-            ProtocolVersion::InsecureV1 | ProtocolVersion::V2 => true,
-            ProtocolVersion::V3 | ProtocolVersion::ZSA => bit2,
-        };
         Some(Self {
             spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
             outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,

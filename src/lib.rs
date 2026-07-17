@@ -118,6 +118,9 @@ impl Proof {
     ///
     /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
     pub const fn expected_proof_size<Pr: OrchardPrimitives>(num_actions: usize) -> usize {
+        // The proof is a fixed base size plus a fixed contribution per action. These constants
+        // are determined by the halo2 action circuit; see the `circuit` module's round-trip
+        // tests, which cross-check them against `CircuitCost::proof_size`.
         Pr::BASE_PROOF_SIZE + Pr::PER_ACTION_PROOF_SIZE * num_actions
     }
 }

@@ -113,13 +113,9 @@ const ZSA_PERSONALIZATIONS: BundleCommitmentPersonalizations = BundleCommitmentP
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
 pub(crate) enum BundleCommitmentFormat {
-    /// The Orchard pool's v5 transaction format.
     OrchardV5,
-    /// The Orchard pool's v6 transaction format.
     OrchardV6,
-    /// The Ironwood pool's v6 transaction format.
     IronwoodV6,
-    /// The Ironwood pool's format under `ProtocolVersion::ZSA`.
     ZSA,
 }
 
@@ -167,11 +163,13 @@ pub(crate) fn hasher(personal: &[u8; 16]) -> State {
 
 /// Evaluate `orchard_digest` for the bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
+/// or in [ZIP-229: Version 6 Transaction Format][zip229]
 /// for OrchardVanilla and as defined in
 /// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
 /// for OrchardZSA
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
+/// [zip229]: https://zips.z.cash/zip-0229
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_bundle_txid_data<
     A: Authorization,
@@ -203,6 +201,7 @@ pub fn hash_bundle_txid_empty(
 
 /// Evaluate `orchard_auth_digest` for the bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244]
+/// or in [ZIP-229: Version 6 Transaction Format][zip229]
 /// for OrchardVanilla and as defined in
 /// [ZIP-246: Digests for the Version 6 Transaction Format][zip246]
 /// for OrchardZSA
@@ -211,6 +210,7 @@ pub fn hash_bundle_txid_empty(
 /// for a given [`OrchardSighashKind`].
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
+/// [zip229]: https://zips.z.cash/zip-0229
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_bundle_auth_data<V, Pr: OrchardPrimitives>(
     bundle: &Bundle<Authorized, V, Pr>,
@@ -326,6 +326,8 @@ mod tests {
         );
     }
 
+    // TODO Constance: add test for (Orchard, V3) and (Ironwood, V3)
+
     /// Verifies that the hash for an OrchardZSA bundle matches a fixed reference value.
     ///
     /// This is a regression test: inputs are fully deterministic (seeded RNG and fixed
@@ -375,6 +377,8 @@ mod tests {
             "37d6c29faa98c2cb54420f3f7cac0477fdb105df1cdfde7adb7fbf68a24e3085"
         );
     }
+
+    // TODO Constance: add test for (Orchard, V3) and (Ironwood, V3)
 
     /// Verifies that the authorizing data commitment for an OrchardZSA bundle matches a fixed
     /// reference value.

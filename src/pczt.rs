@@ -599,7 +599,13 @@ mod tests {
         )
         .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), AssetBase::zatoshi(), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
         let output_action_index = bundle_meta.output_action_index(0).unwrap();
@@ -698,7 +704,13 @@ mod tests {
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10_000), AssetBase::zatoshi(), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
         let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
@@ -937,7 +949,13 @@ mod tests {
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10_000), AssetBase::zatoshi(), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         builder
             .add_output(
@@ -1382,7 +1400,9 @@ mod tests {
             .apply_binding_signature(sighash, rng)
             .unwrap();
         bundle
-            .verify_proof(&VerifyingKey::build::<OrchardVanilla>(OrchardCircuitVersion::PostNu6_3))
+            .verify_proof(&VerifyingKey::build::<OrchardVanilla>(
+                OrchardCircuitVersion::PostNu6_3,
+            ))
             .unwrap();
     }
 
@@ -1532,7 +1552,9 @@ mod tests {
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
         pczt_bundle.zkproof = Some(crate::Proof::new(vec![
             0;
-            crate::Proof::expected_proof_size::<OrchardVanilla>(
+            crate::Proof::expected_proof_size::<
+                OrchardVanilla,
+            >(
                 pczt_bundle.actions.len()
             )
         ]));
