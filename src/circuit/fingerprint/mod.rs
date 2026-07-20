@@ -10,11 +10,12 @@
 //!
 //! * **Only accepting runs are exported to Lean.** The negative captures in `rejected` confirm in
 //!   Rust that a tampered/short/desynchronized proof assembles a non-identity MSM and is rejected by
-//!   the deployed verifier, but they are never handed to Lean. The Lean `MsmMatch` theorem is only
-//!   ever checked against *identity* (accepting) runs, so a Lean `assemble` that trivially accepts
-//!   would still pass every exported fixture. Extending the cross-check to a rejecting run needs a
-//!   Halo2 dumper variant that emits `capturedMsm.evalNat capturedURS ≠ 0` instead of the hardcoded
-//!   `= 0` (tracked upstream against the `dump_vesta_lean_fixture` tooling).
+//!   the deployed verifier, but they are never handed to Lean. `MsmMatch` pins the full coefficient
+//!   structure of accepting runs — not merely acceptance — so a trivially-accepting Lean `assemble`
+//!   would already fail it; the narrower unchecked residual is a Lean `assemble` that agrees on
+//!   accepting runs yet mismodels the rejection paths. This is by design: the Halo2 exporter fails
+//!   fast on a non-identity capture rather than emitting a rejecting fixture, so negative-path
+//!   coverage stays in Rust.
 //! * **The exported Fiat–Shamir schedule is not injective with respect to real transcripts.** The
 //!   dumper models each squeeze by appending the challenge as a `TranscriptElt.scalar`, the same
 //!   constructor used for proof-read scalars, whereas the deployed Blake2b transcript uses a

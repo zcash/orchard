@@ -129,28 +129,36 @@ fn fingerprint_rejected_capture_two_actions() {
         Err(halo2_proofs::plonk::Error::ConstraintSystemFailure)
     ));
 
-    // These are the Orchard action-circuit shape counts emitted by the Lean fixture dumper
-    // (`shape` in `Fixture2.lean`). Keeping them explicit avoids reaching into Halo2's private
-    // verifying-key internals from this crate-local negative capture test. They are pinned to the
-    // circuit asserted above by `assert_pinned_verifying_key`, so they cannot drift silently; the
-    // `assert_eq!(n_multiopen_u, 5)` below is the cross-check that catches any arithmetic error in
-    // the derived offsets that does not happen to cancel out.
+    // The multiopen u-evaluations are exactly the ReadScalars between the x3 and x4 squeezes, so
+    // recover their offset and count from the recorded event stream rather than re-deriving them
+    // from the circuit's shape counts. Squeeze order: theta, beta, gamma, y, x, x1, x2, x3, x4, ...
+    // The `== 5` below pins the count to the circuit asserted by `assert_pinned_verifying_key`.
+    let scalars_before_squeeze = |squeeze_index: usize| -> usize {
+        let (mut squeezes, mut scalars) = (0usize, 0usize);
+        for event in &transcript.events {
+            match event {
+                TranscriptEvent::ReadScalar(_) => scalars += 1,
+                TranscriptEvent::Squeeze(_) => {
+                    if squeezes == squeeze_index {
+                        break;
+                    }
+                    squeezes += 1;
+                }
+                _ => {}
+            }
+        }
+        scalars
+    };
+    let first_multiopen_u = scalars_before_squeeze(7); // ReadScalars before the x3 squeeze
+    let n_multiopen_u = scalars_before_squeeze(8) - first_multiopen_u; // x3 -> x4
+    assert_eq!(n_multiopen_u, 5);
+
+    // The permutation-set evaluations sit inside the post-`x` scalar block, which no squeeze
+    // subdivides, so their offset is still derived from the pinned circuit's shape counts (emitted
+    // as `shape` in `Fixture2.lean`); `assert_pinned_verifying_key` above keeps them from drifting.
     let n_advice_queries = 25;
     let n_fixed_evals = 29;
     let n_permutation_common_evals = 15;
-    let n_permutation_sets = 3;
-    let n_lookups = 3;
-    let n_permutation_set_evals = instances.len() * (3 * n_permutation_sets - 1);
-    let n_lookup_evals = instances.len() * n_lookups * 5;
-    let first_multiopen_u = n_instance_evals
-        + instances.len() * n_advice_queries
-        + n_fixed_evals
-        + 1
-        + n_permutation_common_evals
-        + n_permutation_set_evals
-        + n_lookup_evals;
-    let n_multiopen_u = transcript.scalars.len() - first_multiopen_u - 2;
-    assert_eq!(n_multiopen_u, 5);
 
     // Truncate the proof just before its final multiopen evaluation. The stream is now one scalar
     // short, so the verifier exhausts the transcript mid-multiopen and halo2 surfaces `Error::Opening`

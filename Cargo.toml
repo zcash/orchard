@@ -20,7 +20,7 @@ keywords = ["zcash"]
 
 [package.metadata.docs.rs]
 # We intentionally do not use `all-features = true`: that would enable `verifier-fingerprint`, which
-# requires the `halo2_proofs/verifier-fingerprint` feature that lives only in the git fork pinned
+# requires the `halo2_proofs/unstable-verifier-fingerprint` feature that lives only in the git fork pinned
 # via the patch section below. On docs.rs the crate is built as published, where the patch is
 # stripped and `halo2_proofs` resolves from crates.io without that feature, so the docs build would
 # fail to resolve. Documenting every feature except `verifier-fingerprint` preserves the previous
@@ -128,9 +128,9 @@ debug = true
 # PRE-PUBLISH REQUIREMENT: this patch (and the git `rev` below) must be removed before any
 # `cargo publish` of Orchard, and `verifier-fingerprint` must resolve without it. The sequence is:
 #   1. merge https://github.com/zcash/halo2/pull/914,
-#   2. release `halo2_proofs` 0.3.3 with the `verifier-fingerprint` feature,
+#   2. release `halo2_proofs` 0.3.3 with the `unstable-verifier-fingerprint` feature,
 #   3. drop this `[patch.crates-io]` section (the `version = "0.3"` dep then resolves 0.3.3),
 #   4. restore `all-features = true` under `[package.metadata.docs.rs]`.
 # The `rev` currently pins the *unmerged* head of PR #914; repin to the merged commit once it lands
 # so a rebase of that branch cannot orphan it.
-halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "4789f7ebc7ceefc6c13d6a24e633b54291c1eeaf" }
+halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "70121ee2ec52b0c5478f3630ffba24b7fad79a3d" }
