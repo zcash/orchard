@@ -939,8 +939,10 @@ impl<V, Pr: OrchardPrimitives> Bundle<EffectsOnly, V, Pr> {
     ///
     /// # Errors
     ///
-    /// Returns [`BundleError::UnrepresentableFlags`] if `flags` cannot be encoded under
-    /// `bundle_version`.
+    /// Returns
+    /// - [`BundleError::UnrepresentableFlags`] if `flags` cannot be encoded under `bundle_version`
+    /// - [`BundleError::InvalidBundleVersion`] if `bundle_version` is incompatible with the favor
+    ///   `Pr` (e.g. a ZSA protocol version with `Pr=OrchardVanilla`, or vice versa)
     pub fn from_parts(
         actions: NonEmpty<Action<<EffectsOnly as Authorization>::SpendAuth, Pr>>,
         flags: Flags,
@@ -1088,9 +1090,12 @@ impl<V, Pr: OrchardPrimitives> Bundle<Authorized, V, Pr> {
     ///
     /// # Errors
     ///
-    /// Returns [`BundleError::NonCanonicalProofSize`] if the proof length is not canonical (for a
-    /// version that enforces it), or [`BundleError::UnrepresentableFlags`] if `flags` cannot be
-    /// encoded under `bundle_version`.
+    /// Returns
+    /// - [`BundleError::NonCanonicalProofSize`] if the proof length is not canonical (for a
+    ///   version that enforces it)
+    /// - [`BundleError::UnrepresentableFlags`] if `flags` cannot be encoded under `bundle_version`
+    /// - [`BundleError::InvalidBundleVersion`] if `bundle_version` is incompatible with the favor
+    ///   `Pr` (e.g. a ZSA protocol version with `Pr=OrchardVanilla`, or vice versa)
     pub fn try_from_parts(
         actions: NonEmpty<Action<<Authorized as Authorization>::SpendAuth, Pr>>,
         flags: Flags,
@@ -1651,6 +1656,7 @@ pub(crate) mod tests {
         );
     }
 
+    #[test]
     fn empty_commitments_are_domain_separated() {
         use crate::bundle::commitments::{hash_bundle_auth_empty, hash_bundle_txid_empty};
         use crate::ValuePool;

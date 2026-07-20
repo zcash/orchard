@@ -2411,6 +2411,7 @@ mod tests {
         shielding_bundle::<OrchardZSA>(BundleVersion::zsa())
     }
 
+    #[test]
     fn coinbase_bundle_builds_for_post_nu6_3() {
         let mut rng = OsRng;
 
