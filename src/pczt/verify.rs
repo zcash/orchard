@@ -1,9 +1,49 @@
+use core::fmt;
+
 use crate::{
     keys::{FullViewingKey, SpendValidatingKey},
-    note::{ExtractedNoteCommitment, Rho},
+    note::{AssetBase, ExtractedNoteCommitment, Rho},
     value::ValueCommitment,
     Note,
 };
+
+impl super::Bundle {
+    /// If this bundle disables cross-address transfers, verifies that every action's
+    /// output is addressed to the same expanded receiver (`(g_d, pk_d)`) as its spent
+    /// note. This is a no-op for bundles that permit cross-address transfers.
+    ///
+    /// When the restriction applies, it requires `spend.recipient` and `output.recipient`
+    /// to be set on every action. Signers should always call this before signing. The
+    /// equivalent structural checks are also performed by [`Bundle::finalize_io`] and
+    /// `Bundle::create_proof`.
+    ///
+    /// The post-NU6.3 circuit supports enforcing the restriction; older circuit versions
+    /// do not. The prover and verifier APIs reject restricted bundles for those keys.
+    /// (That is not a security restriction; for security, the consensus verifier must use
+    /// the correct key for the epoch and pool.)
+    ///
+    /// [`Bundle::finalize_io`]: super::Bundle::finalize_io
+    pub fn verify_cross_address_restriction(&self) -> Result<(), VerifyError> {
+        if !self.flags.cross_address_enabled() {
+            for action in &self.actions {
+                let spend_recipient = action
+                    .spend
+                    .recipient
+                    .ok_or(VerifyError::MissingRecipient)?;
+                let output_recipient = action
+                    .output
+                    .recipient
+                    .ok_or(VerifyError::MissingRecipient)?;
+
+                if !spend_recipient.same_expanded_receiver(&output_recipient) {
+                    return Err(VerifyError::DisallowedCrossAddressTransfer);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
 
 impl super::Action {
     /// Verifies that the `cv_net` field is consistent with the note fields.
@@ -20,7 +60,7 @@ impl super::Action {
             .clone()
             .ok_or(VerifyError::MissingValueCommitTrapdoor)?;
 
-        let cv_net = ValueCommitment::derive(spend_value - output_value, rcv);
+        let cv_net = ValueCommitment::derive(spend_value - output_value, rcv, AssetBase::zatoshi());
         if cv_net.to_bytes() == self.cv_net.to_bytes() {
             Ok(())
         } else {
@@ -69,8 +109,10 @@ impl super::Spend {
         let note = Note::from_parts(
             self.recipient.ok_or(VerifyError::MissingRecipient)?,
             self.value.ok_or(VerifyError::MissingValue)?,
+            AssetBase::zatoshi(),
             self.rho.ok_or(VerifyError::MissingRho)?,
             self.rseed.ok_or(VerifyError::MissingRandomSeed)?,
+            self.note_version,
         )
         .into_option()
         .ok_or(VerifyError::InvalidSpendNote)?;
@@ -127,8 +169,10 @@ impl super::Output {
         let note = Note::from_parts(
             self.recipient.ok_or(VerifyError::MissingRecipient)?,
             self.value.ok_or(VerifyError::MissingValue)?,
+            AssetBase::zatoshi(),
             Rho::from_nf_old(spend.nullifier),
             self.rseed.ok_or(VerifyError::MissingRandomSeed)?,
+            self.note_version,
         )
         .into_option()
         .ok_or(VerifyError::InvalidOutputNote)?;
@@ -143,7 +187,11 @@ impl super::Output {
 
 /// Errors that can occur while verifying a PCZT bundle.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum VerifyError {
+    /// An action's output is addressed differently than its spent note, but the bundle's pool
+    /// restriction disables cross-address transfers.
+    DisallowedCrossAddressTransfer,
     /// The output note's components do not produce the expected `cmx`.
     InvalidExtractedNoteCommitment,
     /// The spent note's components do not produce the expected `nullifier`.
@@ -162,7 +210,7 @@ pub enum VerifyError {
     MissingFullViewingKey,
     /// `nullifier` verification requires `rseed` to be set.
     MissingRandomSeed,
-    /// `nullifier` verification requires `recipient` to be set.
+    /// Verification requires `recipient` to be set.
     MissingRecipient,
     /// `nullifier` verification requires `rho` to be set.
     MissingRho,
@@ -175,3 +223,47 @@ pub enum VerifyError {
     /// The provided `fvk` does not own the spent note.
     WrongFvkForNote,
 }
+
+impl fmt::Display for VerifyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            VerifyError::DisallowedCrossAddressTransfer => write!(
+                f,
+                "an action outputs to a different expanded receiver than it spends from, but the \
+                 bundle disables cross-address transfers"
+            ),
+            VerifyError::InvalidExtractedNoteCommitment => {
+                write!(f, "output note doesn't match `cmx`")
+            }
+            VerifyError::InvalidNullifier => write!(f, "spent note doesn't match `nullifier`"),
+            VerifyError::InvalidOutputNote => write!(f, "invalid output note"),
+            VerifyError::InvalidRandomizedVerificationKey => {
+                write!(f, "spend's `fvk` and `alpha` do not match `rk`")
+            }
+            VerifyError::InvalidSpendNote => write!(f, "invalid spent note"),
+            VerifyError::InvalidValueCommitment => {
+                write!(f, "`cv_net` doesn't match the note values and `rcv`")
+            }
+            VerifyError::MismatchedFullViewingKey => {
+                write!(f, "Provided full viewing key doesn't match the `fvk` field")
+            }
+            VerifyError::MissingFullViewingKey => write!(f, "`fvk` missing for dummy note"),
+            VerifyError::MissingRandomSeed => {
+                write!(f, "`rseed` missing for `nullifier` verification")
+            }
+            VerifyError::MissingRecipient => write!(f, "`recipient` missing for verification"),
+            VerifyError::MissingRho => write!(f, "`rho` missing for `nullifier` verification"),
+            VerifyError::MissingSpendAuthRandomizer => {
+                write!(f, "`alpha` missing for `rk` verification")
+            }
+            VerifyError::MissingValue => write!(f, "`value` missing"),
+            VerifyError::MissingValueCommitTrapdoor => {
+                write!(f, "`rcv` missing for `cv_net` verification")
+            }
+            VerifyError::WrongFvkForNote => write!(f, "`fvk` does not own the action's spent note"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for VerifyError {}

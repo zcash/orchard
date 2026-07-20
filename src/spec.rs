@@ -24,6 +24,7 @@ pub(crate) use zcash_spec::PrfExpand;
 
 /// A Pallas point that is guaranteed to not be the identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(crate) struct NonIdentityPallasPoint(pallas::Point);
 
 impl Default for NonIdentityPallasPoint {
@@ -39,6 +40,10 @@ impl ConditionallySelectable for NonIdentityPallasPoint {
 }
 
 impl NonIdentityPallasPoint {
+    /// Decodes a non-identity Pallas point from its canonical 32-byte encoding,
+    /// returning `None` if the bytes do not decode to a valid curve point or if
+    /// they decode to the identity.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Point::from_bytes(bytes)
             .and_then(|p| CtOption::new(NonIdentityPallasPoint(p), !p.is_identity()))
@@ -318,13 +323,15 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
 mod tests {
     use super::{i2lebsp, lebs2ip};
 
-    use group::Group;
-    use halo2_proofs::arithmetic::CurveExt;
-    use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
     #[test]
+    #[cfg(feature = "circuit")]
     fn diversify_hash_substitution() {
+        use group::Group;
+        use halo2_proofs::arithmetic::CurveExt;
+        use pasta_curves::pallas;
+
         assert!(!bool::from(
             pallas::Point::hash_to_curve("z.cash:Orchard-gd")(&[]).is_identity()
         ));

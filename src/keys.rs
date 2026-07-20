@@ -1,9 +1,9 @@
 //! Key structures for Orchard.
 
 use alloc::vec::Vec;
-use core2::io::{self, Read, Write};
+use corez::io::{self, Read, Write};
 
-use ::zip32::{AccountId, ChildIndex};
+use ::zip32::ChildIndex;
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
@@ -28,7 +28,7 @@ use crate::{
     zip32::{self, ExtendedSpendingKey},
 };
 
-pub use ::zip32::{DiversifierIndex, Scope};
+pub use ::zip32::{AccountId, DiversifierIndex, Scope};
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
@@ -54,6 +54,7 @@ impl SpendingKey {
     /// derived according to [ZIP 32].
     ///
     /// [ZIP 32]: https://zips.z.cash/zip-0032
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn random(rng: &mut impl RngCore) -> Self {
         loop {
             let mut bytes = [0; 32];
@@ -121,7 +122,8 @@ pub struct SpendAuthorizingKey(redpallas::SigningKey<SpendAuth>);
 
 impl SpendAuthorizingKey {
     /// Derives ask from sk. Internal use only, does not enforce all constraints.
-    fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+    pub(crate) fn derive_inner(sk: &SpendingKey) -> pallas::Scalar {
         to_scalar(PrfExpand::ORCHARD_ASK.with(&sk.0))
     }
 
@@ -226,9 +228,12 @@ impl SpendValidatingKey {
 /// [`Note`]: crate::note::Note
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(crate) struct NullifierDerivingKey(pallas::Base);
 
 impl NullifierDerivingKey {
+    /// Returns the inner base field element.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn inner(&self) -> pallas::Base {
         self.0
     }
@@ -267,6 +272,7 @@ impl NullifierDerivingKey {
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
 #[derive(Copy, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(crate) struct CommitIvkRandomness(pallas::Scalar);
 
 impl From<&SpendingKey> for CommitIvkRandomness {
@@ -276,6 +282,8 @@ impl From<&SpendingKey> for CommitIvkRandomness {
 }
 
 impl CommitIvkRandomness {
+    /// Returns the inner scalar value.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn inner(&self) -> pallas::Scalar {
         self.0
     }
@@ -334,11 +342,14 @@ impl From<FullViewingKey> for SpendValidatingKey {
 }
 
 impl FullViewingKey {
+    /// Returns the nullifier deriving key for this full viewing key.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
         &self.nk
     }
 
     /// Returns either `rivk` or `rivk_internal` based on `scope`.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn rivk(&self, scope: Scope) -> CommitIvkRandomness {
         match scope {
             Scope::External => self.rivk,
@@ -745,6 +756,8 @@ impl AsRef<[u8; 32]> for OutgoingViewingKey {
 pub struct DiversifiedTransmissionKey(NonIdentityPallasPoint);
 
 impl DiversifiedTransmissionKey {
+    /// Returns the inner `NonIdentityPallasPoint`.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn inner(&self) -> NonIdentityPallasPoint {
         self.0
     }
@@ -765,6 +778,7 @@ impl DiversifiedTransmissionKey {
     }
 
     /// $repr_P(self)$
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn to_bytes(self) -> [u8; 32] {
         self.0.to_bytes()
     }
@@ -967,17 +981,11 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
-    use ff::PrimeField;
     use proptest::prelude::*;
 
     use super::{
         testing::{arb_diversifier_index, arb_diversifier_key, arb_esk, arb_spending_key},
         *,
-    };
-    use crate::{
-        note::{ExtractedNoteCommitment, RandomSeed, Rho},
-        value::NoteValue,
-        Note,
     };
 
     #[test]
@@ -1025,16 +1033,35 @@ mod tests {
         }
     }
 
+    // TODO Constance: update the zcash_test_vectors repository so that keys.rs can be
+    // generated with post-quantum keys and issuance keys.
+    /*
+    #[cfg(feature = "zsa-issuance")]
     #[test]
     fn test_vectors() {
-        for tv in crate::test_vectors::keys::test_vectors() {
+        use {
+            crate::{
+                issuance::auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
+                note::{AssetBase, ExtractedNoteCommitment, RandomSeed, Rho},
+                value::NoteValue,
+                Note,
+            },
+            ff::PrimeField,
+        };
+
+        for tv in crate::test_vectors::keys::TEST_VECTORS {
             let sk = SpendingKey::from_bytes(tv.sk).unwrap();
 
             let ask: SpendAuthorizingKey = (&sk).into();
             assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
 
+            let isk = IssueAuthKey::<ZSASchnorr>::from_bytes(&tv.isk).unwrap();
+
             let ak: SpendValidatingKey = (&ask).into();
             assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
+
+            let ik = IssueValidatingKey::from(&isk);
+            assert_eq!(&ik.encode(), &tv.ik_encoding);
 
             let nk: NullifierDerivingKey = (&sk).into();
             assert_eq!(nk.0.to_repr(), tv.nk);
@@ -1056,18 +1083,20 @@ mod tests {
             assert_eq!(&addr.pk_d().to_bytes(), &tv.default_pk_d);
 
             let rho = Rho::from_bytes(&tv.note_rho).unwrap();
-            let note = Note::from_parts(
+            let orchard_note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),
+                AssetBase::from_bytes(&tv.asset).unwrap(),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
+                NoteVersion::V2,
             )
             .unwrap();
 
-            let cmx: ExtractedNoteCommitment = note.commitment().into();
+            let cmx: ExtractedNoteCommitment = orchard_note.commitment().into();
             assert_eq!(cmx.to_bytes(), tv.note_cmx);
 
-            assert_eq!(note.nullifier(&fvk).to_bytes(), tv.note_nf);
+            assert_eq!(orchard_note.nullifier(&fvk).to_bytes(), tv.note_nf);
 
             let internal_rivk = fvk.rivk(Scope::Internal);
             assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);
@@ -1080,4 +1109,5 @@ mod tests {
             assert_eq!(internal_ovk.0, tv.internal_ovk);
         }
     }
+    */
 }

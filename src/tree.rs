@@ -62,8 +62,9 @@ impl Anchor {
     /// The anchor of the empty Orchard note commitment tree.
     ///
     /// This anchor does not correspond to any valid anchor for a spend, so it
-    /// may only be used for coinbase bundles or in circumstances where Orchard
-    /// functionality is not active.
+    /// may only be used for bundles without real spends — e.g. coinbase bundles,
+    /// where the pool's consensus rules permit them — or in circumstances where
+    /// Orchard functionality is not active.
     pub fn empty_tree() -> Anchor {
         Anchor(MerkleHashOrchard::empty_root(Level::from(MERKLE_DEPTH_ORCHARD as u8)).0)
     }
@@ -115,6 +116,7 @@ impl From<incrementalmerkletree::MerklePath<MerkleHashOrchard, 32>> for MerklePa
 
 impl MerklePath {
     /// Generates a dummy Merkle path for use in dummy spent notes.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn dummy(mut rng: &mut impl RngCore) -> Self {
         MerklePath {
             position: rng.next_u32(),
@@ -183,6 +185,7 @@ impl MerkleHashOrchard {
     }
 
     /// Only used in the circuit.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn inner(&self) -> pallas::Base {
         self.0
     }
@@ -298,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_vectors() {
-        let tv_empty_roots = crate::test_vectors::commitment_tree::test_vectors().empty_roots;
+        let tv_empty_roots = crate::test_vectors::commitment_tree::TEST_VECTOR.empty_roots;
 
         for (height, root) in EMPTY_ROOTS.iter().enumerate() {
             assert_eq!(tv_empty_roots[height], root.to_bytes());
@@ -306,8 +309,8 @@ mod tests {
 
         let mut tree: ShardTree<MemoryShardStore<MerkleHashOrchard, u32>, 4, 3> =
             ShardTree::new(MemoryShardStore::empty(), 100);
-        for (i, tv) in crate::test_vectors::merkle_path::test_vectors()
-            .into_iter()
+        for (i, tv) in crate::test_vectors::merkle_path::TEST_VECTORS
+            .iter()
             .enumerate()
         {
             let checkpoint_id = u32::try_from(i).unwrap();
@@ -349,7 +352,7 @@ mod tests {
     fn empty_roots_incremental() {
         use incrementalmerkletree::Hashable;
 
-        let tv_empty_roots = crate::test_vectors::commitment_tree::test_vectors().empty_roots;
+        let tv_empty_roots = crate::test_vectors::commitment_tree::TEST_VECTOR.empty_roots;
 
         for (level, tv_root) in tv_empty_roots.iter().enumerate() {
             assert_eq!(
