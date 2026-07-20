@@ -30,8 +30,9 @@ use crate::{
         gadget::{add_chip::AddChip, assign_free_advice},
         note_commit::{gadgets::note_commit, NoteCommitChip},
         value_commit_orchard::gadgets::value_commit_orchard,
-        AdditionalZsaWitnesses, Config, OrchardCircuit, Witnesses, ANCHOR, CMX, CV_NET_X, CV_NET_Y,
-        ENABLE_OUTPUT, ENABLE_SPEND, NF_OLD, RK_X, RK_Y,
+        AdditionalZsaWitnesses, Config, OrchardCircuit, OrchardCircuitVersion, Witnesses, ANCHOR,
+        CMX, CV_NET_X, CV_NET_Y, DISABLE_CROSS_ADDRESS, ENABLE_OUTPUT, ENABLE_SPEND, NF_OLD, RK_X,
+        RK_Y,
     },
     constants::{OrchardFixedBases, OrchardFixedBasesFull, OrchardHashDomains},
     flavor::OrchardVanilla,
@@ -58,8 +59,11 @@ impl OrchardCircuit for OrchardVanilla {
 
         // Constrain v_old - v_new = magnitude * sign    (https://p.z.cash/ZKS:action-cv-net-integrity?partial).
         // Either v_old = 0, or calculated root = anchor (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
-        // Constrain v_old = 0 or enable_spends = 1      (https://p.z.cash/ZKS:action-enable-spend).
-        // Constrain v_new = 0 or enable_outputs = 1     (https://p.z.cash/ZKS:action-enable-output).
+        // Constrain v_old = 0 or enable_spend = 1       (https://p.z.cash/ZKS:action-enable-spend).
+        // Constrain v_new = 0 or enable_output = 1      (https://p.z.cash/ZKS:action-enable-output).
+        //
+        // This gate is also reused for the same-address check; see
+        // [`Circuit::synthesize_cross_address_checks`].
         let q_orchard = meta.selector();
         meta.create_gate("Orchard circuit checks", |meta| {
             let q_orchard = meta.query_selector(q_orchard);
@@ -71,8 +75,8 @@ impl OrchardCircuit for OrchardVanilla {
             let root = meta.query_advice(advices[4], Rotation::cur());
             let anchor = meta.query_advice(advices[5], Rotation::cur());
 
-            let enable_spends = meta.query_advice(advices[6], Rotation::cur());
-            let enable_outputs = meta.query_advice(advices[7], Rotation::cur());
+            let enable_spend = meta.query_advice(advices[6], Rotation::cur());
+            let enable_output = meta.query_advice(advices[7], Rotation::cur());
 
             let one = Expression::Constant(pallas::Base::one());
 
@@ -88,12 +92,12 @@ impl OrchardCircuit for OrchardVanilla {
                         v_old.clone() * (root - anchor),
                     ),
                     (
-                        "v_old = 0 or enable_spends = 1",
-                        v_old * (one.clone() - enable_spends),
+                        "v_old = 0 or enable_spend = 1",
+                        v_old * (one.clone() - enable_spend),
                     ),
                     (
-                        "v_new = 0 or enable_outputs = 1",
-                        v_new * (one - enable_outputs),
+                        "v_new = 0 or enable_output = 1",
+                        v_new * (one - enable_output),
                     ),
                 ],
             )
@@ -236,11 +240,64 @@ impl OrchardCircuit for OrchardVanilla {
         config: Self::Config,
         mut layouter: impl Layouter<pallas::Base>,
     ) -> Result<(), plonk::Error> {
+        if circuit.circuit_version == OrchardCircuitVersion::ZSA {
+            return Err(plonk::Error::Synthesis);
+        }
+
+        let addrs = circuit.synthesize_base(&config, &mut layouter)?;
+
+        if circuit.circuit_version.supports_cross_address_restriction() {
+            Witnesses::synthesize_cross_address_checks(&config, &mut layouter, &addrs)?;
+        }
+
+        Ok(())
+    }
+
+    /// For OrchardVanilla circuits, `build_additional_zsa_witnesses` returns `Value::unknown()`.
+    ///
+    /// # Panics
+    /// Panics if the asset is not zatoshi or if `split_flag` is true.
+    fn build_additional_zsa_witnesses(
+        _: pallas::Base,
+        asset: AssetBase,
+        split_flag: bool,
+    ) -> Value<AdditionalZsaWitnesses> {
+        if !(bool::from(asset.is_zatoshi())) {
+            panic!("asset must be zatoshi in OrchardVanilla circuit");
+        }
+        if split_flag {
+            panic!("split_flag must be false in OrchardVanilla circuit");
+        }
+        Value::unknown()
+    }
+}
+
+/// Cells carrying the addresses of an action's spent and newly created notes, returned
+/// from the shared synthesis logic so that circuit versions can impose additional
+/// constraints on them.
+struct AddressPoints {
+    g_d_old: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+    pk_d_old: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+    g_d_new: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+    pk_d_new: NonIdentityPoint<pallas::Affine, EccChip<OrchardFixedBases>>,
+}
+
+impl Witnesses {
+    /// Synthesizes the Orchard Action checks common to every circuit version,
+    /// parameterized by `self.circuit_version`, returning the cells carrying the old
+    /// and new note addresses so that circuit versions can impose additional
+    /// constraints on them.
+    #[allow(non_snake_case)]
+    fn synthesize_base(
+        &self,
+        config: &Config<PallasLookupRangeCheckConfig>,
+        layouter: &mut impl Layouter<pallas::Base>,
+    ) -> Result<AddressPoints, plonk::Error> {
         // Load the Sinsemilla generator lookup table used by the whole circuit.
-        SinsemillaChip::load(config.sinsemilla_config_1.clone(), &mut layouter)?;
+        SinsemillaChip::load(config.sinsemilla_config_1.clone(), layouter)?;
 
         // Construct the ECC chip.
-        let ecc_chip = config.ecc_chip(circuit.circuit_version.halo2_version());
+        let ecc_chip = config.ecc_chip(self.circuit_version.halo2_version());
 
         // Witness private inputs that are used across multiple checks.
         let (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new) = {
@@ -248,32 +305,32 @@ impl OrchardCircuit for OrchardVanilla {
             let psi_old = assign_free_advice(
                 layouter.namespace(|| "witness psi_old"),
                 config.advices[0],
-                circuit.psi_old,
+                self.psi_old,
             )?;
 
             // Witness rho_old
             let rho_old = assign_free_advice(
                 layouter.namespace(|| "witness rho_old"),
                 config.advices[0],
-                circuit.rho_old.map(|rho| rho.into_inner()),
+                self.rho_old.map(|rho| rho.into_inner()),
             )?;
 
             // Witness cm_old
             let cm_old = Point::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "cm_old"),
-                circuit.cm_old.as_ref().map(|cm| cm.inner().to_affine()),
+                self.cm_old.as_ref().map(|cm| cm.inner().to_affine()),
             )?;
 
             // Witness g_d_old
             let g_d_old = NonIdentityPoint::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "gd_old"),
-                circuit.g_d_old.as_ref().map(|gd| gd.to_affine()),
+                self.g_d_old.as_ref().map(|gd| gd.to_affine()),
             )?;
 
             // Witness ak_P.
-            let ak_P: Value<pallas::Point> = circuit.ak.as_ref().map(|ak| ak.into());
+            let ak_P: Value<pallas::Point> = self.ak.as_ref().map(|ak| ak.into());
             let ak_P = NonIdentityPoint::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "witness ak_P"),
@@ -284,21 +341,21 @@ impl OrchardCircuit for OrchardVanilla {
             let nk = assign_free_advice(
                 layouter.namespace(|| "witness nk"),
                 config.advices[0],
-                circuit.nk.map(|nk| nk.inner()),
+                self.nk.map(|nk| nk.inner()),
             )?;
 
             // Witness v_old.
             let v_old = assign_free_advice(
                 layouter.namespace(|| "witness v_old"),
                 config.advices[0],
-                circuit.v_old,
+                self.v_old,
             )?;
 
             // Witness v_new.
             let v_new = assign_free_advice(
                 layouter.namespace(|| "witness v_new"),
                 config.advices[0],
-                circuit.v_new,
+                self.v_new,
             )?;
 
             (psi_old, rho_old, cm_old, g_d_old, ak_P, nk, v_old, v_new)
@@ -306,13 +363,13 @@ impl OrchardCircuit for OrchardVanilla {
 
         // Merkle path validity check (https://p.z.cash/ZKS:action-merkle-path-validity?partial).
         let root = {
-            let path = circuit
+            let path = self
                 .path
                 .map(|typed_path| typed_path.map(|node| node.inner()));
             let merkle_inputs = MerklePath::construct(
                 [config.merkle_chip_1(), config.merkle_chip_2()],
                 OrchardHashDomains::MerkleCrh,
-                circuit.pos,
+                self.pos,
                 path,
             );
             let leaf = cm_old.extract_p().inner().clone();
@@ -323,7 +380,7 @@ impl OrchardCircuit for OrchardVanilla {
         let v_net_magnitude_sign = {
             // Witness the magnitude and sign of v_net = v_old - v_new
             let v_net_magnitude_sign = {
-                let v_net = circuit.v_old - circuit.v_new;
+                let v_net = self.v_old - self.v_new;
                 let magnitude_sign = v_net.map(|v_net| {
                     let (magnitude, sign) = v_net.magnitude_sign();
 
@@ -354,7 +411,7 @@ impl OrchardCircuit for OrchardVanilla {
             let rcv = ScalarFixed::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "rcv"),
-                circuit.rcv.as_ref().map(|rcv| rcv.inner()),
+                self.rcv.as_ref().map(|rcv| rcv.inner()),
             )?;
 
             let cv_net = value_commit_orchard(
@@ -395,11 +452,8 @@ impl OrchardCircuit for OrchardVanilla {
 
         // Spend authority (https://p.z.cash/ZKS:action-spend-authority)
         {
-            let alpha = ScalarFixed::new(
-                ecc_chip.clone(),
-                layouter.namespace(|| "alpha"),
-                circuit.alpha,
-            )?;
+            let alpha =
+                ScalarFixed::new(ecc_chip.clone(), layouter.namespace(|| "alpha"), self.alpha)?;
 
             // alpha_commitment = [alpha] SpendAuthG
             let (alpha_commitment, _) = {
@@ -423,7 +477,7 @@ impl OrchardCircuit for OrchardVanilla {
                 let rivk = ScalarFixed::new(
                     ecc_chip.clone(),
                     layouter.namespace(|| "rivk"),
-                    circuit.rivk.map(|rivk| rivk.inner()),
+                    self.rivk.map(|rivk| rivk.inner()),
                 )?;
 
                 commit_ivk(
@@ -454,9 +508,7 @@ impl OrchardCircuit for OrchardVanilla {
             let pk_d_old = NonIdentityPoint::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "witness pk_d_old"),
-                circuit
-                    .pk_d_old
-                    .map(|pk_d_old| pk_d_old.inner().to_affine()),
+                self.pk_d_old.map(|pk_d_old| pk_d_old.inner().to_affine()),
             )?;
             derived_pk_d_old
                 .constrain_equal(layouter.namespace(|| "pk_d_old equality"), &pk_d_old)?;
@@ -469,7 +521,7 @@ impl OrchardCircuit for OrchardVanilla {
             let rcm_old = ScalarFixed::new(
                 ecc_chip.clone(),
                 layouter.namespace(|| "rcm_old"),
-                circuit.rcm_old.as_ref().map(|rcm_old| rcm_old.inner()),
+                self.rcm_old.as_ref().map(|rcm_old| rcm_old.inner()),
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
@@ -478,7 +530,7 @@ impl OrchardCircuit for OrchardVanilla {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_1(),
-                config.ecc_chip(circuit.circuit_version.halo2_version()),
+                config.ecc_chip(self.circuit_version.halo2_version()),
                 config.note_commit_chip_old(),
                 g_d_old.inner(),
                 pk_d_old.inner(),
@@ -493,30 +545,30 @@ impl OrchardCircuit for OrchardVanilla {
             derived_cm_old.constrain_equal(layouter.namespace(|| "cm_old equality"), &cm_old)?;
         }
 
+        // Witness g_d_new, used in the new note commitment integrity check below and,
+        // for the post-NU 6.3 circuit, in the cross-address checks.
+        let g_d_new = {
+            let g_d_new = self.g_d_new.map(|g_d_new| g_d_new.to_affine());
+            NonIdentityPoint::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "witness g_d_new_star"),
+                g_d_new,
+            )?
+        };
+
+        // Witness pk_d_new, used in the new note commitment integrity check below and,
+        // for the post-NU 6.3 circuit, in the cross-address checks.
+        let pk_d_new = {
+            let pk_d_new = self.pk_d_new.map(|pk_d_new| pk_d_new.inner().to_affine());
+            NonIdentityPoint::new(
+                ecc_chip.clone(),
+                layouter.namespace(|| "witness pk_d_new"),
+                pk_d_new,
+            )?
+        };
+
         // New note commitment integrity (https://p.z.cash/ZKS:action-cmx-new-integrity?partial).
         {
-            // Witness g_d_new
-            let g_d_new = {
-                let g_d_new = circuit.g_d_new.map(|g_d_new| g_d_new.to_affine());
-                NonIdentityPoint::new(
-                    ecc_chip.clone(),
-                    layouter.namespace(|| "witness g_d_new_star"),
-                    g_d_new,
-                )?
-            };
-
-            // Witness pk_d_new
-            let pk_d_new = {
-                let pk_d_new = circuit
-                    .pk_d_new
-                    .map(|pk_d_new| pk_d_new.inner().to_affine());
-                NonIdentityPoint::new(
-                    ecc_chip.clone(),
-                    layouter.namespace(|| "witness pk_d_new"),
-                    pk_d_new,
-                )?
-            };
-
             // ρ^new = nf^old
             let rho_new = nf_old.inner().clone();
 
@@ -524,13 +576,13 @@ impl OrchardCircuit for OrchardVanilla {
             let psi_new = assign_free_advice(
                 layouter.namespace(|| "witness psi_new"),
                 config.advices[0],
-                circuit.psi_new,
+                self.psi_new,
             )?;
 
             let rcm_new = ScalarFixed::new(
                 ecc_chip,
                 layouter.namespace(|| "rcm_new"),
-                circuit.rcm_new.as_ref().map(|rcm_new| rcm_new.inner()),
+                self.rcm_new.as_ref().map(|rcm_new| rcm_new.inner()),
             )?;
 
             // g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)
@@ -539,7 +591,7 @@ impl OrchardCircuit for OrchardVanilla {
                     "g★_d || pk★_d || i2lebsp_{64}(v) || i2lebsp_{255}(rho) || i2lebsp_{255}(psi)"
                 }),
                 config.sinsemilla_chip_2(),
-                config.ecc_chip(circuit.circuit_version.halo2_version()),
+                config.ecc_chip(self.circuit_version.halo2_version()),
                 config.note_commit_chip_new(),
                 g_d_new.inner(),
                 pk_d_new.inner(),
@@ -585,7 +637,7 @@ impl OrchardCircuit for OrchardVanilla {
                 )?;
 
                 region.assign_advice_from_instance(
-                    || "enable spends",
+                    || "enable spend",
                     config.primary,
                     ENABLE_SPEND,
                     config.advices[6],
@@ -593,7 +645,7 @@ impl OrchardCircuit for OrchardVanilla {
                 )?;
 
                 region.assign_advice_from_instance(
-                    || "enable outputs",
+                    || "enable output",
                     config.primary,
                     ENABLE_OUTPUT,
                     config.advices[7],
@@ -604,25 +656,165 @@ impl OrchardCircuit for OrchardVanilla {
             },
         )?;
 
-        Ok(())
+        Ok(AddressPoints {
+            g_d_old,
+            pk_d_old,
+            g_d_new,
+            pk_d_new,
+        })
     }
 
-    /// For OrchardVanilla circuits, `build_additional_zsa_witnesses` returns `Value::unknown()`.
+    /// Enforces the post-NU 6.3 cross-address restriction for one action: when
+    /// `disableCrossAddress` is nonzero, the spent note and output note must be
+    /// addressed to the same expanded receiver, meaning equal `(g_d, pk_d)`.
     ///
-    /// # Panics
-    /// Panics if the asset is not zatoshi or if `split_flag` is true.
-    fn build_additional_zsa_witnesses(
-        _: pallas::Base,
-        asset: AssetBase,
-        split_flag: bool,
-    ) -> Value<AdditionalZsaWitnesses> {
-        if !(bool::from(asset.is_zatoshi())) {
-            panic!("asset must be zatoshi in OrchardVanilla circuit");
-        }
-        if split_flag {
-            panic!("split_flag must be false in OrchardVanilla circuit");
-        }
-        Value::unknown()
+    /// This reuses the existing "Orchard circuit checks" gate instead of adding a
+    /// new gate. The gate already has a product constraint,
+    /// `v_old * (root - anchor) = 0`, with exactly the shape needed for
+    /// `disableCrossAddress * (old_coord - new_coord) = 0`.
+    ///
+    /// The post-NU 6.3 circuit enables that gate on four extra rows, one per affine coordinate of
+    /// `(g_d, pk_d)`, with each row wired as:
+    ///
+    /// ```text
+    /// v_old          <- disableCrossAddress
+    /// v_new          <- 0 (constant)
+    /// magnitude      <- disableCrossAddress
+    /// sign           <- 1 (constant)
+    /// root           <- old coordinate
+    /// anchor         <- new coordinate
+    /// enable_spend   <- 1 (constant)
+    /// enable_output  <- 1 (constant)
+    /// ```
+    ///
+    /// With this layout, the gate constraints become:
+    ///
+    /// ```text
+    /// v_old - v_new = magnitude * sign  ->  disableCrossAddress - 0 = disableCrossAddress * 1
+    /// v_old * (root - anchor) = 0       ->  disableCrossAddress * (old_coord - new_coord) = 0
+    /// v_old * (1 - enable_spend) = 0    ->  disableCrossAddress * (1 - 1) = 0
+    /// v_new * (1 - enable_output) = 0   ->  0 * (1 - 1) = 0
+    /// ```
+    ///
+    /// The second line is the actual cross-address check. Any nonzero
+    /// `disableCrossAddress` value forces each old coordinate to equal the
+    /// corresponding new coordinate. The public API encodes `disableCrossAddress`
+    /// as 0 or 1, but this algebra does not rely on a boolean constraint.
+    ///
+    /// The two otherwise-unused advice columns are also filled with copies of
+    /// `disableCrossAddress` so these rows occupy every advice column; that prevents
+    /// the floor planner from overlapping another selector-enabled region with the
+    /// check rows.
+    fn synthesize_cross_address_checks(
+        config: &Config<PallasLookupRangeCheckConfig>,
+        layouter: &mut impl Layouter<pallas::Base>,
+        addrs: &AddressPoints,
+    ) -> Result<(), plonk::Error> {
+        let AddressPoints {
+            g_d_old,
+            pk_d_old,
+            g_d_new,
+            pk_d_new,
+        } = addrs;
+
+        layouter.assign_region(
+            || "post-NU 6.3 cross-address checks",
+            |mut region| {
+                let coordinate_checks = [
+                    ("g_d x", g_d_old.inner().x(), g_d_new.inner().x()),
+                    ("g_d y", g_d_old.inner().y(), g_d_new.inner().y()),
+                    ("pk_d x", pk_d_old.inner().x(), pk_d_new.inner().x()),
+                    ("pk_d y", pk_d_old.inner().y(), pk_d_new.inner().y()),
+                ];
+
+                for (offset, (label, old_coord, new_coord)) in
+                    coordinate_checks.into_iter().enumerate()
+                {
+                    // Copy disableCrossAddress from the public input at
+                    // primary[DISABLE_CROSS_ADDRESS] into advices[0] for this
+                    // coordinate-check row.
+                    let cross_address_disabled = region.assign_advice_from_instance(
+                        || "disableCrossAddress",
+                        config.primary,
+                        DISABLE_CROSS_ADDRESS,
+                        config.advices[0],
+                        offset,
+                    )?;
+
+                    // Fill the v_new, magnitude, and sign cells so the reused
+                    // value-balance constraint reads:
+                    // disableCrossAddress - 0 = disableCrossAddress * 1.
+                    region.assign_advice_from_constant(
+                        || "zero",
+                        config.advices[1],
+                        offset,
+                        pallas::Base::zero(),
+                    )?;
+                    cross_address_disabled.copy_advice(
+                        || "disableCrossAddress magnitude",
+                        &mut region,
+                        config.advices[2],
+                        offset,
+                    )?;
+                    region.assign_advice_from_constant(
+                        || "positive sign",
+                        config.advices[3],
+                        offset,
+                        pallas::Base::one(),
+                    )?;
+
+                    // Copy the old coordinate into the gate's root cell and the
+                    // new coordinate into its anchor cell for the equality check.
+                    old_coord.copy_advice(
+                        || format!("old {label}"),
+                        &mut region,
+                        config.advices[4],
+                        offset,
+                    )?;
+                    new_coord.copy_advice(
+                        || format!("new {label}"),
+                        &mut region,
+                        config.advices[5],
+                        offset,
+                    )?;
+
+                    // Set both enable flags to one so the unrelated enable checks
+                    // in q_orchard are neutralized on these rows.
+                    region.assign_advice_from_constant(
+                        || "one (neutralize enable_spend check)",
+                        config.advices[6],
+                        offset,
+                        pallas::Base::one(),
+                    )?;
+                    region.assign_advice_from_constant(
+                        || "one (neutralize enable_output check)",
+                        config.advices[7],
+                        offset,
+                        pallas::Base::one(),
+                    )?;
+
+                    // Occupy the otherwise-unused rightmost advice columns so the
+                    // floor planner cannot lay out another region (and enable its
+                    // gate) on these rows.
+                    cross_address_disabled.copy_advice(
+                        || "disableCrossAddress padding",
+                        &mut region,
+                        config.advices[8],
+                        offset,
+                    )?;
+                    cross_address_disabled.copy_advice(
+                        || "disableCrossAddress padding",
+                        &mut region,
+                        config.advices[9],
+                        offset,
+                    )?;
+
+                    config.q_orchard.enable(&mut region, offset)?;
+                }
+
+                Ok(())
+            },
+        )
     }
 }
 
@@ -633,26 +825,48 @@ mod tests {
 
     use ff::Field;
     use halo2_proofs::{circuit::Value, dev::MockProver};
-    use pasta_curves::pallas;
+    use pasta_curves::{pallas, vesta};
     use rand::{rngs::OsRng, RngCore};
 
     use crate::{
-        bundle::Flags,
+        bundle::{BundleVersion, Flags},
         circuit::{
-            Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, Witnesses, K,
+            Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, SingleVerifier,
+            VerifyingKey, Witnesses, K,
         },
         flavor::OrchardVanilla,
         keys::SpendValidatingKey,
-        note::{AssetBase, Note, Rho},
+        note::{AssetBase, Note, NoteVersion, Rho},
         tree::MerklePath,
         value::{ValueCommitTrapdoor, ValueCommitment},
     };
 
+    /// Generates a circuit and instance whose output note is addressed to an expanded
+    /// receiver distinct from the spent note's.
     fn generate_circuit_instance<R: RngCore>(
-        mut rng: R,
+        rng: R,
         circuit_version: OrchardCircuitVersion,
     ) -> (Circuit<OrchardVanilla>, Instance) {
-        let (_, fvk, spent_note) = Note::dummy(&mut rng, None);
+        generate_circuit_instance_inner(rng, circuit_version, false)
+    }
+
+    /// Generates a circuit and instance whose output note is addressed to the spent
+    /// note's expanded receiver, as the cross-address restriction requires.
+    fn generate_self_transfer_circuit_instance<R: RngCore>(
+        rng: R,
+        circuit_version: OrchardCircuitVersion,
+    ) -> (Circuit<OrchardVanilla>, Instance) {
+        generate_circuit_instance_inner(rng, circuit_version, true)
+    }
+
+    fn generate_circuit_instance_inner<R: RngCore>(
+        mut rng: R,
+        circuit_version: OrchardCircuitVersion,
+        output_matches_spend: bool,
+    ) -> (Circuit<OrchardVanilla>, Instance) {
+        // Note Version does not matter for this
+        let note_version = NoteVersion::V2;
+        let (_, fvk, spent_note) = Note::dummy(&mut rng, None, note_version);
 
         let sender_address = spent_note.recipient();
         let nk = *fvk.nk();
@@ -663,7 +877,23 @@ mod tests {
         let alpha = pallas::Scalar::random(&mut rng);
         let rk = ak.randomize(&alpha);
 
-        let (_, _, output_note) = Note::dummy(&mut rng, Some(rho));
+        let output_note = if output_matches_spend {
+            Note::new(
+                sender_address,
+                spent_note.value(),
+                AssetBase::zatoshi(),
+                rho,
+                note_version,
+                &mut rng,
+            )
+        } else {
+            loop {
+                let (_, _, output_note) = Note::dummy(&mut rng, Some(rho), note_version);
+                if !sender_address.same_expanded_receiver(&output_note.recipient()) {
+                    break output_note;
+                }
+            }
+        };
         let cmx = output_note.commitment().into();
 
         let value = spent_note.value() - output_note.value();
@@ -683,8 +913,8 @@ mod tests {
                     pk_d_old: Value::known(*sender_address.pk_d()),
                     v_old: Value::known(spent_note.value()),
                     rho_old: Value::known(spent_note.rho()),
-                    psi_old: Value::known(spent_note.rseed().psi(&spent_note.rho())),
-                    rcm_old: Value::known(spent_note.rseed().rcm(&spent_note.rho())),
+                    psi_old: Value::known(spent_note.psi()),
+                    rcm_old: Value::known(spent_note.rcm()),
                     cm_old: Value::known(spent_note.commitment()),
                     alpha: Value::known(alpha),
                     ak: Value::known(ak),
@@ -693,11 +923,10 @@ mod tests {
                     g_d_new: Value::known(output_note.recipient().g_d()),
                     pk_d_new: Value::known(*output_note.recipient().pk_d()),
                     v_new: Value::known(output_note.value()),
-                    psi_new: Value::known(output_note.rseed().psi(&output_note.rho())),
-                    rcm_new: Value::known(output_note.rseed().rcm(&output_note.rho())),
+                    psi_new: Value::known(output_note.psi()),
+                    rcm_new: Value::known(output_note.rcm()),
                     rcv: Value::known(rcv),
-
-                    ..Witnesses::default()
+                    additional_zsa_witnesses: Value::unknown(),
                 },
                 phantom: core::marker::PhantomData,
             },
@@ -709,29 +938,52 @@ mod tests {
                 cmx,
                 enable_spend: true,
                 enable_output: true,
+                cross_address_disabled: false,
                 enable_zsa: false,
             },
         )
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum ProofFixtureEncoding {
+        LegacyTwoFlags,
+        PostNu6_3ThreeFlags,
     }
 
     fn write_test_case<W: std::io::Write>(
         mut w: W,
         instance: &Instance,
         proof: &Proof,
+        encoding: ProofFixtureEncoding,
     ) -> std::io::Result<()> {
         w.write_all(&instance.anchor().to_bytes())?;
         w.write_all(&instance.cv_net().to_bytes())?;
         w.write_all(&instance.nf_old().to_bytes())?;
         w.write_all(&<[u8; 32]>::from(instance.rk()))?;
         w.write_all(&instance.cmx().to_bytes())?;
-        w.write_all(&[
-            u8::from(instance.enable_spend()),
-            u8::from(instance.enable_output()),
-        ])?;
+        match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => {
+                w.write_all(&[
+                    u8::from(instance.enable_spend()),
+                    u8::from(instance.enable_output()),
+                ])?;
+            }
+            ProofFixtureEncoding::PostNu6_3ThreeFlags => {
+                w.write_all(&[
+                    u8::from(instance.enable_spend()),
+                    u8::from(instance.enable_output()),
+                    u8::from(instance.cross_address_disabled()),
+                ])?;
+            }
+        }
         w.write_all(proof.as_ref())?;
         Ok(())
     }
-    fn read_test_case<R: std::io::Read>(mut r: R) -> std::io::Result<(Instance, Proof)> {
+
+    fn read_test_case<R: std::io::Read>(
+        mut r: R,
+        encoding: ProofFixtureEncoding,
+    ) -> std::io::Result<(Instance, Proof)> {
         let read_32_bytes = |r: &mut R| {
             let mut ret = [0u8; 32];
             r.read_exact(&mut ret).unwrap();
@@ -746,6 +998,7 @@ mod tests {
                 _ => panic!("Unexpected non-boolean byte"),
             }
         };
+
         let anchor = crate::Anchor::from_bytes(read_32_bytes(&mut r)).unwrap();
         let cv_net = ValueCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let nf_old = crate::note::Nullifier::from_bytes(&read_32_bytes(&mut r)).unwrap();
@@ -753,44 +1006,205 @@ mod tests {
         let cmx = crate::note::ExtractedNoteCommitment::from_bytes(&read_32_bytes(&mut r)).unwrap();
         let enable_spend = read_bool(&mut r);
         let enable_output = read_bool(&mut r);
-        let enable_zsa = false;
-        let flags = Flags::from_parts(enable_spend, enable_output, enable_zsa);
+        let (cross_address_bit, bundle_version) = match encoding {
+            ProofFixtureEncoding::LegacyTwoFlags => (0, BundleVersion::orchard_v2()),
+            ProofFixtureEncoding::PostNu6_3ThreeFlags => {
+                // The fixture stores the instance-level *disable* bit; the NU6.3 flag
+                // byte carries the *enable* bit, so invert when reconstructing.
+                //
+                // The circuit is pool-agnostic; decode under Ironwood, the pool whose flag
+                // byte can represent `enableCrossAddress` either way (Orchard post-NU6.3
+                // rejects bit 2).
+                let cross_address_disabled = read_bool(&mut r);
+                (
+                    u8::from(!cross_address_disabled) << 2,
+                    BundleVersion::ironwood_v3(),
+                )
+            }
+        };
+        let flags = Flags::from_byte(
+            u8::from(enable_spend) | (u8::from(enable_output) << 1) | cross_address_bit,
+            bundle_version,
+        )
+        .expect("test vectors use canonical flag encodings");
+
         let instance = Instance::from_parts(anchor, cv_net, nf_old, rk, cmx, flags)
             .expect("test vectors were generated with non-identity rk");
+
         let mut proof_bytes = vec![];
         r.read_to_end(&mut proof_bytes)?;
         let proof = Proof::new(proof_bytes);
+
         Ok((instance, proof))
     }
 
-    // TODO: recast as a proptest
     #[test]
-    fn round_trip() {
+    fn halo2_instance_includes_cross_address_disabled_flag() {
+        let (_, mut instance) =
+            generate_circuit_instance(OsRng, OrchardCircuitVersion::FixedPostNu6_2);
+
+        let halo2_instance = instance.to_halo2_instance();
+        assert_eq!(halo2_instance[0].len(), 11);
+        assert_eq!(
+            halo2_instance[0][super::DISABLE_CROSS_ADDRESS],
+            vesta::Scalar::zero()
+        );
+
+        instance.cross_address_disabled = true;
+        assert_eq!(
+            instance.to_halo2_instance()[0][super::DISABLE_CROSS_ADDRESS],
+            vesta::Scalar::one()
+        );
+    }
+
+    #[test]
+    fn cross_address_support_matches_circuit_version() {
+        assert!(!OrchardCircuitVersion::InsecurePreNu6_2.supports_cross_address_restriction());
+        assert!(!OrchardCircuitVersion::FixedPostNu6_2.supports_cross_address_restriction());
+        assert!(OrchardCircuitVersion::PostNu6_3.supports_cross_address_restriction());
+    }
+
+    #[test]
+    fn post_nu6_3_cross_address_restriction_is_conditional() {
+        let mock_verify = |circuit: &Circuit<OrchardVanilla>, instance: &Instance| {
+            MockProver::run(
+                K,
+                circuit,
+                instance
+                    .to_halo2_instance()
+                    .iter()
+                    .map(|p| p.to_vec())
+                    .collect(),
+            )
+            .unwrap()
+            .verify()
+        };
+
+        // An unrestricted cross-address statement is satisfiable...
+        let (circuit, mut instance) =
+            generate_circuit_instance(OsRng, OrchardCircuitVersion::PostNu6_3);
+        assert_eq!(mock_verify(&circuit, &instance), Ok(()));
+
+        // ...but setting `disableCrossAddress` makes it unsatisfiable...
+        instance.cross_address_disabled = true;
+        assert!(mock_verify(&circuit, &instance).is_err());
+
+        // ...while a restricted self-transfer statement is satisfiable.
+        let (circuit, mut instance) =
+            generate_self_transfer_circuit_instance(OsRng, OrchardCircuitVersion::PostNu6_3);
+        instance.cross_address_disabled = true;
+        assert_eq!(mock_verify(&circuit, &instance), Ok(()));
+    }
+
+    #[test]
+    fn post_nu6_3_restricted_statement_proves_and_verifies() {
+        let mut rng = OsRng;
+        let (circuit, mut instance) =
+            generate_self_transfer_circuit_instance(&mut rng, OrchardCircuitVersion::PostNu6_3);
+        instance.cross_address_disabled = true;
+
+        let pk = ProvingKey::build::<OrchardVanilla>(OrchardCircuitVersion::PostNu6_3);
+        let vk = VerifyingKey::build::<OrchardVanilla>(OrchardCircuitVersion::PostNu6_3);
+
+        let proof = Proof::create(
+            &pk,
+            core::slice::from_ref(&circuit),
+            core::slice::from_ref(&instance),
+            &mut rng,
+        )
+        .unwrap();
+        assert!(proof.verify(&vk, core::slice::from_ref(&instance)).is_ok());
+    }
+
+    // FixedPostNu6_2 leaves instance row 9 (`disableCrossAddress`) unconstrained, so a
+    // freshly created proof can satisfy a restricted statement at the raw halo2 level
+    // without enforcing anything about addresses. This test documents that hazard and
+    // pins the API checks that close it.
+    #[test]
+    fn restricted_statement_requires_supporting_key() {
+        use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite};
+
+        let mut rng = OsRng;
+        let (circuit, mut instance) =
+            generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2);
+        instance.cross_address_disabled = true;
+
+        let pk = ProvingKey::build::<OrchardVanilla>(OrchardCircuitVersion::FixedPostNu6_2);
+        let vk = VerifyingKey::build::<OrchardVanilla>(OrchardCircuitVersion::FixedPostNu6_2);
+
+        let raw_instances = instance.to_halo2_instance();
+        let raw_instances: Vec<_> = raw_instances.iter().map(|i| &i[..]).collect();
+        let raw_instances = [&raw_instances[..]];
+
+        let mut transcript = Blake2bWrite::<_, vesta::Affine, _>::init(vec![]);
+        super::plonk::create_proof(
+            &pk.params,
+            &pk.pk,
+            core::slice::from_ref(&circuit),
+            &raw_instances,
+            &mut rng,
+            &mut transcript,
+        )
+        .unwrap();
+        let proof_bytes = transcript.finalize();
+
+        let strategy = SingleVerifier::new(&vk.params);
+        let mut transcript = Blake2bRead::init(&proof_bytes[..]);
+        assert!(super::plonk::verify_proof(
+            &vk.params,
+            &vk.vk,
+            strategy,
+            &raw_instances,
+            &mut transcript,
+        )
+        .is_ok());
+
+        assert!(matches!(
+            Proof::create(
+                &pk,
+                core::slice::from_ref(&circuit),
+                core::slice::from_ref(&instance),
+                &mut rng,
+            ),
+            Err(super::plonk::Error::InvalidInstances),
+        ));
+
+        let proof = Proof::new(proof_bytes);
+        assert!(matches!(
+            proof.verify(&vk, core::slice::from_ref(&instance)),
+            Err(super::plonk::Error::InvalidInstances),
+        ));
+    }
+
+    // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate the pinned circuit description
+    // for this version.
+    fn pinned_circuit_description(
+        circuit_version: OrchardCircuitVersion,
+        path: &str,
+        expected: &str,
+    ) -> VerifyingKey {
+        let vk = VerifyingKey::build::<OrchardVanilla>(circuit_version);
+
+        if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
+            std::fs::write(path, format!("{:#?}\n", vk.vk.pinned()))
+                .expect("should be able to write new circuit description");
+        } else {
+            assert_eq!(
+                format!("{:#?}\n", vk.vk.pinned()),
+                expected.replace("\r\n", "\n")
+            );
+        }
+
+        vk
+    }
+
+    // TODO: recast as a proptest
+    fn round_trip_for_version(circuit_version: OrchardCircuitVersion, vk: &VerifyingKey) {
         let mut rng = OsRng;
 
         let (circuits, instances): (Vec<_>, Vec<_>) = iter::once(())
-            .map(|()| generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2))
+            .map(|()| generate_circuit_instance(&mut rng, circuit_version))
             .unzip();
-
-        let vk = VerifyingKey::build::<OrchardVanilla>();
-
-        // Test that the pinned verification key (representing the circuit) is as expected.
-        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate it (and the proof below).
-        {
-            if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
-                std::fs::write(
-                    "src/circuit_data/circuit_description_fixed_vanilla",
-                    format!("{:#?}\n", vk.vk.pinned()),
-                )
-                .expect("should be able to write new circuit description");
-            } else {
-                assert_eq!(
-                    format!("{:#?}\n", vk.vk.pinned()),
-                    include_str!("../circuit_data/circuit_description_fixed_vanilla")
-                        .replace("\r\n", "\n")
-                );
-            }
-        }
 
         // Test that the proof size is as expected.
         let expected_proof_size = {
@@ -799,6 +1213,9 @@ mod tests {
                     K,
                     &circuits[0],
                 );
+            // These sizes are identical for every circuit version: the post-NU 6.3 circuit reuses the
+            // existing Orchard checks gate on spare rows and adds no columns or
+            // commitments, leaving the proof shape unchanged.
             assert_eq!(usize::from(circuit_cost.proof_size(1)), 4992);
             assert_eq!(usize::from(circuit_cost.proof_size(2)), 7264);
             // The constants in `Proof::expected_proof_size` must track the circuit's actual
@@ -829,84 +1246,152 @@ mod tests {
             );
         }
 
-        let pk = ProvingKey::build::<OrchardVanilla>();
+        let pk = ProvingKey::build::<OrchardVanilla>(circuit_version);
         let proof = Proof::create(&pk, &circuits, &instances, &mut rng).unwrap();
-        assert!(proof.verify(&vk, &instances).is_ok());
+        assert!(proof.verify(vk, &instances).is_ok());
         assert_eq!(proof.0.len(), expected_proof_size);
     }
 
-    // Proves with the proving key for `proving_version` and checks that the proof verifies
-    // under the verifying key for the same version, but not under the verifying key for
-    // `other_version`. The two circuit versions have different verifying keys, so a proof is
-    // bound to the version it was created with.
-    fn proof_is_bound_to_circuit_version(
+    #[test]
+    fn round_trip_fixed() {
+        let vk = pinned_circuit_description(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            "src/circuit_data/circuit_description_fixed_vanilla",
+            include_str!("../circuit_data/circuit_description_fixed_vanilla"),
+        );
+        round_trip_for_version(OrchardCircuitVersion::FixedPostNu6_2, &vk);
+    }
+
+    #[test]
+    fn round_trip_post_nu6_3() {
+        let vk = pinned_circuit_description(
+            OrchardCircuitVersion::PostNu6_3,
+            "src/circuit_data/circuit_description_post_nu6_3",
+            include_str!("../circuit_data/circuit_description_post_nu6_3"),
+        );
+        round_trip_for_version(OrchardCircuitVersion::PostNu6_3, &vk);
+    }
+
+    // Proves with the proving key for `proving_version` and checks that the proof verifies under
+    // the verifying key for the same version, but not under a version with a different verifying
+    // key.
+    fn proof_is_rejected_by_other_circuit_version(
         proving_version: OrchardCircuitVersion,
         other_version: OrchardCircuitVersion,
     ) {
         let mut rng = OsRng;
+
         let (circuit, instance) = generate_circuit_instance(&mut rng, proving_version);
         let instances = core::slice::from_ref(&instance);
-        let pk = ProvingKey::build_for_version::<OrchardVanilla>(proving_version);
+
+        let pk = ProvingKey::build::<OrchardVanilla>(proving_version);
         let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
+
         // Verifies under the matching version's verifying key.
-        let vk_matching = VerifyingKey::build_for_version::<OrchardVanilla>(proving_version);
+        let vk_matching = VerifyingKey::build::<OrchardVanilla>(proving_version);
         assert!(proof.verify(&vk_matching, instances).is_ok());
+
         // Does not verify under the other version's verifying key.
-        let vk_other = VerifyingKey::build_for_version::<OrchardVanilla>(other_version);
+        let vk_other = VerifyingKey::build::<OrchardVanilla>(other_version);
         assert!(proof.verify(&vk_other, instances).is_err());
     }
 
     #[test]
     fn proof_verifies_against_matching_circuit_version() {
-        // Each prover's proof verifies under its own verifying key, and is rejected by the
-        // other version's verifying key.
-        proof_is_bound_to_circuit_version(
+        // Insecure proofs are rejected by the anchored circuit versions, and anchored proofs are
+        // rejected by the insecure verifying key.
+        proof_is_rejected_by_other_circuit_version(
             OrchardCircuitVersion::FixedPostNu6_2,
             OrchardCircuitVersion::InsecurePreNu6_2,
         );
-        proof_is_bound_to_circuit_version(
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::PostNu6_3,
             OrchardCircuitVersion::InsecurePreNu6_2,
+        );
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::FixedPostNu6_2,
+        );
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::InsecurePreNu6_2,
+            OrchardCircuitVersion::PostNu6_3,
+        );
+    }
+
+    #[test]
+    fn fixed_and_post_nu6_3_have_distinct_verifying_keys() {
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            OrchardCircuitVersion::PostNu6_3,
+        );
+        proof_is_rejected_by_other_circuit_version(
+            OrchardCircuitVersion::PostNu6_3,
             OrchardCircuitVersion::FixedPostNu6_2,
         );
     }
+
     // Proving a circuit with a proving key for a different circuit version is a misuse: the
     // proving key and circuits must agree (see `Proof::create`). Confirm `create` rejects it
     // with `plonk::Error::Synthesis` rather than emitting an unverifiable proof.
     #[test]
     fn create_rejects_mismatched_proving_key_version() {
         let mut rng = OsRng;
-        // Circuits for the insecure version, but proved with the fixed proving key.
-        let (circuit, instance) =
-            generate_circuit_instance(&mut rng, OrchardCircuitVersion::InsecurePreNu6_2);
-        let instances = core::slice::from_ref(&instance);
-        let mismatched_pk =
-            ProvingKey::build_for_version::<OrchardVanilla>(OrchardCircuitVersion::FixedPostNu6_2);
-        assert!(matches!(
-            Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
-            Err(super::plonk::Error::Synthesis),
-        ));
+
+        for (circuit_version, pk_version) in [
+            (
+                OrchardCircuitVersion::InsecurePreNu6_2,
+                OrchardCircuitVersion::FixedPostNu6_2,
+            ),
+            (
+                OrchardCircuitVersion::FixedPostNu6_2,
+                OrchardCircuitVersion::PostNu6_3,
+            ),
+            (
+                OrchardCircuitVersion::PostNu6_3,
+                OrchardCircuitVersion::FixedPostNu6_2,
+            ),
+        ] {
+            let (circuit, instance) = generate_circuit_instance(&mut rng, circuit_version);
+            let instances = core::slice::from_ref(&instance);
+
+            let mismatched_pk = ProvingKey::build::<OrchardVanilla>(pk_version);
+
+            assert!(matches!(
+                Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
+                Err(super::plonk::Error::Synthesis),
+            ));
+        }
     }
 
-    #[test]
-    fn serialized_proof_test_case() {
-        let vk = VerifyingKey::build::<OrchardVanilla>();
-
+    fn serialized_proof_test_case_for_version(
+        circuit_version: OrchardCircuitVersion,
+        proof_path: &str,
+        test_case_bytes: &[u8],
+        encoding: ProofFixtureEncoding,
+        expected_proof_size: usize,
+        restricted: bool,
+    ) {
+        let vk = VerifyingKey::build::<OrchardVanilla>(circuit_version);
+        // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate this serialized proof
+        // fixture. The non-regeneration path embeds and verifies the checked-in fixture.
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
             let create_proof = || -> std::io::Result<()> {
                 let mut rng = OsRng;
 
-                let (circuit, instance) =
-                    generate_circuit_instance(OsRng, OrchardCircuitVersion::FixedPostNu6_2);
+                let (circuit, mut instance) = if restricted {
+                    generate_self_transfer_circuit_instance(&mut rng, circuit_version)
+                } else {
+                    generate_circuit_instance(&mut rng, circuit_version)
+                };
+                instance.cross_address_disabled = restricted;
                 let instances = core::slice::from_ref(&instance);
 
-                let pk = ProvingKey::build::<OrchardVanilla>();
+                let pk = ProvingKey::build::<OrchardVanilla>(circuit_version);
                 let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
                 assert!(proof.verify(&vk, instances).is_ok());
 
-                let file = std::fs::File::create(
-                    "src/circuit_data/circuit_proof_test_case_fixed_vanilla.bin",
-                )?;
-                write_test_case(file, &instance, &proof)
+                let file = std::fs::File::create(proof_path)?;
+                write_test_case(file, &instance, &proof, encoding)
             };
             create_proof().expect("should be able to write new proof");
             // Regeneration only writes the fixture; the non-generate run below embeds and
@@ -915,14 +1400,48 @@ mod tests {
         }
 
         // Parse the hardcoded proof test case.
-        let (instance, proof) = {
-            let test_case_bytes =
-                include_bytes!("../circuit_data/circuit_proof_test_case_fixed_vanilla.bin");
-            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
-        };
-        assert_eq!(proof.0.len(), 4992);
+        let (instance, proof) =
+            read_test_case(test_case_bytes, encoding).expect("proof must be valid");
+        assert_eq!(instance.cross_address_disabled(), restricted);
+        assert_eq!(proof.0.len(), expected_proof_size);
 
         assert!(proof.verify(&vk, &[instance]).is_ok());
+    }
+
+    #[test]
+    fn serialized_fixed_proof_test_case() {
+        serialized_proof_test_case_for_version(
+            OrchardCircuitVersion::FixedPostNu6_2,
+            "src/circuit_data/circuit_proof_test_case_fixed_vanilla.bin",
+            include_bytes!("../circuit_data/circuit_proof_test_case_fixed_vanilla.bin"),
+            ProofFixtureEncoding::LegacyTwoFlags,
+            4992,
+            false,
+        );
+    }
+
+    #[test]
+    fn serialized_post_nu6_3_proof_test_case() {
+        serialized_proof_test_case_for_version(
+            OrchardCircuitVersion::PostNu6_3,
+            "src/circuit_data/circuit_proof_test_case_post_nu6_3.bin",
+            include_bytes!("../circuit_data/circuit_proof_test_case_post_nu6_3.bin"),
+            ProofFixtureEncoding::PostNu6_3ThreeFlags,
+            4992,
+            false,
+        );
+    }
+
+    #[test]
+    fn serialized_post_nu6_3_restricted_proof_test_case() {
+        serialized_proof_test_case_for_version(
+            OrchardCircuitVersion::PostNu6_3,
+            "src/circuit_data/circuit_proof_test_case_post_nu6_3_restricted.bin",
+            include_bytes!("../circuit_data/circuit_proof_test_case_post_nu6_3_restricted.bin"),
+            ProofFixtureEncoding::PostNu6_3ThreeFlags,
+            4992,
+            true,
+        );
     }
 
     // The deployed (NU5..NU6.2) verifying key and a pre-fix proof. `InsecurePreNu6_2`
@@ -932,9 +1451,7 @@ mod tests {
     // pre-NU6.2 verifying key and a sample proof, so they are never regenerated.
     #[test]
     fn insecure_against_stored_circuit() {
-        let vk = VerifyingKey::build_for_version::<OrchardVanilla>(
-            OrchardCircuitVersion::InsecurePreNu6_2,
-        );
+        let vk = VerifyingKey::build::<OrchardVanilla>(OrchardCircuitVersion::InsecurePreNu6_2);
         assert_eq!(
             format!("{:#?}\n", vk.vk.pinned()),
             include_str!("../circuit_data/circuit_description_insecure_vanilla")
@@ -944,7 +1461,8 @@ mod tests {
         let (instance, proof) = {
             let test_case_bytes =
                 include_bytes!("../circuit_data/circuit_proof_test_case_insecure_vanilla.bin");
-            read_test_case(&test_case_bytes[..]).expect("proof must be valid")
+            read_test_case(&test_case_bytes[..], ProofFixtureEncoding::LegacyTwoFlags)
+                .expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
         assert!(proof.verify(&vk, &[instance]).is_ok());
@@ -961,13 +1479,7 @@ mod tests {
             .titled("Orchard Action Circuit", ("sans-serif", 60))
             .unwrap();
 
-        let circuit = Circuit::<OrchardVanilla> {
-            witnesses: Witnesses {
-                circuit_version: OrchardCircuitVersion::FixedPostNu6_2,
-                ..Default::default()
-            },
-            phantom: core::marker::PhantomData,
-        };
+        let circuit = Circuit::<OrchardVanilla>::empty(OrchardCircuitVersion::FixedPostNu6_2);
         halo2_proofs::dev::CircuitLayout::default()
             .show_labels(false)
             .view_height(0..(1 << 11))
