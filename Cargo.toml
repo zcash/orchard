@@ -70,6 +70,7 @@ criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
 halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
+rand_chacha = "0.3"
 zcash_note_encryption = { version = "0.4", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
 shardtree = "0.6"
@@ -89,6 +90,7 @@ unstable-frost = []
 unstable-voting-circuits = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
+verifier-fingerprint = ["circuit", "halo2_proofs/unstable-verifier-fingerprint"]
 test-dependencies = ["proptest", "rand/std"]
 
 [[bench]]

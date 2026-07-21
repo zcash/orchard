@@ -16,6 +16,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run tests
         run: cargo test --verbose
+      # verifier-fingerprint capture tests build the k=11 proving key and run real proofs, too
+      # heavy for every PR (regenerate the fixtures manually per the docs in
+      # src/circuit/fingerprint/mod.rs). Compile them so the cfg(test) module can't rot unnoticed:
+      # `cargo test` (default features) and `cargo build --all-features` (skips cfg(test)) never
+      # type-check it.
+      - name: Compile-check the verifier-fingerprint capture module
+        run: cargo test --features verifier-fingerprint --no-run --verbose
       - name: Verify working directory is clean
         run: git diff --exit-code
 
@@ -116,7 +123,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Generate coverage report
-        run: cargo tarpaulin --engine llvm --all-features --release --timeout 600 --out xml
+        # Enable every feature except `verifier-fingerprint`: it is opt-in capture tooling whose
+        # tests build the k=11 proving key and generate real proofs, which are far too heavy to run
+        # under coverage instrumentation on every PR. Run those manually per the docs in
+        # `src/circuit/fingerprint/mod.rs`.
+        run: cargo tarpaulin --engine llvm --features "dev-graph unstable-frost unstable-voting-circuits test-dependencies" --release --timeout 600 --out xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3.1.4
 
