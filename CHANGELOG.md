@@ -5,6 +5,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to Rust's notion of
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `orchard::builder::Builder::new_with_anchor_deferred`, constructing a builder whose bundle
+  anchor — and every real spend's Merkle witness — is deferred to proving time, per
+  [ZIP 374](https://zips.z.cash/zip-0374). Spends are added without witnesses via the new
+  `orchard::builder::Builder::add_spend_unwitnessed`; the built PCZT bundle reports the
+  deferral through the new `orchard::pczt::Bundle::anchor_deferred` accessor (its `anchor`
+  field then carries the empty-tree root purely as a placeholder that a PCZT serializer
+  must emit as absent, and the real spends' `witness` fields are `None`), and the real
+  anchor and witnesses are installed through the PCZT Updater role after signing. Only
+  supported for bundle formats whose txid digest — and hence every signature — excludes
+  the anchor (the V6 formats); only `Builder::build_for_pczt` can build such a bundle.
+- `orchard::builder::BuildError::{AnchorRequired, AnchorDeferralUnsupported}`
+- `orchard::builder::SpendError::{AnchorDeferred, WitnessRequired}`
+
 ## [0.15.0] 2026-07-09
 
 This release introduces `orchard::bundle::BundleVersion`, the `(value pool, protocol

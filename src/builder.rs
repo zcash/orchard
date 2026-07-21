@@ -12,7 +12,7 @@ use zcash_note_encryption::ENC_CIPHERTEXT_SIZE;
 
 use crate::{
     address::Address,
-    bundle::{Authorization, Authorized, Bundle, BundleVersion, Flags},
+    bundle::{Authorization, Authorized, Bundle, BundleVersion, Flags, TxVersion},
     keys::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
@@ -194,6 +194,15 @@ pub enum BuildError {
     UnrepresentableFlags,
     /// A coinbase bundle was requested with flags that enable spends.
     CoinbaseSpendsEnabled,
+    /// The bundle's anchor is deferred to proving time, but the requested operation
+    /// needs it now: an in-memory build ([`Builder::build`]) proves immediately, which
+    /// requires the real anchor and witnesses; a deferred-anchor bundle can only be
+    /// built for a PCZT ([`Builder::build_for_pczt`]).
+    AnchorRequired,
+    /// Anchors can be deferred only for bundles of transaction formats whose txid
+    /// digest — and hence every signature — excludes the bundle anchor (the V6 formats;
+    /// [ZIP 374](https://zips.z.cash/zip-0374)).
+    AnchorDeferralUnsupported,
 }
 
 impl fmt::Display for BuildError {
@@ -236,6 +245,14 @@ impl fmt::Display for BuildError {
             CoinbaseSpendsEnabled => {
                 f.write_str("A coinbase bundle was requested with flags that enable spends.")
             }
+            AnchorRequired => f.write_str(
+                "The bundle's anchor is deferred to proving time; it can only be built \
+                 for a PCZT.",
+            ),
+            AnchorDeferralUnsupported => f.write_str(
+                "Anchors can be deferred only for bundle formats whose txid digest \
+                 excludes the anchor.",
+            ),
         }
     }
 }
@@ -266,6 +283,12 @@ pub enum SpendError {
     AnchorMismatch,
     /// The full viewing key provided didn't match the note provided
     FvkMismatch,
+    /// The builder's anchor is deferred to proving time, so spends are added without
+    /// witnesses, via [`Builder::add_spend_unwitnessed`].
+    AnchorDeferred,
+    /// The builder's anchor is fixed at build time, so every spend must be added with a
+    /// witness rooting to it, via [`Builder::add_spend`].
+    WitnessRequired,
 }
 
 impl fmt::Display for SpendError {
@@ -275,6 +298,10 @@ impl fmt::Display for SpendError {
             SpendsDisabled => "Spends are not enabled for this builder",
             AnchorMismatch => "All anchors must be equal.",
             FvkMismatch => "FullViewingKey does not correspond to the given note",
+            AnchorDeferred => {
+                "The anchor is deferred to proving time; add spends without witnesses"
+            }
+            WitnessRequired => "The anchor is fixed at build time; add spends with a witness",
         })
     }
 }
@@ -324,7 +351,7 @@ pub struct SpendInfo {
     pub(crate) fvk: FullViewingKey,
     pub(crate) scope: Scope,
     pub(crate) note: Note,
-    pub(crate) merkle_path: MerklePath,
+    pub(crate) merkle_path: Option<MerklePath>,
 }
 
 impl SpendInfo {
@@ -344,7 +371,27 @@ impl SpendInfo {
             fvk,
             scope,
             note,
-            merkle_path,
+            merkle_path: Some(merkle_path),
+        })
+    }
+
+    /// Constructs a spend whose Merkle witness is DEFERRED to proving time ([ZIP 374]):
+    /// the spend carries no path, so it may only be added to a bundle whose anchor is
+    /// deferred (see [`Builder::new_with_anchor_deferred`]), and the PCZT it is built into
+    /// carries an absent `witness` field for it, to be installed by the PCZT Updater
+    /// role.
+    ///
+    /// Returns `None` if the given full viewing key does not own the note.
+    ///
+    /// [ZIP 374]: https://zips.z.cash/zip-0374
+    fn unwitnessed(fvk: FullViewingKey, note: Note) -> Option<Self> {
+        let scope = fvk.scope_for_address(&note.recipient())?;
+        Some(SpendInfo {
+            dummy_sk: None,
+            fvk,
+            scope,
+            note,
+            merkle_path: None,
         })
     }
 
@@ -353,7 +400,7 @@ impl SpendInfo {
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     fn dummy(note_version: NoteVersion, rng: &mut impl RngCore) -> Self {
         let (sk, fvk, note) = Note::dummy(rng, None, note_version);
-        let merkle_path = MerklePath::dummy(rng);
+        let merkle_path = Some(MerklePath::dummy(rng));
 
         SpendInfo {
             dummy_sk: Some(sk),
@@ -370,9 +417,17 @@ impl SpendInfo {
         if self.note.value() == NoteValue::ZERO {
             true
         } else {
-            let cm = self.note.commitment();
-            let path_root = self.merkle_path.root(cm.into());
-            &path_root == anchor
+            match &self.merkle_path {
+                // An unwitnessed spend (deferred anchor, ZIP 374) defers this check to
+                // the PCZT Prover role, which performs it once the real anchor and
+                // witness are installed; within this crate such a spend only ever
+                // coexists with the placeholder anchor of a deferred-anchor builder.
+                None => true,
+                Some(path) => {
+                    let cm = self.note.commitment();
+                    &path.root(cm.into()) == anchor
+                }
+            }
         }
     }
 
@@ -411,7 +466,7 @@ impl SpendInfo {
             rseed: Some(*self.note.rseed()),
             note_version: self.note.version(),
             fvk: Some(self.fvk),
-            witness: Some(self.merkle_path),
+            witness: self.merkle_path,
             alpha: Some(alpha),
             zip32_derivation: None,
             dummy_sk: self.dummy_sk,
@@ -771,7 +826,18 @@ pub struct Builder {
     spends: Vec<SpendInfo>,
     outputs: Vec<OutputInfo>,
     changes: Vec<ChangeInfo>,
-    anchor: Anchor,
+    anchor: BuilderAnchor,
+}
+
+/// How a [`Builder`]'s bundle anchor is provided.
+#[derive(Clone, Copy, Debug)]
+enum BuilderAnchor {
+    /// Fixed at build time: every non-dummy spend is added with a witness rooting to it.
+    Fixed(Anchor),
+    /// Deferred to proving time (ZIP 374): spends are added without witnesses, and the
+    /// built PCZT bundle reports the deferral, carrying the empty-tree root purely as a
+    /// placeholder for its (required) `anchor` field.
+    Deferred,
 }
 
 impl Builder {
@@ -810,8 +876,51 @@ impl Builder {
             spends: vec![],
             outputs: vec![],
             changes: vec![],
-            anchor,
+            anchor: BuilderAnchor::Fixed(anchor),
         })
+    }
+
+    /// Constructs a new empty builder whose bundle anchor — and with it every real
+    /// spend's Merkle witness — is DEFERRED to proving time, per [ZIP 374].
+    ///
+    /// The bundle's `anchor` field carries the empty-tree root purely as a placeholder
+    /// ([`crate::pczt::Bundle::anchor_deferred`] reports the deferral, so a PCZT
+    /// serializer emits the anchor as ABSENT), and spends are added WITHOUT witnesses via
+    /// [`Self::add_spend_unwitnessed`]; the real anchor and witnesses are installed
+    /// through the PCZT Updater role after signing and before proving, where the
+    /// witness-to-anchor consistency check that an anchored builder performs per spend is
+    /// instead performed by the PCZT Prover role. Only [`Self::build_for_pczt`] can build
+    /// the bundle: an in-memory build proves immediately, which needs the real anchor.
+    ///
+    /// `tx_version` is the version of the transaction the bundle will be carried by. It
+    /// determines whether deferral is sound: a signature commits to the anchor whenever
+    /// the txid digest includes it, so deferral is refused unless the format excludes it
+    /// (the V6 formats). As with [`BundleVersion`] itself, the caller is responsible for
+    /// pairing the bundle version and transaction version correctly.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::AnchorDeferralUnsupported`] if the bundle format for
+    /// `bundle_version`'s pool under `tx_version` commits the anchor into the txid
+    /// digest (or is not a valid combination), and the errors of [`Self::new`] otherwise.
+    ///
+    /// [ZIP 374]: https://zips.z.cash/zip-0374
+    pub fn new_with_anchor_deferred(
+        bundle_type: BundleType,
+        bundle_version: BundleVersion,
+        flags: Flags,
+        tx_version: TxVersion,
+    ) -> Result<Self, BuildError> {
+        if bundle_version
+            .value_pool()
+            .commitment_format(tx_version)
+            .map_or(true, |format| format.includes_anchor_in_txid_digest())
+        {
+            return Err(BuildError::AnchorDeferralUnsupported);
+        }
+        let mut builder = Self::new(bundle_type, bundle_version, flags, Anchor::empty_tree())?;
+        builder.anchor = BuilderAnchor::Deferred;
+        Ok(builder)
     }
 
     /// Returns the bundle type this builder was constructed with.
@@ -853,6 +962,10 @@ impl Builder {
         note: Note,
         merkle_path: MerklePath,
     ) -> Result<(), SpendError> {
+        let anchor = match &self.anchor {
+            BuilderAnchor::Fixed(anchor) => anchor,
+            BuilderAnchor::Deferred => return Err(SpendError::AnchorDeferred),
+        };
         if !self.flags.spends_enabled() {
             return Err(SpendError::SpendsDisabled);
         }
@@ -860,10 +973,36 @@ impl Builder {
         let spend = SpendInfo::new(fvk, note, merkle_path).ok_or(SpendError::FvkMismatch)?;
 
         // Consistency check: all anchors must be equal.
-        if !spend.has_matching_anchor(&self.anchor) {
+        if !spend.has_matching_anchor(anchor) {
             return Err(SpendError::AnchorMismatch);
         }
 
+        self.spends.push(spend);
+
+        Ok(())
+    }
+
+    /// Adds a note to be spent in this transaction, WITHOUT a Merkle witness: the
+    /// bundle's anchor — and with it this spend's witness — is deferred to proving time
+    /// (see [`Builder::new_with_anchor_deferred`]), to be installed through the PCZT Updater
+    /// role. The witness-to-anchor consistency check that [`Builder::add_spend`] performs
+    /// is instead performed by the PCZT Prover role once the real values are present.
+    ///
+    /// Returns [`SpendError::WitnessRequired`] if this builder's anchor is fixed at build
+    /// time (use [`Builder::add_spend`]).
+    pub fn add_spend_unwitnessed(
+        &mut self,
+        fvk: FullViewingKey,
+        note: Note,
+    ) -> Result<(), SpendError> {
+        if !matches!(self.anchor, BuilderAnchor::Deferred) {
+            return Err(SpendError::WitnessRequired);
+        }
+        if !self.flags.spends_enabled() {
+            return Err(SpendError::SpendsDisabled);
+        }
+
+        let spend = SpendInfo::unwitnessed(fvk, note).ok_or(SpendError::FvkMismatch)?;
         self.spends.push(spend);
 
         Ok(())
@@ -1008,12 +1147,18 @@ impl Builder {
         self,
         rng: impl RngCore,
     ) -> Result<Option<(UnauthorizedBundle<V>, BundleMetadata)>, BuildError> {
+        // An in-memory bundle proves against its anchor immediately; a deferred-anchor
+        // bundle has none, so it can only be built for a PCZT.
+        let anchor = match self.anchor {
+            BuilderAnchor::Fixed(anchor) => anchor,
+            BuilderAnchor::Deferred => return Err(BuildError::AnchorRequired),
+        };
         bundle(
             rng,
             self.bundle_type,
             self.bundle_version,
             self.flags,
-            self.anchor,
+            anchor,
             self.spends,
             self.outputs,
             self.changes,
@@ -1026,11 +1171,19 @@ impl Builder {
         self,
         rng: impl RngCore,
     ) -> Result<(crate::pczt::Bundle, BundleMetadata), BuildError> {
+        // The PCZT bundle's `anchor` field is required (public API), so a deferred-anchor
+        // bundle carries the empty-tree root purely as a placeholder alongside the
+        // deferral flag; a PCZT serializer emits the anchor as absent.
+        let (anchor, anchor_deferred) = match self.anchor {
+            BuilderAnchor::Fixed(anchor) => (anchor, false),
+            BuilderAnchor::Deferred => (Anchor::empty_tree(), true),
+        };
+        let bundle_version = self.bundle_version;
         build_bundle(
             rng,
             self.bundle_version,
             self.flags,
-            self.anchor,
+            anchor,
             self.bundle_type,
             self.spends,
             self.outputs,
@@ -1046,9 +1199,10 @@ impl Builder {
                     crate::pczt::Bundle {
                         actions,
                         flags,
-                        bundle_version: self.bundle_version,
+                        bundle_version,
                         value_sum,
-                        anchor: self.anchor,
+                        anchor,
+                        anchor_deferred,
                         zkproof: None,
                         bsk: None,
                     },
@@ -1272,7 +1426,7 @@ fn build_bundle<B, R: RngCore>(
                 fvk,
                 scope,
                 note,
-                merkle_path: MerklePath::dummy(&mut rng),
+                merkle_path: Some(MerklePath::dummy(&mut rng)),
             };
             pairs.push((None, Some(chg_idx), spend, output));
         }
@@ -1869,8 +2023,8 @@ mod tests {
         DEFAULT_MIN_ACTIONS,
     };
     use crate::{
-        builder::BundleType,
-        bundle::{Authorized, Bundle, BundleVersion, Flags},
+        builder::{BundleType, SpendError},
+        bundle::{Authorized, Bundle, BundleVersion, Flags, TxVersion},
         circuit::{OrchardCircuitVersion, ProvingKey},
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{
@@ -1897,6 +2051,138 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         (note, merkle_path, anchor)
+    }
+
+    #[test]
+    fn deferred_anchor_builds_for_pczt_without_witnesses() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let bundle_version = BundleVersion::orchard_v3();
+
+        // Deferral is refused for a bundle format whose txid digest commits the anchor.
+        assert!(matches!(
+            Builder::new_with_anchor_deferred(
+                BundleType::DEFAULT,
+                BundleVersion::orchard_v2(),
+                BundleVersion::orchard_v2().default_flags(),
+                TxVersion::V5,
+            ),
+            Err(BuildError::AnchorDeferralUnsupported)
+        ));
+
+        let mut builder = Builder::new_with_anchor_deferred(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            TxVersion::V6,
+        )
+        .unwrap();
+
+        // A witnessed add is refused (the witness could not be checked against anything),
+        // and the unwitnessed add still validates note ownership.
+        let (note, merkle_path, _) = note_with_path(
+            &mut rng,
+            recipient,
+            NoteValue::from_raw(10_000),
+            bundle_version.note_version(),
+        );
+        assert_eq!(
+            builder.add_spend(fvk.clone(), note, merkle_path),
+            Err(SpendError::AnchorDeferred)
+        );
+        let foreign_fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        assert_eq!(
+            builder.add_spend_unwitnessed(foreign_fvk, note),
+            Err(SpendError::FvkMismatch)
+        );
+        builder.add_spend_unwitnessed(fvk.clone(), note).unwrap();
+        builder
+            .add_change_output(
+                fvk.clone(),
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                [0u8; 512],
+            )
+            .unwrap();
+
+        // The built PCZT bundle reports the deferral, carries the empty-tree root purely
+        // as a placeholder, and emits NO witness for the real spend; the padding dummy
+        // keeps its (arbitrary) witness, which the prover requires and the
+        // witness-to-anchor check exempts.
+        let (pczt_bundle, meta) = builder.build_for_pczt(&mut rng).unwrap();
+        assert!(pczt_bundle.anchor_deferred);
+        assert_eq!(pczt_bundle.anchor, Anchor::empty_tree());
+        let spend_index = meta.spend_action_index(0).unwrap();
+        assert_eq!(pczt_bundle.actions.len(), 2);
+        for (i, action) in pczt_bundle.actions.iter().enumerate() {
+            if i == spend_index {
+                assert!(action.spend.witness.is_none());
+            } else {
+                assert!(action.spend.witness.is_some());
+            }
+        }
+
+        // An anchored builder refuses the unwitnessed entry point.
+        let (note2, _, anchor2) = note_with_path(
+            &mut rng,
+            recipient,
+            NoteValue::from_raw(10_000),
+            bundle_version.note_version(),
+        );
+        let mut anchored = Builder::new(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            anchor2,
+        )
+        .unwrap();
+        assert_eq!(
+            anchored.add_spend_unwitnessed(fvk, note2),
+            Err(SpendError::WitnessRequired)
+        );
+    }
+
+    /// An in-memory build proves against its anchor immediately, so a deferred-anchor
+    /// bundle refuses it.
+    #[test]
+    #[cfg(feature = "circuit")]
+    fn deferred_anchor_refuses_in_memory_build() {
+        let mut rng = OsRng;
+        let sk = SpendingKey::random(&mut rng);
+        let fvk = FullViewingKey::from(&sk);
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let bundle_version = BundleVersion::orchard_v3();
+
+        let mut builder = Builder::new_with_anchor_deferred(
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
+            TxVersion::V6,
+        )
+        .unwrap();
+        let (note, _, _) = note_with_path(
+            &mut rng,
+            recipient,
+            NoteValue::from_raw(10_000),
+            bundle_version.note_version(),
+        );
+        builder.add_spend_unwitnessed(fvk.clone(), note).unwrap();
+        builder
+            .add_change_output(
+                fvk,
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                [0u8; 512],
+            )
+            .unwrap();
+        assert!(matches!(
+            builder.build::<i64>(&mut rng),
+            Err(BuildError::AnchorRequired)
+        ));
     }
 
     fn transactional(bundle_required: bool) -> BundleType {
