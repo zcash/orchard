@@ -16,6 +16,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run tests
         run: cargo test --verbose
+      # verifier-fingerprint capture tests build the k=11 proving key and run real proofs, too
+      # heavy for every PR (regenerate the fixtures manually per the docs in
+      # src/circuit/fingerprint/mod.rs). Compile them so the cfg(test) module can't rot unnoticed:
+      # `cargo test` (default features) and `cargo build --all-features` (skips cfg(test)) never
+      # type-check it.
+      - name: Compile-check the verifier-fingerprint capture module
+        run: cargo test --features verifier-fingerprint --no-run --verbose
       - name: Verify working directory is clean
         run: git diff --exit-code
 
