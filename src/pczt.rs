@@ -83,6 +83,22 @@ pub struct Bundle {
     /// Set by the Creator.
     pub(crate) anchor: Anchor,
 
+    /// Whether this bundle was built with its anchor DEFERRED to proving time
+    /// ([ZIP 374]): [`anchor`](Self::anchor) then carries the empty-tree root purely as
+    /// a placeholder that a PCZT serializer must emit as ABSENT, and the real spends'
+    /// `witness` fields are `None`; the real anchor and witnesses are installed through
+    /// the PCZT Updater role before proving. Always `false` for a parsed bundle (a
+    /// serializer re-emitting a parsed bundle tracks the wire anchor's absence
+    /// separately).
+    ///
+    /// [ZIP 374]: https://zips.z.cash/zip-0374
+    // TODO: Fold this flag into the `anchor` field as an `Option<Anchor>` (`None` =
+    // deferred, eliminating the placeholder) the next time an API-breaking change to
+    // this crate is needed for some other reason: it changes the derived public
+    // `anchor()` getter's return type, so it cannot ship in a semver-compatible
+    // release on its own.
+    pub(crate) anchor_deferred: bool,
+
     /// The Orchard bundle proof.
     ///
     /// This is `None` until it is set by the Prover.

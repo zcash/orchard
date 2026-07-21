@@ -66,14 +66,14 @@ const IRONWOOD_V6_PERSONALIZATIONS: BundleCommitmentPersonalizations =
 /// Orchard bundles use the v5 or v6 format according to the transaction; Ironwood bundles
 /// exist only in v6 transactions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BundleCommitmentFormat {
+pub(crate) enum BundleCommitmentFormat {
     OrchardV5,
     OrchardV6,
     IronwoodV6,
 }
 
 impl ValuePool {
-    fn commitment_format(
+    pub(crate) fn commitment_format(
         self,
         tx_version: TxVersion,
     ) -> Result<BundleCommitmentFormat, CommitmentError> {
@@ -95,7 +95,7 @@ impl BundleCommitmentFormat {
         }
     }
 
-    fn includes_anchor_in_txid_digest(self) -> bool {
+    pub(crate) fn includes_anchor_in_txid_digest(self) -> bool {
         matches!(self, BundleCommitmentFormat::OrchardV5)
     }
 

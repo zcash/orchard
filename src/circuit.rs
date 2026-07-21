@@ -268,13 +268,19 @@ impl Circuit {
         let rho_old = spend.note.rho();
         let psi_old = spend.note.psi();
         let rcm_old = spend.note.rcm();
+        // Unwitnessed spends (a deferred-anchor bundle, ZIP 374) exist only in bundles
+        // that refuse in-memory building, and no public constructor produces one, so a
+        // spend that reaches circuit construction always carries its Merkle path.
+        let merkle_path = spend
+            .merkle_path
+            .expect("a spend used as a circuit witness carries a Merkle path");
 
         let psi_new = output_note.psi();
         let rcm_new = output_note.rcm();
 
         Circuit {
-            path: Value::known(spend.merkle_path.auth_path()),
-            pos: Value::known(spend.merkle_path.position()),
+            path: Value::known(merkle_path.auth_path()),
+            pos: Value::known(merkle_path.position()),
             g_d_old: Value::known(sender_address.g_d()),
             pk_d_old: Value::known(*sender_address.pk_d()),
             v_old: Value::known(spend.note.value()),

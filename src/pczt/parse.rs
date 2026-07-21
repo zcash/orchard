@@ -77,6 +77,10 @@ impl Bundle {
             bundle_version,
             value_sum,
             anchor,
+            // A parsed bundle always reports a non-deferred anchor: absence on the wire
+            // is resolved by the caller before parsing, and tracked separately for
+            // re-serialization.
+            anchor_deferred: false,
             zkproof,
             bsk,
         })
