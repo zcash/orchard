@@ -112,3 +112,9 @@ debug = true
 
 [profile.bench]
 debug = true
+
+# Consume the unpublished halo2 change from zcash/halo2#918 (the new dump_vesta_lean_fixture
+# signature). Points at the PR's head branch; drop this once a halo2_proofs with the change is
+# published to crates.io.
+[patch.crates-io]
+halo2_proofs = { git = "https://github.com/TalDerei/halo2", branch = "fingerprint-verifier-upstream" }
