@@ -7,6 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-07-21
+
 ### Added
 - `orchard::builder::Builder::new_with_anchor_deferred`, constructing a builder whose bundle
   anchor — and every real spend's Merkle witness — is deferred to proving time, per
@@ -33,7 +35,15 @@ and this project adheres to Rust's notion of
   (`orchard::pczt::ProverError::MissingWitness`). The Prover now rejects a bundle whose
   anchor is still deferred with the new `orchard::pczt::ProverError::AnchorDeferred`.
 
-## [0.15.0] 2026-07-09
+## [0.15.1] - 2026-07-20
+
+### Added
+- The `verifier-fingerprint` feature flag, enabling
+  `halo2_proofs/unstable-verifier-fingerprint`. It gates test-only capture of
+  canonical Post-NU6.3 verifier fixtures (and Rust-only rejection checks) for
+  cross-checking downstream verifier models, and adds no public API.
+
+## [0.15.0] - 2026-07-09
 
 This release introduces `orchard::bundle::BundleVersion`, the `(value pool, protocol
 version)` of an Orchard bundle, built from the new `orchard::ValuePool` and
