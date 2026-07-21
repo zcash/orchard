@@ -1871,7 +1871,7 @@ pub mod testing {
     use alloc::vec::Vec;
     use core::fmt::Debug;
 
-    use incrementalmerkletree::{frontier::Frontier, Hashable};
+    use incrementalmerkletree::{frontier::Frontier, Hashable, Level};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 
     use proptest::collection::vec;
@@ -1887,7 +1887,7 @@ pub mod testing {
         note::{testing::arb_note, Nullifier, Rho},
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
-        Address, Note, NoteVersion,
+        Address, Note, NoteVersion, NOTE_COMMITMENT_TREE_DEPTH,
     };
 
     use super::{Builder, BundleType};
@@ -2040,6 +2040,99 @@ pub mod testing {
         }
     }
 
+    prop_compose! {
+        /// Multiple spendable Orchard notes witnessed to a single shared anchor,
+        /// all owned by the returned spending key.
+        ///
+        /// Each value in `values` becomes one note (in order), placed as leaf `i`
+        /// of one otherwise-empty note-commitment tree and paired with its
+        /// authentication path against the single shared root returned as the
+        /// `Anchor`. Unlike [`arb_spendable_note`], which gives each note its own
+        /// dummy path and independent anchor, every path returned here yields the
+        /// SAME anchor, so a multi-spend bundle can anchor all of its spends to one
+        /// root. `values` must be non-empty. Reusable by downstream crates building
+        /// shared-anchor multi-spend fixtures.
+        pub fn arb_shared_anchor_notes(values: Vec<NoteValue>, note_version: NoteVersion)(
+            sk in arb_spending_key(),
+            seed in any::<[u8; 32]>(),
+        ) -> (SpendingKey, Vec<(Note, MerklePath)>, Anchor) {
+            assert!(
+                !values.is_empty(),
+                "arb_shared_anchor_notes requires at least one value",
+            );
+            let mut rng = StdRng::from_seed(seed);
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            // One note per value, in order.
+            let notes: Vec<Note> = values
+                .iter()
+                .map(|&value| {
+                    let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+                    Note::new(recipient, value, rho, note_version, &mut rng)
+                })
+                .collect();
+
+            // Filled subtree roots per level: `levels[l][p]` is the root of the
+            // subtree at level `l`, position `p`. Level 0 is the leaves; each higher
+            // level combines pairs, using the empty-subtree root for a missing right
+            // sibling. Positions past `levels[l].len()` are empty.
+            let leaves: Vec<MerkleHashOrchard> = notes
+                .iter()
+                .map(|n| MerkleHashOrchard::from_cmx(&n.commitment().into()))
+                .collect();
+            let mut levels: Vec<Vec<MerkleHashOrchard>> =
+                Vec::with_capacity(NOTE_COMMITMENT_TREE_DEPTH + 1);
+            levels.push(leaves);
+            for l in 0..NOTE_COMMITMENT_TREE_DEPTH {
+                let level = Level::from(l as u8);
+                let cur = &levels[l];
+                let mut next = Vec::with_capacity(cur.len().div_ceil(2));
+                let mut p = 0;
+                while p < cur.len() {
+                    let left = cur[p];
+                    let right = cur
+                        .get(p + 1)
+                        .copied()
+                        .unwrap_or_else(|| MerkleHashOrchard::empty_root(level));
+                    next.push(MerkleHashOrchard::combine(level, &left, &right));
+                    p += 2;
+                }
+                levels.push(next);
+            }
+
+            // Each leaf's authentication path: the sibling subtree root at every
+            // level (its computed value when filled, else the empty-subtree root).
+            let witnesses: Vec<(Note, MerklePath)> = notes
+                .into_iter()
+                .enumerate()
+                .map(|(i, note)| {
+                    let auth_path = core::array::from_fn(|l| {
+                        let level = Level::from(l as u8);
+                        let sibling = (i >> l) ^ 1;
+                        levels[l]
+                            .get(sibling)
+                            .copied()
+                            .unwrap_or_else(|| MerkleHashOrchard::empty_root(level))
+                    });
+                    (note, MerklePath::from_parts(i as u32, auth_path))
+                })
+                .collect();
+
+            // Every leaf's path yields the same root; assert it so a broken helper
+            // fails loudly rather than silently producing mismatched anchors.
+            let anchor = witnesses[0].1.root(witnesses[0].0.commitment().into());
+            for (note, path) in &witnesses {
+                assert_eq!(
+                    path.root(note.commitment().into()),
+                    anchor,
+                    "shared-anchor witnesses inconsistent",
+                );
+            }
+            (sk, witnesses, anchor)
+        }
+    }
+
     /// A builder whose anchor and spend witnesses are deferred to proving time
     /// ([ZIP 374]), constructed for the `orchard_v3` / [`TxVersion::V6`] format that
     /// supports deferral. Reusable by tests and downstream crates exercising the
@@ -2099,6 +2192,25 @@ mod tests {
         let anchor = merkle_path.root(note.commitment().into());
 
         (note, merkle_path, anchor)
+    }
+
+    proptest! {
+        #[test]
+        fn shared_anchor_notes_agree_on_anchor(
+            (_sk, witnesses, anchor) in testing::arb_shared_anchor_notes(
+                vec![
+                    NoteValue::from_raw(10_000),
+                    NoteValue::from_raw(20_000),
+                    NoteValue::from_raw(30_000),
+                ],
+                BundleVersion::orchard_v2().note_version(),
+            ),
+        ) {
+            prop_assert_eq!(witnesses.len(), 3);
+            for (note, path) in &witnesses {
+                prop_assert_eq!(path.root(note.commitment().into()), anchor);
+            }
+        }
     }
 
     proptest! {

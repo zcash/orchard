@@ -18,6 +18,10 @@ and this project adheres to Rust's notion of
   anchor and witnesses are installed through the PCZT Updater role after signing. Only
   supported for bundle formats whose txid digest — and hence every signature — excludes
   the anchor (the V6 formats); only `Builder::build_for_pczt` can build such a bundle.
+- `orchard::builder::testing::arb_shared_anchor_notes`, a proptest strategy generating
+  multiple spendable Orchard notes (one per supplied value) witnessed to a single shared
+  anchor, for building shared-anchor multi-spend fixtures. It is the multi-note counterpart
+  to `orchard::builder::testing::arb_spendable_note`.
 - `orchard::builder::BuildError::{AnchorRequired, AnchorDeferralUnsupported}`
 - `orchard::builder::SpendError::{AnchorDeferred, WitnessRequired}`
 - `orchard::pczt::Updater::set_anchor` and
