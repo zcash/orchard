@@ -20,6 +20,14 @@ and this project adheres to Rust's notion of
   the anchor (the V6 formats); only `Builder::build_for_pczt` can build such a bundle.
 - `orchard::builder::BuildError::{AnchorRequired, AnchorDeferralUnsupported}`
 - `orchard::builder::SpendError::{AnchorDeferred, WitnessRequired}`
+- `orchard::pczt::Updater::set_anchor` and
+  `orchard::pczt::ActionUpdater::set_spend_witness`, the PCZT Updater-role setters that
+  install the real bundle anchor and the per-spend Merkle witnesses that a deferred-anchor
+  bundle ([ZIP 374](https://zips.z.cash/zip-0374)) is built without. `set_anchor` replaces
+  the empty-tree placeholder and clears the deferral so the Prover proves against the real
+  anchor; `set_spend_witness` supplies the witness the Prover requires
+  (`orchard::pczt::ProverError::MissingWitness`). The Prover now rejects a bundle whose
+  anchor is still deferred with the new `orchard::pczt::ProverError::AnchorDeferred`.
 
 ## [0.15.0] 2026-07-09
 
