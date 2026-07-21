@@ -47,6 +47,14 @@ impl super::Bundle {
             return Ok(());
         }
 
+        // A deferred-anchor bundle (ZIP 374) still carries the empty-tree placeholder in
+        // `anchor` and its spends have no witness; the real anchor and witnesses must first
+        // be installed through the Updater role (which clears `anchor_deferred`). Proving
+        // against the placeholder would silently produce an invalid proof, so reject it.
+        if self.anchor_deferred {
+            return Err(ProverError::AnchorDeferred);
+        }
+
         // Check the restriction structurally before synthesizing any circuit, for a
         // clear error instead of an unsatisfiable-constraint failure.
         self.verify_cross_address_restriction()
@@ -147,6 +155,9 @@ impl super::Bundle {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ProverError {
+    /// The bundle's anchor is still deferred (ZIP 374): the real anchor and witnesses must
+    /// be installed through the Updater role before proving.
+    AnchorDeferred,
     /// An action's output is addressed differently than its spent note, but the bundle's pool
     /// restrictions disable cross-address transfers.
     DisallowedCrossAddressTransfer(super::VerifyError),
@@ -184,6 +195,11 @@ pub enum ProverError {
 impl fmt::Display for ProverError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ProverError::AnchorDeferred => write!(
+                f,
+                "the bundle's anchor is still deferred; install it via the Updater role before \
+                 proving"
+            ),
             ProverError::DisallowedCrossAddressTransfer(e) => match e {
                 super::VerifyError::DisallowedCrossAddressTransfer => write!(
                     f,

@@ -4,6 +4,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use super::{Action, Bundle, Zip32Derivation};
+use crate::{tree::MerklePath, Anchor};
 
 impl Bundle {
     /// Updates the bundle with information provided in the given closure.
@@ -23,6 +24,13 @@ impl Updater<'_> {
     /// Provides read access to the bundle being updated.
     pub fn bundle(&self) -> &Bundle {
         self.0
+    }
+
+    /// Installs the real bundle anchor for a deferred-anchor bundle (ZIP 374), replacing
+    /// the empty-tree placeholder and clearing the deferral so the Prover uses this anchor.
+    pub fn set_anchor(&mut self, anchor: Anchor) {
+        self.0.anchor = anchor;
+        self.0.anchor_deferred = false;
     }
 
     /// Updates the action at the given index with information provided in the given
@@ -48,6 +56,13 @@ impl ActionUpdater<'_> {
     /// Sets the ZIP 32 derivation path for the spent note's signing key.
     pub fn set_spend_zip32_derivation(&mut self, derivation: Zip32Derivation) {
         self.0.spend.zip32_derivation = Some(derivation);
+    }
+
+    /// Installs the Merkle witness for the spent note. Required for a deferred-anchor
+    /// bundle (ZIP 374), whose spends are built with no witness; the Prover role requires
+    /// it (`ProverError::MissingWitness`).
+    pub fn set_spend_witness(&mut self, witness: MerklePath) {
+        self.0.spend.witness = Some(witness);
     }
 
     /// Stores the given spend-specific proprietary value at the given key.
