@@ -1,6 +1,6 @@
 [package]
 name = "orchard"
-version = "0.15.1"
+version = "0.15.2"
 authors = [
     "Sean Bowe <ewillbefull@gmail.com>",
     "Jack Grigg <thestr4d@gmail.com>",

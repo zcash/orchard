@@ -7,6 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-07-21
+
 ### Added
 - `orchard::builder::Builder::new_with_anchor_deferred`, constructing a builder whose bundle
   anchor — and every real spend's Merkle witness — is deferred to proving time, per
