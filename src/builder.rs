@@ -1871,7 +1871,7 @@ pub mod testing {
     use alloc::vec::Vec;
     use core::fmt::Debug;
 
-    use incrementalmerkletree::{frontier::Frontier, Hashable};
+    use incrementalmerkletree::{frontier::Frontier, Hashable, Level};
     use rand::{rngs::StdRng, CryptoRng, SeedableRng};
 
     use proptest::collection::vec;
@@ -1879,13 +1879,15 @@ pub mod testing {
 
     use crate::{
         address::testing::arb_address,
-        bundle::{Authorized, Bundle, BundleVersion},
+        bundle::{Authorized, Bundle, BundleVersion, TxVersion},
         circuit::{OrchardCircuitVersion, ProvingKey},
-        keys::{testing::arb_spending_key, FullViewingKey, SpendAuthorizingKey, SpendingKey},
-        note::testing::arb_note,
+        keys::{
+            testing::arb_spending_key, FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey,
+        },
+        note::{testing::arb_note, Nullifier, Rho},
         tree::{Anchor, MerkleHashOrchard, MerklePath},
         value::{testing::arb_positive_note_value, NoteValue, MAX_NOTE_VALUE},
-        Address, Note, NoteVersion,
+        Address, Note, NoteVersion, NOTE_COMMITMENT_TREE_DEPTH,
     };
 
     use super::{Builder, BundleType};
@@ -2011,16 +2013,155 @@ pub mod testing {
     ) -> impl Strategy<Value = Bundle<Authorized, V>> {
         arb_bundle_inputs(k).prop_map(|inputs| inputs.into_bundle::<V>())
     }
+
+    prop_compose! {
+        /// A spendable Orchard note witnessed to an anchor, owned by the
+        /// returned spending key.
+        ///
+        /// The note is created for the external address of the key derived
+        /// from `sk`, so downstream ownership checks (such as
+        /// `add_spend_unwitnessed`) succeed. The returned `MerklePath` is a
+        /// dummy path and the `Anchor` is the root that path produces for the
+        /// note's commitment, giving a consistent `(path, anchor)` pair.
+        /// Reusable by downstream crates that need a ready-to-spend note
+        /// fixture.
+        pub fn arb_spendable_note(value: NoteValue, note_version: NoteVersion)(
+            sk in arb_spending_key(),
+            seed in any::<[u8; 32]>(),
+        ) -> (SpendingKey, Note, MerklePath, Anchor) {
+            let mut rng = StdRng::from_seed(seed);
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+            let note = Note::new(recipient, value, rho, note_version, &mut rng);
+            let merkle_path = MerklePath::dummy(&mut rng);
+            let anchor = merkle_path.root(note.commitment().into());
+            (sk, note, merkle_path, anchor)
+        }
+    }
+
+    prop_compose! {
+        /// Multiple spendable Orchard notes witnessed to a single shared anchor,
+        /// all owned by the returned spending key.
+        ///
+        /// Each value in `values` becomes one note (in order), placed as leaf `i`
+        /// of one otherwise-empty note-commitment tree and paired with its
+        /// authentication path against the single shared root returned as the
+        /// `Anchor`. Unlike [`arb_spendable_note`], which gives each note its own
+        /// dummy path and independent anchor, every path returned here yields the
+        /// SAME anchor, so a multi-spend bundle can anchor all of its spends to one
+        /// root. `values` must be non-empty. Reusable by downstream crates building
+        /// shared-anchor multi-spend fixtures.
+        pub fn arb_shared_anchor_notes(values: Vec<NoteValue>, note_version: NoteVersion)(
+            sk in arb_spending_key(),
+            seed in any::<[u8; 32]>(),
+        ) -> (SpendingKey, Vec<(Note, MerklePath)>, Anchor) {
+            assert!(
+                !values.is_empty(),
+                "arb_shared_anchor_notes requires at least one value",
+            );
+            let mut rng = StdRng::from_seed(seed);
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            // One note per value, in order.
+            let notes: Vec<Note> = values
+                .iter()
+                .map(|&value| {
+                    let rho = Rho::from_nf_old(Nullifier::dummy(&mut rng));
+                    Note::new(recipient, value, rho, note_version, &mut rng)
+                })
+                .collect();
+
+            // Filled subtree roots per level: `levels[l][p]` is the root of the
+            // subtree at level `l`, position `p`. Level 0 is the leaves; each higher
+            // level combines pairs, using the empty-subtree root for a missing right
+            // sibling. Positions past `levels[l].len()` are empty.
+            let leaves: Vec<MerkleHashOrchard> = notes
+                .iter()
+                .map(|n| MerkleHashOrchard::from_cmx(&n.commitment().into()))
+                .collect();
+            let mut levels: Vec<Vec<MerkleHashOrchard>> =
+                Vec::with_capacity(NOTE_COMMITMENT_TREE_DEPTH + 1);
+            levels.push(leaves);
+            for l in 0..NOTE_COMMITMENT_TREE_DEPTH {
+                let level = Level::from(l as u8);
+                let cur = &levels[l];
+                let mut next = Vec::with_capacity(cur.len().div_ceil(2));
+                let mut p = 0;
+                while p < cur.len() {
+                    let left = cur[p];
+                    let right = cur
+                        .get(p + 1)
+                        .copied()
+                        .unwrap_or_else(|| MerkleHashOrchard::empty_root(level));
+                    next.push(MerkleHashOrchard::combine(level, &left, &right));
+                    p += 2;
+                }
+                levels.push(next);
+            }
+
+            // Each leaf's authentication path: the sibling subtree root at every
+            // level (its computed value when filled, else the empty-subtree root).
+            let witnesses: Vec<(Note, MerklePath)> = notes
+                .into_iter()
+                .enumerate()
+                .map(|(i, note)| {
+                    let auth_path = core::array::from_fn(|l| {
+                        let level = Level::from(l as u8);
+                        let sibling = (i >> l) ^ 1;
+                        levels[l]
+                            .get(sibling)
+                            .copied()
+                            .unwrap_or_else(|| MerkleHashOrchard::empty_root(level))
+                    });
+                    (note, MerklePath::from_parts(i as u32, auth_path))
+                })
+                .collect();
+
+            // Every leaf's path yields the same root; assert it so a broken helper
+            // fails loudly rather than silently producing mismatched anchors.
+            let anchor = witnesses[0].1.root(witnesses[0].0.commitment().into());
+            for (note, path) in &witnesses {
+                assert_eq!(
+                    path.root(note.commitment().into()),
+                    anchor,
+                    "shared-anchor witnesses inconsistent",
+                );
+            }
+            (sk, witnesses, anchor)
+        }
+    }
+
+    /// A builder whose anchor and spend witnesses are deferred to proving time
+    /// ([ZIP 374]), constructed for the `orchard_v3` / [`TxVersion::V6`] format that
+    /// supports deferral. Reusable by tests and downstream crates exercising the
+    /// deferred-anchor PCZT flow without re-specifying the builder configuration.
+    ///
+    /// [ZIP 374]: https://zips.z.cash/zip-0374
+    pub fn arb_deferred_anchor_builder() -> impl Strategy<Value = Builder> {
+        Just(()).prop_map(|()| {
+            let bundle_version = BundleVersion::orchard_v3();
+            Builder::new_with_anchor_deferred(
+                BundleType::DEFAULT,
+                bundle_version,
+                bundle_version.default_flags(),
+                TxVersion::V6,
+            )
+            .expect("orchard_v3 in a V6 transaction supports anchor deferral")
+        })
+    }
 }
 
 #[cfg(all(test, feature = "circuit"))]
 mod tests {
-    use rand::rngs::OsRng;
-    use rand::RngCore;
+    use proptest::prelude::*;
+    use rand::rngs::{OsRng, StdRng};
+    use rand::{RngCore, SeedableRng};
 
     use super::{
-        bundle, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo, SpendInfo,
-        DEFAULT_MIN_ACTIONS,
+        bundle, testing, BuildError, Builder, ChangeInfo, MaybeSigned, OutputError, OutputInfo,
+        SpendInfo, DEFAULT_MIN_ACTIONS,
     };
     use crate::{
         builder::{BundleType, SpendError},
@@ -2053,96 +2194,108 @@ mod tests {
         (note, merkle_path, anchor)
     }
 
-    #[test]
-    fn deferred_anchor_builds_for_pczt_without_witnesses() {
-        let mut rng = OsRng;
-        let sk = SpendingKey::random(&mut rng);
-        let fvk = FullViewingKey::from(&sk);
-        let recipient = fvk.address_at(0u32, Scope::External);
-        let bundle_version = BundleVersion::orchard_v3();
-
-        // Deferral is refused for a bundle format whose txid digest commits the anchor.
-        assert!(matches!(
-            Builder::new_with_anchor_deferred(
-                BundleType::DEFAULT,
-                BundleVersion::orchard_v2(),
-                BundleVersion::orchard_v2().default_flags(),
-                TxVersion::V5,
+    proptest! {
+        #[test]
+        fn shared_anchor_notes_agree_on_anchor(
+            (_sk, witnesses, anchor) in testing::arb_shared_anchor_notes(
+                vec![
+                    NoteValue::from_raw(10_000),
+                    NoteValue::from_raw(20_000),
+                    NoteValue::from_raw(30_000),
+                ],
+                BundleVersion::orchard_v2().note_version(),
             ),
-            Err(BuildError::AnchorDeferralUnsupported)
-        ));
-
-        let mut builder = Builder::new_with_anchor_deferred(
-            BundleType::DEFAULT,
-            bundle_version,
-            bundle_version.default_flags(),
-            TxVersion::V6,
-        )
-        .unwrap();
-
-        // A witnessed add is refused (the witness could not be checked against anything),
-        // and the unwitnessed add still validates note ownership.
-        let (note, merkle_path, _) = note_with_path(
-            &mut rng,
-            recipient,
-            NoteValue::from_raw(10_000),
-            bundle_version.note_version(),
-        );
-        assert_eq!(
-            builder.add_spend(fvk.clone(), note, merkle_path),
-            Err(SpendError::AnchorDeferred)
-        );
-        let foreign_fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
-        assert_eq!(
-            builder.add_spend_unwitnessed(foreign_fvk, note),
-            Err(SpendError::FvkMismatch)
-        );
-        builder.add_spend_unwitnessed(fvk.clone(), note).unwrap();
-        builder
-            .add_change_output(
-                fvk.clone(),
-                None,
-                recipient,
-                NoteValue::from_raw(10_000),
-                [0u8; 512],
-            )
-            .unwrap();
-
-        // The built PCZT bundle reports the deferral, carries the empty-tree root purely
-        // as a placeholder, and emits NO witness for the real spend; the padding dummy
-        // keeps its (arbitrary) witness, which the prover requires and the
-        // witness-to-anchor check exempts.
-        let (pczt_bundle, meta) = builder.build_for_pczt(&mut rng).unwrap();
-        assert!(pczt_bundle.anchor_deferred);
-        assert_eq!(pczt_bundle.anchor, Anchor::empty_tree());
-        let spend_index = meta.spend_action_index(0).unwrap();
-        assert_eq!(pczt_bundle.actions.len(), 2);
-        for (i, action) in pczt_bundle.actions.iter().enumerate() {
-            if i == spend_index {
-                assert!(action.spend.witness.is_none());
-            } else {
-                assert!(action.spend.witness.is_some());
+        ) {
+            prop_assert_eq!(witnesses.len(), 3);
+            for (note, path) in &witnesses {
+                prop_assert_eq!(path.root(note.commitment().into()), anchor);
             }
         }
+    }
 
-        // An anchored builder refuses the unwitnessed entry point.
-        let (note2, _, anchor2) = note_with_path(
-            &mut rng,
-            recipient,
-            NoteValue::from_raw(10_000),
-            bundle_version.note_version(),
-        );
-        let mut anchored = Builder::new(
-            BundleType::DEFAULT,
-            bundle_version,
-            bundle_version.default_flags(),
-            anchor2,
-        )
-        .unwrap();
-        assert_eq!(
-            anchored.add_spend_unwitnessed(fvk, note2),
-            Err(SpendError::WitnessRequired)
-        );
+    proptest! {
+        #[test]
+        fn deferred_anchor_builds_for_pczt_without_witnesses(
+            (sk, note, merkle_path, _anchor) in testing::arb_spendable_note(
+                NoteValue::from_raw(10_000),
+                BundleVersion::orchard_v3().note_version(),
+            ),
+            foreign_sk in crate::keys::testing::arb_spending_key(),
+            (_, note2, _, anchor2) in testing::arb_spendable_note(
+                NoteValue::from_raw(10_000),
+                BundleVersion::orchard_v3().note_version(),
+            ),
+            mut builder in testing::arb_deferred_anchor_builder(),
+            build_seed in any::<[u8; 32]>(),
+        ) {
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let foreign_fvk = FullViewingKey::from(&foreign_sk);
+            let bundle_version = BundleVersion::orchard_v3();
+
+            // Deferral is refused for a bundle format whose txid digest commits the anchor.
+            prop_assert!(matches!(
+                Builder::new_with_anchor_deferred(
+                    BundleType::DEFAULT,
+                    BundleVersion::orchard_v2(),
+                    BundleVersion::orchard_v2().default_flags(),
+                    TxVersion::V5,
+                ),
+                Err(BuildError::AnchorDeferralUnsupported)
+            ));
+
+            // A witnessed add is refused (the witness could not be checked against anything),
+            // and the unwitnessed add still validates note ownership.
+            prop_assert_eq!(
+                builder.add_spend(fvk.clone(), note, merkle_path),
+                Err(SpendError::AnchorDeferred)
+            );
+            prop_assert_eq!(
+                builder.add_spend_unwitnessed(foreign_fvk, note),
+                Err(SpendError::FvkMismatch)
+            );
+            builder.add_spend_unwitnessed(fvk.clone(), note).unwrap();
+            builder
+                .add_change_output(
+                    fvk.clone(),
+                    None,
+                    recipient,
+                    NoteValue::from_raw(10_000),
+                    [0u8; 512],
+                )
+                .unwrap();
+
+            // The built PCZT bundle reports the deferral, carries the empty-tree root purely
+            // as a placeholder, and emits NO witness for the real spend; the padding dummy
+            // keeps its (arbitrary) witness, which the prover requires and the
+            // witness-to-anchor check exempts.
+            let mut build_rng = StdRng::from_seed(build_seed);
+            let (pczt_bundle, meta) = builder.build_for_pczt(&mut build_rng).unwrap();
+            prop_assert!(pczt_bundle.anchor_deferred);
+            prop_assert_eq!(pczt_bundle.anchor, Anchor::empty_tree());
+            let spend_index = meta.spend_action_index(0).unwrap();
+            prop_assert_eq!(pczt_bundle.actions.len(), 2);
+            for (i, action) in pczt_bundle.actions.iter().enumerate() {
+                if i == spend_index {
+                    prop_assert!(action.spend.witness.is_none());
+                } else {
+                    prop_assert!(action.spend.witness.is_some());
+                }
+            }
+
+            // An anchored builder refuses the unwitnessed entry point.
+            let mut anchored = Builder::new(
+                BundleType::DEFAULT,
+                bundle_version,
+                bundle_version.default_flags(),
+                anchor2,
+            )
+            .unwrap();
+            prop_assert_eq!(
+                anchored.add_spend_unwitnessed(fvk, note2),
+                Err(SpendError::WitnessRequired)
+            );
+        }
     }
 
     /// An in-memory build proves against its anchor immediately, so a deferred-anchor
@@ -2183,6 +2336,101 @@ mod tests {
             builder.build::<i64>(&mut rng),
             Err(BuildError::AnchorRequired)
         ));
+    }
+
+    proptest! {
+        /// The PCZT Updater installs the real anchor and the spend witness that a
+        /// deferred-anchor bundle is built without, closing the loop the Prover needs.
+        #[test]
+        fn deferred_anchor_updater_installs_anchor_and_witness(
+            (sk, note, merkle_path, real_anchor) in testing::arb_spendable_note(
+                NoteValue::from_raw(10_000),
+                BundleVersion::orchard_v3().note_version(),
+            ),
+            mut builder in testing::arb_deferred_anchor_builder(),
+            build_seed in any::<[u8; 32]>(),
+        ) {
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            builder.add_spend_unwitnessed(fvk.clone(), note).unwrap();
+            builder
+                .add_change_output(
+                    fvk,
+                    None,
+                    recipient,
+                    NoteValue::from_raw(10_000),
+                    [0u8; 512],
+                )
+                .unwrap();
+
+            let mut build_rng = StdRng::from_seed(build_seed);
+            let (mut bundle, meta) = builder.build_for_pczt(&mut build_rng).unwrap();
+            let spend_index = meta.spend_action_index(0).unwrap();
+
+            // The deferred bundle starts with the empty-tree placeholder and no witness.
+            prop_assert!(bundle.anchor_deferred);
+            prop_assert_eq!(bundle.anchor, Anchor::empty_tree());
+            prop_assert!(bundle.actions[spend_index].spend.witness.is_none());
+
+            // The Updater installs the real anchor (clearing the deferral) and the witness.
+            bundle
+                .update_with(|mut u| {
+                    u.set_anchor(real_anchor);
+                    Ok(())
+                })
+                .unwrap();
+            bundle
+                .update_with(|mut u| {
+                    u.update_action_with(spend_index, |mut a| {
+                        a.set_spend_witness(merkle_path);
+                        Ok(())
+                    })
+                })
+                .unwrap();
+
+            prop_assert!(!bundle.anchor_deferred);
+            prop_assert_eq!(bundle.anchor, real_anchor);
+            prop_assert!(bundle.actions[spend_index].spend.witness.is_some());
+        }
+    }
+
+    /// The Prover refuses to prove a bundle whose anchor is still deferred: the real anchor
+    /// must first be installed via the Updater (`set_anchor`).
+    #[test]
+    fn deferred_anchor_prover_rejects_uninstalled_anchor() {
+        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        proptest!(|(
+            (sk, note, _merkle_path, _anchor) in testing::arb_spendable_note(
+                NoteValue::from_raw(10_000),
+                BundleVersion::orchard_v3().note_version(),
+            ),
+            mut builder in testing::arb_deferred_anchor_builder(),
+            build_seed in any::<[u8; 32]>(),
+        )| {
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            builder.add_spend_unwitnessed(fvk.clone(), note).unwrap();
+            builder
+                .add_change_output(
+                    fvk,
+                    None,
+                    recipient,
+                    NoteValue::from_raw(10_000),
+                    [0u8; 512],
+                )
+                .unwrap();
+
+            let mut build_rng = StdRng::from_seed(build_seed);
+            let (mut bundle, _meta) = builder.build_for_pczt(&mut build_rng).unwrap();
+
+            prop_assert!(bundle.anchor_deferred);
+            prop_assert!(matches!(
+                bundle.create_proof(&pk, &mut build_rng),
+                Err(ProverError::AnchorDeferred)
+            ));
+        });
     }
 
     fn transactional(bundle_required: bool) -> BundleType {
