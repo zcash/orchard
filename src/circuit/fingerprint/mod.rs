@@ -137,7 +137,7 @@ fn capture_fixture(seed: u8, num_actions: u8, namespace: &str, output_var: &str)
         namespace,
         "PostNu6_3",
         K,
-        usize::from(num_actions),
+        &raw_instance_refs,
         &transcript,
         &msm,
     );
