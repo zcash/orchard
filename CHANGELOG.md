@@ -7,6 +7,13 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-07-22
+
+### Changed
+- The `verifier-fingerprint` fixture export now derives each Lean instance
+  commitment from the verifier's public inputs instead of exporting it as an
+  opaque verifying-key field (requires `halo2_proofs 0.3.4`).
+
 ## [0.15.2] - 2026-07-21
 
 ### Added
