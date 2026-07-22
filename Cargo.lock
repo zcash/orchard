@@ -992,8 +992,9 @@ dependencies = [
 
 [[package]]
 name = "halo2_proofs"
-version = "0.3.3"
-source = "git+https://github.com/TalDerei/halo2?branch=fingerprint-verifier-upstream#e5dc23e90a3e1e6f84a40e041cf3a157e62931d5"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f63a999d9223fa9d3b9db3031fedc316e6039a0ae0f67394408b16ef670c69f"
 dependencies = [
  "blake2b_simd",
  "ff",
