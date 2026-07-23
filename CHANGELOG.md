@@ -7,6 +7,8 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-07-23
+
 ### Changed
 - Batched trial decryption (the `zcash_note_encryption::batch` APIs) is
   significantly faster. Ephemeral keys are now prepared with GLV endomorphism
@@ -20,6 +22,8 @@ and this project adheres to Rust's notion of
   unaffected. Like the existing `group::Wnaf`-based preparation, the new path
   is variable-time with respect to the (wallet-local) viewing key scalar.
 - MSRV-compatible bump: the minimum `zcash_note_encryption` version is now 0.4.2.
+- MSRV-compatible bump: the minimum `pasta_curves` version is now 0.5.2, and its
+  `glv` feature is now enabled (providing `pasta_curves::glv`).
 
 ## [0.15.3] - 2026-07-22
 
