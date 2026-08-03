@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784825291917,
+  "lastUpdate": 1785737732543,
   "repoUrl": "https://github.com/zcash/orchard",
   "entries": {
     "Orchard Benchmarks": [
@@ -4499,6 +4499,186 @@ window.BENCHMARK_DATA = {
             "name": "default_address",
             "value": 452927,
             "range": "± 750",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "ewillbefull@gmail.com",
+            "name": "Sean Bowe",
+            "username": "ebfull"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "38bd227439117e5bcd031026218299c9ae310095",
+          "message": "Merge pull request #541 from ebfull/fingerprint-random-capture\n\nAdd random match-only fingerprint captures (fabricate→replay)",
+          "timestamp": "2026-08-03T00:03:48-06:00",
+          "tree_id": "df0519585274be89b0ad13063fd50fc173b238f6",
+          "url": "https://github.com/zcash/orchard/commit/38bd227439117e5bcd031026218299c9ae310095"
+        },
+        "date": 1785737731078,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "proving/bundle/1",
+            "value": 2676758218,
+            "range": "± 218326388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/2",
+            "value": 2671656510,
+            "range": "± 8156439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/3",
+            "value": 3824666177,
+            "range": "± 7041954",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "proving/bundle/4",
+            "value": 4984069941,
+            "range": "± 60183672",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/1",
+            "value": 20564202,
+            "range": "± 830603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/2",
+            "value": 20412944,
+            "range": "± 213541",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/3",
+            "value": 23712293,
+            "range": "± 212068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "verifying/bundle/4",
+            "value": 26953448,
+            "range": "± 184335",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/valid",
+            "value": 1369988,
+            "range": "± 4502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/invalid",
+            "value": 115199,
+            "range": "± 202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "note-decryption/compact-valid",
+            "value": 1365656,
+            "range": "± 5097",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "compact-note-decryption/invalid",
+            "value": 1213572493,
+            "range": "± 1604170",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/10",
+            "value": 13780921,
+            "range": "± 16143",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/10",
+            "value": 1241604,
+            "range": "± 9531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/10",
+            "value": 13751249,
+            "range": "± 36348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/10",
+            "value": 1201705,
+            "range": "± 8659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/50",
+            "value": 68854436,
+            "range": "± 110886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/50",
+            "value": 6121609,
+            "range": "± 7938",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/50",
+            "value": 68699708,
+            "range": "± 366923",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/50",
+            "value": 5919024,
+            "range": "± 9743",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/valid/100",
+            "value": 137644015,
+            "range": "± 940958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/invalid/100",
+            "value": 12218032,
+            "range": "± 14699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-valid/100",
+            "value": 137397527,
+            "range": "± 133391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "batch-note-decryption/compact-invalid/100",
+            "value": 11823218,
+            "range": "± 13531",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "derive_fvk",
+            "value": 419629,
+            "range": "± 7021",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "default_address",
+            "value": 453152,
+            "range": "± 4767",
             "unit": "ns/iter"
           }
         ]
