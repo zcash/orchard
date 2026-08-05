@@ -27,6 +27,13 @@ use subtle::{Choice, ConditionallySelectable, CtOption};
 // <https://zips.z.cash/protocol/protocol.pdf#thmuncommittedorchard>
 lazy_static! {
     static ref UNCOMMITTED_ORCHARD: pallas::Base = pallas::Base::from(2);
+    /// The `MerkleCRH^Orchard` Sinsemilla domain.
+    ///
+    /// `HashDomain::new` runs a full `hash_to_curve` to derive `Q`, and the
+    /// domain here is a compile-time constant, so building one per `combine`
+    /// recomputes the same point for every node of every tree and throws it
+    /// away. Hoisted for the same reason `EMPTY_ROOTS` above is.
+    static ref MERKLE_CRH_DOMAIN: HashDomain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
     pub(crate) static ref EMPTY_ROOTS: Vec<MerkleHashOrchard> = {
         iter::empty()
             .chain(Some(MerkleHashOrchard::empty_leaf()))
@@ -227,8 +234,8 @@ impl Hashable for MerkleHashOrchard {
     ///        layer = 31, l = 0
     ///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
     fn combine(level: Level, left: &Self, right: &Self) -> Self {
-        // MerkleCRH Sinsemilla hash domain.
-        let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
+        // MerkleCRH Sinsemilla hash domain, derived once. See MERKLE_CRH_DOMAIN.
+        let domain = &*MERKLE_CRH_DOMAIN;
 
         MerkleHashOrchard(
             domain

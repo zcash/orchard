@@ -103,6 +103,10 @@ name = "small"
 harness = false
 
 [[bench]]
+name = "merkle"
+harness = false
+
+[[bench]]
 name = "circuit"
 harness = false
 required-features = ["circuit"]
