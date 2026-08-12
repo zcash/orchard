@@ -7,6 +7,12 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+
+- `orchard::keys::FullViewingKey::from_sk_ak_incompatible_with_quantum_recoverability_and_will_be_removed()`,
+  behind the `unstable-frost` flag. Intended *ONLY FOR EXPERIMENTAL USE* with
+  FROST; see the doc comment for further caveats.
+
 ## [0.15.5] - 2026-08-02
 
 ### Changed
