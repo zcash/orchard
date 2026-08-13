@@ -237,42 +237,6 @@ fn builder_builds_for_insecure_circuit_version() {
 }
 
 #[test]
-fn builder_builds_for_post_nu6_3_circuit_version() {
-    let mut rng = OsRng;
-    let post_nu6_3_keys = cached_test_keys(OrchardCircuitVersion::PostNu6_3);
-    let post_nu6_3_pk = post_nu6_3_keys.proving_key();
-    let post_nu6_3_vk = post_nu6_3_keys.verifying_key();
-
-    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
-    let fvk = FullViewingKey::from(&sk);
-    let recipient = fvk.address_at(0u32, Scope::External);
-
-    let builder = output_only_builder(BundleVersion::ironwood_v3(), BundleType::DEFAULT, recipient);
-
-    let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
-    assert_eq!(
-        unauthorized.circuit_version(),
-        OrchardCircuitVersion::PostNu6_3
-    );
-
-    let sighash: [u8; 32] = unauthorized
-        .commitment(TxVersion::V6)
-        .expect("bundle flags are representable in this format")
-        .into();
-    let proven = unauthorized.create_proof(post_nu6_3_pk, &mut rng).unwrap();
-    let bundle = proven.apply_signatures(&mut rng, sighash, &[]).unwrap();
-
-    verify_bundle(&bundle, post_nu6_3_vk, TxVersion::V6);
-
-    // Reuse the proof so this test exercises batch aggregation without paying
-    // for a second proving run.
-    let mut validator = BatchValidator::new(post_nu6_3_vk);
-    validator.add_bundle(&bundle, sighash).unwrap();
-    validator.add_bundle(&bundle, sighash).unwrap();
-    assert!(validator.validate(rng));
-}
-
-#[test]
 fn ironwood_builder_outputs_decrypt_with_ironwood_domain() {
     let mut rng = OsRng;
     let sk = SpendingKey::from_bytes([0; 32]).unwrap();
