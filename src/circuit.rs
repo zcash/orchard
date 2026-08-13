@@ -1408,7 +1408,7 @@ mod tests {
     use pasta_curves::{pallas, vesta};
     use rand::{rngs::OsRng, RngCore};
 
-    use super::{Circuit, Instance, OrchardCircuitVersion, Proof, ProvingKey, VerifyingKey, K};
+    use super::{Circuit, Instance, OrchardCircuitVersion, Proof, VerifyingKey, K};
     use crate::{
         bundle::{BundleVersion, Flags},
         keys::SpendValidatingKey,
@@ -1673,17 +1673,18 @@ mod tests {
             generate_self_transfer_circuit_instance(&mut rng, OrchardCircuitVersion::PostNu6_3);
         instance.cross_address_disabled = true;
 
-        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
-        let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let keys = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3);
+        let pk = keys.proving_key();
+        let vk = keys.verifying_key();
 
         let proof = Proof::create(
-            &pk,
+            pk,
             core::slice::from_ref(&circuit),
             core::slice::from_ref(&instance),
             &mut rng,
         )
         .unwrap();
-        assert!(proof.verify(&vk, core::slice::from_ref(&instance)).is_ok());
+        assert!(proof.verify(vk, core::slice::from_ref(&instance)).is_ok());
     }
 
     // FixedPostNu6_2 leaves instance row 9 (`disableCrossAddress`) unconstrained, so a
@@ -1699,8 +1700,9 @@ mod tests {
             generate_circuit_instance(&mut rng, OrchardCircuitVersion::FixedPostNu6_2);
         instance.cross_address_disabled = true;
 
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
-        let vk = VerifyingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let keys = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = keys.proving_key();
+        let vk = keys.verifying_key();
 
         let raw_instances = instance.to_halo2_instance();
         let raw_instances: Vec<_> = raw_instances.iter().map(|i| &i[..]).collect();
@@ -1731,7 +1733,7 @@ mod tests {
 
         assert!(matches!(
             Proof::create(
-                &pk,
+                pk,
                 core::slice::from_ref(&circuit),
                 core::slice::from_ref(&instance),
                 &mut rng,
@@ -1741,7 +1743,7 @@ mod tests {
 
         let proof = Proof::new(proof_bytes);
         assert!(matches!(
-            proof.verify(&vk, core::slice::from_ref(&instance)),
+            proof.verify(vk, core::slice::from_ref(&instance)),
             Err(super::plonk::Error::InvalidInstances),
         ));
     }
@@ -1752,8 +1754,8 @@ mod tests {
         circuit_version: OrchardCircuitVersion,
         path: &str,
         expected: &str,
-    ) -> VerifyingKey {
-        let vk = VerifyingKey::build(circuit_version);
+    ) -> &'static VerifyingKey {
+        let vk = crate::cached_test_keys(circuit_version).verifying_key();
 
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
             std::fs::write(path, format!("{:#?}\n", vk.vk.pinned()))
@@ -1816,8 +1818,8 @@ mod tests {
             );
         }
 
-        let pk = ProvingKey::build(circuit_version);
-        let proof = Proof::create(&pk, &circuits, &instances, &mut rng).unwrap();
+        let pk = crate::cached_test_keys(circuit_version).proving_key();
+        let proof = Proof::create(pk, &circuits, &instances, &mut rng).unwrap();
         assert!(proof.verify(vk, &instances).is_ok());
         assert_eq!(proof.0.len(), expected_proof_size);
     }
@@ -1829,7 +1831,7 @@ mod tests {
             "src/circuit_data/circuit_description_fixed",
             include_str!("circuit_data/circuit_description_fixed"),
         );
-        round_trip_for_version(OrchardCircuitVersion::FixedPostNu6_2, &vk);
+        round_trip_for_version(OrchardCircuitVersion::FixedPostNu6_2, vk);
     }
 
     #[test]
@@ -1839,65 +1841,46 @@ mod tests {
             "src/circuit_data/circuit_description_post_nu6_3",
             include_str!("circuit_data/circuit_description_post_nu6_3"),
         );
-        round_trip_for_version(OrchardCircuitVersion::PostNu6_3, &vk);
+        round_trip_for_version(OrchardCircuitVersion::PostNu6_3, vk);
     }
 
-    // Proves with the proving key for `proving_version` and checks that the proof verifies under
-    // the verifying key for the same version, but not under a version with a different verifying
-    // key.
-    fn proof_is_rejected_by_other_circuit_version(
-        proving_version: OrchardCircuitVersion,
-        other_version: OrchardCircuitVersion,
-    ) {
-        let mut rng = OsRng;
+    const CIRCUIT_VERSIONS: [OrchardCircuitVersion; 3] = [
+        OrchardCircuitVersion::InsecurePreNu6_2,
+        OrchardCircuitVersion::FixedPostNu6_2,
+        OrchardCircuitVersion::PostNu6_3,
+    ];
 
+    fn assert_proof_verifies_only_against_matching_version(proving_version: OrchardCircuitVersion) {
+        let mut rng = OsRng;
         let (circuit, instance) = generate_circuit_instance(&mut rng, proving_version);
         let instances = core::slice::from_ref(&instance);
+        let pk = crate::cached_test_keys(proving_version).proving_key();
+        let proof = Proof::create(pk, &[circuit], instances, &mut rng).unwrap();
 
-        let pk = ProvingKey::build(proving_version);
-        let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
-
-        // Verifies under the matching version's verifying key.
-        let vk_matching = VerifyingKey::build(proving_version);
-        assert!(proof.verify(&vk_matching, instances).is_ok());
-
-        // Does not verify under the other version's verifying key.
-        let vk_other = VerifyingKey::build(other_version);
-        assert!(proof.verify(&vk_other, instances).is_err());
+        for verifying_version in CIRCUIT_VERSIONS {
+            let vk = crate::cached_test_keys(verifying_version).verifying_key();
+            assert_eq!(
+                proof.verify(vk, instances).is_ok(),
+                proving_version == verifying_version,
+            );
+        }
     }
 
     #[test]
-    fn proof_verifies_against_matching_circuit_version() {
-        // Insecure proofs are rejected by the anchored circuit versions, and anchored proofs are
-        // rejected by the insecure verifying key.
-        proof_is_rejected_by_other_circuit_version(
-            OrchardCircuitVersion::FixedPostNu6_2,
+    fn insecure_proof_verifies_only_against_matching_version() {
+        assert_proof_verifies_only_against_matching_version(
             OrchardCircuitVersion::InsecurePreNu6_2,
-        );
-        proof_is_rejected_by_other_circuit_version(
-            OrchardCircuitVersion::PostNu6_3,
-            OrchardCircuitVersion::InsecurePreNu6_2,
-        );
-        proof_is_rejected_by_other_circuit_version(
-            OrchardCircuitVersion::InsecurePreNu6_2,
-            OrchardCircuitVersion::FixedPostNu6_2,
-        );
-        proof_is_rejected_by_other_circuit_version(
-            OrchardCircuitVersion::InsecurePreNu6_2,
-            OrchardCircuitVersion::PostNu6_3,
         );
     }
 
     #[test]
-    fn fixed_and_post_nu6_3_have_distinct_verifying_keys() {
-        proof_is_rejected_by_other_circuit_version(
-            OrchardCircuitVersion::FixedPostNu6_2,
-            OrchardCircuitVersion::PostNu6_3,
-        );
-        proof_is_rejected_by_other_circuit_version(
-            OrchardCircuitVersion::PostNu6_3,
-            OrchardCircuitVersion::FixedPostNu6_2,
-        );
+    fn fixed_proof_verifies_only_against_matching_version() {
+        assert_proof_verifies_only_against_matching_version(OrchardCircuitVersion::FixedPostNu6_2);
+    }
+
+    #[test]
+    fn post_nu6_3_proof_verifies_only_against_matching_version() {
+        assert_proof_verifies_only_against_matching_version(OrchardCircuitVersion::PostNu6_3);
     }
 
     // Proving a circuit with a proving key for a different circuit version is a misuse: the
@@ -1924,10 +1907,10 @@ mod tests {
             let (circuit, instance) = generate_circuit_instance(&mut rng, circuit_version);
             let instances = core::slice::from_ref(&instance);
 
-            let mismatched_pk = ProvingKey::build(pk_version);
+            let mismatched_pk = crate::cached_test_keys(pk_version).proving_key();
 
             assert!(matches!(
-                Proof::create(&mismatched_pk, &[circuit], instances, &mut rng),
+                Proof::create(mismatched_pk, &[circuit], instances, &mut rng),
                 Err(super::plonk::Error::Synthesis),
             ));
         }
@@ -1941,7 +1924,7 @@ mod tests {
         expected_proof_size: usize,
         restricted: bool,
     ) {
-        let vk = VerifyingKey::build(circuit_version);
+        let vk = crate::cached_test_keys(circuit_version).verifying_key();
         // Set ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF to regenerate this serialized proof
         // fixture. The non-regeneration path embeds and verifies the checked-in fixture.
         if std::env::var_os("ORCHARD_CIRCUIT_TEST_GENERATE_NEW_PROOF").is_some() {
@@ -1956,9 +1939,9 @@ mod tests {
                 instance.cross_address_disabled = restricted;
                 let instances = core::slice::from_ref(&instance);
 
-                let pk = ProvingKey::build(circuit_version);
-                let proof = Proof::create(&pk, &[circuit], instances, &mut rng).unwrap();
-                assert!(proof.verify(&vk, instances).is_ok());
+                let pk = crate::cached_test_keys(circuit_version).proving_key();
+                let proof = Proof::create(pk, &[circuit], instances, &mut rng).unwrap();
+                assert!(proof.verify(vk, instances).is_ok());
 
                 let file = std::fs::File::create(proof_path)?;
                 write_test_case(file, &instance, &proof, encoding)
@@ -1975,7 +1958,7 @@ mod tests {
         assert_eq!(instance.cross_address_disabled(), restricted);
         assert_eq!(proof.0.len(), expected_proof_size);
 
-        assert!(proof.verify(&vk, &[instance]).is_ok());
+        assert!(proof.verify(vk, &[instance]).is_ok());
     }
 
     #[test]
@@ -2021,7 +2004,7 @@ mod tests {
     // pre-NU6.2 verifying key and a sample proof, so they are never regenerated.
     #[test]
     fn insecure_against_stored_circuit() {
-        let vk = VerifyingKey::build(OrchardCircuitVersion::InsecurePreNu6_2);
+        let vk = crate::cached_test_keys(OrchardCircuitVersion::InsecurePreNu6_2).verifying_key();
         assert_eq!(
             format!("{:#?}\n", vk.vk.pinned()),
             include_str!("circuit_data/circuit_description_insecure").replace("\r\n", "\n")
@@ -2034,7 +2017,7 @@ mod tests {
                 .expect("proof must be valid")
         };
         assert_eq!(proof.0.len(), 4992);
-        assert!(proof.verify(&vk, &[instance]).is_ok());
+        assert!(proof.verify(vk, &[instance]).is_ok());
     }
 
     #[cfg(feature = "dev-graph")]

@@ -14,7 +14,7 @@ use super::{
     assert_pinned_verifying_key, build_fixture_bundle, fixture_rng, raw_instance_refs,
     raw_instances,
 };
-use crate::circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey};
+use crate::circuit::OrchardCircuitVersion;
 
 enum ScalarEventEdit {
     Write(vesta::Scalar),
@@ -52,15 +52,16 @@ fn proof_from_read_events(
 #[test]
 fn fingerprint_rejected_capture_two_actions() {
     let mut rng = fixture_rng(0x4e);
-    let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
-    let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let keys = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3);
+    let pk = keys.proving_key();
+    let vk = keys.verifying_key();
     assert!(vk.supports_cross_address_restriction());
-    assert_pinned_verifying_key(&vk);
+    assert_pinned_verifying_key(vk);
 
-    let bundle = build_fixture_bundle(&mut rng, &pk, 2);
+    let bundle = build_fixture_bundle(&mut rng, pk, 2);
     let instances = bundle.to_instances();
     let proof = bundle.authorization().proof().clone();
-    assert!(bundle.verify_proof(&vk).is_ok());
+    assert!(bundle.verify_proof(vk).is_ok());
 
     let raw_instances = raw_instances(&instances);
     let raw_instance_refs = raw_instance_refs(&raw_instances);

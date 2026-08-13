@@ -151,7 +151,7 @@ mod tests {
     use super::{BatchError, BatchValidator};
     use crate::{
         bundle::tests::{sample_authorized_bundle, with_cross_address_disabled},
-        circuit::{OrchardCircuitVersion, VerifyingKey},
+        circuit::OrchardCircuitVersion,
     };
 
     #[test]
@@ -166,8 +166,8 @@ mod tests {
             OrchardCircuitVersion::InsecurePreNu6_2,
             OrchardCircuitVersion::FixedPostNu6_2,
         ] {
-            let vk = VerifyingKey::build(circuit_version);
-            let mut validator = BatchValidator::new(&vk);
+            let vk = crate::cached_test_keys(circuit_version).verifying_key();
+            let mut validator = BatchValidator::new(vk);
             assert_eq!(
                 validator.add_bundle(&bundle, [0; 32]),
                 Err(BatchError::RestrictionUnsupportedByKey)
@@ -175,8 +175,8 @@ mod tests {
         }
 
         // The post-NU 6.3 key supports the restriction, so the bundle is accepted.
-        let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
-        let mut validator = BatchValidator::new(&vk);
+        let vk = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3).verifying_key();
+        let mut validator = BatchValidator::new(vk);
         assert_eq!(validator.add_bundle(&bundle, [0; 32]), Ok(()));
     }
 
@@ -187,8 +187,8 @@ mod tests {
             OrchardCircuitVersion::FixedPostNu6_2,
             OrchardCircuitVersion::PostNu6_3,
         ] {
-            let vk = VerifyingKey::build(circuit_version);
-            assert!(BatchValidator::new(&vk).validate(OsRng));
+            let vk = crate::cached_test_keys(circuit_version).verifying_key();
+            assert!(BatchValidator::new(vk).validate(OsRng));
         }
     }
 }

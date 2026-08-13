@@ -51,6 +51,51 @@ pub mod zip32;
 #[cfg(test)]
 mod test_vectors;
 
+// Proving and verifying keys are immutable and depend only on the circuit
+// version, so tests in this process can share one of each per version.
+#[cfg(all(test, feature = "circuit"))]
+struct CachedTestKeys {
+    circuit_version: circuit::OrchardCircuitVersion,
+    proving_key: std::sync::OnceLock<circuit::ProvingKey>,
+    verifying_key: std::sync::OnceLock<circuit::VerifyingKey>,
+}
+
+#[cfg(all(test, feature = "circuit"))]
+impl CachedTestKeys {
+    const fn new(circuit_version: circuit::OrchardCircuitVersion) -> Self {
+        Self {
+            circuit_version,
+            proving_key: std::sync::OnceLock::new(),
+            verifying_key: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn proving_key(&self) -> &circuit::ProvingKey {
+        self.proving_key
+            .get_or_init(|| circuit::ProvingKey::build(self.circuit_version))
+    }
+
+    fn verifying_key(&self) -> &circuit::VerifyingKey {
+        self.verifying_key
+            .get_or_init(|| circuit::VerifyingKey::build(self.circuit_version))
+    }
+}
+
+#[cfg(all(test, feature = "circuit"))]
+fn cached_test_keys(circuit_version: circuit::OrchardCircuitVersion) -> &'static CachedTestKeys {
+    use circuit::OrchardCircuitVersion;
+
+    static INSECURE: CachedTestKeys = CachedTestKeys::new(OrchardCircuitVersion::InsecurePreNu6_2);
+    static FIXED: CachedTestKeys = CachedTestKeys::new(OrchardCircuitVersion::FixedPostNu6_2);
+    static POST_NU6_3: CachedTestKeys = CachedTestKeys::new(OrchardCircuitVersion::PostNu6_3);
+
+    match circuit_version {
+        OrchardCircuitVersion::InsecurePreNu6_2 => &INSECURE,
+        OrchardCircuitVersion::FixedPostNu6_2 => &FIXED,
+        OrchardCircuitVersion::PostNu6_3 => &POST_NU6_3,
+    }
+}
+
 pub use action::{Action, ActionFromPartsError};
 pub use address::Address;
 pub use bundle::Bundle;

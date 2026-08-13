@@ -55,7 +55,7 @@ use halo2_proofs::transcript::{
 use pasta_curves::vesta;
 use rand_chacha::ChaCha20Rng;
 
-use super::super::{OrchardCircuitVersion, VerifyingKey, K};
+use super::super::{OrchardCircuitVersion, K};
 use super::{assert_pinned_verifying_key, fixture_rng, raw_instance_refs};
 
 /// Public-instance rows per action for the pinned Post-NU6.3 circuit
@@ -187,9 +187,9 @@ pub(super) fn capture_random_fixture(
     let mut rng = fixture_rng(seed);
     // No proving key and no bundle: random captures need synthesis (inside `keygen_vk`) plus two
     // verifier runs, never a prover run.
-    let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+    let vk = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3).verifying_key();
     assert!(vk.supports_cross_address_restriction());
-    assert_pinned_verifying_key(&vk);
+    assert_pinned_verifying_key(vk);
 
     // Random public instances with the honest captures' shape: one column of `INSTANCE_ROWS`
     // rows per action, sampled as raw field elements at the halo2 interface (the typed orchard
