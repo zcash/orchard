@@ -260,9 +260,16 @@ fn builder_builds_for_post_nu6_3_circuit_version() {
         .expect("bundle flags are representable in this format")
         .into();
     let proven = unauthorized.create_proof(post_nu6_3_pk, &mut rng).unwrap();
-    let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+    let bundle = proven.apply_signatures(&mut rng, sighash, &[]).unwrap();
 
     verify_bundle(&bundle, post_nu6_3_vk, TxVersion::V6);
+
+    // Reuse the proof so this test exercises batch aggregation without paying
+    // for a second proving run.
+    let mut validator = BatchValidator::new(post_nu6_3_vk);
+    validator.add_bundle(&bundle, sighash).unwrap();
+    validator.add_bundle(&bundle, sighash).unwrap();
+    assert!(validator.validate(rng));
 }
 
 #[test]
