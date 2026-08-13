@@ -7,6 +7,13 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `SpendAuthorizingKey::sign` signs a message with the unrandomized
+  spend-authorizing key, for non-transaction signatures.
+- `SpendValidatingKey::to_verification_key` returns the unrandomized
+  verification key.
+- `FullViewingKey::ak` returns the spend validating key.
+
 ## [0.15.5] - 2026-08-02
 
 ### Changed

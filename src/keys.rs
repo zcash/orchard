@@ -15,7 +15,7 @@ use group::{
 };
 use pasta_curves::glv::{Decomposed, Table};
 use pasta_curves::pallas;
-use rand::RngCore;
+use rand::{CryptoRng, RngCore};
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
 
@@ -135,6 +135,20 @@ impl SpendAuthorizingKey {
     pub fn randomize(&self, randomizer: &pallas::Scalar) -> redpallas::SigningKey<SpendAuth> {
         self.0.randomize(randomizer)
     }
+
+    /// Signs a message with this spend-authorizing key, without randomization.
+    ///
+    /// This is intended for non-transaction signatures (such as binding a UFVK
+    /// to the account's spending authority) where no per-spend randomizer is
+    /// applied. For spend authorization signatures, use [`Self::randomize`] with
+    /// the spend's randomizer and sign with the resulting key.
+    pub fn sign<R: RngCore + CryptoRng>(
+        &self,
+        rng: R,
+        msg: &[u8],
+    ) -> redpallas::Signature<SpendAuth> {
+        self.0.sign(rng, msg)
+    }
 }
 
 impl From<&SpendingKey> for SpendAuthorizingKey {
@@ -187,6 +201,15 @@ impl SpendValidatingKey {
     /// Randomizes this spend validating key with the given `randomizer`.
     pub fn randomize(&self, randomizer: &pallas::Scalar) -> redpallas::VerificationKey<SpendAuth> {
         self.0.randomize(randomizer)
+    }
+
+    /// Returns the unrandomized verification key.
+    ///
+    /// This is the base verification key corresponding to this spend validating
+    /// key, without any randomizer applied. Use [`Self::randomize`] to obtain a
+    /// randomized verification key for spend-auth signature verification.
+    pub fn to_verification_key(&self) -> redpallas::VerificationKey<SpendAuth> {
+        self.0.clone()
     }
 
     /// Converts this spend validating key to its serialized form,
@@ -344,6 +367,11 @@ impl From<FullViewingKey> for SpendValidatingKey {
 }
 
 impl FullViewingKey {
+    /// Returns the spend validating key for this full viewing key.
+    pub fn ak(&self) -> &SpendValidatingKey {
+        &self.ak
+    }
+
     /// Returns the nullifier deriving key for this full viewing key.
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn nk(&self) -> &NullifierDerivingKey {
