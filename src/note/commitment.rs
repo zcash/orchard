@@ -10,6 +10,7 @@ use core::iter;
 
 use bitvec::{array::BitArray, order::Lsb0};
 use group::ff::{PrimeField, PrimeFieldBits};
+use lazy_static::lazy_static;
 use pasta_curves::pallas;
 use subtle::{ConstantTimeEq, CtOption};
 
@@ -18,6 +19,15 @@ use crate::{
     spec::extract_p,
     value::NoteValue,
 };
+
+lazy_static! {
+    static ref NOTE_COMMITMENT_DOMAIN: sinsemilla::CommitDomain =
+        sinsemilla::CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
+}
+
+fn note_commitment_domain() -> &'static sinsemilla::CommitDomain {
+    &NOTE_COMMITMENT_DOMAIN
+}
 
 /// The trapdoor for a note commitment.
 #[derive(Clone, Debug)]
@@ -58,7 +68,7 @@ impl NoteCommitment {
         psi: pallas::Base,
         rcm: NoteCommitTrapdoor,
     ) -> CtOption<Self> {
-        let domain = sinsemilla::CommitDomain::new(NOTE_COMMITMENT_PERSONALIZATION);
+        let domain = note_commitment_domain();
         domain
             .commit(
                 iter::empty()
