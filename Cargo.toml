@@ -107,6 +107,11 @@ name = "circuit"
 harness = false
 required-features = ["circuit"]
 
+[[bench]]
+name = "orchard_k11_prover"
+harness = false
+required-features = ["circuit"]
+
 [profile.release]
 debug = true
 
