@@ -75,6 +75,10 @@ pub use crate::Proof;
 /// Size of the Orchard circuit.
 const K: u32 = 11;
 
+/// Shape of the public instance consumed by one Orchard Action proof.
+const INSTANCE_COLUMNS: usize = 1;
+const INSTANCE_ROWS: usize = 10;
+
 // Absolute offsets for public inputs.
 const ANCHOR: usize = 0;
 const CV_NET_X: usize = 1;
@@ -1252,8 +1256,8 @@ impl Instance {
         self.cross_address_disabled
     }
 
-    fn to_halo2_instance(&self) -> [[vesta::Scalar; 10]; 1] {
-        let mut instance = [vesta::Scalar::zero(); 10];
+    fn to_halo2_instance(&self) -> [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS] {
+        let mut instance = [vesta::Scalar::zero(); INSTANCE_ROWS];
 
         instance[ANCHOR] = self.anchor.inner();
         instance[CV_NET_X] = self.cv_net.x();
@@ -1397,6 +1401,9 @@ impl Proof {
 
 #[cfg(all(test, feature = "verifier-fingerprint"))]
 mod fingerprint;
+
+#[cfg(test)]
+mod benchmark;
 
 #[cfg(test)]
 mod tests {
