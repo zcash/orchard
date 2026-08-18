@@ -1143,6 +1143,18 @@ impl ProvingKey {
         }
     }
 
+    /// Returns the [`VerifyingKey`] corresponding to this proving key.
+    ///
+    /// This clones the key material already contained in the proving key; it
+    /// does not perform key generation.
+    pub fn verifying_key(&self) -> VerifyingKey {
+        VerifyingKey {
+            params: self.params.clone(),
+            vk: self.pk.get_vk().clone(),
+            circuit_version: self.circuit_version,
+        }
+    }
+
     /// The circuit version this proving key produces proofs for.
     pub fn circuit_version(&self) -> OrchardCircuitVersion {
         self.circuit_version

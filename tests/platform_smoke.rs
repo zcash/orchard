@@ -4,7 +4,7 @@ use incrementalmerkletree::Hashable;
 use orchard::{
     builder::{Builder, BundleType},
     bundle::{BatchValidator, BundleVersion, Flags, TxVersion},
-    circuit::{ProvingKey, VerifyingKey},
+    circuit::ProvingKey,
     keys::{FullViewingKey, Scope, SpendingKey},
     tree::MerkleHashOrchard,
     value::NoteValue,
@@ -21,7 +21,7 @@ fn creates_and_verifies_proof_individually_and_in_batch() {
     let bundle_version = BundleVersion::ironwood_v3();
     let circuit_version = bundle_version.circuit_version();
     let proving_key = ProvingKey::build(circuit_version);
-    let verifying_key = VerifyingKey::build(circuit_version);
+    let verifying_key = proving_key.verifying_key();
 
     let spending_key = SpendingKey::from_bytes(TEST_SPENDING_KEY).unwrap();
     let recipient = FullViewingKey::from(&spending_key).address_at(0u32, Scope::External);
