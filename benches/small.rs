@@ -1,5 +1,14 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use incrementalmerkletree::{Hashable, Level};
 use orchard::keys::{FullViewingKey, Scope, SpendingKey};
+use orchard::tree::MerkleHashOrchard;
+
+/// Selects a nontrivial Merkle layer for the benchmarked compression.
+const BENCHMARK_LEVEL: u8 = 7;
+/// Selects a protocol-defined empty root for the left input.
+const LEFT_ROOT_LEVEL: u8 = 4;
+/// Selects a distinct protocol-defined empty root for the right input.
+const RIGHT_ROOT_LEVEL: u8 = 11;
 
 fn key_derivation(c: &mut Criterion) {
     // Meaningless random spending key.
@@ -17,5 +26,15 @@ fn key_derivation(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, key_derivation);
+fn merkle_crh(c: &mut Criterion) {
+    let level = Level::from(BENCHMARK_LEVEL);
+    let left = MerkleHashOrchard::empty_root(Level::from(LEFT_ROOT_LEVEL));
+    let right = MerkleHashOrchard::empty_root(Level::from(RIGHT_ROOT_LEVEL));
+
+    c.bench_function("merkle_crh", |b| {
+        b.iter(|| MerkleHashOrchard::combine(level, black_box(&left), black_box(&right)))
+    });
+}
+
+criterion_group!(benches, key_derivation, merkle_crh);
 criterion_main!(benches);

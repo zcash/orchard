@@ -27,6 +27,7 @@ use subtle::{Choice, ConditionallySelectable, CtOption};
 // <https://zips.z.cash/protocol/protocol.pdf#thmuncommittedorchard>
 lazy_static! {
     static ref UNCOMMITTED_ORCHARD: pallas::Base = pallas::Base::from(2);
+    static ref MERKLE_CRH_DOMAIN: HashDomain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
     pub(crate) static ref EMPTY_ROOTS: Vec<MerkleHashOrchard> = {
         iter::empty()
             .chain(Some(MerkleHashOrchard::empty_leaf()))
@@ -227,11 +228,8 @@ impl Hashable for MerkleHashOrchard {
     ///        layer = 31, l = 0
     ///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
     fn combine(level: Level, left: &Self, right: &Self) -> Self {
-        // MerkleCRH Sinsemilla hash domain.
-        let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
-
         MerkleHashOrchard(
-            domain
+            MERKLE_CRH_DOMAIN
                 .hash(
                     iter::empty()
                         .chain(i2lebsp_k(level.into()).iter().copied())
@@ -292,12 +290,54 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use {
-        crate::tree::{MerkleHashOrchard, EMPTY_ROOTS},
-        group::ff::PrimeField,
-        incrementalmerkletree::{frontier::Frontier, Level, Marking, MerklePath, Retention},
+        crate::{
+            constants::sinsemilla::{i2lebsp_k, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
+            constants::MERKLE_DEPTH_ORCHARD,
+            tree::{MerkleHashOrchard, EMPTY_ROOTS},
+        },
+        group::ff::{PrimeField, PrimeFieldBits},
+        incrementalmerkletree::{
+            frontier::Frontier, Hashable, Level, Marking, MerklePath, Retention,
+        },
         pasta_curves::pallas,
         shardtree::{store::memory::MemoryShardStore, ShardTree},
+        sinsemilla::HashDomain,
     };
+
+    fn combine_with_fresh_domain(
+        level: Level,
+        left: &MerkleHashOrchard,
+        right: &MerkleHashOrchard,
+    ) -> MerkleHashOrchard {
+        let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
+        MerkleHashOrchard(
+            domain
+                .hash(
+                    core::iter::empty()
+                        .chain(i2lebsp_k(level.into()).iter().copied())
+                        .chain(left.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
+                        .chain(right.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
+                )
+                .unwrap_or(pallas::Base::zero()),
+        )
+    }
+
+    #[test]
+    fn cached_merkle_crh_domain_matches_fresh_domains() {
+        // Domain construction depends only on its personalization. Cover every
+        // level here; the official vectors below cover varied canonical nodes.
+        let tree_depth = u8::try_from(MERKLE_DEPTH_ORCHARD).expect("Orchard tree depth fits in u8");
+        let left = MerkleHashOrchard::empty_leaf();
+        let right = MerkleHashOrchard::empty_root(Level::from(tree_depth));
+
+        for level in 0..tree_depth {
+            let level = Level::from(level);
+            assert_eq!(
+                MerkleHashOrchard::combine(level, &left, &right),
+                combine_with_fresh_domain(level, &left, &right),
+            );
+        }
+    }
 
     #[test]
     fn test_vectors() {
