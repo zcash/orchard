@@ -9,6 +9,7 @@ use crate::{
         MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,
+    spec::extract_p_bottom_batch,
 };
 
 use incrementalmerkletree::{Hashable, Level};
@@ -204,6 +205,40 @@ impl MerkleHashOrchard {
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Base::from_repr(*bytes).map(MerkleHashOrchard)
     }
+
+    /// Combines same-level node pairs using `MerkleCRH^Orchard`.
+    ///
+    /// This is equivalent to calling [`Hashable::combine`] for each pair in
+    /// input order, but normalizes all resulting projective Pallas points
+    /// together to amortize the field inversion across the batch.
+    ///
+    /// Every pair is evaluated at `level`. As with [`Hashable::combine`], the
+    /// caller is responsible for supplying children that belong at that level.
+    ///
+    /// The input iterator is consumed once and only borrows its nodes. This
+    /// method allocates and returns one digest per input pair, preserving input
+    /// order. An empty iterator returns an empty [`Vec`].
+    pub fn combine_batch<'a>(
+        level: Level,
+        pairs: impl IntoIterator<Item = (&'a Self, &'a Self)>,
+    ) -> Vec<Self> {
+        extract_p_bottom_batch(pairs.into_iter().map(|(left, right)| {
+            MERKLE_CRH_DOMAIN.hash_to_point(merkle_crh_message(level, left, right))
+        }))
+        .map(|hash| MerkleHashOrchard(hash.unwrap_or(pallas::Base::zero())))
+        .collect()
+    }
+}
+
+fn merkle_crh_message(
+    level: Level,
+    left: &MerkleHashOrchard,
+    right: &MerkleHashOrchard,
+) -> impl Iterator<Item = bool> {
+    i2lebsp_k(usize::from(level))
+        .into_iter()
+        .chain(left.0.to_le_bits().into_iter().take(L_ORCHARD_MERKLE))
+        .chain(right.0.to_le_bits().into_iter().take(L_ORCHARD_MERKLE))
 }
 
 impl ConditionallySelectable for MerkleHashOrchard {
@@ -230,12 +265,7 @@ impl Hashable for MerkleHashOrchard {
     fn combine(level: Level, left: &Self, right: &Self) -> Self {
         MerkleHashOrchard(
             MERKLE_CRH_DOMAIN
-                .hash(
-                    iter::empty()
-                        .chain(i2lebsp_k(level.into()).iter().copied())
-                        .chain(left.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
-                        .chain(right.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
-                )
+                .hash(merkle_crh_message(level, left, right))
                 .unwrap_or(pallas::Base::zero()),
         )
     }
@@ -291,18 +321,26 @@ pub mod testing {
 mod tests {
     use {
         crate::{
-            constants::sinsemilla::{i2lebsp_k, L_ORCHARD_MERKLE, MERKLE_CRH_PERSONALIZATION},
+            constants::sinsemilla::MERKLE_CRH_PERSONALIZATION,
             constants::MERKLE_DEPTH_ORCHARD,
-            tree::{MerkleHashOrchard, EMPTY_ROOTS},
+            tree::{merkle_crh_message, MerkleHashOrchard, EMPTY_ROOTS},
         },
-        group::ff::{PrimeField, PrimeFieldBits},
+        alloc::vec::Vec,
+        group::ff::{Field, PrimeField},
         incrementalmerkletree::{
             frontier::Frontier, Hashable, Level, Marking, MerklePath, Retention,
         },
         pasta_curves::pallas,
+        rand::SeedableRng,
+        rand_chacha::ChaCha20Rng,
         shardtree::{store::memory::MemoryShardStore, ShardTree},
         sinsemilla::HashDomain,
     };
+
+    /// Batch sizes exercise empty, singleton, odd, and tree-level workloads.
+    const BATCH_WIDTHS: [usize; 12] = [0, 1, 2, 3, 4, 8, 16, 32, 64, 128, 256, 512];
+    /// Fixed seed makes the scalar-equivalence test deterministic.
+    const BATCH_TEST_SEED: [u8; 32] = [0x42; 32];
 
     fn combine_with_fresh_domain(
         level: Level,
@@ -312,14 +350,39 @@ mod tests {
         let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
         MerkleHashOrchard(
             domain
-                .hash(
-                    core::iter::empty()
-                        .chain(i2lebsp_k(level.into()).iter().copied())
-                        .chain(left.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE))
-                        .chain(right.0.to_le_bits().iter().by_vals().take(L_ORCHARD_MERKLE)),
-                )
+                .hash(merkle_crh_message(level, left, right))
                 .unwrap_or(pallas::Base::zero()),
         )
+    }
+
+    #[test]
+    fn combine_batch_matches_scalar_at_every_level_and_width() {
+        let mut rng = ChaCha20Rng::from_seed(BATCH_TEST_SEED);
+        let pairs: Vec<_> = (0..*BATCH_WIDTHS.last().expect("batch widths are nonempty"))
+            .map(|_| {
+                (
+                    MerkleHashOrchard(pallas::Base::random(&mut rng)),
+                    MerkleHashOrchard(pallas::Base::random(&mut rng)),
+                )
+            })
+            .collect();
+        let tree_depth = u8::try_from(MERKLE_DEPTH_ORCHARD).expect("Orchard tree depth fits in u8");
+
+        for level in 0..tree_depth {
+            let level = Level::from(level);
+            for width in BATCH_WIDTHS {
+                let expected: Vec<_> = pairs[..width]
+                    .iter()
+                    .map(|(left, right)| MerkleHashOrchard::combine(level, left, right))
+                    .collect();
+                let actual = MerkleHashOrchard::combine_batch(
+                    level,
+                    pairs[..width].iter().map(|(left, right)| (left, right)),
+                );
+
+                assert_eq!(actual, expected, "level {level:?}, width {width}");
+            }
+        }
     }
 
     #[test]
