@@ -23,6 +23,14 @@ jobs:
       # type-check it.
       - name: Compile-check the verifier-fingerprint capture module
         run: cargo test --features verifier-fingerprint --no-run --verbose
+      # Every random-capture variant calls the same proof-byte decoder checks. Run the
+      # representative single-action path on Linux so these assertions execute in CI, while the
+      # compile check above continues to cover the full module on every supported host.
+      - name: Run verifier-fingerprint proof-byte regressions
+        if: matrix.os == 'ubuntu-latest'
+        run: >-
+          cargo test --features verifier-fingerprint
+          circuit::fingerprint::fingerprint_capture_random -- --exact
       - name: Verify working directory is clean
         run: git diff --exit-code
 

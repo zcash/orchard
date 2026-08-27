@@ -139,13 +139,17 @@ fn capture_fixture(seed: u8, num_actions: u8, namespace: &str, output_var: &str)
         transcript.challenges.len(),
     );
 
-    let fixture = vk.vk.dump_vesta_lean_fixture(
+    // The proof bytes the verifier consumed are handed to the exporter, which checks that the
+    // recorded reads re-serialize to exactly them and carries them in the fixture as
+    // `capturedProofHex`, so a consumer can check its proof-string decoder against them.
+    let fixture = vk.vk.dump_vesta_lean_fixture_honest_with_proof_bytes(
         namespace,
         "PostNu6_3",
         K,
         &raw_instance_refs,
         &transcript,
         &msm,
+        &proof.0,
     );
     if let Some(path) = std::env::var_os(output_var) {
         std::fs::write(std::path::PathBuf::from(path), fixture).unwrap();

@@ -112,3 +112,7 @@ debug = true
 
 [profile.bench]
 debug = true
+
+# Temporary until a halo2_proofs release includes zcash/halo2#933.
+[patch.crates-io]
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "fbc2dc537c97f70881021b79a686bc6477eca394" }

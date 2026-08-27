@@ -7,6 +7,16 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- The `verifier-fingerprint` capture drivers now hand the proof byte string the
+  verifier consumed to halo2's `dump_vesta_lean_fixture_honest_with_proof_bytes` /
+  `dump_vesta_lean_fixture_match_only_with_proof_bytes`, so every exported
+  fixture carries it hex-encoded as `capturedProofHex` after the exporter's
+  re-serialization check. The random capture drivers also exercise malformed
+  point and scalar encodings against the deployed reader on those exact bytes.
+  The dependency is temporarily pinned to
+  `zcash/halo2#933` until a `halo2_proofs` release provides those exporters.
+
 ## [0.15.5] - 2026-08-02
 
 ### Changed
