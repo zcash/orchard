@@ -954,8 +954,7 @@ dependencies = [
 [[package]]
 name = "halo2_gadgets"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb2a697cad929f706b7987fe804ad57d43622cd37463ba7e4d662a926fdcfea3"
+source = "git+https://github.com/zcash/halo2?rev=2b514a2d2e2f1c281588695a7931f3fce5315c5a#2b514a2d2e2f1c281588695a7931f3fce5315c5a"
 dependencies = [
  "arrayvec",
  "bitvec",
@@ -981,8 +980,7 @@ checksum = "47716fe1ae67969c5e0b2ef826f32db8c3be72be325e1aa3c1951d06b5575ec5"
 [[package]]
 name = "halo2_poseidon"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fa3da60b81f02f9b33ebc6252d766f843291fb4d2247a07ae73d20b791fc56f"
+source = "git+https://github.com/zcash/halo2?rev=2b514a2d2e2f1c281588695a7931f3fce5315c5a#2b514a2d2e2f1c281588695a7931f3fce5315c5a"
 dependencies = [
  "bitvec",
  "ff",
@@ -993,8 +991,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5aca1c66059a919227dec97444a11a4350d2f9c820ca48690988f0aa0e81cbf"
+source = "git+https://github.com/zcash/halo2?rev=2b514a2d2e2f1c281588695a7931f3fce5315c5a#2b514a2d2e2f1c281588695a7931f3fce5315c5a"
 dependencies = [
  "blake2b_simd",
  "ff",
