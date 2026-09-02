@@ -10,14 +10,22 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     continue-on-error: true
+    permissions:
+      contents: read
+      checks: write # auguwu/clippy-action posts Clippy annotations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master HEAD 2026-08-05
         id: toolchain
         with:
           toolchain: beta
           components: clippy
-      - run: rustup override set ${{steps.toolchain.outputs.name}}
+      - run: rustup override set "${TOOLCHAIN}"
+        shell: bash
+        env:
+          TOOLCHAIN: ${{steps.toolchain.outputs.name}}
       - name: Run Clippy
         uses: auguwu/clippy-action@9817d076b82df0194935be9db6154c56ac07b317 # 1.5.0
         continue-on-error: true

@@ -3,13 +3,21 @@ name: Stable lints
 # We only run these lints on trial-merges of PRs to reduce noise.
 on: pull_request
 
+permissions:
+  contents: read
+
 jobs:
   clippy:
     name: Clippy (MSRV)
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write # auguwu/clippy-action posts Clippy annotations
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run Clippy
         uses: auguwu/clippy-action@9817d076b82df0194935be9db6154c56ac07b317 # 1.5.0
         with:
@@ -27,6 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: crate_root
       # We use a synthetic crate to ensure no dev-dependencies are enabled, which can
       # be incompatible with some of these targets.
