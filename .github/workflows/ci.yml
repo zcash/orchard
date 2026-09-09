@@ -5,6 +5,9 @@ on:
   push:
     branches: main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test on ${{ matrix.os }}
@@ -13,7 +16,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Run tests
         run: cargo test --verbose
       # verifier-fingerprint capture tests build the k=11 proving key and run real proofs, too
@@ -33,10 +38,17 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master HEAD 2026-08-05
         id: toolchain
-      - run: rustup override set ${{steps.toolchain.outputs.name}}
+        with:
+          toolchain: stable
+      - run: rustup override set "${TOOLCHAIN}"
+        shell: bash
+        env:
+          TOOLCHAIN: ${{steps.toolchain.outputs.name}}
       - if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
@@ -57,8 +69,9 @@ jobs:
           - wasm32-wasip1
           - thumbv7em-none-eabihf
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           path: crate_root
       # We use a synthetic crate to ensure no dev-dependencies are enabled, which can
       # be incompatible with some of these targets.
@@ -98,7 +111,9 @@ jobs:
     name: Bitrot check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
         run: cargo build --benches
@@ -107,7 +122,9 @@ jobs:
     name: Book tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install mdbook
         run: |
           mkdir mdbook
@@ -123,7 +140,9 @@ jobs:
       image: xd009642/tarpaulin:develop-nightly
       options: --security-opt seccomp=unconfined
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Generate coverage report
         # Enable every feature except `verifier-fingerprint`: it is opt-in capture tooling whose
         # tests build the k=11 proving key and generate real proofs, which are far too heavy to run
@@ -131,13 +150,15 @@ jobs:
         # `src/circuit/fingerprint/mod.rs`.
         run: cargo tarpaulin --engine llvm --features "dev-graph unstable-frost unstable-voting-circuits test-dependencies" --release --timeout 600 --out xml
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7.0.0
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
 
   doc-links:
     name: Intra-doc links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: cargo fetch
       # Requires #![deny(rustdoc::broken_intra_doc_links)] in crates.
       - run: |
@@ -151,5 +172,7 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: cargo fmt -- --check
