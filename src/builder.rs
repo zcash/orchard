@@ -1909,6 +1909,19 @@ pub mod testing {
         output_amounts: Vec<(Address, NoteValue)>,
     }
 
+    fn fixed_proving_key() -> &'static ProvingKey {
+        #[cfg(test)]
+        {
+            crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key()
+        }
+
+        #[cfg(not(test))]
+        {
+            static PROVING_KEY: std::sync::OnceLock<ProvingKey> = std::sync::OnceLock::new();
+            PROVING_KEY.get_or_init(|| ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2))
+        }
+    }
+
     impl<R: RngCore + CryptoRng> ArbitraryBundleInputs<R> {
         /// Create a bundle from the set of arbitrary bundle inputs.
         fn into_bundle<V: TryFrom<i64>>(mut self) -> Bundle<Authorized, V> {
@@ -1935,13 +1948,13 @@ pub mod testing {
                     .unwrap();
             }
 
-            let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+            let pk = fixed_proving_key();
             builder
                 .build(&mut self.rng)
                 .unwrap()
                 .unwrap()
                 .0
-                .create_proof(&pk, &mut self.rng)
+                .create_proof(pk, &mut self.rng)
                 .unwrap()
                 .prepare(&mut self.rng, [0; 32])
                 .sign(&mut self.rng, &SpendAuthorizingKey::from(&self.sk))
@@ -2166,7 +2179,7 @@ mod tests {
     use crate::{
         builder::{BundleType, SpendError},
         bundle::{Authorized, Bundle, BundleVersion, Flags, TxVersion},
-        circuit::{OrchardCircuitVersion, ProvingKey},
+        circuit::OrchardCircuitVersion,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{
             FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey,
@@ -2399,7 +2412,7 @@ mod tests {
     /// must first be installed via the Updater (`set_anchor`).
     #[test]
     fn deferred_anchor_prover_rejects_uninstalled_anchor() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key();
         proptest!(|(
             (sk, note, _merkle_path, _anchor) in testing::arb_spendable_note(
                 NoteValue::from_raw(10_000),
@@ -2427,7 +2440,7 @@ mod tests {
 
             prop_assert!(bundle.anchor_deferred);
             prop_assert!(matches!(
-                bundle.create_proof(&pk, &mut build_rng),
+                bundle.create_proof(pk, &mut build_rng),
                 Err(ProverError::AnchorDeferred)
             ));
         });
@@ -2562,7 +2575,7 @@ mod tests {
 
     #[test]
     fn shielding_bundle() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key();
         let mut rng = OsRng;
 
         let builder =
@@ -2575,7 +2588,7 @@ mod tests {
             .unwrap()
             .unwrap()
             .0
-            .create_proof(&pk, &mut rng)
+            .create_proof(pk, &mut rng)
             .unwrap()
             .prepare(rng, [0; 32])
             .finalize()
@@ -3206,7 +3219,7 @@ mod tests {
 
     #[test]
     fn restricted_pczt_structural_checks_reject_tampering() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3).proving_key();
         let mut rng = OsRng;
         let spend_sk = SpendingKey::random(&mut rng);
         let spend_fvk = FullViewingKey::from(&spend_sk);
@@ -3242,7 +3255,7 @@ mod tests {
 
         let (mut pczt_bundle, _) = builder.build_for_pczt(&mut rng).unwrap();
         pczt_bundle.verify_cross_address_restriction().unwrap();
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.create_proof(pk, rng).unwrap();
 
         let spend_recipient = pczt_bundle.actions()[0].spend.recipient.unwrap();
         let other_recipient = loop {
@@ -3259,7 +3272,7 @@ mod tests {
             Err(VerifyError::DisallowedCrossAddressTransfer)
         ));
         assert!(matches!(
-            pczt_bundle.create_proof(&pk, rng),
+            pczt_bundle.create_proof(pk, rng),
             Err(ProverError::DisallowedCrossAddressTransfer(_))
         ));
     }
@@ -3287,15 +3300,15 @@ mod tests {
         };
 
         let mut rng = OsRng;
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key();
         let bundle = build_restricted(&mut rng);
         assert!(matches!(
-            bundle.create_proof(&pk, &mut rng),
+            bundle.create_proof(pk, &mut rng),
             Err(BuildError::Proof(halo2_proofs::plonk::Error::Synthesis)),
         ));
 
-        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3).proving_key();
         let bundle = build_restricted(&mut rng);
-        bundle.create_proof(&pk, &mut rng).unwrap();
+        bundle.create_proof(pk, &mut rng).unwrap();
     }
 }

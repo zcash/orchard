@@ -393,7 +393,7 @@ mod tests {
     use crate::{
         builder::{Builder, BundleMetadata, BundleType},
         bundle::{BundleVersion, Flags},
-        circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
+        circuit::OrchardCircuitVersion,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
@@ -516,7 +516,7 @@ mod tests {
     #[test]
     fn shielding_bundle() {
         let bundle_version = BundleVersion::orchard_v2();
-        let pk = ProvingKey::build(bundle_version.circuit_version());
+        let pk = crate::cached_test_keys(bundle_version.circuit_version()).proving_key();
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -543,7 +543,7 @@ mod tests {
         pczt_bundle.finalize_io(sighash, rng).unwrap();
 
         // Run the Prover role.
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.create_proof(pk, rng).unwrap();
 
         // Run the Transaction Extractor role.
         let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();
@@ -555,15 +555,16 @@ mod tests {
 
     #[test]
     fn create_proof_uses_proving_key_circuit_version() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
-        let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let keys = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3);
+        let pk = keys.proving_key();
+        let vk = keys.verifying_key();
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
         let sighash = [0; 32];
         // This is the load-bearing assertion: if PCZT proving still built FixedPostNu6_2
         // circuits unconditionally, `Proof::create` would reject them for this post-NU 6.3 key.
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.create_proof(pk, rng).unwrap();
 
         let bundle = pczt_bundle
             .extract::<i64>()
@@ -572,14 +573,15 @@ mod tests {
             .apply_binding_signature(sighash, rng)
             .unwrap();
 
-        assert!(bundle.verify_proof(&vk).is_ok());
+        assert!(bundle.verify_proof(vk).is_ok());
     }
 
     #[test]
     fn qr_output_version_checks_note_commitment() {
         let mut rng = OsRng;
-        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
-        let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let keys = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3);
+        let pk = keys.proving_key();
+        let vk = keys.verifying_key();
 
         let sk = SpendingKey::random(&mut rng);
         let fvk = FullViewingKey::from(&sk);
@@ -608,7 +610,7 @@ mod tests {
         let sighash = [0; 32];
         pczt_bundle.finalize_io(sighash, rng).unwrap();
         pczt_bundle
-            .create_proof(&pk, rng)
+            .create_proof(pk, rng)
             .expect("V3 output version reconstructs the QR note for proving");
 
         pczt_bundle.actions_mut()[output_action_index]
@@ -619,19 +621,19 @@ mod tests {
             action.output.verify_note_commitment(&action.spend),
             Err(VerifyError::InvalidExtractedNoteCommitment)
         ));
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.create_proof(pk, rng).unwrap();
         let bundle = pczt_bundle
             .extract::<i64>()
             .unwrap()
             .unwrap()
             .apply_binding_signature(sighash, rng)
             .unwrap();
-        assert!(bundle.verify_proof(&vk).is_err());
+        assert!(bundle.verify_proof(vk).is_err());
     }
 
     #[test]
     fn qr_spend_version_checks_nullifier_and_proves() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3).proving_key();
         let mut rng = OsRng;
 
         let sk = SpendingKey::random(&mut rng);
@@ -705,7 +707,7 @@ mod tests {
 
         pczt_bundle.finalize_io([0; 32], rng).unwrap();
         pczt_bundle
-            .create_proof(&pk, rng)
+            .create_proof(pk, rng)
             .expect("V3 spend version reconstructs the QR note for proving");
 
         pczt_bundle.actions_mut()[spend_action_index]
@@ -717,7 +719,7 @@ mod tests {
             Err(VerifyError::InvalidNullifier)
         ));
         assert!(matches!(
-            pczt_bundle.create_proof(&pk, rng),
+            pczt_bundle.create_proof(pk, rng),
             Err(ProverError::RhoMismatch)
         ));
     }
@@ -725,7 +727,7 @@ mod tests {
     #[test]
     fn shielded_bundle() {
         let bundle_version = BundleVersion::orchard_v2();
-        let pk = ProvingKey::build(bundle_version.circuit_version());
+        let pk = crate::cached_test_keys(bundle_version.circuit_version()).proving_key();
         let mut rng = OsRng;
 
         // Pretend we derived the spending key via ZIP 32.
@@ -820,7 +822,7 @@ mod tests {
         }
 
         // Run the Prover role.
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.create_proof(pk, rng).unwrap();
 
         // TODO: Verify that the PCZT contains sufficient information to decrypt and check
         // `enc_ciphertext`.
@@ -1141,25 +1143,25 @@ mod tests {
 
     #[test]
     fn create_proof_rejects_identity_rk() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key();
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
         pczt_bundle.actions_mut()[0].spend.rk = identity_rk();
 
         assert!(matches!(
-            pczt_bundle.create_proof(&pk, rng),
+            pczt_bundle.create_proof(pk, rng),
             Err(ProverError::IdentityRk),
         ));
     }
 
     #[test]
     fn extract_rejects_identity_rk() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key();
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.create_proof(pk, rng).unwrap();
 
         // Inject identity rk after a valid proof has been produced. Extract
         // should reject at the `Action::from_parts` step, before any proof or
@@ -1174,11 +1176,11 @@ mod tests {
 
     #[test]
     fn extract_rejects_non_canonical_proof() {
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key();
         let rng = OsRng;
 
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        pczt_bundle.create_proof(pk, rng).unwrap();
 
         // Pad the proof with a trailing byte after it was produced. Extraction must reject the
         // non-canonical proof rather than carry it into the extracted (and later authorized)
@@ -1322,12 +1324,12 @@ mod tests {
             OrchardCircuitVersion::FixedPostNu6_2,
             OrchardCircuitVersion::PostNu6_3,
         ] {
-            let pk = ProvingKey::build(circuit_version);
+            let pk = crate::cached_test_keys(circuit_version).proving_key();
 
             let mut mismatched_pczt_bundle = minimal_finalized_pczt_bundle(rng);
             mismatched_pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
             assert!(matches!(
-                mismatched_pczt_bundle.create_proof(&pk, rng),
+                mismatched_pczt_bundle.create_proof(pk, rng),
                 Err(ProverError::DisallowedCrossAddressTransfer(_)),
             ));
         }
@@ -1337,9 +1339,9 @@ mod tests {
 
         // A pre-NU 6.3 proving key rejects the structurally-conforming restricted
         // statement at the instance check, leaving the bundle unmodified.
-        let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
+        let pk = crate::cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2).proving_key();
         assert!(matches!(
-            pczt_bundle.create_proof(&pk, rng),
+            pczt_bundle.create_proof(pk, rng),
             Err(ProverError::ProofFailed(
                 halo2_proofs::plonk::Error::InvalidInstances
             )),
@@ -1348,8 +1350,9 @@ mod tests {
 
         // A post-NU 6.3 proving key proves the same statement, and the proof verifies
         // in the extracted bundle under the post-NU 6.3 verifying key.
-        let pk = ProvingKey::build(OrchardCircuitVersion::PostNu6_3);
-        pczt_bundle.create_proof(&pk, rng).unwrap();
+        let keys = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3);
+        let pk = keys.proving_key();
+        pczt_bundle.create_proof(pk, rng).unwrap();
 
         pczt_bundle.actions_mut()[bundle_meta.spend_action_index(0).unwrap()]
             .sign(sighash, &spend_ask, rng)
@@ -1364,9 +1367,7 @@ mod tests {
             .unwrap()
             .apply_binding_signature(sighash, rng)
             .unwrap();
-        bundle
-            .verify_proof(&VerifyingKey::build(OrchardCircuitVersion::PostNu6_3))
-            .unwrap();
+        bundle.verify_proof(keys.verifying_key()).unwrap();
     }
 
     #[test]

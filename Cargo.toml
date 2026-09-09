@@ -71,6 +71,7 @@ halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
 rand_chacha = "0.3"
+sinsemilla = { version = "0.1", features = ["test-dependencies"] }
 zcash_note_encryption = { version = "0.4.2", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
 shardtree = "0.6"
@@ -104,6 +105,11 @@ harness = false
 
 [[bench]]
 name = "circuit"
+harness = false
+required-features = ["circuit"]
+
+[[bench]]
+name = "orchard_k11_prover"
 harness = false
 required-features = ["circuit"]
 
