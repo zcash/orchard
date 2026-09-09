@@ -7,7 +7,25 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `ProvingKey::verifying_key`, which reuses the verifying key generated as
+  part of proving-key construction instead of deriving it again.
+- `MerkleHashOrchard::combine_batch`, which hashes same-level Merkle node
+  pairs together and shares one projective-to-affine normalization across
+  each batch.
+- Reproducible one-Action prover and validated-corpus batch-verifier
+  benchmark harnesses, in `benches/orchard_k11_prover.rs` and documented in
+  `benches/README.md`.
+- A `platform_smoke` integration test covering proof creation, individual
+  verification and batch verification. The existing CI matrix runs it on
+  Linux, macOS and Windows.
+
 ### Changed
+- The Sinsemilla note-commitment domain is now initialized once and reused,
+  instead of deriving the same generators for every commitment.
+- The Sinsemilla Merkle CRH domain is now initialized once and reused for
+  Orchard and Ironwood commitment-tree hashing, instead of deriving the same
+  generator for every node.
 - MSRV is now 1.88
 
 ## [0.15.5] - 2026-08-02
