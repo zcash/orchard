@@ -46,7 +46,7 @@ const FIXTURE_SEED_DOMAIN: u8 = 0x42;
 const PROOF_SEED_DOMAIN: u8 = 0x24;
 const INDEX_SEED_BYTES: usize = core::mem::size_of::<u64>();
 
-const BATCH_FIXTURE_MAGIC: &[u8] = b"ZAKURA_ORCHARD_BATCH_CORPUS_V1";
+const BATCH_FIXTURE_MAGIC: &[u8] = b"ORCHARD_BATCH_CORPUS_V1";
 
 fn benchmark_rng(domain: u8, index: usize) -> StdRng {
     let mut seed = [domain; 32];

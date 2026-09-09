@@ -10,7 +10,7 @@ Build or run the Criterion target with one Rayon worker:
 
 ```console
 RAYON_NUM_THREADS=1 cargo +1.88 bench --locked \
-    -p zakura-orchard --features circuit \
+    -p orchard --features circuit \
     --bench orchard_k11_prover
 ```
 
@@ -26,7 +26,7 @@ without running it:
 
 ```console
 cargo +1.88 test --locked --release \
-    -p zakura-orchard --features circuit --lib --no-run
+    -p orchard --features circuit --lib --no-run
 ```
 
 Cargo prints the test executable path. Copy that executable to a stable path
