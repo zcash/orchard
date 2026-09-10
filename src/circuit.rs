@@ -1398,6 +1398,9 @@ impl Proof {
 #[cfg(all(test, feature = "verifier-fingerprint"))]
 mod fingerprint;
 
+#[cfg(all(test, feature = "circuit-fixtures"))]
+mod layout_dump;
+
 #[cfg(test)]
 mod tests {
     use alloc::vec::Vec;
