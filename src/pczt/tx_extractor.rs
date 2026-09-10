@@ -59,6 +59,7 @@ impl super::Bundle {
         // flags is checked when proving or verifying.
         if let Some(bundle) = &bundle {
             crate::bundle::validate_proof_size(
+                bundle.bundle_version().circuit_version(),
                 &bundle.authorization().proof,
                 bundle.actions().len(),
             )?;

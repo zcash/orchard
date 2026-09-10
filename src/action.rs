@@ -196,7 +196,7 @@ pub(crate) mod testing {
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
-            testing::arb_note, TransmittedNoteCiphertext,
+            testing::arb_note, AssetBase, TransmittedNoteCiphertext,
         },
         note_encryption::{OrchardDomain, OrchardNoteEncryption},
         primitives::redpallas::{self, testing::arb_valid_spendauth_keypair},
@@ -235,9 +235,11 @@ pub(crate) mod testing {
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
         ) -> Action<()> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let cv_net = ValueCommitment::derive(
+            let cv_net = ValueCommitment::derive_with_asset(
                 spend_value - output_value,
-                ValueCommitTrapdoor::zero()
+                ValueCommitTrapdoor::zero(),
+                // TODO ZSA: asset should be a param, not hardcoded here
+                AssetBase::zatoshi()
             );
             let encrypted_note =
                 encrypted_note_for(note, &cv_net, &cmx, StdRng::from_seed(rng_seed));
@@ -263,9 +265,11 @@ pub(crate) mod testing {
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
         ) -> Action<redpallas::Signature<SpendAuth>> {
             let cmx = ExtractedNoteCommitment::from(note.commitment());
-            let cv_net = ValueCommitment::derive(
+            let cv_net = ValueCommitment::derive_with_asset(
                 spend_value - output_value,
-                ValueCommitTrapdoor::zero()
+                ValueCommitTrapdoor::zero(),
+                // TODO ZSA: asset should be a param, not hardcoded here
+                AssetBase::zatoshi()
             );
 
             let encrypted_note =

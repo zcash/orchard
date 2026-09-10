@@ -54,9 +54,8 @@ use rand::RngCore;
 use subtle::CtOption;
 
 use crate::{
-    constants::fixed_bases::{
-        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
-    },
+    constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES},
+    note::AssetBase,
     primitives::redpallas::{self, Binding},
 };
 
@@ -356,8 +355,18 @@ impl ValueCommitment {
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
     pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
+        ValueCommitment::derive_with_asset(value, rcv, AssetBase::zatoshi())
+    }
+
+    /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{OrchardZSA}}$.
+    ///
+    /// Defined in [ZIP-226][zip226].
+    ///
+    /// [zip226]: https://zips.z.cash/zip-0226
+    #[allow(non_snake_case)]
+    pub fn derive_with_asset(value: ValueSum, rcv: ValueCommitTrapdoor, asset: AssetBase) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-        let V = hasher(&VALUE_COMMITMENT_V_BYTES);
+        let V = asset.cv_base();
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
 

@@ -2,7 +2,8 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use orchard::{
     builder::{Builder, BundleType},
     bundle::BundleVersion,
-    circuit::{OrchardCircuitVersion, ProvingKey},
+    circuit::ProvingKey,
+    circuit_version::OrchardCircuitVersion,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey},
     note_encryption::{CompactAction, OrchardDomain},
     value::NoteValue,
