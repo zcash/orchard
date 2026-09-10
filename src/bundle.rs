@@ -4,6 +4,9 @@ use alloc::vec::Vec;
 
 pub mod commitments;
 
+mod bytes;
+pub use bytes::{BundleBytes, BundleDecompressionError};
+
 #[cfg(feature = "circuit")]
 mod batch;
 #[cfg(feature = "circuit")]
