@@ -96,9 +96,12 @@ fn cached_test_keys(circuit_version: circuit::OrchardCircuitVersion) -> &'static
     }
 }
 
-pub use action::{Action, ActionFromPartsError};
+pub use action::{
+    Action, ActionBytes, ActionFromPartsError, ActionParseError, DecompressionError,
+    ACTION_DESCRIPTION_SIZE,
+};
 pub use address::Address;
-pub use bundle::Bundle;
+pub use bundle::{Bundle, BundleBytes};
 pub use constants::MERKLE_DEPTH_ORCHARD as NOTE_COMMITMENT_TREE_DEPTH;
 pub use constants::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE};
 pub use note::{Note, NoteVersion};

@@ -463,7 +463,8 @@ mod tests {
                     .0
                     .to_repr(),
                 *tv_root,
-                "Empty root mismatch at level {level}"
+                "Empty root mismatch at level {}",
+                level
             );
         }
     }
