@@ -7,8 +7,30 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
-### Changed
-- MSRV is now 1.88
+### Added
+- A parse tier holding an Action description with `cv_net`, `rk` and `epk` left
+  compressed, so reading actions from the wire or from disk costs no curve
+  arithmetic:
+  - `ActionBytes` and `BundleBytes`, mirroring `Action` and `Bundle`, with
+    `ActionBytes::{to_bytes, from_bytes}` and `ACTION_DESCRIPTION_SIZE`.
+  - `decompress` on both, recovering the point tier, plus `ActionParseError`,
+    `DecompressionError` and `bundle::BundleDecompressionError`.
+  - `value::ValueCommitmentBytes` and
+    `primitives::redpallas::VerificationKeyBytes`, the compressed forms it holds,
+    plus `primitives::InvalidPoint`, their leaf `decompress` error.
+  - `Action::compress` and `Bundle::compress`, dropping to the encoded tier.
+    Infallible: neither can hold a point that fails to encode.
+
+`decompress` is the only way from a compressed type to its recovered one, and the
+wire (`from_bytes`) and `compress` are the only ways into the encoded tier.
+  - `ActionBytes` implements `ShieldedOutput` and converts into `CompactAction`,
+    and `OrchardDomain::for_action_bytes` builds its trial-decryption domain, so a
+    wallet scans — including via `zcash_note_encryption::batch` — without
+    decompressing. Ovk recovery still needs a `ValueCommitment`, so it is unchanged.
+
+`Action` and `Bundle` are unchanged. `ActionBytes::decompress` delegates to
+`Action::from_parts`, so the identity-`rk` and `epk` rules keep one
+implementation and no consensus rule moves.
 
 ## [0.15.5] - 2026-08-02
 

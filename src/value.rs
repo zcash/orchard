@@ -57,7 +57,10 @@ use crate::{
     constants::fixed_bases::{
         VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
     },
-    primitives::redpallas::{self, Binding},
+    primitives::{
+        redpallas::{self, Binding},
+        InvalidPoint,
+    },
 };
 
 /// Maximum note value.
@@ -401,6 +404,34 @@ impl ValueCommitment {
         } else {
             *self.0.to_affine().coordinates().unwrap().y()
         }
+    }
+}
+
+/// `cv_net` as [`ActionBytes`](crate::ActionBytes) holds it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ValueCommitmentBytes([u8; 32]);
+
+impl From<[u8; 32]> for ValueCommitmentBytes {
+    fn from(bytes: [u8; 32]) -> Self {
+        ValueCommitmentBytes(bytes)
+    }
+}
+
+impl From<&ValueCommitment> for ValueCommitmentBytes {
+    fn from(cv: &ValueCommitment) -> Self {
+        ValueCommitmentBytes(cv.to_bytes())
+    }
+}
+
+impl ValueCommitmentBytes {
+    /// Returns the byte encoding of this value commitment.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0
+    }
+
+    /// Recovers the point. 1 sqrt.
+    pub fn decompress(&self) -> Result<ValueCommitment, InvalidPoint> {
+        Option::from(ValueCommitment::from_bytes(&self.0)).ok_or(InvalidPoint)
     }
 }
 
