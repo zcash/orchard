@@ -26,16 +26,16 @@ rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 aes = "0.8"
 bitvec = { version = "1", default-features = false }
 blake2b_simd = { version = "1", default-features = false }
-ff = { version = "0.13", default-features = false }
+ff = { version = "0.14", default-features = false }
 fpe = { version = "0.6", default-features = false, features = ["alloc"] }
-group = "0.13"
+group = "0.14"
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 lazy_static = "1"
 memuse = { version = "0.2.2", default-features = false }
 pasta_curves = { version = "0.5.2", features = ["glv"] }
 proptest = { version = ">=1.0.0, <1.7.0", optional = true }
-rand = { version = "0.8", default-features = false }
-rand_core = { version = "0.6", default-features = false }
+rand = { version = "0.10", default-features = false }
+rand_core = { version = "0.10", default-features = false }
 reddsa = { version = "0.5", default-features = false }
 nonempty = { version = "0.11", default-features = false }
 poseidon = { package = "halo2_poseidon", version = "0.1" }
@@ -70,7 +70,7 @@ criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
 halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
-rand_chacha = "0.3"
+rand = { version = "0.10", features = ["chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
 zcash_note_encryption = { version = "0.4.2", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
 shardtree = "0.6"
@@ -91,7 +91,7 @@ unstable-voting-circuits = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 verifier-fingerprint = ["circuit", "halo2_proofs/unstable-verifier-fingerprint"]
-test-dependencies = ["proptest", "rand/std"]
+test-dependencies = ["proptest", "rand/std", "rand/std_rng"]
 
 [[bench]]
 name = "note_decryption"
@@ -106,6 +106,17 @@ harness = false
 name = "circuit"
 harness = false
 required-features = ["circuit"]
+
+[patch.crates-io]
+jubjub = { git = "https://github.com/dannywillems/jubjub.git", rev = "bbc02c837de0a515e83a61c64eb63ca293767612" }
+bls12_381 = { git = "https://github.com/dannywillems/bls12_381.git", rev = "90261e682a44da54ffbc0089ac5aea105ec74cbf" }
+pasta_curves = { git = "https://github.com/zcash/pasta_curves.git", rev = "a51d76f82bb28b01fc76f0f8ed3e5fdb055481dd" }
+sinsemilla = { git = "https://github.com/zcash/sinsemilla.git", rev = "fd0e46c6db9c6572218e95a9c55fea5a824751ad" }
+reddsa = { git = "https://github.com/dannywillems/reddsa.git", rev = "d90e8e9dd5961c0ef563255ec398c24e1faaa66e" }
+zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption.git", rev = "a0968095ca6bf94226875ba65c4ee37880ea68f6" }
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "3716502f0752dbb0921e7f31edb1865e2e3e83de" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "3716502f0752dbb0921e7f31edb1865e2e3e83de" }
+halo2_poseidon = { git = "https://github.com/zcash/halo2.git", rev = "3716502f0752dbb0921e7f31edb1865e2e3e83de" }
 
 [profile.release]
 debug = true

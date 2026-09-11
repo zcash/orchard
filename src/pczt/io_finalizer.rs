@@ -2,7 +2,7 @@ use core::fmt;
 
 use alloc::vec::Vec;
 
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 
 use crate::{
     keys::SpendAuthorizingKey,
@@ -21,7 +21,7 @@ impl super::Bundle {
     /// left unmodified.
     ///
     /// [`Bundle::verify_cross_address_restriction`]: super::Bundle::verify_cross_address_restriction
-    pub fn finalize_io<R: RngCore + CryptoRng>(
+    pub fn finalize_io<R: Rng + CryptoRng>(
         &mut self,
         sighash: [u8; 32],
         mut rng: R,
