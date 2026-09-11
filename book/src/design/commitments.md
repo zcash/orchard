@@ -12,7 +12,15 @@ randomness.
 We instantiate $\mathit{HomomorphicCommit}$ with a Pedersen commitment, and use it for
 value commitments:
 
-$$\mathsf{cv} = \mathit{HomomorphicCommit}^{\mathsf{cv}}_{\mathsf{rcv}}(v)$$
+$$\begin{cases}
+\mathsf{cv^{Sapling}} &= \mathit{HomomorphicCommit}^{\mathsf{Sapling}}_{\mathsf{rcv}}(\mathsf{v}) \\
+&= [\mathsf{v}]\,\mathcal{V}^{\mathsf{Sapling}} + [\mathsf{rcv}]\,\mathcal{R}^{\mathsf{Sapling}} \\
+\\
+\mathsf{cv^{Orchard}} &= \mathit{HomomorphicCommit}^{\mathsf{Orchard}}_{\mathsf{rcv}}(\mathsf{v}) \\
+&= [\mathsf{v}]\,\mathcal{V}^{\mathsf{Orchard}} + [\mathsf{rcv}]\,\mathcal{R}^{\mathsf{Orchard}} \\
+\\
+\mathsf{cv^{ZSA}} &= [\mathsf{v}]\,\mathsf{AssetBase} + [\mathsf{rcv}]\,\mathcal{R}^{\mathsf{Orchard}} \\
+\end{cases}$$
 
 We instantiate $\mathit{Commit}$ and $\mathit{ShortCommit}$ with Sinsemilla, and use them
 for all other commitments:

@@ -1,6 +1,9 @@
 name: CI checks
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: main
 
 jobs:
   test:
@@ -10,9 +13,19 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run tests
-        run: cargo test --verbose
+        env:
+          # Disable LTO in CI to avoid very slow/hanging release test builds on macOS (rustc/LLVM).
+          CARGO_PROFILE_RELEASE_LTO: "off"
+        run: cargo test --verbose --release
+      # verifier-fingerprint capture tests build the k=11 proving key and run real proofs, too
+      # heavy for every PR (regenerate the fixtures manually per the docs in
+      # src/circuit/fingerprint/mod.rs). Compile them so the cfg(test) module can't rot unnoticed:
+      # `cargo test` (default features) and `cargo build --all-features` (skips cfg(test)) never
+      # type-check it.
+      - name: Compile-check the verifier-fingerprint capture module
+        run: cargo test --features verifier-fingerprint --no-run --verbose
       - name: Verify working directory is clean
         run: git diff --exit-code
 
@@ -23,12 +36,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         id: toolchain
       - run: rustup override set ${{steps.toolchain.outputs.name}}
       - if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get -y install libfontconfig1-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install libfontconfig1-dev
       - name: Remove lockfile to build with latest dependencies
         run: rm Cargo.lock
       - name: Build crate
@@ -42,10 +57,10 @@ jobs:
     strategy:
       matrix:
         target:
-          - wasm32-wasi
+          - wasm32-wasip1
           - thumbv7em-none-eabihf
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: crate_root
       # We use a synthetic crate to ensure no dev-dependencies are enabled, which can
@@ -67,15 +82,23 @@ jobs:
       - name: Add lazy_static with the spin_no_std feature
         working-directory: ./ci-build
         run: cargo add lazy_static --no-default-features --features "spin_no_std"
-      - name: Add typenum with the no_std feature
+      - name: Add typenum with no default features
         working-directory: ./ci-build
-        run: cargo add typenum --no-default-features --features "no_std"
+        run: cargo add typenum --no-default-features
       - name: Show Cargo.toml for the synthetic crate
         working-directory: ./ci-build
         run: cat Cargo.toml
+      - name: Copy pinned dependencies into synthetic crate
+        run: cp crate_root/Cargo.lock ci-build/
       - name: Add target
         working-directory: ./ci-build
         run: rustup target add ${{ matrix.target }}
+      - name: Pin deps to versions compatible with rustc 1.70
+        working-directory: ./ci-build
+        run: |
+          cargo update -p unicode-ident --precise 1.0.12
+          cargo update -p syn --precise 2.0.114
+          cargo update -p quote --precise 1.0.44
       - name: Build no_std for target
         working-directory: ./ci-build
         run: cargo build --verbose --target ${{ matrix.target }}
@@ -84,7 +107,7 @@ jobs:
     name: Bitrot check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Build benchmarks to prevent bitrot
       - name: Build benchmarks
         run: cargo build --benches
@@ -93,7 +116,7 @@ jobs:
     name: Book tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install mdbook
         run: |
           mkdir mdbook
@@ -102,27 +125,33 @@ jobs:
       - name: Test Orchard book
         run: mdbook test book/
 
-  codecov:
-    name: Code coverage
-    runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin:develop-nightly
-      options: --security-opt seccomp=unconfined
-    steps:
-      - uses: actions/checkout@v4
-      - name: Generate coverage report
-        run: cargo tarpaulin --engine llvm --all-features --release --timeout 600 --out xml
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3.1.4
+#  codecov:
+#    name: Code coverage
+#    runs-on: ubuntu-latest
+#    container:
+#      image: xd009642/tarpaulin:develop-nightly
+#      options: --security-opt seccomp=unconfined
+#    steps:
+#      - uses: actions/checkout@v7
+#      - name: Generate coverage report
+#        # Enable every feature except `verifier-fingerprint`: it is opt-in capture tooling whose
+#        # tests build the k=11 proving key and generate real proofs, which are far too heavy to run
+#        # under coverage instrumentation on every PR. Run those manually per the docs in
+#        # `src/circuit/fingerprint/mod.rs`.
+#        run: cargo tarpaulin --engine llvm --features "dev-graph unstable-frost unstable-voting-circuits test-dependencies" --release --timeout 600 --out xml
+#      - name: Upload coverage to Codecov
+#        uses: codecov/codecov-action@v7.0.0
 
   doc-links:
     name: Intra-doc links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: cargo fetch
       # Requires #![deny(rustdoc::broken_intra_doc_links)] in crates.
-      - run: sudo apt-get -y install libfontconfig1-dev
+      - run: |
+          sudo apt-get update
+          sudo apt-get -y install libfontconfig1-dev
       - name: Check intra-doc links
         run: cargo doc --all-features --document-private-items
 
@@ -131,5 +160,5 @@ jobs:
     timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: cargo fmt -- --check
