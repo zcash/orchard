@@ -17,7 +17,8 @@ use sinsemilla::HashDomain;
 
 use ff::{Field, PrimeField, PrimeFieldBits};
 use lazy_static::lazy_static;
-use rand::RngCore;
+use rand::Rng;
+
 use serde::de::{Deserializer, Error};
 use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
@@ -117,7 +118,7 @@ impl From<incrementalmerkletree::MerklePath<MerkleHashOrchard, 32>> for MerklePa
 impl MerklePath {
     /// Generates a dummy Merkle path for use in dummy spent notes.
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
-    pub(crate) fn dummy(mut rng: &mut impl RngCore) -> Self {
+    pub(crate) fn dummy(mut rng: &mut impl Rng) -> Self {
         MerklePath {
             position: rng.next_u32(),
             auth_path: [(); MERKLE_DEPTH_ORCHARD]
@@ -269,20 +270,20 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
 pub mod testing {
     use ff::Field;
     use rand::{
-        distributions::{Distribution, Standard},
-        RngCore,
+        distr::{Distribution, StandardUniform},
+        Rng,
     };
 
     use super::MerkleHashOrchard;
 
     impl MerkleHashOrchard {
         /// Return a random fake `MerkleHashOrchard`.
-        pub fn random(rng: &mut impl RngCore) -> Self {
-            Standard.sample(rng)
+        pub fn random(rng: &mut impl Rng) -> Self {
+            StandardUniform.sample(rng)
         }
     }
 
-    impl Distribution<MerkleHashOrchard> for Standard {
+    impl Distribution<MerkleHashOrchard> for StandardUniform {
         fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> MerkleHashOrchard {
             MerkleHashOrchard(pasta_curves::Fp::random(rng))
         }

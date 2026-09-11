@@ -345,7 +345,7 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
 mod tests {
     use super::{i2lebsp, lebs2ip};
 
-    use rand::{rngs::OsRng, RngCore};
+    use rand::{rand_core::UnwrapErr, rngs::SysRng, Rng};
 
     #[test]
     #[cfg(feature = "circuit")]
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn lebs2ip_round_trip() {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         {
             let int = rng.next_u64();
             assert_eq!(lebs2ip::<64>(&i2lebsp(int)), int);
