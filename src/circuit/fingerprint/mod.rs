@@ -33,8 +33,7 @@ use halo2_proofs::plonk::fingerprint::{capture_proof_fingerprint, ChallengeRecor
 use halo2_proofs::transcript::Challenge255;
 use incrementalmerkletree::Hashable;
 use pasta_curves::vesta;
-use rand::SeedableRng;
-use rand_chacha::ChaCha20Rng;
+use rand::{rngs::ChaCha20Rng, SeedableRng};
 
 use super::{OrchardCircuitVersion, ProvingKey, VerifyingKey, K};
 use crate::{
