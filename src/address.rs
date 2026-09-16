@@ -35,12 +35,26 @@ impl Address {
         self.d
     }
 
+    /// Returns the diversified base point for this address.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn g_d(&self) -> NonIdentityPallasPoint {
         diversify_hash(self.d.as_array())
     }
 
+    /// Returns the diversified transmission key for this address.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn pk_d(&self) -> &DiversifiedTransmissionKey {
         &self.pk_d
+    }
+
+    /// Returns whether `self` and `other` correspond to the same expanded receiver, i.e.
+    /// have equal `(g_d, pk_d)`.
+    ///
+    /// This matches the equality notion used by the `disableCrossAddress` circuit
+    /// constraint, and is intentionally distinct from `PartialEq` on `Address`, which
+    /// compares the raw diversifier encoding.
+    pub(crate) fn same_expanded_receiver(&self, other: &Self) -> bool {
+        self.g_d() == other.g_d() && self.pk_d() == other.pk_d()
     }
 
     /// Serializes this address to its "raw" encoding as specified in [Zcash Protocol Spec § 5.6.4.2: Orchard Raw Payment Addresses][orchardpaymentaddrencoding]
