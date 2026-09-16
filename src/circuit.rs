@@ -24,13 +24,15 @@ use crate::{
         gadget::add_chip::{AddChip, AddConfig},
         note_commit::{NoteCommitChip, NoteCommitConfig},
     },
-    circuit_version::OrchardCircuitVersion,
     constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains},
     note::{nullifier::Nullifier, ExtractedNoteCommitment, Note, Rho},
     primitives::redpallas::{SpendAuth, VerificationKey},
     tree::Anchor,
     value::{ValueCommitTrapdoor, ValueCommitment},
 };
+
+pub use crate::circuit_version::OrchardCircuitVersion;
+
 use halo2_gadgets::{
     ecc::{
         chip::{EccChip, EccConfig},
