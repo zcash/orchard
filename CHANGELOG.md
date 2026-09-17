@@ -8,6 +8,15 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
+- `zeroize` feature flag (enabled by default), which enables the `zeroize`
+  dependency (without its default features, so `no_std` is preserved), turns on
+  `pasta_curves/zeroize`, `reddsa/zeroize` and `zip32/zeroize`, and provides:
+  - `impl zeroize::{Zeroize, ZeroizeOnDrop} for orchard::keys::SpendingKey`
+  - `impl zeroize::{Zeroize, ZeroizeOnDrop} for orchard::keys::SpendAuthorizingKey`
+  - `impl zeroize::{Zeroize, ZeroizeOnDrop} for orchard::primitives::redpallas::SigningKey`
+  When enabled, these types are zeroized on drop, and the intermediate values
+  produced while deriving them from a spending key are zeroized after use.
+- `orchard::primitives::redpallas::SigningKey::to_bytes`
 - `orchard::note_encryption::COMPACT_NOTE_SIZE`, `NOTE_PLAINTEXT_SIZE` and
   `ENC_CIPHERTEXT_SIZE`. `zcash_note_encryption` removed these constants,
   because the note plaintext size is now domain-specific; they are Orchard
@@ -19,6 +28,12 @@ and this project adheres to Rust's notion of
   that they alias.
 
 ### Changed
+- `orchard::keys::SpendingKey` no longer implements `Copy` (it still implements
+  `Clone`), and its `Debug` impl no longer prints the key material.
+- Removed `impl From<SigningKey<T>> for [u8; 32]` and
+  `impl From<&SigningKey<T>> for [u8; 32]` for
+  `orchard::primitives::redpallas::SigningKey`; use `SigningKey::to_bytes`
+  instead.
 - MSRV is now 1.88
 - **Breaking change:** `note::TransmittedNoteCiphertext::enc_ciphertext` is now
   a `note_encryption::NoteCiphertextBytes` instead of a `[u8; 580]`. The new

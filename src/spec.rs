@@ -206,8 +206,8 @@ impl PreparedNonZeroScalar {
 /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
-pub(crate) fn to_base(x: [u8; 64]) -> pallas::Base {
-    pallas::Base::from_uniform_bytes(&x)
+pub(crate) fn to_base(x: &[u8; 64]) -> pallas::Base {
+    pallas::Base::from_uniform_bytes(x)
 }
 
 /// $\mathsf{ToScalar}^\mathsf{Orchard}(x) := LEOS2IP_{\ell_\mathsf{PRFexpand}}(x) (mod r_P)$
@@ -215,9 +215,25 @@ pub(crate) fn to_base(x: [u8; 64]) -> pallas::Base {
 /// Defined in [Zcash Protocol Spec § 4.2.3: Orchard Key Components][orchardkeycomponents].
 ///
 /// [orchardkeycomponents]: https://zips.z.cash/protocol/nu5.pdf#orchardkeycomponents
-pub(crate) fn to_scalar(x: [u8; 64]) -> pallas::Scalar {
-    pallas::Scalar::from_uniform_bytes(&x)
+pub(crate) fn to_scalar(x: &[u8; 64]) -> pallas::Scalar {
+    pallas::Scalar::from_uniform_bytes(x)
 }
+
+/// Zeroizes a secret intermediate value.
+///
+/// This is a no-op unless the `zeroize` feature is enabled.
+#[cfg(feature = "zeroize")]
+#[inline]
+pub(crate) fn zeroize_secret<Z: zeroize::Zeroize + ?Sized>(secret: &mut Z) {
+    secret.zeroize();
+}
+
+/// Zeroizes a secret intermediate value.
+///
+/// This is a no-op unless the `zeroize` feature is enabled.
+#[cfg(not(feature = "zeroize"))]
+#[inline]
+pub(crate) fn zeroize_secret<Z: ?Sized>(_secret: &mut Z) {}
 
 /// Converts from pallas::Base to pallas::Scalar (aka $x \pmod{r_\mathbb{P}}$).
 ///
