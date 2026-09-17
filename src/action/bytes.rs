@@ -24,10 +24,9 @@ const EPK: Range<usize> = 128..160;
 const ENC_CIPHERTEXT: Range<usize> = 160..740;
 const OUT_CIPHERTEXT: Range<usize> = 740..ACTION_DESCRIPTION_SIZE;
 
-/// An [`Action`] with `cv_net`, `rk` and `epk` left compressed.
+/// An [`Action`] with `cv_net`, `rk` and `epk` left in compressed & potentially non-canonical encodings.
 ///
-/// Building, encoding, hashing and trial-decrypting one costs no curve arithmetic.
-/// [`Self::decompress`] is the only way from here to an [`Action`].
+/// [`ActionBytes::decompress`] must be used to decompress & check point rules
 #[derive(Clone, Debug)]
 pub struct ActionBytes<A> {
     nf: Nullifier,
@@ -86,12 +85,15 @@ impl<A> ActionBytes<A> {
         }
     }
 
-    /// Recovers the [`Action`]. 3 sqrt.
+    /// Recovers the [`Action`]. 3 sqrt
     ///
-    /// # Errors
+    /// - Checks `cv_net` is canonical-encoding via [`ValueCommitmentBytes::decompress`]
+    /// - Checks `rk` is canonical-encoding via [`redpallas::VerificationKeyBytes::decompress`]
+    /// - Checks `rk` is not the identity & `epk` is canonical-encoding & not the identity, via
+    ///   [`Action::from_parts`]
+    /// - `nf` and `cmx` checked earlier in [`ActionBytes::from_bytes`]
     ///
-    /// First point rule this action breaks. The identity-`rk` and `epk` rules are
-    /// [`Action::from_parts`]'s, so they keep exactly one implementation.
+    /// Returns the first rule broken, in that order.
     pub fn decompress(self) -> Result<Action<A>, DecompressionError> {
         let cv_net = self
             .cv_net
@@ -114,8 +116,7 @@ impl<A> ActionBytes<A> {
 
     /// Encodes this Action description.
     ///
-    /// `A` is not written: the transaction format carries every action's signature in a
-    /// separate array.
+    /// `A` is not written (transaction format carries the signatures in a separate array)
     pub fn to_bytes(&self) -> [u8; ACTION_DESCRIPTION_SIZE] {
         let mut bytes = [0u8; ACTION_DESCRIPTION_SIZE];
 
@@ -133,13 +134,11 @@ impl<A> ActionBytes<A> {
 
 impl ActionBytes<()> {
     /// Decodes an Action description, checking the `nullifier` and `cmx` encodings.
+    /// This parse operation does not check point rules.
+    /// [`ActionBytes::decompress`] must be used to check the point rules.
     ///
-    /// Unauthorized: the transaction carries every action's signature in a separate array, so
-    /// the caller pairs one back on with [`ActionBytes::with_authorization`].
-    ///
-    /// # Errors
-    ///
-    /// First field that is not a canonical field-element encoding.
+    /// - Unauthorized: [`ActionBytes::with_authorization`] pairs the signature back on
+    /// - Returns the first field that is not a canonical field-element encoding
     pub fn from_bytes(bytes: &[u8; ACTION_DESCRIPTION_SIZE]) -> Result<Self, ActionParseError> {
         let field = |range: Range<usize>| -> [u8; 32] {
             bytes[range]
@@ -172,9 +171,9 @@ impl ActionBytes<()> {
 }
 
 impl<A> Action<A> {
-    /// Drops to the encoded tier.
+    /// Converts to [`ActionBytes<A>`], forgetting the invariants enforced by [`Action`].
     ///
-    /// Infallible: an [`Action`] cannot hold a point that fails to encode.
+    /// Infallible: an [`Action`] cannot hold a point that fails to encode
     pub fn compress(self) -> ActionBytes<A> {
         ActionBytes {
             nf: self.nf,
@@ -187,10 +186,18 @@ impl<A> Action<A> {
     }
 }
 
-// Slots into `zcash_client_backend`'s full-ciphertext batch scanner, which bounds its queue by
-// `Output: DynamicUsage` and adds that to `size_of_val`. Every field here is fixed-size, so the
-// whole 888 bytes are already covered by `size_of` and nothing is on the heap.
-memuse::impl_no_dynamic_usage!(ActionBytes<redpallas::Signature<SpendAuth>>);
+/// [`ActionBytes`] is entirely fixed-size & has no dynamic usage
+///
+/// Required by `zcash_client_backend`'s batch scanner (bounds its queue by `Output: DynamicUsage`)
+impl DynamicUsage for ActionBytes<redpallas::Signature<SpendAuth>> {
+    fn dynamic_usage(&self) -> usize {
+        0
+    }
+
+    fn dynamic_usage_bounds(&self) -> (usize, Option<usize>) {
+        (0, Some(0))
+    }
+}
 
 /// An Action description field that is not a valid encoding of its type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -218,6 +225,8 @@ impl fmt::Display for ActionParseError {
 impl core::error::Error for ActionParseError {}
 
 /// An Action description field carrying a point no valid Action description may carry.
+///
+/// Returned by [`ActionBytes::decompress`]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DecompressionError {
