@@ -63,7 +63,7 @@ visibility = "0.1.1"
 zeroize = { version = "1", optional = true, default-features = false }
 
 # Logging
-tracing = { version = "0.1", default-features = false }
+tracing = { version = "0.1", optional = true, default-features = false }
 
 # No-std support
 corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
@@ -94,7 +94,7 @@ bench = false
 [features]
 default = ["circuit", "multicore", "std", "zeroize"]
 std = ["corez/std", "group/wnaf-memuse", "reddsa/std"]
-circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "std"]
+circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "dep:tracing", "std"]
 unstable-frost = []
 unstable-voting-circuits = []
 multicore = ["halo2_proofs?/multicore"]
