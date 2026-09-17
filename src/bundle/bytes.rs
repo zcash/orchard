@@ -12,10 +12,9 @@ use crate::{
     tree::Anchor,
 };
 
-/// A [`Bundle`] whose actions are still encoded.
+/// A [`Bundle`] where the actions are still encoded & possibly non-canonical encodings
 ///
-/// Upholds every rule a [`Bundle`] does except those needing a point, which
-/// [`Self::decompress`] discharges.
+/// To decompress & check the point rules, use [`BundleBytes::decompress`].
 #[derive(Clone)]
 pub struct BundleBytes<T: Authorization, V> {
     actions: NonEmpty<ActionBytes<T::SpendAuth>>,
@@ -47,7 +46,9 @@ impl<T: Authorization, V: fmt::Debug> fmt::Debug for BundleBytes<T, V> {
 }
 
 impl<T: Authorization, V> BundleBytes<T, V> {
-    /// Carries the same obligations as [`Bundle::from_parts_unchecked`].
+    /// Constructs a `BundleBytes` without checking the flag & proof-size rules.
+    ///
+    /// Carries the same obligations as [`Bundle::from_parts_unchecked`]
     pub(crate) fn from_parts_unchecked(
         actions: NonEmpty<ActionBytes<T::SpendAuth>>,
         flags: Flags,
@@ -104,11 +105,10 @@ impl<T: Authorization, V> BundleBytes<T, V> {
             .expect("flags are validated against the bundle version at construction")
     }
 
-    /// Recovers the [`Bundle`]. 3 sqrt per action.
+    /// Recovers the [`Bundle`], decompressing the actions & checking the point rules. 3 sqrt per action
     ///
-    /// # Errors
-    ///
-    /// First action that breaks a point rule.
+    /// Iterates over the actions in order. A [`BundleDecompressionError`] is returned for the first
+    /// decompression error encountered, and the error includes the index of the action that failed.
     pub fn decompress(self) -> Result<Bundle<T, V>, BundleDecompressionError> {
         let actions = self
             .actions
@@ -132,11 +132,12 @@ impl<T: Authorization, V> BundleBytes<T, V> {
 }
 
 impl<V> BundleBytes<Authorized, V> {
-    /// Same checks as [`Bundle::try_from_parts`], both decidable without a point.
+    /// Constructs a `BundleBytes` from [`ActionBytes`], running the same checks as
+    /// [`Bundle::try_from_parts`]. The actions can represent non-canonical encodings.
+    /// [`BundleBytes::decompress`] must be used to check the point rules.
     ///
-    /// # Errors
-    ///
-    /// [`BundleError::NonCanonicalProofSize`] or [`BundleError::UnrepresentableFlags`].
+    /// - [`BundleError::NonCanonicalProofSize`] if the proof size does not match the action count
+    /// - [`BundleError::UnrepresentableFlags`] if the flags do not encode under `bundle_version`
     pub fn try_from_parts(
         actions: NonEmpty<ActionBytes<<Authorized as Authorization>::SpendAuth>>,
         flags: Flags,
@@ -161,9 +162,9 @@ impl<V> BundleBytes<Authorized, V> {
 }
 
 impl<T: Authorization, V> Bundle<T, V> {
-    /// Drops to the encoded tier.
+    /// Converts to [`BundleBytes<T, V>`], forgetting the invariants enforced by [`Bundle`].
     ///
-    /// Infallible: a [`Bundle`] cannot hold a point that fails to encode.
+    /// Infallible: a [`Bundle`] cannot hold a point that fails to encode
     pub fn compress(self) -> BundleBytes<T, V> {
         BundleBytes {
             actions: self.actions.map(Action::compress),
@@ -177,6 +178,8 @@ impl<T: Authorization, V> Bundle<T, V> {
 }
 
 /// Action at bundle-relative index `action` breaks a point rule.
+///
+/// Returned by [`BundleBytes::decompress`]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct BundleDecompressionError {
