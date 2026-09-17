@@ -77,7 +77,9 @@ impl<T: SigType> SigningKey<T> {
     }
 }
 
-/// `rk` as [`ActionBytes`](crate::ActionBytes) holds it.
+/// Compressed encoding for `rk` that CAN represent a non-canonical encoding of a Pallas point.
+///
+/// [`VerificationKeyBytes::decompress`] must be used to decompress & check point rules
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VerificationKeyBytes<T: SigType>(reddsa::VerificationKeyBytes<T>);
 
@@ -88,6 +90,7 @@ impl<T: SigType> From<[u8; 32]> for VerificationKeyBytes<T> {
 }
 
 impl<T: SigType> From<&VerificationKey<T>> for VerificationKeyBytes<T> {
+    /// Converts to [`VerificationKeyBytes`], forgetting the invariants enforced by [`VerificationKey`].
     fn from(vk: &VerificationKey<T>) -> Self {
         VerificationKeyBytes(vk.0.into())
     }
@@ -99,7 +102,7 @@ impl<T: SigType> VerificationKeyBytes<T> {
         self.0.into()
     }
 
-    /// Recovers the key. 1 sqrt.
+    /// Recovers the key, checking the encoding is canonical. 1 sqrt
     pub fn decompress(&self) -> Result<VerificationKey<T>, InvalidPoint> {
         reddsa::VerificationKey::try_from(self.0)
             .map(VerificationKey)
