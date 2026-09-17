@@ -6,10 +6,10 @@
 
 pub mod redpallas;
 
-/// Bytes that are not a canonical encoding of the point they should hold.
+/// Bytes that are not a canonical encoding of a Pallas point.
 ///
-/// Leaf error for the `decompress` methods on the compressed types, which do not know which
-/// field they were read into; a description names the field in its own error.
+/// Leaf error for [`ValueCommitmentBytes::decompress`](crate::value::ValueCommitmentBytes::decompress)
+/// and [`VerificationKeyBytes::decompress`](redpallas::VerificationKeyBytes::decompress)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InvalidPoint;
 
