@@ -6,9 +6,10 @@ use blake2b_simd::Params as Blake2bParams;
 use ff::PrimeField;
 use group::GroupEncoding;
 use pasta_curves::pallas;
-use rand::RngCore;
+use rand::Rng;
 use subtle::CtOption;
 
+use crate::note_encryption::NoteCiphertextBytes;
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
     spec::{to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar, PrfExpand},
@@ -114,7 +115,7 @@ impl Rho {
 pub struct RandomSeed([u8; 32]);
 
 impl RandomSeed {
-    pub(crate) fn random(rng: &mut impl RngCore, rho: &Rho) -> Self {
+    pub(crate) fn random(rng: &mut impl Rng, rho: &Rho) -> Self {
         loop {
             let mut bytes = [0; 32];
             rng.fill_bytes(&mut bytes);
@@ -144,7 +145,7 @@ impl RandomSeed {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn psi(&self, rho: &Rho) -> pallas::Base {
-        to_base(PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
+        to_base(&PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
     }
 
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
@@ -152,7 +153,7 @@ impl RandomSeed {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn esk_inner(&self, rho: &Rho) -> CtOption<NonZeroPallasScalar> {
         NonZeroPallasScalar::from_scalar(to_scalar(
-            PrfExpand::ORCHARD_ESK.with(&self.0, &rho.to_bytes()),
+            &PrfExpand::ORCHARD_ESK.with(&self.0, &rho.to_bytes()),
         ))
     }
 
@@ -172,7 +173,7 @@ impl RandomSeed {
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn rcm_v2(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
-            PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
+            &PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
         ))
     }
 
@@ -227,7 +228,7 @@ impl RandomSeed {
         // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
         h.update(&psi.to_repr());
 
-        commitment::NoteCommitTrapdoor(to_scalar(*h.finalize().as_array()))
+        commitment::NoteCommitTrapdoor(to_scalar(h.finalize().as_array()))
     }
 }
 
@@ -304,7 +305,7 @@ impl Note {
         value: NoteValue,
         rho: Rho,
         version: NoteVersion,
-        mut rng: impl RngCore,
+        mut rng: impl Rng,
     ) -> Self {
         loop {
             let note = Note::from_parts(
@@ -327,7 +328,7 @@ impl Note {
     /// [orcharddummynotes]: https://zips.z.cash/protocol/nu5.pdf#orcharddummynotes
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn dummy(
-        rng: &mut impl RngCore,
+        rng: &mut impl Rng,
         rho: Option<Rho>,
         note_version: NoteVersion,
     ) -> (SpendingKey, FullViewingKey, Self) {
@@ -446,7 +447,7 @@ pub struct TransmittedNoteCiphertext {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
     /// The encrypted note ciphertext
-    pub enc_ciphertext: [u8; 580],
+    pub enc_ciphertext: NoteCiphertextBytes,
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
@@ -456,7 +457,7 @@ impl fmt::Debug for TransmittedNoteCiphertext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransmittedNoteCiphertext")
             .field("epk_bytes", &self.epk_bytes)
-            .field("enc_ciphertext", &hex::encode(self.enc_ciphertext))
+            .field("enc_ciphertext", &hex::encode(self.enc_ciphertext.0))
             .field("out_ciphertext", &hex::encode(self.out_ciphertext))
             .finish()
     }
