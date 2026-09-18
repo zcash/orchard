@@ -26,6 +26,9 @@ pub use parse::ParseError;
 mod verify;
 pub use verify::VerifyError;
 
+// Inherent impls on `Action` only: in-band secret distribution for its output.
+mod note_encryption;
+
 mod io_finalizer;
 pub use io_finalizer::IoFinalizerError;
 

@@ -7,6 +7,18 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- Trial decryption and output recovery on `orchard::pczt::Action`, each selecting the note
+  encryption domain from the action's own note version (`NoteVersion::V2` selects
+  `OrchardDomain`, and `NoteVersion::V3` selects `IronwoodDomain`) so that a PCZT consumer
+  does not reproduce that pairing. A consumer that pairs them wrongly does not fail loudly:
+  trial decryption simply does not match, and the output is then misclassified.
+  - `orchard::pczt::Action::decrypt_output_with_ivk`
+  - `orchard::pczt::Action::decrypt_compact_output_with_ivk`
+  - `orchard::pczt::Action::recover_output_with_ovk`
+- `impl From<&orchard::pczt::Action> for orchard::note_encryption::CompactAction`,
+  constructing the compact view of an action's output from the action's own fields.
+
 ### Changed
 - MSRV is now 1.88
 
