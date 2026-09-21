@@ -26,6 +26,11 @@ pub use parse::ParseError;
 mod verify;
 pub use verify::VerifyError;
 
+// Inherent impls on `Action` (in-band secret distribution for its output), plus the error
+// their choice of note encryption domain can fail with.
+mod note_encryption;
+pub use note_encryption::UnsupportedBundleVersion;
+
 mod io_finalizer;
 pub use io_finalizer::IoFinalizerError;
 

@@ -7,6 +7,13 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::pczt::Action::decrypt_output_with_ivk`
+- `orchard::pczt::Action::decrypt_compact_output_with_ivk`
+- `orchard::pczt::Action::recover_output_with_ovk`
+- `orchard::pczt::UnsupportedBundleVersion`
+- `impl From<&orchard::pczt::Action> for orchard::note_encryption::CompactAction`
+
 ### Changed
 - MSRV is now 1.88
 
