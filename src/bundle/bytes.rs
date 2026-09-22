@@ -25,6 +25,22 @@ pub struct BundleBytes<T: Authorization, V> {
     bundle_version: BundleVersion,
 }
 
+impl<T: Authorization + PartialEq, V: PartialEq> PartialEq for BundleBytes<T, V>
+where
+    T::SpendAuth: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.actions == other.actions
+            && self.flags == other.flags
+            && self.value_balance == other.value_balance
+            && self.anchor == other.anchor
+            && self.authorization == other.authorization
+            && self.bundle_version == other.bundle_version
+    }
+}
+
+impl<T: Authorization + Eq, V: Eq> Eq for BundleBytes<T, V> where T::SpendAuth: Eq {}
+
 impl<T: Authorization, V: fmt::Debug> fmt::Debug for BundleBytes<T, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         struct Actions<'a, T>(&'a NonEmpty<ActionBytes<T>>);
@@ -259,6 +275,7 @@ mod tests {
     fn decompress_names_the_offending_action() {
         let bytes = sample(3).compress();
         let tampered = with_cv_net_replaced(&bytes, 2, NON_CANONICAL);
+        assert_ne!(tampered, bytes);
 
         let err = tampered.decompress().unwrap_err();
         assert_eq!(err.action, 2);
@@ -270,7 +287,6 @@ mod tests {
     fn bundle_round_trips_through_the_parse_tier() {
         let bundle = sample(3);
         let bytes = bundle.clone().compress();
-        let encodings: Vec<_> = bytes.actions().iter().map(ActionBytes::to_bytes).collect();
 
         assert_eq!(bytes.flags(), bundle.flags());
         assert_eq!(bytes.value_balance(), bundle.value_balance());
@@ -278,17 +294,11 @@ mod tests {
         assert_eq!(bytes.bundle_version(), bundle.bundle_version());
 
         let recovered = bytes
+            .clone()
             .decompress()
             .expect("a built bundle is valid")
             .compress();
-        assert_eq!(
-            recovered
-                .actions()
-                .iter()
-                .map(ActionBytes::to_bytes)
-                .collect::<Vec<_>>(),
-            encodings,
-        );
+        assert_eq!(recovered, bytes);
     }
 
     /// The checked constructor must reject exactly what the point tier rejects, notably a

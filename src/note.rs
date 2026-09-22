@@ -463,6 +463,17 @@ impl fmt::Debug for TransmittedNoteCiphertext {
     }
 }
 
+// Hand-written (`NoteBytesData` derives no `PartialEq`)
+impl PartialEq for TransmittedNoteCiphertext {
+    fn eq(&self, other: &Self) -> bool {
+        self.epk_bytes == other.epk_bytes
+            && self.enc_ciphertext.0 == other.enc_ciphertext.0
+            && self.out_ciphertext == other.out_ciphertext
+    }
+}
+
+impl Eq for TransmittedNoteCiphertext {}
+
 /// Generators for property testing.
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
