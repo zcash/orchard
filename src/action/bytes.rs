@@ -27,7 +27,7 @@ const OUT_CIPHERTEXT: Range<usize> = 740..ACTION_DESCRIPTION_SIZE;
 /// An [`Action`] with `cv_net`, `rk` and `epk` left in compressed & potentially non-canonical encodings.
 ///
 /// [`ActionBytes::decompress`] must be used to decompress & check point rules
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActionBytes<A> {
     nf: Nullifier,
     rk: redpallas::VerificationKeyBytes<SpendAuth>,

@@ -826,7 +826,7 @@ impl<V> Bundle<EffectsOnly, V> {
 }
 
 /// Authorizing data for a bundle of actions, ready to be committed to the ledger.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Authorized {
     proof: Proof,
     binding_signature: redpallas::Signature<Binding>,

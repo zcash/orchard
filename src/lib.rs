@@ -65,7 +65,7 @@ pub use tree::Anchor;
 /// A proof of the validity of an Orchard [`Bundle`].
 ///
 /// [`Bundle`]: crate::bundle::Bundle
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Proof(Vec<u8>);
 
 impl core::fmt::Debug for Proof {

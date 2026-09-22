@@ -441,7 +441,7 @@ impl Note {
 }
 
 /// An encrypted note.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct TransmittedNoteCiphertext {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
