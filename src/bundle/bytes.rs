@@ -206,7 +206,11 @@ mod tests {
     use super::BundleBytes;
     use crate::{
         action::DecompressionError,
-        bundle::{tests::sample_authorized_bundle, Authorized, Bundle, BundleVersion, Flags},
+        bundle::{
+            commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
+            tests::sample_authorized_bundle,
+            Authorized, Bundle, BundleVersion, Flags, TxVersion,
+        },
         ActionBytes, Proof,
     };
 
@@ -328,6 +332,34 @@ mod tests {
             );
 
             assert_eq!(on_bytes.err(), on_points.err());
+        }
+    }
+
+    proptest::proptest! {
+        /// The digests are defined over the encodings, so both tiers must reach the same ones.
+        #[test]
+        fn bytes_tier_digests_match_the_point_tier(
+            bundle in proptest::prelude::Strategy::prop_flat_map(
+                1usize..4,
+                crate::bundle::testing::arb_bundle,
+            ),
+        ) {
+            let bundle = bundle
+                .try_map_value_balance::<i64, (), _>(|v| Ok(i64::try_from(v).unwrap_or(0)))
+                .expect("the mapping cannot fail");
+            let compressed = bundle.clone().compress();
+            for tx_version in [TxVersion::V5, TxVersion::V6] {
+                proptest::prop_assert_eq!(
+                    hash_bundle_txid_data(&compressed, tx_version),
+                    bundle.commitment(tx_version).map(|c| c.0),
+                    "txid digest, {:?}", tx_version
+                );
+                proptest::prop_assert_eq!(
+                    hash_bundle_auth_data(&compressed, tx_version),
+                    bundle.authorizing_commitment(tx_version).map(|c| c.0),
+                    "authorizing digest, {:?}", tx_version
+                );
+            }
         }
     }
 }
