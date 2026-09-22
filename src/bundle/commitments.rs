@@ -3,7 +3,10 @@
 use blake2b_simd::{Hash as Blake2bHash, Params, State};
 
 use crate::{
-    bundle::{Authorization, Authorized, Bundle, CommitmentError, TxVersion},
+    bundle::{
+        ActionEncoding, Authorization, Authorized, BundleEncoding, CommitmentError, TxVersion,
+    },
+    primitives::redpallas::{self, SpendAuth},
     ValuePool,
 };
 
@@ -130,8 +133,8 @@ fn hasher(personal: &[u8; 16]) -> State {
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [`BundleVersion`]: crate::bundle::BundleVersion
-pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
-    bundle: &Bundle<A, V>,
+pub fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
+    bundle: &impl BundleEncoding<A, V>,
     tx_version: TxVersion,
 ) -> Result<Blake2bHash, CommitmentError> {
     let format = bundle
@@ -152,8 +155,8 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
 
         mh.update(&action.encrypted_note().enc_ciphertext[52..564]);
 
-        nh.update(&action.cv_net().to_bytes());
-        nh.update(&<[u8; 32]>::from(action.rk()));
+        nh.update(&action.cv_net_bytes());
+        nh.update(&action.rk_bytes());
         nh.update(&action.encrypted_note().enc_ciphertext[564..]);
         nh.update(&action.encrypted_note().out_ciphertext);
     }
@@ -191,8 +194,12 @@ pub fn hash_bundle_txid_empty(
 /// Identifier Non-Malleability][zip244]
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
-pub(crate) fn hash_bundle_auth_data<V>(
-    bundle: &Bundle<Authorized, V>,
+pub fn hash_bundle_auth_data<V>(
+    bundle: &impl BundleEncoding<
+        Authorized,
+        V,
+        Action: ActionEncoding<SpendAuth = redpallas::Signature<SpendAuth>>,
+    >,
     tx_version: TxVersion,
 ) -> Result<Blake2bHash, CommitmentError> {
     let format = bundle

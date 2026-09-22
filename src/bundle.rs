@@ -7,6 +7,9 @@ pub mod commitments;
 mod bytes;
 pub use bytes::{BundleBytes, BundleDecompressionError};
 
+mod encoding;
+pub use encoding::{ActionEncoding, BundleEncoding};
+
 #[cfg(feature = "circuit")]
 mod batch;
 #[cfg(feature = "circuit")]
