@@ -20,6 +20,16 @@ and this project adheres to Rust's notion of
   - `ActionBytes` implements `ShieldedOutput` and converts into `CompactAction`,
     with `OrchardDomain::for_action_bytes` building its domain, for wallet
     trial-decryption without decompressing
+  - `impl {PartialEq, Eq}` for `ActionBytes`, `BundleBytes`, `Proof`,
+    `bundle::Authorized`, `note::TransmittedNoteCiphertext` and
+    `primitives::redpallas::Signature`
+- `bundle::{ActionEncoding, BundleEncoding}`, the views of the byte encodings
+  implemented by both tiers
+
+### Changed
+- `bundle::commitments::{hash_bundle_txid_data, hash_bundle_auth_data}` are
+  public, and take any `BundleEncoding` rather than a `Bundle`, so a
+  transaction encoder can reach the ZIP-244 digests from either tier
 
 ## [0.16.0] - 2026-09-29
 
