@@ -91,6 +91,7 @@ unstable-voting-circuits = []
 multicore = ["halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 verifier-fingerprint = ["circuit", "halo2_proofs/unstable-verifier-fingerprint"]
+circuit-fixtures = ["circuit", "halo2_proofs/unstable-circuit-fixtures"]
 test-dependencies = ["proptest", "rand/std"]
 
 [[bench]]
@@ -112,3 +113,10 @@ debug = true
 
 [profile.bench]
 debug = true
+
+# Temporary source pin for the circuit-fixture exporter. Replace this with the Halo2
+# release containing zcash/halo2#934 once that release is published.
+[patch.crates-io]
+halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "e3172f987a8e1274e678d7993b1c9061dd4408b0" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "e3172f987a8e1274e678d7993b1c9061dd4408b0" }
+halo2_poseidon = { git = "https://github.com/zcash/halo2", rev = "e3172f987a8e1274e678d7993b1c9061dd4408b0" }
