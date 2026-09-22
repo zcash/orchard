@@ -53,7 +53,7 @@ impl AddChip {
             let b = meta.query_advice(b, Rotation::cur());
             let c = meta.query_advice(c, Rotation::cur());
 
-            Constraints::with_selector(q_add, Some(a + b - c))
+            Constraints::with_selector(q_add, Some(("c = a + b", a + b - c)))
         });
 
         AddConfig { a, b, c, q_add }
