@@ -24,6 +24,7 @@ pub(crate) use zcash_spec::PrfExpand;
 
 /// A Pallas point that is guaranteed to not be the identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
 pub(crate) struct NonIdentityPallasPoint(pallas::Point);
 
 impl Default for NonIdentityPallasPoint {
@@ -39,9 +40,25 @@ impl ConditionallySelectable for NonIdentityPallasPoint {
 }
 
 impl NonIdentityPallasPoint {
+    /// Decodes a non-identity Pallas point from its canonical 32-byte encoding,
+    /// returning `None` if the bytes do not decode to a valid curve point or if
+    /// they decode to the identity.
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Point::from_bytes(bytes)
             .and_then(|p| CtOption::new(NonIdentityPallasPoint(p), !p.is_identity()))
+    }
+
+    /// Constructs a wrapper for a point that is guaranteed to be non-identity
+    /// (such as the product of a non-zero scalar and a non-identity point in
+    /// the prime-order Pallas group).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `p.is_identity()`.
+    pub(crate) fn expect_non_identity(p: pallas::Point) -> Self {
+        assert!(!bool::from(p.is_identity()));
+        NonIdentityPallasPoint(p)
     }
 }
 
@@ -155,7 +172,12 @@ impl PreparedNonIdentityBase {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct PreparedNonZeroScalar(WnafScalar<pallas::Scalar, PREPARED_WINDOW_SIZE>);
+pub(crate) struct PreparedNonZeroScalar(
+    WnafScalar<pallas::Scalar, PREPARED_WINDOW_SIZE>,
+    // The scalar itself, retained for the GLV ladder in `pasta_curves::glv`, which
+    // decomposes the scalar rather than consuming the wNAF form.
+    pallas::Scalar,
+);
 
 #[cfg(feature = "std")]
 impl DynamicUsage for PreparedNonZeroScalar {
@@ -170,7 +192,12 @@ impl DynamicUsage for PreparedNonZeroScalar {
 
 impl PreparedNonZeroScalar {
     pub(crate) fn new(scalar: &NonZeroPallasScalar) -> Self {
-        PreparedNonZeroScalar(WnafScalar::new(scalar))
+        PreparedNonZeroScalar(WnafScalar::new(scalar), **scalar)
+    }
+
+    /// The raw scalar, for the GLV ladder in `pasta_curves::glv`.
+    pub(crate) fn raw_scalar(&self) -> pallas::Scalar {
+        self.1
     }
 }
 
@@ -318,13 +345,15 @@ pub fn i2lebsp<const NUM_BITS: usize>(int: u64) -> [bool; NUM_BITS] {
 mod tests {
     use super::{i2lebsp, lebs2ip};
 
-    use group::Group;
-    use halo2_proofs::arithmetic::CurveExt;
-    use pasta_curves::pallas;
     use rand::{rngs::OsRng, RngCore};
 
     #[test]
+    #[cfg(feature = "circuit")]
     fn diversify_hash_substitution() {
+        use group::Group;
+        use halo2_proofs::arithmetic::CurveExt;
+        use pasta_curves::pallas;
+
         assert!(!bool::from(
             pallas::Point::hash_to_curve("z.cash:Orchard-gd")(&[]).is_identity()
         ));

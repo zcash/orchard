@@ -1,4 +1,4 @@
-# NoteCommit
+# Orchard NoteCommit
 
 ## Message decomposition
 
