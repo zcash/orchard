@@ -65,12 +65,21 @@ pub fn hash_issue_bundle_auth_empty() -> Blake2bHash {
 /// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
 /// for a given [`IssueSighashKind`].
 ///
+/// # Panics
+///
+/// Panics if the authorization signature in the issue bundle uses a sighash kind different from
+/// `IssueSighashKind::AllEffecting`, which is currently the only defined kind.
+///
 /// [zip246]: https://zips.z.cash/zip-0246
 pub(crate) fn hash_issue_bundle_auth_data(
     bundle: &IssueBundle<Signed>,
     sighash_info_for_kind: impl Fn(&IssueSighashKind) -> Vec<u8>,
 ) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_SIG_PERSONALIZATION);
+    assert_eq!(
+        *bundle.authorization().signature().sighash_kind(),
+        IssueSighashKind::AllEffecting
+    );
     let sighash_info = sighash_info_for_kind(bundle.authorization().signature().sighash_kind());
     h.update(&get_compact_size(sighash_info.len()));
     h.update(sighash_info.as_slice());
@@ -123,7 +132,8 @@ mod tests {
             }),
             true,
             &mut rng,
-        );
+        )
+        .unwrap();
 
         let another_asset = bundle
             .add_recipient(

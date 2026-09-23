@@ -165,7 +165,8 @@ fn issue_zsa_notes(
         }),
         true,
         &mut rng,
-    );
+    )
+    .unwrap();
 
     assert!(awaiting_nullifier_bundle
         .add_recipient(
