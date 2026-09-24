@@ -8,6 +8,19 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
+
+- A bytes tier holding an Action description with `cv_net`, `rk` and `epk` left
+  compressed, so reading from disk/wire costs no curve arithmetic
+  - `ActionBytes` and `BundleBytes`, mirroring `Action` and `Bundle`, with
+    `ActionBytes::{to_bytes, from_bytes}` and `ACTION_DESCRIPTION_SIZE`
+  - `decompress` on both, recovering the point tier, plus `ActionParseError`,
+    `DecompressionError` and `bundle::BundleDecompressionError`
+  - `compress` on `Action` and `Bundle` that compresses to bytes representation
+  - `value::ValueCommitmentBytes` and `primitives::redpallas::VerificationKeyBytes`,
+    the compressed forms `ActionBytes` holds, with a `primitives::InvalidPoint` error
+  - `ActionBytes` implements `ShieldedOutput` and converts into `CompactAction`,
+    with `OrchardDomain::for_action_bytes` building its domain, for wallet
+    trial-decryption without decompressing
 - `orchard::pczt::Action::decrypt_output_with_ivk`
 - `orchard::pczt::Action::decrypt_compact_output_with_ivk`
 - `orchard::pczt::Action::recover_output_with_ovk`
