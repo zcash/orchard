@@ -1,4 +1,5 @@
 # Changelog
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -33,14 +34,18 @@ and this project adheres to Rust's notion of
 - `impl From<&orchard::pczt::Action> for orchard::note_encryption::CompactAction`
 
 ### Changed
+
 - `bundle::commitments::{hash_bundle_txid_data, hash_bundle_auth_data}` are
   public, and take any `BundleEncoding` rather than a `Bundle`, so a
   transaction encoder can reach the ZIP-244 digests from either tier
 - MSRV is now 1.88
+- Derive MerkleCRH Sinsemilla domain once via lazy_static rather than
+  per `MerkleHashOrchard::combine`
 
 ## [0.15.5] - 2026-08-02
 
 ### Changed
+
 - The minimum `halo2_proofs` version is now 0.3.5, which provides the
   match-only fixture exporter used by the random `verifier-fingerprint`
   captures.
@@ -48,6 +53,7 @@ and this project adheres to Rust's notion of
 ## [0.15.4] - 2026-07-23
 
 ### Changed
+
 - Batched trial decryption (the `zcash_note_encryption::batch` APIs) is
   significantly faster. Ephemeral keys are now prepared with GLV endomorphism
   windows built across the whole batch with a single shared normalization, and
@@ -66,6 +72,7 @@ and this project adheres to Rust's notion of
 ## [0.15.3] - 2026-07-22
 
 ### Changed
+
 - The `verifier-fingerprint` fixture export now derives each Lean instance
   commitment from the verifier's public inputs instead of exporting it as an
   opaque verifying-key field (requires `halo2_proofs 0.3.4`).
@@ -73,6 +80,7 @@ and this project adheres to Rust's notion of
 ## [0.15.2] - 2026-07-21
 
 ### Added
+
 - `orchard::builder::Builder::new_with_anchor_deferred`, constructing a builder whose bundle
   anchor — and every real spend's Merkle witness — is deferred to proving time, per
   [ZIP 374](https://zips.z.cash/zip-0374). Spends are added without witnesses via the new
@@ -101,6 +109,7 @@ and this project adheres to Rust's notion of
 ## [0.15.1] - 2026-07-20
 
 ### Added
+
 - The `verifier-fingerprint` feature flag, enabling
   `halo2_proofs/unstable-verifier-fingerprint`. It gates test-only capture of
   canonical Post-NU6.3 verifier fixtures (and Rust-only rejection checks) for
@@ -108,8 +117,7 @@ and this project adheres to Rust's notion of
 
 ## [0.15.0] - 2026-07-09
 
-This release introduces `orchard::bundle::BundleVersion`, the `(value pool, protocol
-version)` of an Orchard bundle, built from the new `orchard::ValuePool` and
+This release introduces `orchard::bundle::BundleVersion`, the `(value pool, protocol version)` of an Orchard bundle, built from the new `orchard::ValuePool` and
 `orchard::ProtocolVersion` types. Each `Bundle` now carries its `BundleVersion` as
 non-serialized context, so a bundle can be serialized and committed to without separately
 supplying a — possibly mismatching — version, and is encodable and committable by
@@ -119,6 +127,7 @@ Existing callers keep the current behavior by constructing bundles with
 `OrchardCircuitVersion::FixedPostNu6_2` when building proving/verifying keys).
 
 ### Added
+
 - NU6.3 and Ironwood bundle-version APIs:
   - `orchard::ValuePool`, the value pool an Orchard bundle belongs to (`Orchard` or
     `Ironwood`), and `orchard::ProtocolVersion`, the Orchard protocol version
@@ -217,6 +226,7 @@ Existing callers keep the current behavior by constructing bundles with
     underlying `orchard::pczt::VerifyError`.
 
 ### Changed
+
 - Bundle construction now requires an explicit `BundleVersion` and `Flags`:
   - `orchard::builder::Builder::new` now takes
     `(BundleType, BundleVersion, Flags, Anchor)` and returns
@@ -379,6 +389,7 @@ Existing callers keep the current behavior by constructing bundles with
     (ZIP 2005, Ironwood) notes.
 
 ### Removed
+
 - `orchard::bundle::ProofSizeEnforcement`; `Bundle::try_from_parts` now derives the
   canonical proof-size check from the `BundleVersion` (enforced for every version except
   `BundleVersion::orchard_insecure_v1`).
@@ -404,12 +415,14 @@ Existing callers keep the current behavior by constructing bundles with
   with `BatchValidator::new`, which requires a verifying key.
 
 ### Fixed
+
 - The `Display` output of `orchard::builder::BuildError::OutputsDisabled`
   previously described spends rather than outputs.
 
 ## [0.14.0] - 2026-06-02
 
 ### Added
+
 - `orchard::action::ActionFromPartsError`
 - `orchard::Proof::expected_proof_size`, the canonical byte length of a proof
   for a given number of actions.
@@ -448,6 +461,7 @@ Existing callers keep the current behavior by constructing bundles with
   separately.
 
 ### Changed
+
 - Updated to `halo2_gadgets 0.5.0`
 - `orchard::action::Action::from_parts` now returns
   `Result<Self, orchard::action::ActionFromPartsError>` instead of `Option<Self>`.
@@ -463,6 +477,7 @@ Existing callers keep the current behavior by constructing bundles with
     `OrchardShortScalarBases`, which are unchanged.
 
 ### Removed
+
 - `orchard::Bundle::from_parts`. Construct a bundle through the
   authorization-specific constructor instead: `Bundle::<EffectsOnly, V>::from_parts`,
   or `Bundle::<Authorized, V>::try_from_parts` for an authorized bundle.
@@ -478,6 +493,7 @@ Existing callers keep the current behavior by constructing bundles with
     unit-struct impls dead.
 
 ### Fixed
+
 - The update to `halo2_gadgets 0.5.0` fixes a critical vulnerability related to
   its use in the Orchard circuit. Please see the release notes for
   `halo2_gadgets 0.5.0` for additional details.
@@ -491,6 +507,7 @@ Existing callers keep the current behavior by constructing bundles with
 ## [0.13.1] - 2026-04-27
 
 ### Added
+
 - `orchard::{L_ORCHARD_BASE, L_ORCHARD_SCALAR, L_VALUE}`, the bit-length
   parameters of the Orchard base field, scalar field, and value encoding
   as defined in the Zcash protocol specification.
@@ -500,12 +517,10 @@ Existing callers keep the current behavior by constructing bundles with
   voting-circuit development. These temporary APIs are not covered by the
   crate's semver stability guarantees and may change in any future release:
   - Modules: `orchard::{constants, spec}`,
-    `orchard::circuit::{commit_ivk, commit_ivk::gadgets, note_commit,
-    note_commit::gadgets, gadget::add_chip}`,
+    `orchard::circuit::{commit_ivk, commit_ivk::gadgets, note_commit, note_commit::gadgets, gadget::add_chip}`,
     `orchard::note::{commitment, nullifier}`.
   - Address and circuit helpers: `Address::{g_d, pk_d}`,
-    `circuit::gadget::{AddInstruction, assign_free_advice, derive_nullifier,
-    commit_ivk, note_commit}`,
+    `circuit::gadget::{AddInstruction, assign_free_advice, derive_nullifier, commit_ivk, note_commit}`,
     `circuit::gadget::add_chip::{AddConfig, AddChip}` and
     `AddChip::{configure, construct}`,
     `CommitIvkChip::{configure, construct}`,
@@ -535,6 +550,7 @@ Existing callers keep the current behavior by constructing bundles with
 ## [0.13.0] - 2026-04-22
 
 ### Added
+
 - `orchard::primitives::redpallas::VerificationKey<T>::is_identity`, which
   returns `true` if the verification key is the identity `pallas::Point`.
 - `orchard::primitives::redpallas::testing::arb_valid_spendauth_keypair`
@@ -542,6 +558,7 @@ Existing callers keep the current behavior by constructing bundles with
   `(rsk, rk)` key pair with non-identity `rk`.
 
 ### Changed
+
 - MSRV is now 1.85.1
 - Migrated from yanked `core2` library to `corez`
 - `orchard::pczt::Bundle::extract` now takes its `self` argument by
@@ -561,6 +578,7 @@ Existing callers keep the current behavior by constructing bundles with
 ## [0.12.0] - 2025-12-05
 
 ### Added
+
 - `orchard::pczt::Action::apply_signature`
 - `orchard::value::BalanceError`
 - `impl std::error::Error` for the following errors:
@@ -575,6 +593,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `orchard::zip32::Error`
 
 ### Changed
+
 - `orchard::builder::BuildError::ValueSum` variant now contains
   `orchard::value::BalanceError`.
 - `orchard::pczt::SignerError` has added variants:
@@ -597,19 +616,23 @@ Existing callers keep the current behavior by constructing bundles with
   a `#[non_exhaustive]` enum with (for now) a single variant.
 
 ### Removed
+
 - `orchard::value::OverflowError` (use `BalanceError` instead).
 
 ## [0.10.2] - 2025-05-08
 
 ### Fixed
+
 - Fixes problems in test compilation under `--no-default-features`
 
 ## [0.11.0] - 2025-02-20
 
 ### Added
+
 - `orchard::pczt::Zip32Derivation::extract_account_index`
 
 ### Changed
+
 - MSRV is now 1.70
 - Migrated to `nonempty 0.11`, `incrementalmerkletree 0.8`, `shardtree 0.6`,
   `zcash_spec 0.2`, `zip32 0.2`
@@ -619,6 +642,7 @@ Existing callers keep the current behavior by constructing bundles with
 ## [0.10.1] - 2024-12-16
 
 ### Added
+
 - Support for Partially-Created Zcash Transactions:
   - `orchard::builder::Builder::build_for_pczt`
   - `orchard::note_encryption`:
@@ -636,27 +660,32 @@ Existing callers keep the current behavior by constructing bundles with
 ## [0.10.0] - 2024-10-02
 
 ### Changed
+
 - Migrated to `incrementalmerkletree 0.7`.
 
 ## [0.9.1] - 2024-08-13
 
 ### Changed
+
 - Migrated to `visibility 0.1.1`.
 
 ## [0.9.0] - 2024-08-12
 
 ### Added
+
 - `orchard::keys::SpendValidatingKey::{from_bytes, to_bytes}` behind the
   `unstable-frost` feature flag. These are temporary APIs exposed for development
   purposes, and will be replaced by type-safe FROST APIs once ZIP 312 key
   generation is specified (https://github.com/zcash/zips/pull/883).
 
 ### Changed
+
 - Migrated to `incrementalmerkletree 0.6`.
 
 ## [0.8.0] - 2024-03-25
 
 ### Added
+
 - `orchard::keys::IncomingViewingKey::prepare`
 - `orchard::note::Rho`
 - `orchard::action::Action::rho`
@@ -667,6 +696,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `impl Distribution<MerkleHashOrchard> for Standard`
 
 ### Changed
+
 - The following methods have their `Nullifier`-typed argument or return value
   now take or return `note::Rho` instead:
   - `orchard::note::RandomSeed::from_bytes`
@@ -674,18 +704,23 @@ Existing callers keep the current behavior by constructing bundles with
   - `orchard::note::Note::rho`
 
 ### Removed
+
 - `orchard::note_encryption::OrchardDomain::for_nullifier` (use `for_action`
   or `for_compact_action` instead).
 
 ## [0.7.1] - 2024-02-29
+
 ### Added
+
 - `impl subtle::ConstantTimeEq for orchard::note::Nullifier`
 - `orchard::note_encryption`:
   - `CompactAction::cmx`
   - `impl Clone for CompactAction`
 
 ## [0.7.0] - 2024-01-26
+
 ### Licensing
+
 - The license for this crate is now "MIT OR Apache-2.0". The license
   exception that applied to the Zcash and Zebra projects, other projects
   designed to integrate with Zcash, and certain forks of Zcash, is no longer
@@ -694,6 +729,7 @@ Existing callers keep the current behavior by constructing bundles with
   with or without use of the license exception.
 
 ### Added
+
 - `orchard::builder`:
   - `bundle`
   - `BundleMetadata`
@@ -703,6 +739,7 @@ Existing callers keep the current behavior by constructing bundles with
 - `orchard::tree::Anchor::empty_tree`
 
 ### Changed
+
 - Migrated to the `zip32` crate. The following types have been replaced by the
   equivalent ones in that crate are now re-exported from there:
   - `orchard::keys::{DiversifierIndex, Scope}`
@@ -716,7 +753,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `Builder::build` now takes an additional `BundleType` argument that
     specifies how actions should be padded, instead of using hardcoded padding.
     It also now returns a `Result<Option<(Bundle<...>, BundleMetadata)>, ...>`
-    instead of a  `Result<Bundle<...>, ...>`.
+    instead of a `Result<Bundle<...>, ...>`.
   - `BuildError` has additional variants:
     - `SpendsDisabled`
     - `OutputsDisabled`
@@ -726,20 +763,27 @@ Existing callers keep the current behavior by constructing bundles with
 - `orchard::keys::SpendingKey::from_zip32_seed` now takes a `zip32::AccountId`.
 
 ### Removed
+
 - `orchard::bundle::Flags::from_parts`
 
 ## [0.6.0] - 2023-09-08
+
 ### Changed
+
 - MSRV is now 1.65.0.
 - Migrated to `incrementalmerkletree 0.5`.
 
 ## [0.5.0] - 2023-06-06
+
 ### Changed
+
 - Migrated to `zcash_note_encryption 0.4`, `incrementalmerkletree 0.4`, `bridgetree 0.3`.
   `bridgetree` is now exclusively a test dependency.
 
 ## [0.4.0] - 2023-04-11
+
 ### Added
+
 - `orchard::builder`:
   - `{SpendInfo::new, InputView, OutputView}`
   - `Builder::{spends, outputs}`
@@ -756,6 +800,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `orchard::value::ValueSum`
 
 ### Changed
+
 - MSRV is now 1.60.0.
 - Migrated to `ff 0.13`, `group 0.13`, `pasta_curves 0.5`, `halo2_proofs 0.3`,
   `halo2_gadgets 0.3`, `reddsa 0.5`, `zcash_note_encryption 0.3`.
@@ -767,11 +812,14 @@ Existing callers keep the current behavior by constructing bundles with
   - `BuildError` now implements `std::error::Error` and `std::fmt::Display`.
 
 ### Fixed
+
 - Several bugs have been fixed that were preventing Orchard bundles from being
   created or verified on 32-bit platforms, or with recent versions of Rust.
 
 ## [0.3.0] - 2022-10-19
+
 ### Added
+
 - `orchard::Proof::add_to_batch`
 - `orchard::address::Address::diversifier`
 - `orchard::keys::Diversifier::from_bytes`
@@ -781,10 +829,13 @@ Existing callers keep the current behavior by constructing bundles with
 - `orchard::circuit::Circuit::from_action_context`
 
 ### Changed
+
 - Migrated to `zcash_note_encryption 0.2`.
 
 ## [0.2.0] - 2022-06-24
+
 ### Added
+
 - `orchard::bundle::BatchValidator`
 - `orchard::builder::Builder::value_balance`
 - `orchard::note_encryption`:
@@ -799,10 +850,13 @@ Existing callers keep the current behavior by constructing bundles with
   - `ValueCommitment::derive`
 
 ### Changed
+
 - Migrated to `halo2_proofs 0.2`.
 
 ## [0.1.0] - 2022-05-10
+
 ### Changed
+
 - Migrated to `bitvec 1`, `ff 0.12`, `group 0.12`, `incrementalmerkletree 0.3`,
   `pasta_curves 0.4`, `halo2_proofs 0.1`, `reddsa 0.3`.
 - `orchard::bundle`:
@@ -816,7 +870,9 @@ Existing callers keep the current behavior by constructing bundles with
   of `ValueSum`.
 
 ## [0.1.0-beta.3] - 2022-04-06
+
 ### Added
+
 - `orchard::keys`:
   - `Scope` enum, for distinguishing external and internal scopes for viewing
     keys and addresses.
@@ -824,6 +880,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `FullViewingKey::scope_for_address`
 
 ### Changed
+
 - Migrated to `halo2_proofs 0.1.0-beta.4`, `incrementalmerkletree 0.3.0-beta.2`.
 - `orchard::builder`:
   - `Builder::add_spend` now requires that the `FullViewingKey` matches the
@@ -833,6 +890,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `FullViewingKey::{address, address_at}` now each take a `Scope` argument.
 
 ### Removed
+
 - `orchard::keys`:
   - `FullViewingKey::derive_internal`
   - `impl From<&FullViewingKey> for IncomingViewingKey` (use
@@ -841,7 +899,9 @@ Existing callers keep the current behavior by constructing bundles with
     `FullViewingKey::to_ovk` instead).
 
 ## [0.1.0-beta.2] - 2022-03-22
+
 ### Added
+
 - `orchard::keys`:
   - `DiversifierIndex::to_bytes`
   - `FullViewingKey::derive_internal`
@@ -862,6 +922,7 @@ Existing callers keep the current behavior by constructing bundles with
   - `orchard::primitives::redpallas::SigningKey`
 
 ### Changed
+
 - MSRV is now 1.56.1.
 - Bumped dependencies to `pasta_curves 0.3`, `halo2_proofs 0.1.0-beta.3`.
 - The following methods now have an additional `rng: impl RngCore` argument:
@@ -876,6 +937,7 @@ Existing callers keep the current behavior by constructing bundles with
   now have `Debug` bounds on themselves and their associated types.
 
 ### Removed
+
 - `orchard::bundle`:
   - `commitments::hash_bundle_txid_data` (use `Bundle::commitment` instead).
   - `commitments::hash_bundle_auth_data` (use `Bundle::authorizing_commitment`
@@ -890,4 +952,5 @@ Existing callers keep the current behavior by constructing bundles with
 - `orchard::value::ValueSum::from_raw`
 
 ## [0.1.0-beta.1] - 2021-12-17
+
 Initial release!
