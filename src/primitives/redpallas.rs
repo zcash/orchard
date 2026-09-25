@@ -3,6 +3,8 @@
 use core::cmp::{Ord, Ordering, PartialOrd};
 
 use pasta_curves::pallas;
+
+use super::InvalidPoint;
 use rand::{CryptoRng, RngCore};
 
 #[cfg(feature = "std")]
@@ -59,6 +61,39 @@ impl<T: SigType> SigningKey<T> {
     /// Creates a signature of type `T` on `msg` using this `SigningKey`.
     pub fn sign<R: RngCore + CryptoRng>(&self, rng: R, msg: &[u8]) -> Signature<T> {
         Signature(self.0.sign(rng, msg))
+    }
+}
+
+/// Compressed encoding for `rk` that CAN represent a non-canonical encoding of a Pallas point.
+///
+/// [`VerificationKeyBytes::decompress`] must be used to decompress & check point rules
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VerificationKeyBytes<T: SigType>(reddsa::VerificationKeyBytes<T>);
+
+impl<T: SigType> From<[u8; 32]> for VerificationKeyBytes<T> {
+    fn from(bytes: [u8; 32]) -> Self {
+        VerificationKeyBytes(reddsa::VerificationKeyBytes::from(bytes))
+    }
+}
+
+impl<T: SigType> From<&VerificationKey<T>> for VerificationKeyBytes<T> {
+    /// Converts to [`VerificationKeyBytes`], forgetting the invariants enforced by [`VerificationKey`].
+    fn from(vk: &VerificationKey<T>) -> Self {
+        VerificationKeyBytes(vk.0.into())
+    }
+}
+
+impl<T: SigType> VerificationKeyBytes<T> {
+    /// Returns the byte encoding of this key.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.into()
+    }
+
+    /// Recovers the key, checking the encoding is canonical. 1 sqrt
+    pub fn decompress(&self) -> Result<VerificationKey<T>, InvalidPoint> {
+        reddsa::VerificationKey::try_from(self.0)
+            .map(VerificationKey)
+            .map_err(|_| InvalidPoint)
     }
 }
 
@@ -165,7 +200,7 @@ impl<T: SigType> VerificationKey<T> {
 }
 
 /// A RedPallas signature.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature<T: SigType>(reddsa::Signature<T>);
 
 impl<T: SigType> From<[u8; 64]> for Signature<T> {

@@ -27,6 +27,8 @@ use subtle::{Choice, ConditionallySelectable, CtOption};
 // <https://zips.z.cash/protocol/protocol.pdf#thmuncommittedorchard>
 lazy_static! {
     static ref UNCOMMITTED_ORCHARD: pallas::Base = pallas::Base::from(2);
+    /// MerkleCRH Sinsemilla hash domain; its Q point costs a hash-to-curve, so it is derived once.
+    static ref MERKLE_CRH: HashDomain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
     pub(crate) static ref EMPTY_ROOTS: Vec<MerkleHashOrchard> = {
         iter::empty()
             .chain(Some(MerkleHashOrchard::empty_leaf()))
@@ -227,11 +229,8 @@ impl Hashable for MerkleHashOrchard {
     ///        layer = 31, l = 0
     ///      - when hashing to the final root, we produce the anchor with layer = 0, l = 31.
     fn combine(level: Level, left: &Self, right: &Self) -> Self {
-        // MerkleCRH Sinsemilla hash domain.
-        let domain = HashDomain::new(MERKLE_CRH_PERSONALIZATION);
-
         MerkleHashOrchard(
-            domain
+            MERKLE_CRH
                 .hash(
                     iter::empty()
                         .chain(i2lebsp_k(level.into()).iter().copied())
@@ -360,7 +359,8 @@ mod tests {
                     .0
                     .to_repr(),
                 *tv_root,
-                "Empty root mismatch at level {level}"
+                "Empty root mismatch at level {}",
+                level
             );
         }
     }

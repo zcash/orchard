@@ -4,6 +4,12 @@ use alloc::vec::Vec;
 
 pub mod commitments;
 
+mod bytes;
+pub use bytes::{BundleBytes, BundleDecompressionError};
+
+mod encoding;
+pub use encoding::{ActionEncoding, BundleEncoding};
+
 #[cfg(feature = "circuit")]
 mod batch;
 #[cfg(feature = "circuit")]
@@ -820,7 +826,7 @@ impl<V> Bundle<EffectsOnly, V> {
 }
 
 /// Authorizing data for a bundle of actions, ready to be committed to the ledger.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Authorized {
     proof: Proof,
     binding_signature: redpallas::Signature<Binding>,

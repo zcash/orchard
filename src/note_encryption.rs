@@ -12,7 +12,7 @@ use zcash_note_encryption::{
 };
 
 use crate::{
-    action::Action,
+    action::{Action, ActionBytes},
     keys::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
@@ -169,6 +169,11 @@ impl<V: DomainVersion> NoteEncryptionDomain<V> {
 
     /// Constructs a domain that can be used to trial-decrypt this action's output note.
     pub fn for_action<T>(act: &Action<T>) -> Self {
+        Self::from_rho(act.rho())
+    }
+
+    /// Constructs a domain that can be used to trial-decrypt this encoded action's output note.
+    pub fn for_action_bytes<T>(act: &ActionBytes<T>) -> Self {
         Self::from_rho(act.rho())
     }
 
@@ -412,6 +417,22 @@ impl<P: DomainPolicy, T> ShieldedOutput<NoteEncryptionDomain<P>, ENC_CIPHERTEXT_
     }
 }
 
+impl<P: DomainPolicy, T> ShieldedOutput<NoteEncryptionDomain<P>, ENC_CIPHERTEXT_SIZE>
+    for ActionBytes<T>
+{
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(self.encrypted_note().epk_bytes)
+    }
+
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        self.cmx().to_bytes()
+    }
+
+    fn enc_ciphertext(&self) -> &[u8; ENC_CIPHERTEXT_SIZE] {
+        &self.encrypted_note().enc_ciphertext
+    }
+}
+
 impl<P: DomainPolicy> ShieldedOutput<NoteEncryptionDomain<P>, ENC_CIPHERTEXT_SIZE>
     for crate::pczt::Action
 {
@@ -487,6 +508,19 @@ impl<T> From<&Action<T>> for CompactAction {
             enc_ciphertext: action.encrypted_note().enc_ciphertext[..52]
                 .try_into()
                 .unwrap(),
+        }
+    }
+}
+
+impl<T> From<&ActionBytes<T>> for CompactAction {
+    fn from(action: &ActionBytes<T>) -> Self {
+        CompactAction {
+            nullifier: *action.nullifier(),
+            cmx: *action.cmx(),
+            ephemeral_key: EphemeralKeyBytes(action.encrypted_note().epk_bytes),
+            enc_ciphertext: action.encrypted_note().enc_ciphertext[..52]
+                .try_into()
+                .expect("the compact prefix is 52 bytes"),
         }
     }
 }
