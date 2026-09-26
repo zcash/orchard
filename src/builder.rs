@@ -1991,7 +1991,7 @@ pub mod testing {
 
             ArbitraryBundleInputs {
                 rng: StdRng::from_seed(rng_seed),
-                sk,
+                sk: sk.clone(),
                 anchor: frontier.root().into(),
                 notes: notes_and_auth_paths,
                 output_amounts

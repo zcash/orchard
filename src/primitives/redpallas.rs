@@ -4,6 +4,8 @@ use core::cmp::{Ord, Ordering, PartialOrd};
 
 use pasta_curves::pallas;
 use rand::{CryptoRng, Rng};
+#[cfg(feature = "zeroize")]
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[cfg(feature = "std")]
 pub use reddsa::batch;
@@ -23,14 +25,27 @@ pub type Binding = reddsa::orchard::Binding;
 impl SigType for Binding {}
 
 /// A RedPallas signing key.
+///
+/// If the `zeroize` feature is enabled, the secret scalar is zeroized on drop.
 #[derive(Clone, Debug)]
 pub struct SigningKey<T: SigType>(reddsa::SigningKey<T>);
 
+#[cfg(feature = "zeroize")]
+impl<T: SigType> Zeroize for SigningKey<T> {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+// The inner `reddsa::SigningKey` zeroizes itself on drop.
+#[cfg(feature = "zeroize")]
+impl<T: SigType> ZeroizeOnDrop for SigningKey<T> {}
+
 impl<T: SigType> SigningKey<T> {
-    /// Returns the canonical byte encoding of this signing key.
+    /// Returns the canonical byte encoding of the secret scalar.
     ///
-    /// The returned array is secret key material. The caller must zeroize it
-    /// when it is no longer needed.
+    /// The returned array is secret key material; the caller is responsible for
+    /// zeroizing it once it is no longer needed.
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_bytes()
     }
