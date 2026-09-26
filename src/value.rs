@@ -50,7 +50,8 @@ use pasta_curves::{
     arithmetic::{CurveAffine, CurveExt},
     pallas,
 };
-use rand::RngCore;
+use rand::Rng;
+
 use subtle::CtOption;
 
 use crate::{
@@ -297,8 +298,8 @@ impl<'a> Sum<&'a ValueCommitTrapdoor> for ValueCommitTrapdoor {
 
 impl ValueCommitTrapdoor {
     /// Generates a new value commitment trapdoor.
-    pub(crate) fn random(rng: impl RngCore) -> Self {
-        ValueCommitTrapdoor(pallas::Scalar::random(rng))
+    pub(crate) fn random(mut rng: impl Rng) -> Self {
+        ValueCommitTrapdoor(pallas::Scalar::random(&mut rng))
     }
 
     /// Returns the zero trapdoor, which provides no blinding.

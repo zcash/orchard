@@ -38,13 +38,13 @@ use core::fmt;
 
 use zcash_note_encryption::{
     try_compact_note_decryption, try_note_decryption, try_output_recovery_with_ovk,
-    EphemeralKeyBytes, COMPACT_NOTE_SIZE,
+    EphemeralKeyBytes,
 };
 
 use crate::{
     bundle::BundleVersion,
     keys::{OutgoingViewingKey, PreparedIncomingViewingKey},
-    note_encryption::{CompactAction, IronwoodDomain, OrchardDomain},
+    note_encryption::{CompactAction, IronwoodDomain, OrchardDomain, COMPACT_NOTE_SIZE},
     Address, Note, ProtocolVersion, ValuePool,
 };
 
@@ -54,7 +54,7 @@ impl From<&super::Action> for CompactAction {
         // lengths are compile-time constants, and `COMPACT_NOTE_SIZE` is the smaller.
         let mut enc_ciphertext = [0; COMPACT_NOTE_SIZE];
         enc_ciphertext
-            .copy_from_slice(&action.output.encrypted_note.enc_ciphertext[..COMPACT_NOTE_SIZE]);
+            .copy_from_slice(&action.output.encrypted_note.enc_ciphertext.0[..COMPACT_NOTE_SIZE]);
 
         CompactAction::from_parts(
             action.spend.nullifier,
@@ -311,8 +311,8 @@ impl super::Action {
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::OsRng;
-    use zcash_note_encryption::{ShieldedOutput, COMPACT_NOTE_SIZE};
+    use rand::{rand_core::UnwrapErr, rngs::SysRng};
+    use zcash_note_encryption::ShieldedOutput;
 
     use crate::{
         builder::{Builder, BundleType},
@@ -322,7 +322,7 @@ mod tests {
             FullViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
         },
         note::Rho,
-        note_encryption::{CompactAction, OrchardDomain},
+        note_encryption::{CompactAction, OrchardDomain, COMPACT_NOTE_SIZE},
         tree::EMPTY_ROOTS,
         value::NoteValue,
         Address, NoteVersion,
@@ -366,7 +366,7 @@ mod tests {
         bundle_version: BundleVersion,
         ovk: Option<OutgoingViewingKey>,
         recipient: Address,
-        mut rng: OsRng,
+        mut rng: UnwrapErr<SysRng>,
     ) -> (crate::pczt::Bundle, usize) {
         let mut builder = Builder::new(
             BundleType::DEFAULT,
@@ -387,7 +387,7 @@ mod tests {
     /// own fields.
     #[test]
     fn compact_action_view_matches_the_action() {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
         let (bundle, action_index) = single_output_bundle(
             BundleVersion::orchard_v2(),
@@ -403,12 +403,12 @@ mod tests {
         assert_eq!(compact.cmx(), *action.output().cmx());
         assert_eq!(compact.rho(), Rho::from_nf_old(*action.spend().nullifier()));
         assert_eq!(
-            ShieldedOutput::<OrchardDomain, COMPACT_NOTE_SIZE>::ephemeral_key(&compact).0,
+            ShieldedOutput::<OrchardDomain>::ephemeral_key(&compact).0,
             action.output().encrypted_note().epk_bytes,
         );
         assert_eq!(
-            ShieldedOutput::<OrchardDomain, COMPACT_NOTE_SIZE>::enc_ciphertext(&compact)[..],
-            action.output().encrypted_note().enc_ciphertext[..COMPACT_NOTE_SIZE],
+            ShieldedOutput::<OrchardDomain>::enc_ciphertext_compact(&compact).0[..],
+            action.output().encrypted_note().enc_ciphertext.0[..COMPACT_NOTE_SIZE],
         );
     }
 
@@ -421,7 +421,7 @@ mod tests {
     ///   is not an input to the choice of domain.
     #[test]
     fn decryption_domain_follows_the_bundle_value_pool() {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
 
         for (bundle_version, same_pool_versions, other_pool_version, other_note_version) in [
             (
@@ -522,7 +522,7 @@ mod tests {
     /// recipient but recoverable by nobody.
     #[test]
     fn output_without_an_ovk_is_not_recoverable() {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let bundle_version = BundleVersion::orchard_v2();
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
         let recipient = fvk.address_at(0u32, Scope::External);
@@ -559,7 +559,7 @@ mod tests {
     /// [`UnsupportedBundleVersion`]: super::UnsupportedBundleVersion
     #[test]
     fn every_constructible_bundle_version_has_a_domain() {
-        let mut rng = OsRng;
+        let mut rng = UnwrapErr(SysRng);
         let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
         let recipient = fvk.address_at(0u32, Scope::External);
         let ivk = PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::External));
