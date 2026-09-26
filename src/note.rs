@@ -145,7 +145,7 @@ impl RandomSeed {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn psi(&self, rho: &Rho) -> pallas::Base {
-        to_base(PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
+        to_base(&PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
     }
 
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
@@ -153,7 +153,7 @@ impl RandomSeed {
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     fn esk_inner(&self, rho: &Rho) -> CtOption<NonZeroPallasScalar> {
         NonZeroPallasScalar::from_scalar(to_scalar(
-            PrfExpand::ORCHARD_ESK.with(&self.0, &rho.to_bytes()),
+            &PrfExpand::ORCHARD_ESK.with(&self.0, &rho.to_bytes()),
         ))
     }
 
@@ -173,7 +173,7 @@ impl RandomSeed {
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
     pub(crate) fn rcm_v2(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
-            PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
+            &PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
         ))
     }
 
@@ -228,7 +228,7 @@ impl RandomSeed {
         // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
         h.update(&psi.to_repr());
 
-        commitment::NoteCommitTrapdoor(to_scalar(*h.finalize().as_array()))
+        commitment::NoteCommitTrapdoor(to_scalar(h.finalize().as_array()))
     }
 }
 
