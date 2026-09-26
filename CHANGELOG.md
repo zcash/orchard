@@ -22,6 +22,7 @@ and this project adheres to Rust's notion of
   instantiations of the new `zcash_note_encryption::Domain` associated types,
   along with a re-export of `zcash_note_encryption::note_bytes::NoteBytesData`
   that they alias.
+- `orchard::primitives::redpallas::SigningKey::to_bytes`
 
 ### Changed
 - MSRV is now 1.88
@@ -36,6 +37,12 @@ and this project adheres to Rust's notion of
   the domain's `NoteCiphertextBytes`, so the field has to hold that type. The
   wrapper is a `#[derive(Clone, Copy)]` newtype over the same array; use `.0`
   (or `AsRef<[u8]>`) to reach the bytes.
+
+### Removed
+- `impl From<SigningKey<T>> for [u8; 32]` and
+  `impl From<&SigningKey<T>> for [u8; 32]` in `orchard::primitives::redpallas`.
+  Use `SigningKey::to_bytes` instead; the caller must zeroize the returned
+  bytes.
 
 ## [0.15.5] - 2026-08-02
 

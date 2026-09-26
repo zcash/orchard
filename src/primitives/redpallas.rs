@@ -26,15 +26,13 @@ impl SigType for Binding {}
 #[derive(Clone, Debug)]
 pub struct SigningKey<T: SigType>(reddsa::SigningKey<T>);
 
-impl<T: SigType> From<SigningKey<T>> for [u8; 32] {
-    fn from(sk: SigningKey<T>) -> [u8; 32] {
-        sk.0.to_bytes()
-    }
-}
-
-impl<T: SigType> From<&SigningKey<T>> for [u8; 32] {
-    fn from(sk: &SigningKey<T>) -> [u8; 32] {
-        sk.0.to_bytes()
+impl<T: SigType> SigningKey<T> {
+    /// Returns the canonical byte encoding of this signing key.
+    ///
+    /// The returned array is secret key material. The caller must zeroize it
+    /// when it is no longer needed.
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.0.to_bytes()
     }
 }
 

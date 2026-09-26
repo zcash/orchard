@@ -1116,7 +1116,7 @@ mod tests {
             let sk = SpendingKey::from_bytes(tv.sk).unwrap();
 
             let ask: SpendAuthorizingKey = (&sk).into();
-            assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
+            assert_eq!(ask.0.to_bytes(), tv.ask);
 
             let ak: SpendValidatingKey = (&ask).into();
             assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
