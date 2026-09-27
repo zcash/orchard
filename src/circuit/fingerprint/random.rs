@@ -53,7 +53,7 @@ use halo2_proofs::transcript::{
     Blake2bWrite, Challenge255, EncodedChallenge, Transcript, TranscriptRead, TranscriptWrite,
 };
 use pasta_curves::vesta;
-use rand_chacha::ChaCha20Rng;
+use rand::rngs::ChaCha20Rng;
 
 use super::super::{OrchardCircuitVersion, VerifyingKey, K};
 use super::{assert_pinned_verifying_key, fixture_rng, raw_instance_refs};

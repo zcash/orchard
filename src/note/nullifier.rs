@@ -9,7 +9,8 @@
 use group::{ff::PrimeField, Group};
 use memuse::DynamicUsage;
 use pasta_curves::{arithmetic::CurveExt, pallas};
-use rand::RngCore;
+use rand::Rng;
+
 use subtle::{ConstantTimeEq, CtOption};
 
 use super::NoteCommitment;
@@ -50,7 +51,7 @@ impl Nullifier {
     ///
     /// Instead of explicitly sampling for a unique nullifier, we rely here on the size of
     /// the base field to make the chance of sampling a colliding nullifier negligible.
-    pub(crate) fn dummy(rng: &mut impl RngCore) -> Self {
+    pub(crate) fn dummy(rng: &mut impl Rng) -> Self {
         Nullifier(extract_p(&pallas::Point::random(rng)))
     }
 

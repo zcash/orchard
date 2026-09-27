@@ -3,7 +3,7 @@ use core::fmt;
 use alloc::vec::Vec;
 
 use halo2_proofs::plonk;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 
 use crate::{
     builder::SpendInfo,
@@ -35,7 +35,7 @@ impl super::Bundle {
     /// or if proof creation fails.
     ///
     /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit::OrchardCircuitVersion::PostNu6_3
-    pub fn create_proof<R: RngCore + CryptoRng>(
+    pub fn create_proof<R: Rng + CryptoRng>(
         &mut self,
         pk: &ProvingKey,
         rng: R,

@@ -187,7 +187,7 @@ impl DynamicUsage for Action<redpallas::Signature<SpendAuth>> {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub(crate) mod testing {
-    use rand::{rngs::StdRng, RngCore, SeedableRng};
+    use rand::{rngs::StdRng, Rng, SeedableRng};
     use reddsa::orchard::SpendAuth;
     use zcash_note_encryption::Domain as _;
 
@@ -216,7 +216,7 @@ pub(crate) mod testing {
         note: Note,
         cv_net: &ValueCommitment,
         cmx: &ExtractedNoteCommitment,
-        mut rng: impl RngCore,
+        mut rng: impl Rng,
     ) -> TransmittedNoteCiphertext {
         let encryptor = OrchardNoteEncryption::new(None, note, [0u8; 512]);
         TransmittedNoteCiphertext {
@@ -294,6 +294,7 @@ mod tests {
     use super::{Action, ActionFromPartsError};
     use crate::{
         note::{ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
+        note_encryption::NoteBytesData,
         primitives::redpallas::{self, SpendAuth},
         value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
     };
@@ -334,7 +335,7 @@ mod tests {
         let cmx = ExtractedNoteCommitment::from_bytes(&[2u8; 32]).unwrap();
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: pallas::Point::generator().to_bytes(),
-            enc_ciphertext: [4u8; 580],
+            enc_ciphertext: NoteBytesData([4u8; 580]),
             out_ciphertext: [5u8; 80],
         };
         let cv_net = ValueCommitment::derive(ValueSum::from_raw(42), ValueCommitTrapdoor::zero());

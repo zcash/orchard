@@ -1,6 +1,6 @@
 use core::fmt;
 
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
 
 use crate::{
     keys::SpendAuthorizingKey,
@@ -15,7 +15,7 @@ impl super::Action {
     /// [`Bundle::verify_cross_address_restriction`]) before applying signatures.
     ///
     /// [`Bundle::verify_cross_address_restriction`]: super::Bundle::verify_cross_address_restriction
-    pub fn sign<R: RngCore + CryptoRng>(
+    pub fn sign<R: Rng + CryptoRng>(
         &mut self,
         sighash: [u8; 32],
         ask: &SpendAuthorizingKey,

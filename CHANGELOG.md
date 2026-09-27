@@ -13,9 +13,29 @@ and this project adheres to Rust's notion of
 - `orchard::pczt::Action::recover_output_with_ovk`
 - `orchard::pczt::UnsupportedBundleVersion`
 - `impl From<&orchard::pczt::Action> for orchard::note_encryption::CompactAction`
+- `orchard::note_encryption::COMPACT_NOTE_SIZE`, `NOTE_PLAINTEXT_SIZE` and
+  `ENC_CIPHERTEXT_SIZE`. `zcash_note_encryption` removed these constants,
+  because the note plaintext size is now domain-specific; they are Orchard
+  parameters and so now live here.
+- `orchard::note_encryption::{NotePlaintextBytes, NoteCiphertextBytes,
+  CompactNotePlaintextBytes, CompactNoteCiphertextBytes}`, the Orchard
+  instantiations of the new `zcash_note_encryption::Domain` associated types,
+  along with a re-export of `zcash_note_encryption::note_bytes::NoteBytesData`
+  that they alias.
 
 ### Changed
 - MSRV is now 1.88
+- Migrated to `ff 0.14`, `group 0.14`, `pasta_curves 0.6`, `rand_core 0.10`,
+  `reddsa 0.6`, and `zcash_note_encryption 0.5`.
+- Public APIs that took an `RngCore` (with or without `CryptoRng`) now take a
+  `rand_core 0.10` `Rng` in its place, as `RngCore` is deprecated in
+  `rand_core 0.10`.
+- **Breaking change:** `note::TransmittedNoteCiphertext::enc_ciphertext` is now
+  a `note_encryption::NoteCiphertextBytes` instead of a `[u8; 580]`. The new
+  `zcash_note_encryption::ShieldedOutput::enc_ciphertext` returns a reference to
+  the domain's `NoteCiphertextBytes`, so the field has to hold that type. The
+  wrapper is a `#[derive(Clone, Copy)]` newtype over the same array; use `.0`
+  (or `AsRef<[u8]>`) to reach the bytes.
 
 ## [0.15.5] - 2026-08-02
 

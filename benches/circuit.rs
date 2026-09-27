@@ -14,7 +14,12 @@ use orchard::{
     value::NoteValue,
     Anchor, Bundle,
 };
-use rand::rngs::OsRng;
+use rand::{rand_core::UnwrapErr, rngs::SysRng};
+
+/// `rand` 0.10 replaces `rand_core` 0.6's infallible `OsRng` with the
+/// fallible `SysRng`; unwrapping its error type recovers the old interface.
+#[allow(non_upper_case_globals)]
+const OsRng: UnwrapErr<SysRng> = UnwrapErr(SysRng);
 
 fn criterion_benchmark(c: &mut Criterion) {
     let rng = OsRng;

@@ -3,7 +3,8 @@ use core::fmt;
 
 use halo2_proofs::plonk;
 use pasta_curves::vesta;
-use rand::{CryptoRng, RngCore};
+use rand::{CryptoRng, Rng};
+
 use tracing::debug;
 
 use super::{Authorized, Bundle};
@@ -118,7 +119,7 @@ impl<'a> BatchValidator<'a> {
     ///
     /// The cross-address-restriction capability is enforced when bundles are added (see
     /// [`Self::add_bundle`]), so it is already guaranteed here.
-    pub fn validate<R: RngCore + CryptoRng>(self, rng: R) -> bool {
+    pub fn validate<R: Rng + CryptoRng>(self, mut rng: R) -> bool {
         // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
 
         if self.signatures.is_empty() {
@@ -133,7 +134,7 @@ impl<'a> BatchValidator<'a> {
             validator.queue(sig.signature.clone());
         }
 
-        match validator.verify(rng) {
+        match validator.verify(&mut rng) {
             // If signatures are valid, check the proofs.
             Ok(()) => self.proofs.finalize(&self.vk.params, &self.vk.vk),
             Err(e) => {
@@ -146,7 +147,7 @@ impl<'a> BatchValidator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use rand::rngs::OsRng;
+    use rand::{rand_core::UnwrapErr, rngs::SysRng};
 
     use super::{BatchError, BatchValidator};
     use crate::{
@@ -188,7 +189,7 @@ mod tests {
             OrchardCircuitVersion::PostNu6_3,
         ] {
             let vk = VerifyingKey::build(circuit_version);
-            assert!(BatchValidator::new(&vk).validate(OsRng));
+            assert!(BatchValidator::new(&vk).validate(UnwrapErr(SysRng)));
         }
     }
 }

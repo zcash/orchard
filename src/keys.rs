@@ -10,12 +10,11 @@ use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
 use group::{
     ff::{Field, PrimeField},
-    prime::PrimeCurveAffine,
-    Curve, GroupEncoding,
+    Curve, CurveAffine, GroupEncoding,
 };
 use pasta_curves::glv::{Decomposed, Table};
 use pasta_curves::pallas;
-use rand::RngCore;
+use rand::Rng;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use zcash_note_encryption::EphemeralKeyBytes;
 
@@ -57,7 +56,7 @@ impl SpendingKey {
     ///
     /// [ZIP 32]: https://zips.z.cash/zip-0032
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
-    pub(crate) fn random(rng: &mut impl RngCore) -> Self {
+    pub(crate) fn random(rng: &mut impl Rng) -> Self {
         loop {
             let mut bytes = [0; 32];
             rng.fill_bytes(&mut bytes);
