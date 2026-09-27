@@ -13,6 +13,14 @@ and this project adheres to Rust's notion of
 - `orchard::pczt::Action::recover_output_with_ovk`
 - `orchard::pczt::UnsupportedBundleVersion`
 - `impl From<&orchard::pczt::Action> for orchard::note_encryption::CompactAction`
+- `zeroize` feature flag (enabled by default), which enables the `zeroize`
+  dependency (without its default features, so `no_std` is preserved), turns on
+  `pasta_curves/zeroize`, `reddsa/zeroize` and `zip32/zeroize`, and provides:
+  - `impl zeroize::{Zeroize, ZeroizeOnDrop} for orchard::keys::SpendingKey`
+  - `impl zeroize::{Zeroize, ZeroizeOnDrop} for orchard::keys::SpendAuthorizingKey`
+  - `impl zeroize::{Zeroize, ZeroizeOnDrop} for orchard::primitives::redpallas::SigningKey`
+  When enabled, these types are zeroized on drop, and the intermediate values
+  produced while deriving them from a spending key are zeroized after use.
 - `orchard::note_encryption::COMPACT_NOTE_SIZE`, `NOTE_PLAINTEXT_SIZE` and
   `ENC_CIPHERTEXT_SIZE`. `zcash_note_encryption` removed these constants,
   because the note plaintext size is now domain-specific; they are Orchard
@@ -22,8 +30,11 @@ and this project adheres to Rust's notion of
   instantiations of the new `zcash_note_encryption::Domain` associated types,
   along with a re-export of `zcash_note_encryption::note_bytes::NoteBytesData`
   that they alias.
+- `orchard::primitives::redpallas::SigningKey::to_bytes`
 
 ### Changed
+- `orchard::keys::SpendingKey` no longer implements `Copy` (it still implements
+  `Clone`), and its `Debug` impl no longer prints the key material.
 - MSRV is now 1.88
 - Migrated to `ff 0.14`, `group 0.14`, `pasta_curves 0.6`, `rand_core 0.10`,
   `reddsa 0.6`, and `zcash_note_encryption 0.5`.
@@ -36,6 +47,12 @@ and this project adheres to Rust's notion of
   the domain's `NoteCiphertextBytes`, so the field has to hold that type. The
   wrapper is a `#[derive(Clone, Copy)]` newtype over the same array; use `.0`
   (or `AsRef<[u8]>`) to reach the bytes.
+
+### Removed
+- `impl From<SigningKey<T>> for [u8; 32]` and
+  `impl From<&SigningKey<T>> for [u8; 32]` in `orchard::primitives::redpallas`.
+  Use `SigningKey::to_bytes` instead; the caller must zeroize the returned
+  bytes.
 
 ## [0.15.5] - 2026-08-02
 
