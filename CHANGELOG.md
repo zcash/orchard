@@ -33,20 +33,23 @@ and this project adheres to Rust's notion of
 - `orchard::primitives::redpallas::SigningKey::to_bytes`
 
 ### Changed
-- `orchard::keys::SpendingKey` no longer implements `Copy` (it still implements
-  `Clone`), and its `Debug` impl no longer prints the key material.
-- MSRV is now 1.88
 - Migrated to `ff 0.14`, `group 0.14`, `pasta_curves 0.6`, `rand_core 0.10`,
   `reddsa 0.6`, and `zcash_note_encryption 0.5`.
 - Public APIs that took an `RngCore` (with or without `CryptoRng`) now take a
   `rand_core 0.10` `Rng` in its place, as `RngCore` is deprecated in
   `rand_core 0.10`.
-- **Breaking change:** `note::TransmittedNoteCiphertext::enc_ciphertext` is now
-  a `note_encryption::NoteCiphertextBytes` instead of a `[u8; 580]`. The new
-  `zcash_note_encryption::ShieldedOutput::enc_ciphertext` returns a reference to
-  the domain's `NoteCiphertextBytes`, so the field has to hold that type. The
-  wrapper is a `#[derive(Clone, Copy)]` newtype over the same array; use `.0`
-  (or `AsRef<[u8]>`) to reach the bytes.
+- `orchard::keys::SpendingKey` no longer implements `Copy` (it still implements
+  `Clone`), and its `Debug` impl no longer prints the key material.
+- MSRV is now 1.88
+- `note::TransmittedNoteCiphertext::enc_ciphertext` is now a
+- `note_encryption::NoteCiphertextBytes` instead of a `[u8; 580]`. The new
+  `zcash_note_encryption::ShieldedOutput::enc_ciphertext` returns a reference
+  to the domain's `NoteCiphertextBytes`, so the field has to hold that type.
+  The wrapper is a `#[derive(Clone, Copy)]` newtype over the same array; use
+  `.0` (or `AsRef<[u8]>`) to reach the bytes.
+- `tracing` is now an optional dependency, enabled by the `circuit` feature. It was
+  only ever used by the `circuit`-gated batch validator, and its `tracing-core`
+  dependency does not build for targets without atomic compare-and-swap.
 
 ### Removed
 - `impl From<SigningKey<T>> for [u8; 32]` and
