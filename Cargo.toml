@@ -30,10 +30,10 @@ group = "0.14"
 zcash_spec = "0.2.1"
 
 # Circuit
-halo2_gadgets = { version = "0.5", optional = true, default-features = false }
-halo2_proofs = { version = "0.3.5", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
+halo2_gadgets = { version = "0.6", optional = true, default-features = false }
+halo2_proofs = { version = "0.4", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 pasta_curves = { version = "0.6", features = ["glv"] }
-poseidon = { package = "halo2_poseidon", version = "0.1" }
+poseidon = { package = "halo2_poseidon", version = "0.2" }
 reddsa = { version = "0.6", default-features = false }
 sinsemilla = "0.2"
 
@@ -46,7 +46,7 @@ blake2b_simd = { version = "1", default-features = false }
 bitvec = { version = "1", default-features = false }
 incrementalmerkletree = "0.8.1"
 zcash_note_encryption = "0.5"
-zip32 = { version = "0.2.0", default-features = false }
+zip32 = { version = "0.3", default-features = false }
 
 # Secret management
 subtle = { version = "2.6", default-features = false }
@@ -76,7 +76,7 @@ proptest = { version = ">=1.0.0, <1.7.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
-halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
+halo2_gadgets = { version = "0.6", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
 rand = { version = "0.10", features = ["chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
@@ -122,12 +122,6 @@ required-features = ["circuit"]
 name = "orchard_k11_prover"
 harness = false
 required-features = ["circuit"]
-
-[patch.crates-io]
-zip32 = { git = "https://github.com/zcash/zip32.git", rev = "0399cd62dae9b3abe5dc8d5e761b8ef11b57b12a" }
-halo2_proofs = { git = "https://github.com/zcash/halo2.git", rev = "232496b154e6332c88924e4affa8351ff92408b4" }
-halo2_gadgets = { git = "https://github.com/zcash/halo2.git", rev = "232496b154e6332c88924e4affa8351ff92408b4" }
-halo2_poseidon = { git = "https://github.com/zcash/halo2.git", rev = "232496b154e6332c88924e4affa8351ff92408b4" }
 
 [profile.release]
 debug = true
