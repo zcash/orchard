@@ -31,8 +31,20 @@ and this project adheres to Rust's notion of
   along with a re-export of `zcash_note_encryption::note_bytes::NoteBytesData`
   that they alias.
 - `orchard::primitives::redpallas::SigningKey::to_bytes`
+- `ProvingKey::verifying_key`, which reuses the verifying key generated as
+  part of proving-key construction instead of deriving it again.
+- `MerkleHashOrchard::combine_batch`, which hashes same-level Merkle node
+  pairs together and shares one projective-to-affine normalization across
+  each batch.
+- Reproducible one-Action prover and validated-corpus batch-verifier
+  benchmark harnesses, in `benches/orchard_k11_prover.rs` and documented in
+  `benches/README.md`.
+- A `platform_smoke` integration test covering proof creation, individual
+  verification and batch verification. The existing CI matrix runs it on
+  Linux, macOS and Windows.
 
 ### Changed
+- MSRV is now 1.88
 - Migrated to `ff 0.14`, `group 0.14`, `pasta_curves 0.6`, `rand_core 0.10`,
   `reddsa 0.6`, and `zcash_note_encryption 0.5`.
 - Public APIs that took an `RngCore` (with or without `CryptoRng`) now take a
@@ -40,9 +52,13 @@ and this project adheres to Rust's notion of
   `rand_core 0.10`.
 - `orchard::keys::SpendingKey` no longer implements `Copy` (it still implements
   `Clone`), and its `Debug` impl no longer prints the key material.
-- MSRV is now 1.88
+- The Sinsemilla note-commitment domain is now initialized once and reused,
+  instead of deriving the same generators for every commitment.
+- The Sinsemilla Merkle CRH domain is now initialized once and reused for
+  Orchard and Ironwood commitment-tree hashing, instead of deriving the same
+  generator for every node.
 - `note::TransmittedNoteCiphertext::enc_ciphertext` is now a
-- `note_encryption::NoteCiphertextBytes` instead of a `[u8; 580]`. The new
+  `note_encryption::NoteCiphertextBytes` instead of a `[u8; 580]`. The new
   `zcash_note_encryption::ShieldedOutput::enc_ciphertext` returns a reference
   to the domain's `NoteCiphertextBytes`, so the field has to hold that type.
   The wrapper is a `#[derive(Clone, Copy)]` newtype over the same array; use
