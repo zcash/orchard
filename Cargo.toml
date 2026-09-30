@@ -69,16 +69,16 @@ tracing = { version = "0.1", optional = true, default-features = false }
 corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
 
 # Developer tooling dependencies
-image = { version = "0.24", optional = true }
+image = { version = "0.25", optional = true }
 plotters = { version = "0.3.0", optional = true }
 memuse = { version = "0.2.2", default-features = false }
-proptest = { version = ">=1.0.0, <1.7.0", optional = true }
+proptest = { version = "1", optional = true }
 
 [dev-dependencies]
-criterion = "0.4" # 0.5 depends on clap 4 which has MSRV 1.70
+criterion = "0.5"
 halo2_gadgets = { version = "0.6", features = ["test-dependencies"] }
 hex = "0.4"
-proptest = ">=1.0.0, <1.7.0"
+proptest = "1"
 rand = { version = "0.10", features = ["chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
 sinsemilla = { version = "0.2", features = ["test-dependencies"] }
 zcash_note_encryption = { version = "0.5.1", features = ["pre-zip-212"] }
@@ -87,7 +87,7 @@ shardtree = "0.8"
 
 [target.'cfg(unix)'.dev-dependencies]
 inferno = { version = "0.11", default-features = false, features = ["multithreaded", "nameattr"] }
-pprof = { version = "0.11", features = ["criterion", "flamegraph"] }
+pprof = { version = "0.15", features = ["criterion", "flamegraph"] }
 
 [lib]
 bench = false
