@@ -23,9 +23,9 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs", "--html-in-header", "katex-header.html"]
 
 [dependencies]
-aes = "0.8"
+aes = "0.9"
 ff = { version = "0.14", default-features = false }
-fpe = { version = "0.6", default-features = false, features = ["alloc"] }
+fpe = { version = "0.7", default-features = false, features = ["alloc"] }
 group = "0.14"
 zcash_spec = "0.2.1"
 
