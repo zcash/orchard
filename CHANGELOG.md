@@ -46,7 +46,8 @@ and this project adheres to Rust's notion of
 ### Changed
 - MSRV is now 1.88
 - Migrated to `ff 0.14`, `group 0.14`, `pasta_curves 0.6`, `rand_core 0.10`,
-  `reddsa 0.6`, `zcash_note_encryption 0.5`, `zip32 0.3`, and `halo2_proofs 0.4`.
+  `reddsa 0.6`, `zcash_note_encryption 0.5`, `zip32 0.3`, `halo2_proofs 0.4`
+  `incrementalmerkletree 0.9`, `shardtree 0.8`.
 - Under the `unstable-voting-circuits` feature: migrated to `halo2_gadgets 0.6`.
 - Public APIs that took an `RngCore` (with or without `CryptoRng`) now take a
   `rand_core 0.10` `Rng` in its place, as `RngCore` is deprecated in

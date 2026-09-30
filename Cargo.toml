@@ -44,7 +44,7 @@ rand_core = { version = "0.10", default-features = false }
 # Zcash protocol
 blake2b_simd = { version = "1", default-features = false }
 bitvec = { version = "1", default-features = false }
-incrementalmerkletree = "0.8.1"
+incrementalmerkletree = "0.9"
 zcash_note_encryption = "0.5.1"
 zip32 = { version = "0.3", default-features = false }
 
@@ -82,8 +82,8 @@ proptest = ">=1.0.0, <1.7.0"
 rand = { version = "0.10", features = ["chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
 sinsemilla = { version = "0.2", features = ["test-dependencies"] }
 zcash_note_encryption = { version = "0.5.1", features = ["pre-zip-212"] }
-incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
-shardtree = "0.6"
+incrementalmerkletree = { version = "0.9", features = ["test-dependencies"] }
+shardtree = "0.8"
 
 [target.'cfg(unix)'.dev-dependencies]
 inferno = { version = "0.11", default-features = false, features = ["multithreaded", "nameattr"] }
