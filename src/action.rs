@@ -12,6 +12,9 @@ use crate::{
     value::ValueCommitment,
 };
 
+mod bytes;
+pub use bytes::{ActionBytes, ActionParseError, DecompressionError, ACTION_DESCRIPTION_SIZE};
+
 /// An action applied to the global ledger.
 ///
 /// This both creates a note (adding a commitment to the global ledger), and consumes
