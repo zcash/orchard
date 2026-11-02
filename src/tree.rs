@@ -310,10 +310,52 @@ impl Hashable for MerkleHashOrchard {
         )
     }
 
+    /// - [`MerkleHashOrchard::combine_batch`] over each task's pairs
+    /// - `multicore`: one task per rayon thread, clamped to `MIN..=MAX_PAIRS_PER_TASK` pairs
+    fn combine_pairs(level: Level, children: &[Self]) -> Vec<Self> {
+        assert!(children.len().is_multiple_of(2), "children pair up");
+        let parents = |children: &[Self]| {
+            Self::combine_batch(
+                level,
+                children
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|[left, right]| (left, right)),
+            )
+        };
+        #[cfg(feature = "multicore")]
+        {
+            use rayon::prelude::*;
+            let per_task = (children.len() / 2)
+                .div_ceil(rayon::current_num_threads())
+                .clamp(MIN_PAIRS_PER_TASK, MAX_PAIRS_PER_TASK);
+            if children.len() > 2 * per_task {
+                return children
+                    .par_chunks(2 * per_task)
+                    .flat_map_iter(parents)
+                    .collect();
+            }
+        }
+        parents(children)
+    }
+
     fn empty_root(level: Level) -> Self {
         EMPTY_ROOTS[<usize>::from(level)]
     }
 }
+
+/// Fewest pairs per rayon task (= `sinsemilla`'s lockstep threshold)
+///
+/// - 20 threads, µs/pair at 64 / 128 / 512 pairs: 4.3 / 2.7 / 1.7 (64 per task: 6.8 / 4.7 / 2.4)
+#[cfg(feature = "multicore")]
+const MIN_PAIRS_PER_TASK: usize = 8;
+
+/// Most pairs per rayon task (more tasks than threads: balance across P- and E-cores)
+///
+/// - 20 threads, µs/pair at 2048 / 8192 / 32768 pairs: 1.46 / 1.24 / 0.99 (512 or 2048: no better)
+#[cfg(feature = "multicore")]
+const MAX_PAIRS_PER_TASK: usize = 256;
 
 impl Serialize for MerkleHashOrchard {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -455,6 +497,70 @@ mod tests {
                     "level {level:?}, {left:?} ‖ {right:?}"
                 );
             }
+        }
+    }
+
+    /// 1000 pairs: several rayon tasks under `multicore` (on any machine with >= 2 threads)
+    #[test]
+    fn combine_pairs_equals_combine_per_pair_across_task_splits() {
+        let mut rng = ChaCha20Rng::from_seed(BATCH_TEST_SEED);
+        let children: Vec<_> = (0..2 * 1000)
+            .map(|_| MerkleHashOrchard(pallas::Base::random(&mut rng)))
+            .collect();
+
+        for level in [0, 31].map(Level::from) {
+            for pairs in [0, 1, 7, 8, 9, 1000] {
+                let children = &children[..2 * pairs];
+                let expected: Vec<_> = children
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|[left, right]| MerkleHashOrchard::combine(level, left, right))
+                    .collect();
+                assert_eq!(
+                    MerkleHashOrchard::combine_pairs(level, children),
+                    expected,
+                    "level {level:?}, {pairs} pairs"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "children pair up")]
+    fn combine_pairs_refuses_an_odd_count() {
+        MerkleHashOrchard::combine_pairs(Level::from(0), &[MerkleHashOrchard::empty_leaf()]);
+    }
+
+    #[test]
+    fn combine_pairs_rebuilds_the_empty_root_and_merkle_path_vectors() {
+        let tv_empty_roots = crate::test_vectors::commitment_tree::test_vectors().empty_roots;
+        let mut node = MerkleHashOrchard::empty_leaf();
+        assert_eq!(tv_empty_roots[0], node.to_bytes());
+        for level in 0..MERKLE_DEPTH_ORCHARD as u8 {
+            node = MerkleHashOrchard::combine_pairs(level.into(), &[node, node])[0];
+            assert_eq!(
+                tv_empty_roots[usize::from(level) + 1],
+                node.to_bytes(),
+                "{level}"
+            );
+        }
+
+        // vector `i` = depth-4 tree of leaves `0..=i`, the rest uncommitted
+        for (i, tv) in crate::test_vectors::merkle_path::test_vectors()
+            .into_iter()
+            .enumerate()
+        {
+            let mut nodes: Vec<MerkleHashOrchard> = tv.leaves[..=i]
+                .iter()
+                .map(|leaf| MerkleHashOrchard::from_bytes(leaf).expect("canonical vector leaf"))
+                .collect();
+            nodes.resize(tv.leaves.len(), MerkleHashOrchard::empty_leaf());
+            for level in 0..tv.paths[i].len() as u8 {
+                nodes = MerkleHashOrchard::combine_pairs(level.into(), &nodes);
+            }
+            let root = MerkleHashOrchard::from_bytes(&tv.root).expect("canonical vector root");
+            assert_eq!(nodes, [root], "vector {i}");
         }
     }
 
