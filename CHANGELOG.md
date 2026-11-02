@@ -7,6 +7,16 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `runtime-precomputation` feature flag, which enables `sinsemilla`'s
+  `runtime-precomputation` (position-weighted tables built on first use, sized
+  by `SINSEMILLA_TABLE_LIMIT` at build time)
+
+### Changed
+- `tree::MerkleHashOrchard::combine_batch` hashes its pairs with
+  `sinsemilla::HashDomain::hash_many_vartime`. Results are unchanged, and the
+  function is now variable time, which is fine for public tree nodes.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added
