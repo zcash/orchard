@@ -103,6 +103,8 @@ dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 verifier-fingerprint = ["circuit", "halo2_proofs/unstable-verifier-fingerprint"]
 test-dependencies = ["proptest", "rand/std", "rand/std_rng"]
 zeroize = ["dep:zeroize", "pasta_curves/zeroize", "reddsa/zeroize", "zip32/zeroize"]
+# Sinsemilla's position-weighted tables, built on first use (size: `SINSEMILLA_TABLE_LIMIT` at build)
+runtime-precomputation = ["sinsemilla/runtime-precomputation"]
 
 [[bench]]
 name = "note_decryption"
@@ -122,6 +124,10 @@ required-features = ["circuit"]
 name = "orchard_k11_prover"
 harness = false
 required-features = ["circuit"]
+
+[patch.crates-io]
+# `runtime-precomputation` (zcash/sinsemilla#9) + `HashDomain::hash_many_vartime`; drop once released
+sinsemilla = { git = "https://github.com/zingolabs/sinsemilla.git", rev = "09b92cf4e87bb3f5a803053d457f6604d1a1dce5" }
 
 [profile.release]
 debug = true

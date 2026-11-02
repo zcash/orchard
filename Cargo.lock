@@ -2531,8 +2531,7 @@ dependencies = [
 [[package]]
 name = "sinsemilla"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72744738b764bb3bb7bb5dcf71b62d19c2de8a09f850a7388f6088f244037299"
+source = "git+https://github.com/zingolabs/sinsemilla.git?rev=09b92cf4e87bb3f5a803053d457f6604d1a1dce5#09b92cf4e87bb3f5a803053d457f6604d1a1dce5"
 dependencies = [
  "group",
  "pasta_curves",

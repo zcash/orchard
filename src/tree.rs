@@ -9,12 +9,11 @@ use crate::{
         MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,
-    spec::extract_p_bottom_batch,
 };
 
 use incrementalmerkletree::{Hashable, Level};
 use pasta_curves::pallas;
-use sinsemilla::HashDomain;
+use sinsemilla::{HashDomain, K};
 
 use ff::{Field, PrimeField, PrimeFieldBits};
 use lazy_static::lazy_static;
@@ -210,8 +209,10 @@ impl MerkleHashOrchard {
     /// Combines same-level node pairs using `MerkleCRH^Orchard`.
     ///
     /// This is equivalent to calling [`Hashable::combine`] for each pair in
-    /// input order, but normalizes all resulting projective Pallas points
-    /// together to amortize the field inversion across the batch.
+    /// input order, but hashes the pairs together with
+    /// [`HashDomain::hash_many_vartime`] to amortize field inversions across the
+    /// batch. That is variable time, which is fine for Merkle tree nodes because
+    /// they are public.
     ///
     /// Every pair is evaluated at `level`. As with [`Hashable::combine`], the
     /// caller is responsible for supplying children that belong at that level.
@@ -223,11 +224,15 @@ impl MerkleHashOrchard {
         level: Level,
         pairs: impl IntoIterator<Item = (&'a Self, &'a Self)>,
     ) -> Vec<Self> {
-        extract_p_bottom_batch(pairs.into_iter().map(|(left, right)| {
-            MERKLE_CRH_DOMAIN.hash_to_point(merkle_crh_message(level, left, right))
-        }))
-        .map(|hash| MerkleHashOrchard(hash.unwrap_or(pallas::Base::zero())))
-        .collect()
+        let messages: Vec<_> = pairs
+            .into_iter()
+            .map(|(left, right)| merkle_crh_words(level, left, right))
+            .collect();
+        MERKLE_CRH_DOMAIN
+            .hash_many_vartime(&messages)
+            .into_iter()
+            .map(|hash| MerkleHashOrchard(hash.unwrap_or(pallas::Base::zero())))
+            .collect()
     }
 }
 
@@ -240,6 +245,40 @@ fn merkle_crh_message(
         .into_iter()
         .chain(left.0.to_le_bits().into_iter().take(L_ORCHARD_MERKLE))
         .chain(right.0.to_le_bits().into_iter().take(L_ORCHARD_MERKLE))
+}
+
+/// `K`-bit words of a MerkleCRH message (10 + 2 · 255 = 520 bits, no padding word)
+const MERKLE_CRH_WORDS: usize = (K + 2 * L_ORCHARD_MERKLE) / K;
+const _: () = assert!((K + 2 * L_ORCHARD_MERKLE).is_multiple_of(K));
+
+/// [`merkle_crh_message`] as `K`-bit words, packed limb-wise (not bit by bit)
+fn merkle_crh_words(
+    level: Level,
+    left: &MerkleHashOrchard,
+    right: &MerkleHashOrchard,
+) -> [u16; MERKLE_CRH_WORDS] {
+    let mut bits = [0u64; (MERKLE_CRH_WORDS * K).div_ceil(64)];
+    bits[0] = u64::from(u8::from(level));
+    for (child, at) in [(left, K), (right, K + L_ORCHARD_MERKLE)] {
+        // canonical repr < 2^255 (bit 255 = 0): spill past `L_ORCHARD_MERKLE` ORs nothing
+        for (i, limb) in child.0.to_repr().as_chunks::<8>().0.iter().enumerate() {
+            let (word, shift) = ((at + 64 * i) / 64, (at + 64 * i) % 64);
+            let limb = u64::from_le_bytes(*limb);
+            bits[word] |= limb << shift;
+            if shift > 0 {
+                bits[word + 1] |= limb >> (64 - shift);
+            }
+        }
+    }
+    core::array::from_fn(|i| {
+        let (at, shift) = (i * K / 64, i * K % 64);
+        let high = match shift + K > 64 {
+            true => bits[at + 1] << (64 - shift),
+            false => 0,
+        };
+        // masked to K = 10 bits
+        ((bits[at] >> shift | high) & ((1 << K) - 1)) as u16
+    })
 }
 
 impl ConditionallySelectable for MerkleHashOrchard {
@@ -324,7 +363,7 @@ mod tests {
         crate::{
             constants::sinsemilla::MERKLE_CRH_PERSONALIZATION,
             constants::MERKLE_DEPTH_ORCHARD,
-            tree::{merkle_crh_message, MerkleHashOrchard, EMPTY_ROOTS},
+            tree::{merkle_crh_message, merkle_crh_words, MerkleHashOrchard, EMPTY_ROOTS},
         },
         alloc::vec::Vec,
         group::ff::{Field, PrimeField},
@@ -381,6 +420,40 @@ mod tests {
                 );
 
                 assert_eq!(actual, expected, "level {level:?}, width {width}");
+            }
+        }
+    }
+
+    /// Children 0, 1, p − 1 (largest canonical) and random, at the top and bottom levels
+    #[test]
+    fn merkle_crh_words_pack_merkle_crh_message() {
+        let mut rng = ChaCha20Rng::from_seed(BATCH_TEST_SEED);
+        let children = [
+            pallas::Base::zero(),
+            pallas::Base::one(),
+            -pallas::Base::one(),
+            pallas::Base::random(&mut rng),
+        ]
+        .map(MerkleHashOrchard);
+        for level in [0, 31].map(Level::from) {
+            for (left, right) in children
+                .iter()
+                .flat_map(|l| children.iter().map(move |r| (l, r)))
+            {
+                let bits: Vec<bool> = merkle_crh_message(level, left, right).collect();
+                let expected: Vec<u16> = bits
+                    .chunks(sinsemilla::K)
+                    .map(|word| {
+                        word.iter()
+                            .rev()
+                            .fold(0, |acc, &bit| acc << 1 | u16::from(bit))
+                    })
+                    .collect();
+                assert_eq!(
+                    merkle_crh_words(level, left, right).to_vec(),
+                    expected,
+                    "level {level:?}, {left:?} ‖ {right:?}"
+                );
             }
         }
     }
