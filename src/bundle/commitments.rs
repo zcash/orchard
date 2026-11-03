@@ -36,6 +36,7 @@ const ZCASH_IRONWOOD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnwdH_v6";
 const ZCASH_ZSA_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIronwdH_zsa";
 const ZCASH_ZSA_ACTION_GROUPS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_AGH_zsa";
 const ZCASH_ZSA_ACTIONS_COMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_ACH_zsa";
+const ZCASH_ZSA_ACTIONS_MEMOS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_AMH_zsa";
 const ZCASH_ZSA_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_ANH_zsa";
 const ZCASH_ZSA_BURN_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrnBurnHash";
 const ZCASH_ZSA_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnH__zsa";
@@ -98,7 +99,7 @@ const IRONWOOD_V6_PERSONALIZATIONS: BundleCommitmentPersonalizations =
 const ZSA_PERSONALIZATIONS: BundleCommitmentPersonalizations = BundleCommitmentPersonalizations {
     bundle: ZCASH_ZSA_HASH_PERSONALIZATION,
     actions_compact: ZCASH_ZSA_ACTIONS_COMPACT_HASH_PERSONALIZATION,
-    actions_memos: ZCASH_IRONWOOD_ACTIONS_MEMOS_HASH_PERSONALIZATION,
+    actions_memos: ZCASH_ZSA_ACTIONS_MEMOS_HASH_PERSONALIZATION,
     actions_noncompact: ZCASH_ZSA_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION,
     auth: ZCASH_ZSA_SIGS_HASH_PERSONALIZATION,
     zsa: Some(ZSAPersonalizations {
@@ -692,7 +693,7 @@ mod tests {
         let sighash = hash_bundle_txid_data(&bundle, TxVersion::ZSA).unwrap();
         assert_eq!(
             sighash.to_hex().as_str(),
-            "f764389f2128d87114747e1fbb8adb9c9b147fca456811e585bf24824ad490ad"
+            "77b85fe352c9d53ef5848d5eaab26bae47970f91d97d7564b51b9d2bf01f40d5"
         );
     }
 
