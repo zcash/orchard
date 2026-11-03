@@ -31,7 +31,7 @@ const ZCASH_IRONWOOD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxI
 const ZCASH_IRONWOOD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnwdH_v6";
 
 // These strings are specific to this fork. They are the personalizations defined in
-// https://deploy-preview-141--zcash-zips-qedit.netlify.app/draft-qedit-zsa-transaction-format-and-digests
+// https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 // which is the draft ZIP for the ZSA transaction format post NU 6.3 (aka Ironwood).
 const ZCASH_ZSA_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIronwdH_zsa";
 const ZCASH_ZSA_ACTION_GROUPS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_AGH_zsa";

@@ -31,7 +31,7 @@ pub fn hash_issue_bundle_txid_empty() -> Blake2bHash {
 /// Construct the `issuance_digest` commitment for the issue bundle as defined in the
 /// [ZSA Transaction Format ZIP][zip-draft]
 ///
-/// [zip-draft]: https://deploy-preview-141--zcash-zips-qedit.netlify.app/draft-qedit-zsa-transaction-format-and-digests
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 #[cfg(feature = "zsa-issuance")]
 pub(crate) fn hash_issue_bundle_txid_data<A: IssueAuth>(bundle: &IssueBundle<A>) -> Blake2bHash {
     let mut h = hasher(ZCASH_ORCHARD_ZSA_ISSUE_PERSONALIZATION);
