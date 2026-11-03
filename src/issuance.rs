@@ -58,9 +58,9 @@ pub struct IssueBundle<T: IssueAuth> {
 
 /// Flags for an issuance action.
 ///
-/// `flagsIssuance` is defined in [ZIP-230: Version 6 Transaction Format][issueaction].
+/// `flagsIssuance` is defined in the [ZSA Transaction Format ZIP][issueaction].
 ///
-/// [issueaction]: https://zips.z.cash/zip-0230#issuance-action-description-issueaction
+/// [issueaction]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests#issuance-action-description-issueaction
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IssuanceFlags {
     /// Flag denoting whether issuance of this asset type is finalized.
@@ -83,10 +83,10 @@ impl IssuanceFlags {
         self.finalize
     }
 
-    /// Serialize `IssuanceFlags` to a byte as defined in
-    /// [ZIP-230: Version 6 Transaction Format][issueaction].
+    /// Serialize `IssuanceFlags` to a byte as defined in the
+    /// [ZSA Transaction Format ZIP][issueaction].
     ///
-    /// [issueaction]: https://zips.z.cash/zip-0230#issuance-action-description-issueaction
+    /// [issueaction]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests#issuance-action-description-issueaction
     pub fn to_byte(&self) -> u8 {
         let mut value = 0u8;
         if self.finalize {
@@ -95,12 +95,12 @@ impl IssuanceFlags {
         value
     }
 
-    /// Parse issuance flags from a single byte as defined in
-    /// [ZIP-230: Version 6 Transaction Format][issueaction].
+    /// Parse issuance flags from a single byte as defined in the
+    /// [ZSA Transaction Format ZIP][issueaction].
     ///
     /// Returns `None` if unexpected bits are set in the flag byte.
     ///
-    /// [issueaction]: https://zips.z.cash/zip-0230#issuance-action-description-issueaction
+    /// [issueaction]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests#issuance-action-description-issueaction
     pub fn from_byte(value: u8) -> Option<Self> {
         if value & ISSUANCE_FLAGS_EXPECTED_UNSET == 0 {
             Some(Self {
