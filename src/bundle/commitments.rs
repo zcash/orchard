@@ -256,10 +256,10 @@ fn hash_bundle_txid_data_vanilla<A: Authorization, V: Copy + Into<i64>>(
     Ok(h.finalize())
 }
 
-/// Evaluate `orchard_digest` for the ZSA bundle as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246]
+/// Evaluate `orchard_digest` for the ZSA bundle as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft]
 ///
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 fn hash_bundle_txid_data_zsa<A: Authorization, V: Copy + Into<i64>>(
     bundle: &Bundle<A, V>,
     tx_version: TxVersion,
@@ -320,12 +320,12 @@ fn hash_bundle_txid_data_zsa<A: Authorization, V: Copy + Into<i64>>(
 
 /// Evaluate `orchard_digest` for the bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard, as defined in
-/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA.
+/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft] for ZSA.
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     bundle: &Bundle<A, V>,
     tx_version: TxVersion,
@@ -342,12 +342,12 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
 /// Construct the commitment for the absent bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard V5, as defined in
 /// [ZIP-229: Version 6 Transaction Format][zip229] for Orchard V6 and Ironwood V6, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA, according to the
+/// the [ZSA Transaction Format ZIP][zip-draft] for ZSA, according to the
 /// (value_pool, tx_version) pair.
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub fn hash_bundle_txid_empty(
     value_pool: ValuePool,
     tx_version: TxVersion,
@@ -402,8 +402,8 @@ fn hash_bundle_auth_data_vanilla<V>(
     Ok(h.finalize())
 }
 
-/// Evaluate `orchard_auth_digest` for the ZSA bundle as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246]
+/// Evaluate `orchard_auth_digest` for the ZSA bundle as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft]
 ///
 /// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
 /// for a given [`OrchardSighashKind`].
@@ -413,7 +413,7 @@ fn hash_bundle_auth_data_vanilla<V>(
 /// Panics if any signature in the bundle uses a sighash kind different from
 /// `OrchardSighashKind::AllEffecting`, which is currently the only defined kind.
 ///
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 fn hash_bundle_auth_data_zsa<V>(
     bundle: &Bundle<Authorized, V>,
     tx_version: TxVersion,
@@ -463,15 +463,15 @@ fn hash_bundle_auth_data_zsa<V>(
 
 /// Evaluate `orchard_auth_digest` for the bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard, as defined in
-/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA.
+/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft] for ZSA.
 ///
 /// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
 /// for a given [`OrchardSighashKind`].
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub(crate) fn hash_bundle_auth_data<V>(
     bundle: &Bundle<Authorized, V>,
     tx_version: TxVersion,
@@ -489,12 +489,12 @@ pub(crate) fn hash_bundle_auth_data<V>(
 /// Construct the commitment for the absent bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard V5, as defined in
 /// [ZIP-229: Version 6 Transaction Format][zip229] for Orchard V6 and Ironwood V6, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA, according to the
+/// the [ZSA Transaction Format ZIP][zip-draft] for ZSA, according to the
 /// (value_pool, tx_version) pair.
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub fn hash_bundle_auth_empty(
     value_pool: ValuePool,
     tx_version: TxVersion,
