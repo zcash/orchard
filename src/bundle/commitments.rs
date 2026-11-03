@@ -441,6 +441,8 @@ fn hash_bundle_auth_data_zsa<V>(
         sash.update(&<[u8; 64]>::from(action.authorization().sig()));
     }
     agh.update(sash.finalize().as_bytes());
+    assert!(format.includes_anchor_in_authorizing_digest());
+    agh.update(&bundle.anchor().to_bytes());
     h.update(agh.finalize().as_bytes());
 
     assert_eq!(
@@ -454,9 +456,6 @@ fn hash_bundle_auth_data_zsa<V>(
     h.update(&<[u8; 64]>::from(
         bundle.authorization().binding_signature().sig(),
     ));
-
-    assert!(format.includes_anchor_in_authorizing_digest());
-    h.update(&bundle.anchor().to_bytes());
 
     Ok(h.finalize())
 }
@@ -808,7 +807,7 @@ mod tests {
             hash_bundle_auth_data(&bundle, TxVersion::ZSA, test_sighash_info_for_kind).unwrap();
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
-            "b63cebdf20b4e9e7beac9fba4507167c2c239bd598a99348d7186e21ef2df2c0"
+            "569557607d897fa1256f1f620b844af852bc0d1b6461316d80b999136a6e51c5"
         );
     }
 
