@@ -209,6 +209,8 @@ pub enum BuildError {
     UnrepresentableFlags,
     /// A coinbase bundle was requested with flags that enable spends.
     CoinbaseSpendsEnabled,
+    /// A coinbase bundle was requested with flags that enable ZSA.
+    CoinbaseZsaEnabled,
     /// A burn or a non-zatoshi asset was requested for a PCZT, which is zatoshi-only in V1.
     ZsaUnsupportedByPczt,
     /// The bundle's actions do not balance: some asset's net value is not its burn.
@@ -265,6 +267,9 @@ impl fmt::Display for BuildError {
             ),
             CoinbaseSpendsEnabled => {
                 f.write_str("A coinbase bundle was requested with flags that enable spends.")
+            }
+            CoinbaseZsaEnabled => {
+                f.write_str("A coinbase bundle was requested with flags that enable ZSA.")
             }
             ZsaUnsupportedByPczt => f.write_str(
                 "A burn or a non-zatoshi asset cannot be carried in a PCZT V1 Orchard bundle.",
@@ -972,8 +977,9 @@ impl Builder {
     /// # Errors
     ///
     /// Returns [`BuildError::UnrepresentableFlags`] if `flags` cannot be encoded under
-    /// `bundle_version`, or [`BuildError::CoinbaseSpendsEnabled`] if `bundle_type` is
-    /// [`BundleType::Coinbase`] but `flags` enable spends.
+    /// `bundle_version`, or [`BuildError::CoinbaseSpendsEnabled`] /
+    /// [`BuildError::CoinbaseZsaEnabled`] if `bundle_type` is [`BundleType::Coinbase`] but
+    /// `flags` enable spends / ZSA.
     pub fn new(
         bundle_type: BundleType,
         bundle_version: BundleVersion,
@@ -985,6 +991,9 @@ impl Builder {
         }
         if matches!(bundle_type, BundleType::Coinbase) && flags.spends_enabled() {
             return Err(BuildError::CoinbaseSpendsEnabled);
+        }
+        if matches!(bundle_type, BundleType::Coinbase) && flags.zsa_enabled() {
+            return Err(BuildError::CoinbaseZsaEnabled);
         }
         Ok(Builder {
             bundle_type,
@@ -1477,6 +1486,8 @@ fn pad_spend(
 /// - [`BuildError::UnrepresentableFlags`] if `flags` cannot be encoded under `bundle_version`,
 /// - [`BuildError::CoinbaseSpendsEnabled`] if `bundle_type` is [`BundleType::Coinbase`] but `flags`
 ///   enable spends,
+/// - [`BuildError::CoinbaseZsaEnabled`] if `bundle_type` is [`BundleType::Coinbase`] but `flags`
+///   enable ZSA,
 /// - [`BuildError::Burn`] if `burn` is not valid in this context,
 /// - [`BuildError::BindingKeyMismatch`] if some asset's net value does not match its `burn` entry.
 #[allow(clippy::too_many_arguments)]
@@ -1600,8 +1611,8 @@ fn build_bundle<B, R: RngCore>(
     // Every build path funnels through here (the free `bundle` function, `Builder::build`, and
     // `Builder::build_for_pczt`), so validate the version-dependent invariants here rather than
     // trusting each caller: the flags must be encodable under the bundle version, a coinbase
-    // bundle must not enable spends, and a burn requires a version and flags that enable ZSA
-    // plus entries that are burnable at all.
+    // bundle must enable neither spends nor ZSA, and a burn requires a version and flags that
+    // enable ZSA plus entries that are burnable at all.
     // `Builder::new` and `Builder::add_burn` also enforce these up front, for fail-fast
     // construction.
     if flags.to_byte(bundle_version).is_none() {
@@ -1609,6 +1620,9 @@ fn build_bundle<B, R: RngCore>(
     }
     if matches!(bundle_type, BundleType::Coinbase) && flags.spends_enabled() {
         return Err(BuildError::CoinbaseSpendsEnabled);
+    }
+    if matches!(bundle_type, BundleType::Coinbase) && flags.zsa_enabled() {
+        return Err(BuildError::CoinbaseZsaEnabled);
     }
     let burn_vec: Vec<(AssetBase, NoteValue)> = burn.into_iter().collect();
     validate_burn(&burn_vec, &flags, bundle_version).map_err(BuildError::Burn)?;
@@ -3114,6 +3128,29 @@ mod tests {
             BTreeMap::new(),
         );
         assert!(matches!(result, Err(BuildError::CoinbaseSpendsEnabled)));
+    }
+
+    #[test]
+    fn coinbase_rejects_zsa_enabled_flags() {
+        // A coinbase bundle must have `enableZSA = 0`, on every build path.
+        let anchor: Anchor = EMPTY_ROOTS[MERKLE_DEPTH_ORCHARD].into();
+        let (version, flags) = (BundleVersion::zsa(), Flags::SPENDS_DISABLED_WITH_ZSA);
+        assert!(matches!(
+            Builder::new(BundleType::Coinbase, version, flags, anchor),
+            Err(BuildError::CoinbaseZsaEnabled)
+        ));
+        let result = bundle::<i64>(
+            &mut OsRng,
+            BundleType::Coinbase,
+            version,
+            flags,
+            anchor,
+            vec![],
+            vec![],
+            vec![],
+            BTreeMap::new(),
+        );
+        assert!(matches!(result, Err(BuildError::CoinbaseZsaEnabled)));
     }
 
     #[test]

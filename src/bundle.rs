@@ -350,7 +350,8 @@ impl Flags {
         zsa_enabled: false,
     };
 
-    /// The flag set with spends disabled and ZSA enabled.
+    /// The flag set with spends disabled and ZSA enabled. Not valid for coinbase bundles, which
+    /// must disable ZSA.
     pub const SPENDS_DISABLED_WITH_ZSA: Flags = Flags {
         spends_enabled: false,
         outputs_enabled: true,

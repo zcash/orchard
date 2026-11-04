@@ -213,7 +213,7 @@ fn create_zatoshi_note(keys: &Keychain) -> Note {
         let mut builder = Builder::new(
             BundleType::Coinbase,
             BundleVersion::zsa(),
-            Flags::SPENDS_DISABLED_WITH_ZSA,
+            Flags::SPENDS_DISABLED,
             anchor,
         )
         .unwrap();
