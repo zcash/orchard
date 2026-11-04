@@ -1268,6 +1268,11 @@ impl Builder {
         &self.changes
     }
 
+    /// Returns the assets intended for burning by the transaction being constructed.
+    pub fn burn(&self) -> &BTreeMap<AssetBase, NoteValue> {
+        &self.burn
+    }
+
     /// The net zatoshi value of the bundle to be built. The value of all spends,
     /// minus the value of all outputs.
     ///
