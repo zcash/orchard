@@ -769,8 +769,9 @@ pub fn verify_issue_bundle_signature(
 /// * `bundle`: A reference to the [`IssueBundle`] to be validated.
 /// * `sighash`: A 32-byte array representing the `sighash` used to verify the bundle's signature.
 /// * `get_global_records`: A closure that takes a reference to an [`AssetBase`] and returns an
-///   [`Option<AssetRecord>`], representing the current state of the asset from a global store
-///   of previously issued assets.
+///   [`Option<AssetRecord>`], representing the current state of the asset. Per ZIP 227, this
+///   state must already include the transaction's burns (see
+///   [`validate_bundle_burn`](crate::bundle::burn_validation::validate_bundle_burn)).
 /// * `first_nullifier`: A reference to a [`Nullifier`] that is used to compute the `rho` value of
 ///   each issuance note.
 ///
