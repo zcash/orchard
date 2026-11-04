@@ -24,6 +24,7 @@ pub use self::asset_base::AssetBase;
 pub use self::asset_base::AssetId;
 
 const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";
+const SPLIT_NOTE_PSI_NF_DOMAIN_SEPARATOR: u8 = 0x0A;
 const ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR: u8 = 0x0B;
 const ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR: u8 = 0x0E;
 
@@ -159,6 +160,23 @@ impl RandomSeed {
         to_base(PrfExpand::PSI.with(&self.0, &rho.to_bytes()))
     }
 
+    /// Defined in [ZIP 226: Split Notes](https://zips.z.cash/zip-0226#split-notes).
+    pub(crate) fn psi_nf(&self, rho: &Rho) -> pallas::Base {
+        let mut h = self.prf_expand(SPLIT_NOTE_PSI_NF_DOMAIN_SEPARATOR);
+        h.update(&rho.to_bytes());
+        to_base(*h.finalize().as_array())
+    }
+
+    /// A PRF^expand_rseed hasher after `[dst]`, for domain separators that [`PrfExpand`] lacks.
+    fn prf_expand(&self, dst: u8) -> blake2b_simd::State {
+        let mut h = Blake2bParams::new()
+            .hash_length(64)
+            .personal(PRF_EXPAND_PERSONALIZATION)
+            .to_state();
+        h.update(&self.0).update(&[dst]);
+        h
+    }
+
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
@@ -220,14 +238,7 @@ impl RandomSeed {
         value: u64,
         psi: &pallas::Base,
     ) -> commitment::NoteCommitTrapdoor {
-        let mut h = Blake2bParams::new()
-            .hash_length(64)
-            .personal(PRF_EXPAND_PERSONALIZATION)
-            .to_state();
-        // rseed: raw bytes (32 bytes)
-        h.update(&self.0);
-        // domain separator: [0x0B] (1 byte, literal)
-        h.update(&[ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR]);
+        let mut h = self.prf_expand(ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR);
         // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
         h.update(&g_d.to_bytes());
         // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
@@ -276,14 +287,7 @@ impl RandomSeed {
         psi: &pallas::Base,
         asset: &AssetBase,
     ) -> commitment::NoteCommitTrapdoor {
-        let mut h = Blake2bParams::new()
-            .hash_length(64)
-            .personal(PRF_EXPAND_PERSONALIZATION)
-            .to_state();
-        // rseed: raw bytes (32 bytes)
-        h.update(&self.0);
-        // domain separator: [0x0E] (1 byte, literal)
-        h.update(&[ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR]);
+        let mut h = self.prf_expand(ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR);
         // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
         h.update(&g_d.to_bytes());
         // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
@@ -556,7 +560,9 @@ impl Note {
     /// For a split note, this value comes from `rseed_split_note`. It is then different from
     /// [`Self::psi`]. For all other notes, the two values are the same.
     pub(crate) fn psi_nf(&self) -> pallas::Base {
-        self.rseed_split_note.unwrap_or(self.rseed).psi(&self.rho())
+        let rho = self.rho();
+        let split = self.rseed_split_note.unwrap_or(self.rseed).psi_nf(&rho);
+        pallas::Base::conditional_select(&self.psi(), &split, self.rseed_split_note.is_some())
     }
 
     /// Derives the note commitment trapdoor for this note.
@@ -922,9 +928,10 @@ mod tests {
             ..note
         };
 
-        let psi_nf = split_rseed.psi(&rho);
+        let psi_nf = split_rseed.psi_nf(&rho);
         assert_eq!(split_note.psi_nf(), psi_nf);
         assert_ne!(psi_nf, note.psi());
+        assert_ne!(psi_nf, split_rseed.psi(&rho));
 
         let derive = |psi, is_split: bool| {
             Nullifier::derive(
