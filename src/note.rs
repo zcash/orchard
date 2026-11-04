@@ -27,6 +27,7 @@ const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";
 const SPLIT_NOTE_PSI_NF_DOMAIN_SEPARATOR: u8 = 0x0A;
 const ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR: u8 = 0x0B;
 const ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR: u8 = 0x0E;
+const ISSUANCE_RHO_DOMAIN_SEPARATOR: u8 = 0x84;
 
 #[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod commitment;
@@ -162,19 +163,9 @@ impl RandomSeed {
 
     /// Defined in [ZIP 226: Split Notes](https://zips.z.cash/zip-0226#split-notes).
     pub(crate) fn psi_nf(&self, rho: &Rho) -> pallas::Base {
-        let mut h = self.prf_expand(SPLIT_NOTE_PSI_NF_DOMAIN_SEPARATOR);
+        let mut h = prf_expand(&self.0, SPLIT_NOTE_PSI_NF_DOMAIN_SEPARATOR);
         h.update(&rho.to_bytes());
         to_base(*h.finalize().as_array())
-    }
-
-    /// A PRF^expand_rseed hasher after `[dst]`, for domain separators that [`PrfExpand`] lacks.
-    fn prf_expand(&self, dst: u8) -> blake2b_simd::State {
-        let mut h = Blake2bParams::new()
-            .hash_length(64)
-            .personal(PRF_EXPAND_PERSONALIZATION)
-            .to_state();
-        h.update(&self.0).update(&[dst]);
-        h
     }
 
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
@@ -238,7 +229,7 @@ impl RandomSeed {
         value: u64,
         psi: &pallas::Base,
     ) -> commitment::NoteCommitTrapdoor {
-        let mut h = self.prf_expand(ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR);
+        let mut h = prf_expand(&self.0, ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR);
         // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
         h.update(&g_d.to_bytes());
         // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
@@ -287,7 +278,7 @@ impl RandomSeed {
         psi: &pallas::Base,
         asset: &AssetBase,
     ) -> commitment::NoteCommitTrapdoor {
-        let mut h = self.prf_expand(ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR);
+        let mut h = prf_expand(&self.0, ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR);
         // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
         h.update(&g_d.to_bytes());
         // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
@@ -694,11 +685,20 @@ pub(crate) fn rho_for_issuance_note(
     index_action: u32,
     index_note: u32,
 ) -> Rho {
-    Rho(to_base(PrfExpand::ORCHARD_DERIVED_ISSUE_RHO.with(
-        &nullifier.to_bytes(),
-        &index_action.to_le_bytes(),
-        &index_note.to_le_bytes(),
-    )))
+    let mut h = prf_expand(&nullifier.to_bytes(), ISSUANCE_RHO_DOMAIN_SEPARATOR);
+    h.update(&index_action.to_le_bytes())
+        .update(&index_note.to_le_bytes());
+    Rho(to_base(*h.finalize().as_array()))
+}
+
+/// A PRF^expand_sk hasher after `[dst]`, for domain separators that [`PrfExpand`] lacks.
+fn prf_expand(sk: &[u8], dst: u8) -> blake2b_simd::State {
+    let mut h = Blake2bParams::new()
+        .hash_length(64)
+        .personal(PRF_EXPAND_PERSONALIZATION)
+        .to_state();
+    h.update(sk).update(&[dst]);
+    h
 }
 
 /// An encrypted note.
