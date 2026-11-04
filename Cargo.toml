@@ -68,6 +68,9 @@ tracing = { version = "0.1", optional = true, default-features = false }
 # No-std support
 corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
 
+# Multicore tree hashing
+rayon = { version = "1", optional = true }
+
 # Developer tooling dependencies
 image = { version = "0.25", optional = true }
 plotters = { version = "0.3.0", optional = true }
@@ -98,11 +101,13 @@ std = ["corez/std", "group/wnaf-memuse", "reddsa/std"]
 circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "dep:tracing", "std"]
 unstable-frost = []
 unstable-voting-circuits = []
-multicore = ["halo2_proofs?/multicore"]
+multicore = ["std", "dep:rayon", "halo2_proofs?/multicore"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 verifier-fingerprint = ["circuit", "halo2_proofs/unstable-verifier-fingerprint"]
 test-dependencies = ["proptest", "rand/std", "rand/std_rng"]
 zeroize = ["dep:zeroize", "pasta_curves/zeroize", "reddsa/zeroize", "zip32/zeroize"]
+# Sinsemilla's position-weighted tables, built on first use (size: `SINSEMILLA_TABLE_LIMIT` at build)
+runtime-precomputation = ["sinsemilla/runtime-precomputation"]
 
 [[bench]]
 name = "note_decryption"
@@ -122,6 +127,16 @@ required-features = ["circuit"]
 name = "orchard_k11_prover"
 harness = false
 required-features = ["circuit"]
+
+[[bench]]
+name = "merkle_crh"
+harness = false
+
+[patch.crates-io]
+# `Hashable::combine_pairs` (zcash/incrementalmerkletree#219); drop once released
+incrementalmerkletree = { git = "https://github.com/elicbarbieri/incrementalmerkletree.git", rev = "e11bf32479c30059f94e652e390d5939831cc901" }
+# `runtime-precomputation` (zcash/sinsemilla#9) + `HashDomain::hash_many_vartime`; drop once released
+sinsemilla = { git = "https://github.com/zingolabs/sinsemilla.git", rev = "09b92cf4e87bb3f5a803053d457f6604d1a1dce5" }
 
 [profile.release]
 debug = true

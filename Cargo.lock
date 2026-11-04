@@ -1324,8 +1324,7 @@ checksum = "6e44b0a4eaa4c82f441d50a963f2d5f05a787240aeee097597033e72accfd22f"
 [[package]]
 name = "incrementalmerkletree"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3b0c166f7f34e02988f84a7bed22be9707b1569acc6aeb3afaf34152d0e0400"
+source = "git+https://github.com/elicbarbieri/incrementalmerkletree.git?rev=e11bf32479c30059f94e652e390d5939831cc901#d5e07689456e0be0154934aa39d347a9e5f18765"
 dependencies = [
  "either",
  "proptest",
@@ -1825,6 +1824,7 @@ dependencies = [
  "proptest",
  "rand 0.10.2",
  "rand_core 0.10.1",
+ "rayon",
  "reddsa",
  "serde",
  "shardtree",
@@ -2531,8 +2531,7 @@ dependencies = [
 [[package]]
 name = "sinsemilla"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72744738b764bb3bb7bb5dcf71b62d19c2de8a09f850a7388f6088f244037299"
+source = "git+https://github.com/zingolabs/sinsemilla.git?rev=09b92cf4e87bb3f5a803053d457f6604d1a1dce5#09b92cf4e87bb3f5a803053d457f6604d1a1dce5"
 dependencies = [
  "group",
  "pasta_curves",
