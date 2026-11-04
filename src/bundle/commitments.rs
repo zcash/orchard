@@ -30,23 +30,18 @@ const ZCASH_IRONWOOD_ACTIONS_MEMOS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrnA
 const ZCASH_IRONWOOD_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrnActNH_v6";
 const ZCASH_IRONWOOD_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnwdH_v6";
 
-// These strings are specific to this fork. They are not the ZIP-246 strings,
-// because ZIP-246 is withdrawn. ZIP-229 does not specify the ZSA values at this time.
-//
-// TODO Re-derive these from the ZSA digest spec once published, and add its test vectors.
-// Changing any string here changes consensus-visible digests.
-//
-// TODO Settle the naming convention at the same time: the burn and auth strings below still say
-// `Orc`, and the suffixes mix `Hash` with `_v6`.
-const ZCASH_ZSA_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrchardZsaH";
-const ZCASH_ZSA_ACTION_GROUPS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdZsaActGHash";
-const ZCASH_ZSA_ACTIONS_COMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdZsaActCHash";
-const ZCASH_ZSA_ACTIONS_MEMOS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdZsaActMH_v6";
-const ZCASH_ZSA_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdZsaActNHash";
-const ZCASH_ZSA_BURN_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdOrcBurnHash";
-const ZCASH_ZSA_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthZsaHashv6";
-const ZCASH_ZSA_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthOrcAGHash";
-const ZCASH_ZSA_SPEND_AUTH_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthOrSASHash";
+// These strings are specific to this fork. They are the personalizations defined in
+// https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
+// which is the draft ZIP for the ZSA transaction format post NU 6.3 (aka Ironwood).
+const ZCASH_ZSA_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIronwdH_zsa";
+const ZCASH_ZSA_ACTION_GROUPS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_AGH_zsa";
+const ZCASH_ZSA_ACTIONS_COMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_ACH_zsa";
+const ZCASH_ZSA_ACTIONS_MEMOS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_AMH_zsa";
+const ZCASH_ZSA_ACTIONS_NONCOMPACT_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrn_ANH_zsa";
+const ZCASH_ZSA_BURN_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxIdIrnBurnHash";
+const ZCASH_ZSA_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnH__zsa";
+const ZCASH_ZSA_ACTION_GROUPS_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnAGHash";
+const ZCASH_ZSA_SPEND_AUTH_SIGS_HASH_PERSONALIZATION: &[u8; 16] = b"ZTxAuthIrnSASH__";
 
 #[derive(Clone, Copy, Debug)]
 struct BundleCommitmentPersonalizations {
@@ -261,10 +256,10 @@ fn hash_bundle_txid_data_vanilla<A: Authorization, V: Copy + Into<i64>>(
     Ok(h.finalize())
 }
 
-/// Evaluate `orchard_digest` for the ZSA bundle as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246]
+/// Evaluate `orchard_digest` for the ZSA bundle as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft]
 ///
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 fn hash_bundle_txid_data_zsa<A: Authorization, V: Copy + Into<i64>>(
     bundle: &Bundle<A, V>,
     tx_version: TxVersion,
@@ -325,12 +320,12 @@ fn hash_bundle_txid_data_zsa<A: Authorization, V: Copy + Into<i64>>(
 
 /// Evaluate `orchard_digest` for the bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard, as defined in
-/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA.
+/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft] for ZSA.
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     bundle: &Bundle<A, V>,
     tx_version: TxVersion,
@@ -347,12 +342,12 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
 /// Construct the commitment for the absent bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard V5, as defined in
 /// [ZIP-229: Version 6 Transaction Format][zip229] for Orchard V6 and Ironwood V6, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA, according to the
+/// the [ZSA Transaction Format ZIP][zip-draft] for ZSA, according to the
 /// (value_pool, tx_version) pair.
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub fn hash_bundle_txid_empty(
     value_pool: ValuePool,
     tx_version: TxVersion,
@@ -407,8 +402,8 @@ fn hash_bundle_auth_data_vanilla<V>(
     Ok(h.finalize())
 }
 
-/// Evaluate `orchard_auth_digest` for the ZSA bundle as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246]
+/// Evaluate `orchard_auth_digest` for the ZSA bundle as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft]
 ///
 /// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
 /// for a given [`OrchardSighashKind`].
@@ -418,7 +413,7 @@ fn hash_bundle_auth_data_vanilla<V>(
 /// Panics if any signature in the bundle uses a sighash kind different from
 /// `OrchardSighashKind::AllEffecting`, which is currently the only defined kind.
 ///
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 fn hash_bundle_auth_data_zsa<V>(
     bundle: &Bundle<Authorized, V>,
     tx_version: TxVersion,
@@ -447,6 +442,8 @@ fn hash_bundle_auth_data_zsa<V>(
         sash.update(&<[u8; 64]>::from(action.authorization().sig()));
     }
     agh.update(sash.finalize().as_bytes());
+    assert!(format.includes_anchor_in_authorizing_digest());
+    agh.update(&bundle.anchor().to_bytes());
     h.update(agh.finalize().as_bytes());
 
     assert_eq!(
@@ -461,23 +458,20 @@ fn hash_bundle_auth_data_zsa<V>(
         bundle.authorization().binding_signature().sig(),
     ));
 
-    assert!(format.includes_anchor_in_authorizing_digest());
-    h.update(&bundle.anchor().to_bytes());
-
     Ok(h.finalize())
 }
 
 /// Evaluate `orchard_auth_digest` for the bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard, as defined in
-/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA.
+/// [ZIP-229: Version 6 Transaction Format][zip229] for Ironwood, and as defined in the
+/// [ZSA Transaction Format ZIP][zip-draft] for ZSA.
 ///
 /// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
 /// for a given [`OrchardSighashKind`].
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub(crate) fn hash_bundle_auth_data<V>(
     bundle: &Bundle<Authorized, V>,
     tx_version: TxVersion,
@@ -495,12 +489,12 @@ pub(crate) fn hash_bundle_auth_data<V>(
 /// Construct the commitment for the absent bundle as defined in
 /// [ZIP-244: Transaction Identifier Non-Malleability][zip244] for Orchard V5, as defined in
 /// [ZIP-229: Version 6 Transaction Format][zip229] for Orchard V6 and Ironwood V6, and as defined in
-/// [ZIP-246: Digests for the Withdrawn Version 6 Transaction Format][zip246] for ZSA, according to the
+/// the [ZSA Transaction Format ZIP][zip-draft] for ZSA, according to the
 /// (value_pool, tx_version) pair.
 ///
 /// [zip244]: https://zips.z.cash/zip-0244
 /// [zip229]: https://zips.z.cash/zip-0229
-/// [zip246]: https://zips.z.cash/zip-0246
+/// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
 pub fn hash_bundle_auth_empty(
     value_pool: ValuePool,
     tx_version: TxVersion,
@@ -699,7 +693,7 @@ mod tests {
         let sighash = hash_bundle_txid_data(&bundle, TxVersion::ZSA).unwrap();
         assert_eq!(
             sighash.to_hex().as_str(),
-            "58ffd40ba5bbc328ac4a9ee00385a7938de0117a295782e38c4b1895ce197bf4"
+            "77b85fe352c9d53ef5848d5eaab26bae47970f91d97d7564b51b9d2bf01f40d5"
         );
     }
 
@@ -814,7 +808,7 @@ mod tests {
             hash_bundle_auth_data(&bundle, TxVersion::ZSA, test_sighash_info_for_kind).unwrap();
         assert_eq!(
             orchard_auth_digest.to_hex().as_str(),
-            "5ec1dbdbff7ee96c73e0a44038c8211ece6d55b879aa994310a25ab68149cead"
+            "1500b89c77ec3e372ffe02646461898d4aafb0751a760e358bdd6fd5fa4fe6fd"
         );
     }
 

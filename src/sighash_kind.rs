@@ -7,16 +7,16 @@ use alloc::vec::Vec;
 
 /// The kind of data that a sighash commits to.
 ///
-/// This is used to implement [sighash versioning] for transactions containing Orchard
-/// bundles.
+/// This is used to implement [sighash versioning][sighashversioning] for transactions
+/// containing Orchard bundles.
 ///
-/// [sighashversioning]: https://zips.z.cash/zip-0246#sighash-versioning
+/// [sighashversioning]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests#sighash-versioning
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum OrchardSighashKind {
     /// The "default" sighash that commits to all effecting data of the transaction, as defined in
-    /// [ZIP-246: Digests for the Version 6 Transaction Format][sighashversioning]
+    /// the [ZSA Transaction Format ZIP][sighashversioning]
     ///
-    /// [sighashversioning]: https://zips.z.cash/zip-0246#sighash-versioning
+    /// [sighashversioning]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests#sighash-versioning
     AllEffecting,
 }
 
