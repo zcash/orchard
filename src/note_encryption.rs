@@ -13,7 +13,7 @@ use zcash_note_encryption::{
 pub use zcash_note_encryption::note_bytes::NoteBytesData;
 
 use crate::{
-    action::Action,
+    action::{Action, ActionBytes},
     keys::{
         DiversifiedTransmissionKey, Diversifier, EphemeralPublicKey, EphemeralSecretKey,
         OutgoingViewingKey, PreparedEphemeralPublicKey, PreparedIncomingViewingKey, SharedSecret,
@@ -192,6 +192,11 @@ impl<V: DomainVersion> NoteEncryptionDomain<V> {
 
     /// Constructs a domain that can be used to trial-decrypt this action's output note.
     pub fn for_action<T>(act: &Action<T>) -> Self {
+        Self::from_rho(act.rho())
+    }
+
+    /// Constructs a domain that can be used to trial-decrypt this encoded action's output note.
+    pub fn for_action_bytes<T>(act: &ActionBytes<T>) -> Self {
         Self::from_rho(act.rho())
     }
 
@@ -460,6 +465,28 @@ impl<P: DomainPolicy, T> ShieldedOutput<NoteEncryptionDomain<P>> for Action<T> {
     }
 }
 
+impl<P: DomainPolicy, T> ShieldedOutput<NoteEncryptionDomain<P>> for ActionBytes<T> {
+    fn ephemeral_key(&self) -> EphemeralKeyBytes {
+        EphemeralKeyBytes(self.encrypted_note().epk_bytes)
+    }
+
+    fn cmstar(&self) -> &ExtractedNoteCommitment {
+        self.cmx()
+    }
+
+    fn cmstar_bytes(&self) -> [u8; 32] {
+        self.cmx().to_bytes()
+    }
+
+    fn enc_ciphertext(&self) -> Option<&NoteCiphertextBytes> {
+        Some(&self.encrypted_note().enc_ciphertext)
+    }
+
+    fn enc_ciphertext_compact(&self) -> CompactNoteCiphertextBytes {
+        compact_ciphertext(&self.encrypted_note().enc_ciphertext)
+    }
+}
+
 impl<P: DomainPolicy> ShieldedOutput<NoteEncryptionDomain<P>> for crate::pczt::Action {
     fn ephemeral_key(&self) -> EphemeralKeyBytes {
         EphemeralKeyBytes(self.output().encrypted_note().epk_bytes)
@@ -549,6 +576,19 @@ impl<T> From<&Action<T>> for CompactAction {
             enc_ciphertext: action.encrypted_note().enc_ciphertext.0[..COMPACT_NOTE_SIZE]
                 .try_into()
                 .unwrap(),
+        }
+    }
+}
+
+impl<T> From<&ActionBytes<T>> for CompactAction {
+    fn from(action: &ActionBytes<T>) -> Self {
+        CompactAction {
+            nullifier: *action.nullifier(),
+            cmx: *action.cmx(),
+            ephemeral_key: EphemeralKeyBytes(action.encrypted_note().epk_bytes),
+            enc_ciphertext: action.encrypted_note().enc_ciphertext.0[..COMPACT_NOTE_SIZE]
+                .try_into()
+                .expect("COMPACT_NOTE_SIZE <= ENC_CIPHERTEXT_SIZE"),
         }
     }
 }
