@@ -177,9 +177,7 @@ impl ExtendedSpendingKey {
     ///
     /// [orchardmasterkey]: https://zips.z.cash/zip-0032#orchard-master-key-generation
     ///
-    /// # Panics
-    ///
-    /// Panics if the seed is shorter than 32 bytes or longer than 252 bytes.
+    /// The seed length is not checked; callers must supply a 32–252 byte seed per ZIP 32.
     fn master(seed: &[u8]) -> Result<Self, Error> {
         let m_orchard = HardenedOnlyKey::master(&[seed]);
 

@@ -45,6 +45,10 @@ pub enum Zip32Error {
     InvalidIssuanceKey,
     /// A non zero account when deriving an Orchard-ZSA issuance key
     NonZeroAccount,
+    /// A child index in the derivation path is 2^31 or more
+    InvalidChildIndex(u32),
+    /// The seed is not 32 to 252 bytes long
+    InvalidSeedLength,
 }
 
 impl fmt::Display for Zip32Error {
@@ -59,6 +63,8 @@ impl fmt::Display for Zip32Error {
                     "A non zero account when deriving an Orchard-ZSA issuance key"
                 )
             }
+            Zip32Error::InvalidChildIndex(i) => write!(f, "Child index {i} is 2^31 or more"),
+            Zip32Error::InvalidSeedLength => write!(f, "The seed must be 32 to 252 bytes long"),
         }
     }
 }
@@ -221,6 +227,12 @@ impl IssueAuthKey<ZSASchnorr> {
         if account != 0 {
             return Err(Zip32Error::NonZeroAccount);
         }
+        if coin_type >= (1 << 31) {
+            return Err(Zip32Error::InvalidChildIndex(coin_type));
+        }
+        if !(32..=252).contains(&seed.len()) {
+            return Err(Zip32Error::InvalidSeedLength);
+        }
 
         // Call zip32 logic
         let path = &[
@@ -357,6 +369,21 @@ pub mod testing {
 mod tests {
     use super::*;
     use rand::rngs::OsRng;
+
+    #[test]
+    fn from_zip32_seed_rejects_invalid_inputs() {
+        let derive = |seed: &[u8], coin_type| {
+            IssueAuthKey::<ZSASchnorr>::from_zip32_seed(seed, coin_type, 0).err()
+        };
+        assert_eq!(derive(&[0; 31], 1), Some(Zip32Error::InvalidSeedLength));
+        assert_eq!(derive(&[0; 253], 1), Some(Zip32Error::InvalidSeedLength));
+        assert_eq!(
+            derive(&[0; 32], 1 << 31),
+            Some(Zip32Error::InvalidChildIndex(1 << 31))
+        );
+        assert_eq!(derive(&[0; 32], 1), None);
+        assert_eq!(derive(&[0; 252], 1), None);
+    }
 
     #[test]
     fn issuance_authorizing_key_from_bytes_fail_on_zero() {
