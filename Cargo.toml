@@ -121,4 +121,3 @@ sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc
 zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "40b73b157374b62b648a26b94a1f236e5d9c389f" }
 halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "828fab66a72116a4a8ea0dc7d8895667d90dacf4" }
 halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "828fab66a72116a4a8ea0dc7d8895667d90dacf4" }
-zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "d5e84264d2ad0646b587a837f4e2424ca64d3a05" }

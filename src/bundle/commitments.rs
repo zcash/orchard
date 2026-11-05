@@ -112,8 +112,8 @@ const ZSA_PERSONALIZATIONS: BundleCommitmentPersonalizations = BundleCommitmentP
 
 /// The hash format used to compute a bundle's transaction-ID and authorizing digests,
 /// selected from the bundle's pool and the version of the transaction it is encoded in.
-/// Orchard bundles use the v5 or v6 format according to the transaction; Ironwood bundles
-/// exist only in v6 transactions.
+/// Orchard bundles use the v5 or v6 format, and Ironwood bundles the v6 or ZSA format,
+/// according to the transaction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
 pub(crate) enum BundleCommitmentFormat {
@@ -256,7 +256,7 @@ fn hash_bundle_txid_data_vanilla<A: Authorization, V: Copy + Into<i64>>(
     Ok(h.finalize())
 }
 
-/// Evaluate `orchard_digest` for the ZSA bundle as defined in the
+/// Evaluate `ironwood_digest_zsa` for the ZSA bundle as defined in the
 /// [ZSA Transaction Format ZIP][zip-draft]
 ///
 /// [zip-draft]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests
@@ -402,7 +402,7 @@ fn hash_bundle_auth_data_vanilla<V>(
     Ok(h.finalize())
 }
 
-/// Evaluate `orchard_auth_digest` for the ZSA bundle as defined in the
+/// Evaluate `ironwood_auth_digest_zsa` for the ZSA bundle as defined in the
 /// [ZSA Transaction Format ZIP][zip-draft]
 ///
 /// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding

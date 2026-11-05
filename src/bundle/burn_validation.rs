@@ -138,6 +138,10 @@ pub(crate) fn validate_burn_entry(asset: AssetBase, value: NoteValue) -> Result<
 /// - Checking that there is sufficient supply to burn
 /// - Computing the new asset records after burning
 ///
+/// Per ZIP 227, burns are applied before issuance: the state that
+/// [`verify_issue_bundle`](crate::issuance::verify_issue_bundle) reads for the same transaction
+/// must include the returned records.
+///
 /// Each burn element is represented as a tuple of `AssetBase` and `NoteValue` (value for the burn).
 ///
 /// # Arguments

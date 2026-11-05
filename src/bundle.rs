@@ -57,7 +57,8 @@ impl<T> Action<T> {
 
 /// A shielded [`ValuePool`] (Orchard or Ironwood) together with the [`ProtocolVersion`]
 /// under which a bundle in that pool is built. The Ironwood pool only exists from NU6.3
-/// onward, so it is only valid in combination with [`ProtocolVersion::V3`].
+/// onward, so it is only valid in combination with [`ProtocolVersion::V3`] or
+/// [`ProtocolVersion::ZSA`].
 ///
 /// This pins the `circuit_version` and the flag-byte format, and determines whether
 /// cross-address transfers are permitted (`permits_cross_address_transfers`).
@@ -350,7 +351,8 @@ impl Flags {
         zsa_enabled: false,
     };
 
-    /// The flag set with spends disabled and ZSA enabled.
+    /// The flag set with spends disabled and ZSA enabled. Not valid for coinbase bundles, which
+    /// must disable ZSA.
     pub const SPENDS_DISABLED_WITH_ZSA: Flags = Flags {
         spends_enabled: false,
         outputs_enabled: true,
@@ -1094,9 +1096,6 @@ impl core::error::Error for BundleError {}
 #[non_exhaustive]
 pub enum CommitmentError {
     /// The requested transaction version is not valid for the bundle's [`BundleVersion`].
-    ///
-    /// Ironwood bundles exist only in v6 transactions, so an Ironwood bundle
-    /// (`BundleVersion::ironwood_v3()`) cannot be committed with `TxVersion::V5`.
     InvalidTransactionVersion,
 }
 
@@ -1105,7 +1104,7 @@ impl fmt::Display for CommitmentError {
         match self {
             CommitmentError::InvalidTransactionVersion => write!(
                 f,
-                "Ironwood bundles can only be committed in a v6 transaction",
+                "The transaction version is not valid for the bundle version",
             ),
         }
     }

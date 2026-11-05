@@ -103,12 +103,12 @@ impl NoteCommitment {
         );
         let commit_with_zsa_domain = zsa_domain.commit(zsa_note_bits, &rcm.0);
 
-        // Select the desired commitment in constant-time
-        let commit = commit_with_zsa_domain.and_then(|zsa_commit| {
-            commit_with_zec_domain.map(|zec_commit| {
-                pallas::Point::conditional_select(&zsa_commit, &zec_commit, asset.is_zatoshi())
-            })
-        });
+        // Per ZIP 226, the result is ⊥ only if the selected commitment is ⊥.
+        let commit = CtOption::conditional_select(
+            &commit_with_zsa_domain,
+            &commit_with_zec_domain,
+            asset.is_zatoshi(),
+        );
 
         commit.map(NoteCommitment)
     }
