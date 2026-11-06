@@ -546,7 +546,7 @@ mod tests {
                 let mut traps = traps.into_iter();
                 let mut out = Vec::with_capacity(n_assets * 5);
 
-                for (asset, four_values) in assets.into_iter().zip(vals.chunks_exact(4)) {
+                for (asset, four_values) in assets.into_iter().zip(vals.as_chunks::<4>().0) {
                     let sum = four_values
                         .iter()
                         .cloned()

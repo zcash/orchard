@@ -25,7 +25,8 @@ use crate::{
         TransmittedNoteCiphertext,
     },
     note_encryption::{
-        enc_ciphertext_size, NoteCiphertextBytes, NoteEncryptionDomain, OrchardVersion,
+        enc_ciphertext_size, encrypt_outgoing_plaintext, NoteCiphertextBytes, NoteEncryptionDomain,
+        OrchardVersion,
     },
     primitives::redpallas::{self, Binding, SpendAuth},
     sighash_kind::{OrchardBindingSig, OrchardSighashKind, OrchardSpendAuthSig},
@@ -672,7 +673,7 @@ impl OutputInfo {
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: encryptor.epk().to_bytes().0,
             enc_ciphertext,
-            out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, &cmx, &mut rng),
+            out_ciphertext: encrypt_outgoing_plaintext(&encryptor, cv_net, &cmx, &mut rng),
         };
 
         (note, cmx, encrypted_note)

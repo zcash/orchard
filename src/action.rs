@@ -199,7 +199,7 @@ pub(crate) mod testing {
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
             testing::arb_note, AssetBase, TransmittedNoteCiphertext,
         },
-        note_encryption::{NoteEncryptionDomain, OrchardVersion},
+        note_encryption::{encrypt_outgoing_plaintext, NoteEncryptionDomain, OrchardVersion},
         primitives::redpallas::testing::arb_valid_spendauth_keypair,
         sighash_kind::{OrchardSighashKind, OrchardSpendAuthSig},
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
@@ -232,7 +232,7 @@ pub(crate) mod testing {
         TransmittedNoteCiphertext {
             epk_bytes: NoteEncryptionDomain::<OrchardVersion>::epk_bytes(encryptor.epk()).0,
             enc_ciphertext: encryptor.encrypt_note_plaintext(),
-            out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, cmx, &mut rng),
+            out_ciphertext: encrypt_outgoing_plaintext(&encryptor, cv_net, cmx, &mut rng),
         }
     }
 

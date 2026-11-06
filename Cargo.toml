@@ -43,11 +43,12 @@ poseidon = { package = "halo2_poseidon", version = "0.1" }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 sinsemilla = "0.1"
 subtle = { version = "2.6", default-features = false }
-zcash_note_encryption = "0.4.2"
+zcash_note_encryption = "=0.5.0"
 incrementalmerkletree = "0.8.1"
 zcash_spec = "0.2.1"
 zip32 = { version = "0.2.0", default-features = false }
 visibility = "0.1.1"
+rand_core_010 = { package = "rand_core", version = "0.10", default-features = false }
 
 # Circuit
 halo2_gadgets = { version = "0.5", optional = true, default-features = false }
@@ -72,7 +73,7 @@ halo2_gadgets = { version = "0.5", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = ">=1.0.0, <1.7.0"
 rand_chacha = "0.3"
-zcash_note_encryption = { version = "0.4.2", features = ["pre-zip-212"] }
+zcash_note_encryption = { version = "=0.5.0", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.8.1", features = ["test-dependencies"] }
 shardtree = "0.6"
 
@@ -118,6 +119,6 @@ debug = true
 
 [patch.crates-io]
 sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
-zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "40b73b157374b62b648a26b94a1f236e5d9c389f" }
 halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "828fab66a72116a4a8ea0dc7d8895667d90dacf4" }
+halo2_poseidon = { git = "https://github.com/zcash/halo2", rev = "828fab66a72116a4a8ea0dc7d8895667d90dacf4" }
 halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "828fab66a72116a4a8ea0dc7d8895667d90dacf4" }

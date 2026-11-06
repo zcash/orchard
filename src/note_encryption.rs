@@ -7,8 +7,8 @@ use blake2b_simd::{Hash, Params};
 use group::ff::PrimeField;
 use zcash_note_encryption::{
     note_bytes::{NoteBytes, NoteBytesData},
-    BatchDomain, Domain, EphemeralKeyBytes, OutPlaintextBytes, OutgoingCipherKey, ShieldedOutput,
-    AEAD_TAG_SIZE, OUT_PLAINTEXT_SIZE,
+    BatchDomain, Domain, EphemeralKeyBytes, NoteEncryption, OutPlaintextBytes, OutgoingCipherKey,
+    ShieldedOutput, AEAD_TAG_SIZE, OUT_CIPHERTEXT_SIZE, OUT_PLAINTEXT_SIZE,
 };
 
 use crate::{
@@ -890,6 +890,38 @@ pub type IronwoodNoteEncryption = zcash_note_encryption::NoteEncryption<Ironwood
 /// [`NoteEncryption`]: zcash_note_encryption::NoteEncryption
 pub type ZSANoteEncryption = zcash_note_encryption::NoteEncryption<ZSADomain>;
 
+/// [`NoteEncryption::encrypt_outgoing_plaintext`] for a `rand_core` 0.6 RNG.
+///
+/// TODO: Remove with [`Rng010`] once this crate moves to `rand` 0.10.
+pub(crate) fn encrypt_outgoing_plaintext<D: Domain>(
+    ne: &NoteEncryption<D>,
+    cv: &D::ValueCommitment,
+    cmx: &D::ExtractedCommitment,
+    rng: &mut impl rand_core::RngCore,
+) -> [u8; OUT_CIPHERTEXT_SIZE] {
+    ne.encrypt_outgoing_plaintext(cv, cmx, &mut Rng010(rng))
+}
+
+/// Adapts a `rand_core` 0.6 RNG to the `rand_core` 0.10 API of `zcash_note_encryption`.
+struct Rng010<R>(R);
+
+impl<R: rand_core::RngCore> rand_core_010::TryRng for Rng010<R> {
+    type Error = core::convert::Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.0.next_u32())
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(self.0.next_u64())
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        self.0.fill_bytes(dst);
+        Ok(())
+    }
+}
+
 /// A compact Action for light clients.
 #[derive(Clone)]
 pub struct CompactAction {
@@ -1038,11 +1070,12 @@ mod tests {
     };
 
     use super::{
-        compact_note_size, parse_note_plaintext_without_memo, prf_ock_orchard, CompactAction,
-        CompactNoteCiphertextBytes, CompactNotePlaintextBytes, DomainVersion, IronwoodDomain,
-        IronwoodNoteEncryption, IronwoodVersion, NoteCiphertextBytes, NoteEncryptionDomain,
-        OrchardDomain, OrchardNoteEncryption, OrchardVersion, ZSADomain, ZSANoteEncryption,
-        ZSAVersion, COMPACT_NOTE_SIZE_VANILLA, COMPACT_NOTE_SIZE_ZSA,
+        compact_note_size, encrypt_outgoing_plaintext, parse_note_plaintext_without_memo,
+        prf_ock_orchard, CompactAction, CompactNoteCiphertextBytes, CompactNotePlaintextBytes,
+        DomainVersion, IronwoodDomain, IronwoodNoteEncryption, IronwoodVersion,
+        NoteCiphertextBytes, NoteEncryptionDomain, OrchardDomain, OrchardNoteEncryption,
+        OrchardVersion, ZSADomain, ZSANoteEncryption, ZSAVersion, COMPACT_NOTE_SIZE_VANILLA,
+        COMPACT_NOTE_SIZE_ZSA,
     };
     use crate::note::AssetBase;
     use crate::{
@@ -1231,7 +1264,7 @@ mod tests {
 
             assert_eq!(ne.encrypt_note_plaintext().as_ref(), &tv.c_enc[..]);
             assert_eq!(
-                &ne.encrypt_outgoing_plaintext(&cv_net, &cmx, &mut OsRng)[..],
+                &encrypt_outgoing_plaintext(&ne, &cv_net, &cmx, &mut OsRng)[..],
                 &tv.c_out[..]
             );
         }
@@ -1268,7 +1301,7 @@ mod tests {
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: IronwoodDomain::epk_bytes(encryptor.epk()).0,
             enc_ciphertext: encryptor.encrypt_note_plaintext(),
-            out_ciphertext: encryptor.encrypt_outgoing_plaintext(&cv_net, &cmx, &mut rng),
+            out_ciphertext: encrypt_outgoing_plaintext(&encryptor, &cv_net, &cmx, &mut rng),
         };
         let action = Action::from_parts(
             nf_old,
@@ -1396,7 +1429,7 @@ mod tests {
 
             assert_eq!(ne.encrypt_note_plaintext().as_ref(), &tv.c_enc[..]);
             assert_eq!(
-                &ne.encrypt_outgoing_plaintext(&cv_net, &cmx, &mut OsRng)[..],
+                &encrypt_outgoing_plaintext(&ne, &cv_net, &cmx, &mut OsRng)[..],
                 &tv.c_out[..]
             );
         }
