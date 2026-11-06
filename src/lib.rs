@@ -31,6 +31,7 @@ pub mod builder;
 pub mod bundle;
 #[cfg(feature = "circuit")]
 pub mod circuit;
+pub mod circuit_version;
 #[cfg(not(feature = "unstable-voting-circuits"))]
 mod constants;
 #[cfg(feature = "unstable-voting-circuits")]
@@ -51,6 +52,7 @@ pub mod zip32;
 #[cfg(test)]
 mod test_vectors;
 
+use crate::circuit_version::OrchardCircuitVersion;
 pub use action::{Action, ActionFromPartsError};
 pub use address::Address;
 pub use bundle::Bundle;
@@ -108,13 +110,15 @@ impl Proof {
     /// constructing a bundle from untrusted bytes; see [`Bundle::try_from_parts`].
     ///
     /// [`Bundle::try_from_parts`]: crate::Bundle::try_from_parts
-    pub const fn expected_proof_size(num_actions: usize) -> usize {
+    pub const fn expected_proof_size(
+        circuit_version: OrchardCircuitVersion,
+        num_actions: usize,
+    ) -> usize {
         // The proof is a fixed base size plus a fixed contribution per action. These constants
         // are determined by the halo2 action circuit; see the `circuit` module's round-trip
         // tests, which cross-check them against `CircuitCost::proof_size`.
-        const BASE: usize = 2720;
-        const PER_ACTION: usize = 2272;
-        BASE + PER_ACTION * num_actions
+        let (base, per_action) = circuit_version.proof_size_constants();
+        base + per_action * num_actions
     }
 }
 

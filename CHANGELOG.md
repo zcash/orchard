@@ -7,8 +7,81 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::note::AssetBase`, the ZSA note type identifier:
+  - `AssetBase::zatoshi`, the asset used by every Orchard note built through this crate's
+    public APIs today.
+  - `AssetBase::{from_bytes, to_bytes}`, (de)serializing an `AssetBase`.
+  - `AssetBase::is_zatoshi`, testing whether it is the zatoshi asset.
+  - `AssetBase::cv_base`, the base point used to derive a value commitment for notes of this
+    asset.
+- `orchard::Note::asset`, returning a note's `AssetBase` (currently always
+  `AssetBase::zatoshi()`).
+- `impl subtle::ConditionallySelectable for orchard::note::RandomSeed`.
+- `orchard::bundle::Flags::zsa_enabled`, the accessor for the new ZSA flag bit. No public
+  constructor can currently set it to `true`.
+- `orchard::circuit_version` module, containing `OrchardCircuitVersion` (moved out of
+  `orchard::circuit`; see Changed) with a new `OrchardCircuitVersion::ZSA` variant selecting
+  the ZSA Action circuit.
+- `orchard::value::ValueCommitment::derive_with_asset`, deriving a value commitment for an
+  arbitrary `AssetBase`.
+- `unstable-voting-circuits`-only (not covered by the crate's semver guarantees):
+  - Constants backing the new ZSA note commitment domain and split-note nullifier derivation:
+    - `orchard::constants::fixed_bases::NOTE_ZSA_COMMITMENT_PERSONALIZATION`
+    - `orchard::constants::sinsemilla::Q_NOTE_ZSA_COMMITMENT_M_GENERATOR`
+    - `orchard::constants::sinsemilla::{OrchardHashDomains::NoteZsaCommit,
+      OrchardCommitDomains::NoteZsaCommit}` variants
+    - `orchard::constants::nullifier_l` module, with the `NULLIFIER_L` constant used to derive
+      a split note's nullifier
+  - The types carrying the ZSA-specific inputs that the gadgets now take (see Changed):
+    - `orchard::circuit::derive_nullifier::ZsaNullifierParams`
+    - `orchard::circuit::note_commit::ZsaNoteCommitParams`
+
 ### Changed
 - MSRV is now 1.88
+- The following already-opaque public structs gained new private fields for future ZSA
+  support (none has a public accessor beyond `Note::asset`, listed under Added):
+  - `orchard::note::Note`: `asset`, `rseed_split_note`
+  - `orchard::builder::SpendInfo`: `split_flag`
+  - `orchard::builder::OutputInfo`: `asset`
+  - `orchard::circuit::Instance`: `enable_zsa`
+- `orchard::Proof::expected_proof_size` now takes an `OrchardCircuitVersion` argument, since
+  the ZSA circuit's proof size differs from the other circuit versions'.
+- `OrchardCircuitVersion` moved from `orchard::circuit::OrchardCircuitVersion` to
+  `orchard::circuit_version::OrchardCircuitVersion`. Neither it nor
+  `orchard::bundle::BundleVersion::circuit_version` (the method that returns it) require the
+  `circuit` feature anymore, so that `orchard::Proof::expected_proof_size` can take
+  an `OrchardCircuitVersion` argument without pulling in the `circuit` feature.
+- `OrchardCircuitVersion` is now `#[non_exhaustive]`: downstream crates matching on it must
+  add a wildcard arm.
+- `orchard::circuit::Circuit` no longer implements `halo2_proofs::plonk::Circuit`. It still
+  carries the witnesses of a single action, but the `plonk::Circuit` implementations now live
+  on the crate-internal `CircuitVanilla` and `CircuitZsa` types, one per circuit variation.
+  `Proof::create`, `ProvingKey::build`, and `VerifyingKey::build` dispatch to the right one
+  internally, so callers do not need to select it themselves.
+- `orchard::Note::nullifier` now implements the split-note nullifier derivation of ZIP 226: a
+  note carrying a split seed derives $\psi$ from that seed, and its nullifier is offset by
+  $\mathcal{L}^{\mathsf{Orchard}}$. No public constructor produces a note with a split seed,
+  so the nullifier of every note that can be built today is unchanged.
+- `orchard::circuit::Config` is now generic over the `halo2_gadgets` lookup-range-check
+  strategy.
+- `unstable-voting-circuits`-only (not covered by the crate's semver guarantees):
+  - `orchard::circuit::note_commit::{NoteCommitConfig, NoteCommitChip}` are now generic over the
+    same lookup-range-check strategy, and `NoteCommitChip::configure` takes an additional
+    `is_zsa_circuit: bool` argument.
+  - Three gadgets moved out of `orchard::circuit::gadget`, each into a module of its own. Their
+    behavior is unchanged, but the old paths no longer exist (paths below are relative to
+    `orchard::circuit`):
+    - `gadget::derive_nullifier` → `derive_nullifier::gadgets::derive_nullifier`, plus a trailing
+      `zsa_params: Option<ZsaNullifierParams>` argument (`None` for vanilla behavior).
+    - `gadget::commit_ivk` → `commit_ivk::gadgets::commit_ivk`, now generic over the
+      lookup-range-check strategy and the Sinsemilla chip.
+    - `gadget::note_commit` → `note_commit::gadgets::note_commit`, now generic over the
+      lookup-range-check strategy, plus a trailing
+      `zsa_params: Option<ZsaNoteCommitParams>` argument (`None` for vanilla behavior).
+  - `orchard::constants::{OrchardHashDomains, OrchardCommitDomains}` both gained a
+    `NoteZsaCommit` variant (listed under Added) and are now `#[non_exhaustive]`, so downstream
+    matches on either must add a wildcard arm.
 
 ## [0.15.5] - 2026-08-02
 

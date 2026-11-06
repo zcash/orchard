@@ -4,7 +4,8 @@ use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
     builder::{Builder, BundleType},
     bundle::{Authorized, BatchValidator, BundleVersion, Flags, TxVersion},
-    circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
+    circuit::{ProvingKey, VerifyingKey},
+    circuit_version::OrchardCircuitVersion,
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::{ExtractedNoteCommitment, NoteVersion},
     note_encryption::{IronwoodDomain, OrchardDomain},

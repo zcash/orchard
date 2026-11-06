@@ -17,7 +17,10 @@ use crate::{
         FullViewingKey, OutgoingViewingKey, Scope, SpendAuthorizingKey, SpendValidatingKey,
         SpendingKey,
     },
-    note::{ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho, TransmittedNoteCiphertext},
+    note::{
+        AssetBase, ExtractedNoteCommitment, Note, NoteVersion, Nullifier, Rho,
+        TransmittedNoteCiphertext,
+    },
     note_encryption::OrchardNoteEncryption,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::{Anchor, MerklePath},
@@ -29,7 +32,8 @@ use crate::{
 use {
     crate::{
         action::Action,
-        circuit::{Circuit, Instance, OrchardCircuitVersion, ProvingKey},
+        circuit::{Circuit, Instance, ProvingKey},
+        circuit_version::OrchardCircuitVersion,
     },
     nonempty::NonEmpty,
 };
@@ -352,6 +356,9 @@ pub struct SpendInfo {
     pub(crate) scope: Scope,
     pub(crate) note: Note,
     pub(crate) merkle_path: Option<MerklePath>,
+    // If `split_flag` is true, the spend note's value is not counted in the action's `ValueSum`.
+    // TODO ZSA: `ActionInfo::value_sum` does not implement this yet.
+    pub(crate) split_flag: bool,
 }
 
 impl SpendInfo {
@@ -372,6 +379,7 @@ impl SpendInfo {
             scope,
             note,
             merkle_path: Some(merkle_path),
+            split_flag: false,
         })
     }
 
@@ -392,6 +400,7 @@ impl SpendInfo {
             scope,
             note,
             merkle_path: None,
+            split_flag: false,
         })
     }
 
@@ -410,6 +419,7 @@ impl SpendInfo {
             scope: Scope::External,
             note,
             merkle_path,
+            split_flag: false,
         }
     }
 
@@ -484,6 +494,7 @@ pub struct OutputInfo {
     ovk: Option<OutgoingViewingKey>,
     recipient: Address,
     value: NoteValue,
+    asset: AssetBase,
     memo: [u8; 512],
     note_version: NoteVersion,
     /// When set, `build` fills `enc_ciphertext` with random bytes instead of encrypting the
@@ -514,6 +525,8 @@ impl OutputInfo {
             ovk,
             recipient,
             value,
+            // TODO ZSA: asset should be a param, not hardcoded here
+            asset: AssetBase::zatoshi(),
             memo,
             note_version,
             randomized_ciphertext: false,
@@ -536,6 +549,8 @@ impl OutputInfo {
             ovk: None,
             recipient,
             value: NoteValue::ZERO,
+            // TODO ZSA: asset should be a param, not hardcoded here
+            asset: AssetBase::zatoshi(),
             memo: [0u8; 512],
             note_version,
             randomized_ciphertext: matches!(spent_scope, Scope::External),
@@ -679,7 +694,18 @@ struct ActionInfo {
 }
 
 impl ActionInfo {
+    /// # Panics
+    ///
+    /// Panics if the spent and output notes do not have the same asset. The circuit
+    /// witnesses a single `asset`, used for both note commitments and for the value
+    /// commitment, so an action cannot mix assets.
     fn new(spend: SpendInfo, output: OutputInfo, rng: impl RngCore) -> Self {
+        assert_eq!(
+            spend.note.asset(),
+            output.asset,
+            "an action's spent and output notes must have the same asset"
+        );
+
         ActionInfo {
             spend,
             output,
@@ -706,7 +732,8 @@ impl ActionInfo {
         circuit_version: OrchardCircuitVersion,
     ) -> (Action<SigningMetadata>, Circuit) {
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
+        let cv_net =
+            ValueCommitment::derive_with_asset(v_net, self.rcv.clone(), self.spend.note.asset());
 
         let (nf_old, ak, alpha, rk) = self.spend.build(&mut rng);
         let (note, cmx, encrypted_note) = self.output.build(&cv_net, nf_old, &mut rng);
@@ -738,8 +765,11 @@ impl ActionInfo {
     }
 
     fn build_for_pczt(self, mut rng: impl RngCore) -> crate::pczt::Action {
+        // ZSA notes are not yet supported by PCZT.
+        assert_eq!(self.spend.note.asset(), AssetBase::zatoshi());
         let v_net = self.value_sum();
-        let cv_net = ValueCommitment::derive(v_net, self.rcv.clone());
+        let cv_net =
+            ValueCommitment::derive_with_asset(v_net, self.rcv.clone(), self.spend.note.asset());
 
         let spend = self.spend.into_pczt(&mut rng);
         let output = self.output.into_pczt(&cv_net, spend.nullifier, &mut rng);
@@ -1427,6 +1457,7 @@ fn build_bundle<B, R: RngCore>(
                 scope,
                 note,
                 merkle_path: Some(MerklePath::dummy(&mut rng)),
+                split_flag: false,
             };
             pairs.push((None, Some(chg_idx), spend, output));
         }
@@ -1880,7 +1911,8 @@ pub mod testing {
     use crate::{
         address::testing::arb_address,
         bundle::{Authorized, Bundle, BundleVersion, TxVersion},
-        circuit::{OrchardCircuitVersion, ProvingKey},
+        circuit::ProvingKey,
+        circuit_version::OrchardCircuitVersion,
         keys::{
             testing::arb_spending_key, FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey,
         },
@@ -2166,7 +2198,8 @@ mod tests {
     use crate::{
         builder::{BundleType, SpendError},
         bundle::{Authorized, Bundle, BundleVersion, Flags, TxVersion},
-        circuit::{OrchardCircuitVersion, ProvingKey},
+        circuit::ProvingKey,
+        circuit_version::OrchardCircuitVersion,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{
             FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey,
