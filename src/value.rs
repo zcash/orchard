@@ -56,6 +56,8 @@ use crate::{
     primitives::redpallas::{self, Binding},
 };
 
+mod commitment_table;
+
 /// Maximum note value.
 pub const MAX_NOTE_VALUE: u64 = u64::MAX;
 
@@ -374,19 +376,24 @@ impl ValueCommitment {
     /// This runs in variable time with respect to `value`. **`value` must be public.**
     /// Use [`ValueCommitment::derive`] for a note's value.
     pub fn derive_public(value: ValueSum) -> Self {
-        let magnitude = u64::try_from(value.0.abs()).expect("value must be in valid range");
-        let generator = value_commit_v::generator();
-        let commitment = (0..u64::BITS - magnitude.leading_zeros()).rev().fold(
-            pallas::Point::identity(),
-            |acc, bit| {
-                let acc = acc.double();
-                if (magnitude >> bit) & 1 == 1 {
-                    acc + generator
-                } else {
-                    acc
-                }
-            },
-        );
+        let mut magnitude = u64::try_from(value.0.abs()).expect("value must be in valid range");
+        let mut commitment = pallas::Point::identity();
+        // Signed radix-64 digits need at most eleven windows for a u64, including carry.
+        // Both the lookup indices and the branches depend only on this public value.
+        for window in &commitment_table::TABLE {
+            if magnitude == 0 {
+                break;
+            }
+            // The mask bounds this digit to 0..64, which fits in usize.
+            let digit = (magnitude & 63) as usize;
+            magnitude >>= 6;
+            if digit > 32 {
+                magnitude += 1;
+                commitment -= &window[64 - digit - 1];
+            } else if digit != 0 {
+                commitment += &window[digit - 1];
+            }
+        }
         ValueCommitment(if value.0.is_negative() {
             -commitment
         } else {

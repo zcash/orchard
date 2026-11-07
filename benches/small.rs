@@ -2,6 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use incrementalmerkletree::{Hashable, Level};
 use orchard::keys::{FullViewingKey, Scope, SpendingKey};
 use orchard::tree::MerkleHashOrchard;
+use orchard::value::{NoteValue, ValueCommitment, ValueSum};
 
 /// Selects a nontrivial Merkle layer for the benchmarked compression.
 const BENCHMARK_LEVEL: u8 = 7;
@@ -101,5 +102,30 @@ fn merkle_crh_batch(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, key_derivation, merkle_crh, merkle_crh_batch);
+fn public_value_commitment(c: &mut Criterion) {
+    let mut group = c.benchmark_group("public_value_commitment");
+    for (name, value) in [
+        ("zero", ValueSum::default()),
+        ("fee", NoteValue::from_raw(10_000) - NoteValue::ZERO),
+        (
+            "negative_fee",
+            NoteValue::ZERO - NoteValue::from_raw(10_000),
+        ),
+        ("i64_min", NoteValue::ZERO - NoteValue::from_raw(1u64 << 63)),
+        ("u64_max", NoteValue::from_raw(u64::MAX) - NoteValue::ZERO),
+    ] {
+        group.bench_with_input(BenchmarkId::from_parameter(name), &value, |b, value| {
+            b.iter(|| ValueCommitment::derive_public(black_box(*value)))
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    key_derivation,
+    merkle_crh,
+    merkle_crh_batch,
+    public_value_commitment
+);
 criterion_main!(benches);
