@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 
-use group::{Curve, GroupEncoding};
+use group::Curve;
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
     plonk::{
@@ -1276,8 +1276,9 @@ impl Instance {
         instance[CV_NET_Y] = self.cv_net.y();
         instance[NF_OLD] = self.nf_old.inner();
 
-        let rk = pallas::Point::from_bytes(&self.rk.clone().into())
-            .expect("the cached byte encoding of a VerificationKey<_> is canonical")
+        let rk = self
+            .rk
+            .point()
             .to_affine()
             .coordinates()
             .expect("rk is non-identity by construction");
@@ -1418,6 +1419,9 @@ mod fingerprint;
 mod benchmark;
 
 #[cfg(test)]
+mod verification_tests;
+
+#[cfg(test)]
 mod tests {
     use alloc::vec::Vec;
     use core::iter;
@@ -1438,7 +1442,7 @@ mod tests {
 
     /// Generates a circuit and instance whose output note is addressed to an expanded
     /// receiver distinct from the spent note's.
-    fn generate_circuit_instance<R: Rng>(
+    pub(super) fn generate_circuit_instance<R: Rng>(
         rng: R,
         circuit_version: OrchardCircuitVersion,
     ) -> (Circuit, Instance) {
