@@ -372,8 +372,7 @@ impl ValueCommitment {
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
-        // TODO: impl From<pallas::Point> for redpallas::VerificationKey.
-        self.0.to_bytes().try_into().unwrap()
+        redpallas::VerificationKey::from_point(self.0)
     }
 
     /// Deserialize a value commitment from its byte representation
