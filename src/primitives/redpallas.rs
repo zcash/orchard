@@ -13,6 +13,9 @@ pub use reddsa::batch;
 #[cfg(test)]
 use rand::{rand_core::UnwrapErr, rngs::SysRng};
 
+#[cfg(test)]
+mod retained_key_tests;
+
 /// A RedPallas signature type.
 pub trait SigType: reddsa::SigType + private::Sealed {}
 
@@ -126,6 +129,12 @@ impl<T: SigType> Ord for VerificationKey<T> {
 }
 
 impl VerificationKey<SpendAuth> {
+    /// Returns the validated point without decoding its canonical encoding again.
+    #[cfg(feature = "circuit")]
+    pub(crate) fn point(&self) -> pallas::Point {
+        self.0.into()
+    }
+
     /// Used in the note encryption tests.
     #[cfg(test)]
     pub(crate) fn dummy() -> Self {
@@ -151,6 +160,7 @@ impl VerificationKey<SpendAuth> {
 }
 
 impl VerificationKey<Binding> {
+    /// Constructs a binding key from an existing valid point, including identity.
     pub(crate) fn from_point(point: pallas::Point) -> Self {
         VerificationKey(point.into())
     }
