@@ -249,3 +249,22 @@ fn public_normalization_matches_constant_time_for_worker_boundaries() {
         }
     }
 }
+
+#[cfg(feature = "multicore")]
+#[test]
+fn preparation_uses_only_one_level_of_parallelism() {
+    for count in [0, 1, 3, 4, 64, 207] {
+        assert_eq!(super::parallel_preparation(count), count >= 4);
+    }
+    for threads in [1, 2, 4] {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .unwrap()
+            .install(|| {
+                for count in [0, 1, 3, 4, 64, 207] {
+                    assert!(!super::parallel_preparation(count));
+                }
+            });
+    }
+}

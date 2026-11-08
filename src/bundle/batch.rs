@@ -17,6 +17,12 @@ use crate::{
 #[cfg(feature = "multicore")]
 const MIN_PARALLEL_BUNDLES: usize = 4;
 
+/// Let an enclosing Rayon batch own parallelism rather than nesting preparation jobs.
+#[cfg(feature = "multicore")]
+fn parallel_preparation(bundles: usize) -> bool {
+    bundles >= MIN_PARALLEL_BUNDLES && rayon::current_thread_index().is_none()
+}
+
 /// Owned verification inputs, without the bundle's ciphertexts or cached commitments.
 #[derive(Debug)]
 struct BundleInput {
@@ -37,7 +43,7 @@ struct PreparedBundle {
 /// Maps bundles in order, distributing sufficiently large batches across the pool.
 fn map_bundles<T: Send, U: Send>(items: Vec<T>, f: impl Fn(T) -> U + Send + Sync) -> Vec<U> {
     #[cfg(feature = "multicore")]
-    if items.len() >= MIN_PARALLEL_BUNDLES {
+    if parallel_preparation(items.len()) {
         use rayon::prelude::*;
         return items.into_par_iter().map(f).collect();
     }
@@ -50,7 +56,7 @@ fn normalize(points: &[pallas::Point], bundles: usize) -> Vec<pallas::Affine> {
     // The points are transaction cv_net/rk encodings or binding keys derived solely
     // from public cv_net commitments and valueBalance; no witness or trapdoor enters here.
     #[cfg(feature = "multicore")]
-    if bundles >= MIN_PARALLEL_BUNDLES {
+    if parallel_preparation(bundles) {
         use rayon::prelude::*;
         let chunk = points.len().div_ceil(rayon::current_num_threads()).max(1);
         points

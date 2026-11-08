@@ -14,6 +14,8 @@ and this project adheres to Rust's notion of
 - Batch validation queues verification inputs, derives binding keys in parallel, shares
   public-point normalization, and prepares signatures and instances in parallel from
   four bundles with `multicore`. Unsupported circuit capabilities are still rejected eagerly.
+  Calls already running on a Rayon worker prepare serially so enclosing concurrent batches
+  retain ownership of the pool.
 - Proof creation and individual verification batch-normalize action public inputs together.
 - Public action and binding points use explicit variable-time normalization during verification;
   proof creation, secret-bearing arithmetic and ordinary field inversion remain constant-time.
