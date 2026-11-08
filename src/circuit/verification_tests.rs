@@ -53,6 +53,13 @@ fn batched_public_instances_match_independent_constant_time_encoding() {
             .iter()
             .map(Instance::to_halo2_instance)
             .collect();
-        assert_eq!(Instance::to_halo2_instances(&instances[..n]), expected);
+        assert_eq!(
+            Instance::to_halo2_instances::<false>(&instances[..n]),
+            expected
+        );
+        assert_eq!(
+            Instance::to_halo2_instances::<true>(&instances[..n]),
+            expected
+        );
     }
 }

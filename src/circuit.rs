@@ -1280,7 +1280,7 @@ impl Instance {
     }
 
     /// Encodes the public action commitments and spend keys with one shared inversion.
-    pub(crate) fn to_halo2_instances(
+    pub(crate) fn to_halo2_instances<const PUBLIC: bool>(
         instances: &[Self],
     ) -> Vec<[[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS]> {
         let points: Vec<_> = instances
@@ -1289,9 +1289,14 @@ impl Instance {
             .chain(instances.iter().map(|instance| instance.rk.point()))
             .collect();
         let mut affine = vec![pallas::Affine::default(); points.len()];
-        // cv_net and rk are circuit public inputs, not the secret value/trapdoor
-        // or spend key from which they were derived, even during proof creation.
-        pallas::Point::batch_normalize_vartime(&points, &mut affine);
+        if PUBLIC {
+            // Verification consumes public cv_net/rk points from the transaction.
+            pallas::Point::batch_normalize_vartime(&points, &mut affine);
+        } else {
+            // During proving, even public affine outputs can have witness-dependent
+            // projective Z coordinates. Keep their normalization constant-time.
+            pallas::Point::batch_normalize(&points, &mut affine);
+        }
         let (cv_nets, rks) = affine.split_at(instances.len());
         Self::to_halo2_instances_with_affine(instances, cv_nets, rks)
     }
@@ -1384,7 +1389,7 @@ impl Proof {
             return Err(plonk::Error::InvalidInstances);
         }
 
-        let instances = Instance::to_halo2_instances(instances);
+        let instances = Instance::to_halo2_instances::<false>(instances);
         let instances: Vec<Vec<_>> = instances
             .iter()
             .map(|i| i.iter().map(|c| &c[..]).collect())
@@ -1419,7 +1424,7 @@ impl Proof {
             return Err(plonk::Error::InvalidInstances);
         }
 
-        let instances = Instance::to_halo2_instances(instances);
+        let instances = Instance::to_halo2_instances::<true>(instances);
         let instances: Vec<Vec<_>> = instances
             .iter()
             .map(|i| i.iter().map(|c| &c[..]).collect())
