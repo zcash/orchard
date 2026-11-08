@@ -13,6 +13,7 @@ use core::fmt;
 
 use blake2b_simd::Hash as Blake2bHash;
 use nonempty::NonEmpty;
+use pasta_curves::arithmetic::CurveExt;
 use zcash_note_encryption::{try_note_decryption, try_output_recovery_with_ovk};
 
 #[cfg(feature = "std")]
@@ -765,18 +766,30 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
     /// [`Bundle::authorization`].
     pub fn binding_validating_key(&self) -> redpallas::VerificationKey<Binding> {
-        // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
-        (self
-            .actions
-            .iter()
-            .map(|a| a.cv_net())
-            .sum::<ValueCommitment>()
-            - ValueCommitment::derive(
-                ValueSum::from_raw(self.value_balance.into()),
-                ValueCommitTrapdoor::zero(),
-            ))
-        .into_bvk()
+        // This binding point depends only on serialized action commitments and the
+        // public valueBalance. Builder/PCZT trapdoor checks keep their constant-time path.
+        redpallas::VerificationKey::from_affine(
+            binding_validating_key(
+                self.actions.iter().map(|action| action.cv_net()),
+                self.value_balance.into(),
+            )
+            .point()
+            .to_affine_vartime(),
+        )
     }
+}
+
+/// Derives the binding point without encoding or normalizing it.
+fn binding_validating_key<'a>(
+    commitments: impl Iterator<Item = &'a ValueCommitment>,
+    value_balance: i64,
+) -> ValueCommitment {
+    // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
+    commitments.sum::<ValueCommitment>()
+        - ValueCommitment::derive(
+            ValueSum::from_raw(value_balance),
+            ValueCommitTrapdoor::zero(),
+        )
 }
 
 /// Marker type for a bundle that contains no authorizing data.

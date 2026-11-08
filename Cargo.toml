@@ -33,8 +33,10 @@ zcash_spec = "0.2.1"
 halo2_gadgets = { version = "0.6", optional = true, default-features = false }
 halo2_proofs = { version = "0.4", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
 rayon = { version = "1", optional = true }
+# Requires Pasta's explicit public-input variable-time normalization APIs.
 pasta_curves = { version = "0.6", features = ["glv"] }
 poseidon = { package = "halo2_poseidon", version = "0.2" }
+# Requires a RedDSA release containing the retained-key and from_affine APIs.
 reddsa = { version = "0.6", default-features = false }
 sinsemilla = "0.2"
 

@@ -12,7 +12,10 @@ use halo2_proofs::{
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
 };
-use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
+use pasta_curves::{
+    arithmetic::{CurveAffine, CurveExt},
+    pallas, vesta,
+};
 use rand::Rng;
 
 use self::{
@@ -1183,8 +1186,6 @@ pub struct Instance {
     cross_address_disabled: bool,
 }
 
-pub(crate) type Halo2Instance = [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS];
-
 impl Instance {
     /// Constructs an [`Instance`] from its constituent parts.
     ///
@@ -1271,78 +1272,82 @@ impl Instance {
     }
 
     #[cfg(test)]
-    fn to_halo2_instance(&self) -> Halo2Instance {
-        let [instance] = Self::to_halo2_instances(core::slice::from_ref(self))
-            .try_into()
-            .expect("one instance in, one instance out");
-        instance
+    pub(crate) fn to_halo2_instance(&self) -> [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS] {
+        self.to_halo2_instance_with_points(
+            self.cv_net.point().to_affine(),
+            self.rk.point().to_affine(),
+        )
     }
 
-    /// Encodes each instance as circuit public inputs.
-    ///
-    /// The `cv_net` and `rk` points are already held in projective form, so this
-    /// normalizes all of them with one shared inversion instead of decoding `rk` from
-    /// its bytes (a square root) and inverting each coordinate separately.
-    fn to_halo2_instances(instances: &[Self]) -> Vec<Halo2Instance> {
-        // All `cv_net` points, then all `rk` points.
-        let points: Vec<pallas::Point> = instances
+    /// Encodes the public action commitments and spend keys with one shared inversion.
+    pub(crate) fn to_halo2_instances(
+        instances: &[Self],
+    ) -> Vec<[[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS]> {
+        let points: Vec<_> = instances
             .iter()
             .map(|instance| instance.cv_net.point())
             .chain(instances.iter().map(|instance| instance.rk.point()))
             .collect();
-        let mut affine = alloc::vec![pallas::Affine::default(); points.len()];
-        pallas::Point::batch_normalize(&points, &mut affine);
+        let mut affine = vec![pallas::Affine::default(); points.len()];
+        // cv_net and rk are circuit public inputs, not the secret value/trapdoor
+        // or spend key from which they were derived, even during proof creation.
+        pallas::Point::batch_normalize_vartime(&points, &mut affine);
         let (cv_nets, rks) = affine.split_at(instances.len());
         Self::to_halo2_instances_with_affine(instances, cv_nets, rks)
     }
 
-    /// Encodes each instance as circuit public inputs, given each instance's `cv_net`
-    /// and `rk` already normalized to affine form (`cv_nets[i]` and `rks[i]` belong to
-    /// `instances[i]`). Batch validation normalizes the points of every bundle together.
     pub(crate) fn to_halo2_instances_with_affine(
         instances: &[Self],
         cv_nets: &[pallas::Affine],
         rks: &[pallas::Affine],
-    ) -> Vec<Halo2Instance> {
-        debug_assert_eq!(cv_nets.len(), instances.len());
-        debug_assert_eq!(rks.len(), instances.len());
+    ) -> Vec<[[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS]> {
+        assert_eq!(instances.len(), cv_nets.len());
+        assert_eq!(instances.len(), rks.len());
         instances
             .iter()
             .zip(cv_nets.iter().zip(rks))
-            .map(|(i, (cv_net, rk))| {
-                let mut instance = [vesta::Scalar::zero(); INSTANCE_ROWS];
-
-                instance[ANCHOR] = i.anchor.inner();
-                // An identity cv_net is encoded as (0, 0).
-                let (cv_net_x, cv_net_y) = cv_net
-                    .coordinates()
-                    .into_option()
-                    .map_or((pallas::Base::zero(), pallas::Base::zero()), |c| {
-                        (*c.x(), *c.y())
-                    });
-                instance[CV_NET_X] = cv_net_x;
-                instance[CV_NET_Y] = cv_net_y;
-                instance[NF_OLD] = i.nf_old.inner();
-
-                let rk = rk
-                    .coordinates()
-                    .expect("rk is non-identity by construction");
-                instance[RK_X] = *rk.x();
-                instance[RK_Y] = *rk.y();
-                instance[CMX] = i.cmx.inner();
-                instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(i.enable_spend));
-                instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(i.enable_output));
-                // Instance columns are zero-padded over the evaluation domain, so for
-                // statements where this flag is false, this encoding is commitment-identical
-                // to the historical nine-row encoding. Pre-NU 6.3 circuits leave this row
-                // unconstrained, which is why restricted statements must never reach those
-                // keys (see `Proof::create` and `Proof::verify`).
-                instance[DISABLE_CROSS_ADDRESS] =
-                    vesta::Scalar::from(u64::from(i.cross_address_disabled));
-
-                [instance]
-            })
+            .map(|(instance, (cv_net, rk))| instance.to_halo2_instance_with_points(*cv_net, *rk))
             .collect()
+    }
+
+    /// Encodes this instance using its already-normalized value commitment and spend key.
+    fn to_halo2_instance_with_points(
+        &self,
+        cv: pallas::Affine,
+        rk: pallas::Affine,
+    ) -> [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS] {
+        let mut instance = [vesta::Scalar::zero(); INSTANCE_ROWS];
+
+        instance[ANCHOR] = self.anchor.inner();
+        let (cv_x, cv_y) = Option::from(cv.coordinates())
+            .map(
+                |coordinates: pasta_curves::arithmetic::Coordinates<pallas::Affine>| {
+                    (*coordinates.x(), *coordinates.y())
+                },
+            )
+            .unwrap_or((pallas::Base::zero(), pallas::Base::zero()));
+        instance[CV_NET_X] = cv_x;
+        instance[CV_NET_Y] = cv_y;
+        instance[NF_OLD] = self.nf_old.inner();
+
+        let rk = rk
+            .coordinates()
+            .expect("rk is non-identity by construction");
+
+        instance[RK_X] = *rk.x();
+        instance[RK_Y] = *rk.y();
+        instance[CMX] = self.cmx.inner();
+        instance[ENABLE_SPEND] = vesta::Scalar::from(u64::from(self.enable_spend));
+        instance[ENABLE_OUTPUT] = vesta::Scalar::from(u64::from(self.enable_output));
+        // Instance columns are zero-padded over the evaluation domain, so for statements
+        // where this flag is false, this encoding is commitment-identical to the historical
+        // nine-row encoding. Pre-NU 6.3 circuits leave this row unconstrained, which is why
+        // restricted statements must never reach those keys (see `Proof::create` and
+        // `Proof::verify`).
+        instance[DISABLE_CROSS_ADDRESS] =
+            vesta::Scalar::from(u64::from(self.cross_address_disabled));
+
+        [instance]
     }
 }
 
@@ -1424,19 +1429,6 @@ impl Proof {
         let strategy = SingleVerifier::new(&vk.params);
         let mut transcript = Blake2bRead::init(&self.0[..]);
         plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
-    }
-
-    /// Splits this proof into the instance columns and proof bytes that
-    /// [`plonk::BatchVerifier::add_proof`] takes, given its encoded instances.
-    pub(crate) fn into_batch_input(
-        self,
-        instances: Vec<Halo2Instance>,
-    ) -> (Vec<Vec<Vec<vesta::Scalar>>>, Vec<u8>) {
-        let instances = instances
-            .into_iter()
-            .map(|i| i.into_iter().map(|c| c.into_iter().collect()).collect())
-            .collect();
-        (instances, self.0)
     }
 }
 

@@ -165,9 +165,7 @@ impl VerificationKey<Binding> {
         VerificationKey(point.into())
     }
 
-    /// Constructs a binding key from a point already in affine form, so batch
-    /// validation can normalize every bundle's key with one shared inversion.
-    #[cfg(feature = "circuit")]
+    /// Reuses coordinates normalized with the other public verification inputs.
     pub(crate) fn from_affine(point: pallas::Affine) -> Self {
         VerificationKey(reddsa::VerificationKey::from_affine(point))
     }
