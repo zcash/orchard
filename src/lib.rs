@@ -45,6 +45,7 @@ mod spec;
 #[cfg(feature = "unstable-voting-circuits")]
 pub mod spec;
 pub mod tree;
+pub mod trusted;
 pub mod value;
 pub mod zip32;
 

@@ -315,13 +315,20 @@ impl ValueCommitTrapdoor {
 
 /// A commitment to a [`ValueSum`].
 #[derive(Clone, Debug)]
-pub struct ValueCommitment(pallas::Point);
+pub struct ValueCommitment(Repr);
+
+// `Bytes` only for commitments parsed inside `trusted::with_trusted_encodings`.
+#[derive(Clone, Debug)]
+enum Repr {
+    Point(pallas::Point),
+    Bytes([u8; 32]),
+}
 
 impl Add<&ValueCommitment> for ValueCommitment {
     type Output = ValueCommitment;
 
     fn add(self, rhs: &Self) -> Self::Output {
-        ValueCommitment(self.0 + rhs.0)
+        ValueCommitment::from_point(self.point() + rhs.point())
     }
 }
 
@@ -329,27 +336,42 @@ impl Sub for ValueCommitment {
     type Output = ValueCommitment;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        ValueCommitment(self.0 - rhs.0)
+        ValueCommitment::from_point(self.point() - rhs.point())
     }
 }
 
 impl Sum for ValueCommitment {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(ValueCommitment(pallas::Point::identity()), |acc, cv| {
-            acc + &cv
-        })
+        iter.fold(
+            ValueCommitment::from_point(pallas::Point::identity()),
+            |acc, cv| acc + &cv,
+        )
     }
 }
 
 impl<'a> Sum<&'a ValueCommitment> for ValueCommitment {
     fn sum<I: Iterator<Item = &'a ValueCommitment>>(iter: I) -> Self {
-        iter.fold(ValueCommitment(pallas::Point::identity()), |acc, cv| {
-            acc + cv
-        })
+        iter.fold(
+            ValueCommitment::from_point(pallas::Point::identity()),
+            |acc, cv| acc + cv,
+        )
     }
 }
 
 impl ValueCommitment {
+    fn from_point(point: pallas::Point) -> Self {
+        ValueCommitment(Repr::Point(point))
+    }
+
+    /// Returns the point, decompressing it if this commitment was read from bytes.
+    pub(crate) fn point(&self) -> pallas::Point {
+        match &self.0 {
+            Repr::Point(point) => *point,
+            Repr::Bytes(bytes) => Option::from(pallas::Point::from_bytes(bytes))
+                .expect("trusted value commitments are valid points"),
+        }
+    }
+
     /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{Orchard}}$.
     ///
     /// Defined in [Zcash Protocol Spec § 5.4.8.3: Homomorphic Pedersen commitments (Sapling and Orchard)][concretehomomorphiccommit].
@@ -368,39 +390,51 @@ impl ValueCommitment {
             pallas::Scalar::from(abs_value)
         };
 
-        ValueCommitment(V * value + R * rcv.0)
+        ValueCommitment::from_point(V * value + R * rcv.0)
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
         // TODO: impl From<pallas::Point> for redpallas::VerificationKey.
-        self.0.to_bytes().try_into().unwrap()
+        self.to_bytes().try_into().unwrap()
     }
 
     /// Deserialize a value commitment from its byte representation
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<ValueCommitment> {
-        pallas::Point::from_bytes(bytes).map(ValueCommitment)
+        // The caller validated these bytes before, so decompress the point on first use.
+        if crate::trusted::encodings_are_trusted() {
+            return CtOption::new(
+                ValueCommitment(Repr::Bytes(*bytes)),
+                subtle::Choice::from(1),
+            );
+        }
+        pallas::Point::from_bytes(bytes).map(ValueCommitment::from_point)
     }
 
     /// Serialize this value commitment to its canonical byte representation.
     pub fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_bytes()
+        match &self.0 {
+            Repr::Point(point) => point.to_bytes(),
+            Repr::Bytes(bytes) => *bytes,
+        }
     }
 
     /// x-coordinate of this value commitment.
     pub(crate) fn x(&self) -> pallas::Base {
-        if self.0 == pallas::Point::identity() {
+        let point = self.point();
+        if point == pallas::Point::identity() {
             pallas::Base::zero()
         } else {
-            *self.0.to_affine().coordinates().unwrap().x()
+            *point.to_affine().coordinates().unwrap().x()
         }
     }
 
     /// y-coordinate of this value commitment.
     pub(crate) fn y(&self) -> pallas::Base {
-        if self.0 == pallas::Point::identity() {
+        let point = self.point();
+        if point == pallas::Point::identity() {
             pallas::Base::zero()
         } else {
-            *self.0.to_affine().coordinates().unwrap().y()
+            *point.to_affine().coordinates().unwrap().y()
         }
     }
 }
