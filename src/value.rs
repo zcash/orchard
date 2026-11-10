@@ -385,6 +385,11 @@ impl ValueCommitment {
         self.0.to_bytes()
     }
 
+    /// The committed Pallas point.
+    pub(crate) fn point(&self) -> pallas::Point {
+        self.0
+    }
+
     /// x-coordinate of this value commitment.
     pub(crate) fn x(&self) -> pallas::Base {
         if self.0 == pallas::Point::identity() {
