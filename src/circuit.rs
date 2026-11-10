@@ -6,8 +6,8 @@ use group::Curve;
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
     plonk::{
-        self, Advice, BatchVerifier, Column, Constraints, Expression, Instance as InstanceColumn,
-        Selector, SingleVerifier,
+        self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector,
+        SingleVerifier,
     },
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
@@ -1183,7 +1183,7 @@ pub struct Instance {
     cross_address_disabled: bool,
 }
 
-type Halo2Instance = [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS];
+pub(crate) type Halo2Instance = [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS];
 
 impl Instance {
     /// Constructs an [`Instance`] from its constituent parts.
@@ -1293,7 +1293,19 @@ impl Instance {
         let mut affine = alloc::vec![pallas::Affine::default(); points.len()];
         pallas::Point::batch_normalize(&points, &mut affine);
         let (cv_nets, rks) = affine.split_at(instances.len());
+        Self::to_halo2_instances_with_affine(instances, cv_nets, rks)
+    }
 
+    /// Encodes each instance as circuit public inputs, given each instance's `cv_net`
+    /// and `rk` already normalized to affine form (`cv_nets[i]` and `rks[i]` belong to
+    /// `instances[i]`). Batch validation normalizes the points of every bundle together.
+    pub(crate) fn to_halo2_instances_with_affine(
+        instances: &[Self],
+        cv_nets: &[pallas::Affine],
+        rks: &[pallas::Affine],
+    ) -> Vec<Halo2Instance> {
+        debug_assert_eq!(cv_nets.len(), instances.len());
+        debug_assert_eq!(rks.len(), instances.len());
         instances
             .iter()
             .zip(cv_nets.iter().zip(rks))
@@ -1414,30 +1426,17 @@ impl Proof {
         plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
     }
 
-    /// Adds this proof to the given batch for verification with the given instances.
-    ///
-    /// Internal to [`BatchValidator`], which is the only public batch path. A raw batch
-    /// does not know which [`VerifyingKey`] it will be finalized with, so it cannot enforce
-    /// that instances disabling cross-address transfers are only finalized with a key whose
-    /// circuit version constrains the `disableCrossAddress` public input (see
-    /// [`OrchardCircuitVersion::supports_cross_address_restriction`]). [`BatchValidator`]
-    /// binds its key at construction and rejects such bundles in [`add_bundle`] before they
-    /// reach this method; exposing this directly would let a caller sidestep that check by
-    /// finalizing the batch against an unsupported key.
-    ///
-    /// [`BatchValidator`]: crate::bundle::BatchValidator
-    /// [`add_bundle`]: crate::bundle::BatchValidator::add_bundle
-    pub(crate) fn add_to_batch(
-        &self,
-        batch: &mut BatchVerifier<vesta::Affine>,
-        instances: Vec<Instance>,
-    ) {
-        let instances = Instance::to_halo2_instances(&instances)
+    /// Splits this proof into the instance columns and proof bytes that
+    /// [`plonk::BatchVerifier::add_proof`] takes, given its encoded instances.
+    pub(crate) fn into_batch_input(
+        self,
+        instances: Vec<Halo2Instance>,
+    ) -> (Vec<Vec<Vec<vesta::Scalar>>>, Vec<u8>) {
+        let instances = instances
             .into_iter()
             .map(|i| i.into_iter().map(|c| c.into_iter().collect()).collect())
             .collect();
-
-        batch.add_proof(instances, self.0.clone());
+        (instances, self.0)
     }
 }
 
