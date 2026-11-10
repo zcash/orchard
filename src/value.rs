@@ -365,10 +365,9 @@ impl ValueCommitment {
         ValueCommitment(V * value + R * rcv.0)
     }
 
-    /// Derives the commitment to a public `value` with a zero trapdoor.
+    /// Derives the commitment to a public value with a zero trapdoor.
     ///
-    /// This equals `derive(value, ValueCommitTrapdoor::zero())`, the term a bundle's
-    /// value balance contributes to its binding validating key.
+    /// This equals `derive(value, ValueCommitTrapdoor::zero())`.
     ///
     /// # Security
     ///
@@ -376,10 +375,7 @@ impl ValueCommitment {
     /// Use [`ValueCommitment::derive`] for a note's value.
     pub fn derive_public(value: ValueSum) -> Self {
         let magnitude = u64::try_from(value.0.abs()).expect("value must be in valid range");
-        let generator = crate::constants::fixed_bases::value_commit_v::generator();
-        // Double-and-add over only the magnitude's significant bits, adding the
-        // generator only at set bits. A negative value negates the product rather
-        // than multiplying by a full-width negated scalar.
+        let generator = value_commit_v::generator();
         let commitment = (0..u64::BITS - magnitude.leading_zeros()).rev().fold(
             pallas::Point::identity(),
             |acc, bit| {
@@ -496,6 +492,9 @@ pub mod testing {
         }
     }
 }
+
+#[cfg(test)]
+mod public_balance_tests;
 
 #[cfg(test)]
 mod tests {
