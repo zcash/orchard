@@ -46,20 +46,17 @@ use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
 #[cfg(feature = "circuit")]
 use halo2_proofs::plonk::Assigned;
-use pasta_curves::{
-    arithmetic::{CurveAffine, CurveExt},
-    pallas,
-};
+use pasta_curves::{arithmetic::CurveAffine, pallas};
 use rand::Rng;
 
 use subtle::CtOption;
 
 use crate::{
-    constants::fixed_bases::{
-        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
-    },
+    constants::fixed_bases::{value_commit_r, value_commit_v},
     primitives::redpallas::{self, Binding},
 };
+
+mod commitment_table;
 
 /// Maximum note value.
 pub const MAX_NOTE_VALUE: u64 = u64::MAX;
@@ -357,9 +354,8 @@ impl ValueCommitment {
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
     pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
-        let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-        let V = hasher(&VALUE_COMMITMENT_V_BYTES);
-        let R = hasher(&VALUE_COMMITMENT_R_BYTES);
+        let V = value_commit_v::generator();
+        let R = value_commit_r::generator();
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
 
         let value = if value.0.is_negative() {
@@ -369,6 +365,40 @@ impl ValueCommitment {
         };
 
         ValueCommitment(V * value + R * rcv.0)
+    }
+
+    /// Derives the commitment to a public value with a zero trapdoor.
+    ///
+    /// This equals `derive(value, ValueCommitTrapdoor::zero())`.
+    ///
+    /// # Security
+    ///
+    /// This runs in variable time with respect to `value`. **`value` must be public.**
+    /// Use [`ValueCommitment::derive`] for a note's value.
+    pub fn derive_public(value: ValueSum) -> Self {
+        let mut magnitude = u64::try_from(value.0.abs()).expect("value must be in valid range");
+        let mut commitment = pallas::Point::identity();
+        // Signed radix-64 digits need at most eleven windows for a u64, including carry.
+        // Both the lookup indices and the branches depend only on this public value.
+        for window in &commitment_table::TABLE {
+            if magnitude == 0 {
+                break;
+            }
+            // The mask bounds this digit to 0..64, which fits in usize.
+            let digit = (magnitude & 63) as usize;
+            magnitude >>= 6;
+            if digit > 32 {
+                magnitude += 1;
+                commitment -= &window[64 - digit - 1];
+            } else if digit != 0 {
+                commitment += &window[digit - 1];
+            }
+        }
+        ValueCommitment(if value.0.is_negative() {
+            -commitment
+        } else {
+            commitment
+        })
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
@@ -469,6 +499,9 @@ pub mod testing {
         }
     }
 }
+
+#[cfg(test)]
+mod public_balance_tests;
 
 #[cfg(test)]
 mod tests {
