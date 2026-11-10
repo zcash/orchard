@@ -43,13 +43,10 @@ use core::ops::{Add, RangeInclusive, Sub};
 
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
-use group::{Curve, Group, GroupEncoding};
+use group::{Group, GroupEncoding};
 #[cfg(feature = "circuit")]
 use halo2_proofs::plonk::Assigned;
-use pasta_curves::{
-    arithmetic::{CurveAffine, CurveExt},
-    pallas,
-};
+use pasta_curves::{arithmetic::CurveExt, pallas};
 use rand::Rng;
 
 use subtle::CtOption;
@@ -350,6 +347,11 @@ impl<'a> Sum<&'a ValueCommitment> for ValueCommitment {
 }
 
 impl ValueCommitment {
+    /// Returns the existing point for shared normalization of public inputs.
+    pub(crate) fn point(&self) -> pallas::Point {
+        self.0
+    }
+
     /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{Orchard}}$.
     ///
     /// Defined in [Zcash Protocol Spec § 5.4.8.3: Homomorphic Pedersen commitments (Sapling and Orchard)][concretehomomorphiccommit].
@@ -372,8 +374,7 @@ impl ValueCommitment {
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
-        // TODO: impl From<pallas::Point> for redpallas::VerificationKey.
-        self.0.to_bytes().try_into().unwrap()
+        redpallas::VerificationKey::from_point(self.0)
     }
 
     /// Deserialize a value commitment from its byte representation
@@ -384,24 +385,6 @@ impl ValueCommitment {
     /// Serialize this value commitment to its canonical byte representation.
     pub fn to_bytes(&self) -> [u8; 32] {
         self.0.to_bytes()
-    }
-
-    /// x-coordinate of this value commitment.
-    pub(crate) fn x(&self) -> pallas::Base {
-        if self.0 == pallas::Point::identity() {
-            pallas::Base::zero()
-        } else {
-            *self.0.to_affine().coordinates().unwrap().x()
-        }
-    }
-
-    /// y-coordinate of this value commitment.
-    pub(crate) fn y(&self) -> pallas::Base {
-        if self.0 == pallas::Point::identity() {
-            pallas::Base::zero()
-        } else {
-            *self.0.to_affine().coordinates().unwrap().y()
-        }
     }
 }
 

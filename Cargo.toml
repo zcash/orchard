@@ -32,8 +32,11 @@ zcash_spec = "0.2.1"
 # Circuit
 halo2_gadgets = { version = "0.6", optional = true, default-features = false }
 halo2_proofs = { version = "0.4", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
+rayon = { version = "1", optional = true }
+# Requires Pasta's explicit public-input variable-time normalization APIs.
 pasta_curves = { version = "0.6", features = ["glv"] }
 poseidon = { package = "halo2_poseidon", version = "0.2" }
+# Requires a RedDSA release containing the retained-key and from_affine APIs.
 reddsa = { version = "0.6", default-features = false }
 sinsemilla = "0.2"
 
@@ -98,7 +101,7 @@ std = ["corez/std", "group/wnaf-memuse", "reddsa/std"]
 circuit = ["dep:halo2_gadgets", "dep:halo2_proofs", "dep:tracing", "std"]
 unstable-frost = []
 unstable-voting-circuits = []
-multicore = ["halo2_proofs?/multicore"]
+multicore = ["halo2_proofs?/multicore", "dep:rayon"]
 dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 verifier-fingerprint = ["circuit", "halo2_proofs/unstable-verifier-fingerprint"]
 test-dependencies = ["proptest", "rand/std", "rand/std_rng"]

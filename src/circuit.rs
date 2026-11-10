@@ -2,17 +2,20 @@
 
 use alloc::vec::Vec;
 
-use group::{Curve, GroupEncoding};
+use group::Curve;
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
     plonk::{
-        self, Advice, BatchVerifier, Column, Constraints, Expression, Instance as InstanceColumn,
-        Selector, SingleVerifier,
+        self, Advice, Column, Constraints, Expression, Instance as InstanceColumn, Selector,
+        SingleVerifier,
     },
     poly::Rotation,
     transcript::{Blake2bRead, Blake2bWrite},
 };
-use pasta_curves::{arithmetic::CurveAffine, pallas, vesta};
+use pasta_curves::{
+    arithmetic::{CurveAffine, CurveExt},
+    pallas, vesta,
+};
 use rand::Rng;
 
 use self::{
@@ -1268,17 +1271,71 @@ impl Instance {
         self.cross_address_disabled
     }
 
-    fn to_halo2_instance(&self) -> [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS] {
+    #[cfg(test)]
+    pub(crate) fn to_halo2_instance(&self) -> [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS] {
+        self.to_halo2_instance_with_points(
+            self.cv_net.point().to_affine(),
+            self.rk.point().to_affine(),
+        )
+    }
+
+    /// Encodes the public action commitments and spend keys with one shared inversion.
+    pub(crate) fn to_halo2_instances<const PUBLIC: bool>(
+        instances: &[Self],
+    ) -> Vec<[[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS]> {
+        let points: Vec<_> = instances
+            .iter()
+            .map(|instance| instance.cv_net.point())
+            .chain(instances.iter().map(|instance| instance.rk.point()))
+            .collect();
+        let mut affine = vec![pallas::Affine::default(); points.len()];
+        if PUBLIC {
+            // Verification consumes public cv_net/rk points from the transaction.
+            pallas::Point::batch_normalize_vartime(&points, &mut affine);
+        } else {
+            // During proving, even public affine outputs can have witness-dependent
+            // projective Z coordinates. Keep their normalization constant-time.
+            pallas::Point::batch_normalize(&points, &mut affine);
+        }
+        let (cv_nets, rks) = affine.split_at(instances.len());
+        Self::to_halo2_instances_with_affine(instances, cv_nets, rks)
+    }
+
+    pub(crate) fn to_halo2_instances_with_affine(
+        instances: &[Self],
+        cv_nets: &[pallas::Affine],
+        rks: &[pallas::Affine],
+    ) -> Vec<[[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS]> {
+        assert_eq!(instances.len(), cv_nets.len());
+        assert_eq!(instances.len(), rks.len());
+        instances
+            .iter()
+            .zip(cv_nets.iter().zip(rks))
+            .map(|(instance, (cv_net, rk))| instance.to_halo2_instance_with_points(*cv_net, *rk))
+            .collect()
+    }
+
+    /// Encodes this instance using its already-normalized value commitment and spend key.
+    fn to_halo2_instance_with_points(
+        &self,
+        cv: pallas::Affine,
+        rk: pallas::Affine,
+    ) -> [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS] {
         let mut instance = [vesta::Scalar::zero(); INSTANCE_ROWS];
 
         instance[ANCHOR] = self.anchor.inner();
-        instance[CV_NET_X] = self.cv_net.x();
-        instance[CV_NET_Y] = self.cv_net.y();
+        let (cv_x, cv_y) = Option::from(cv.coordinates())
+            .map(
+                |coordinates: pasta_curves::arithmetic::Coordinates<pallas::Affine>| {
+                    (*coordinates.x(), *coordinates.y())
+                },
+            )
+            .unwrap_or((pallas::Base::zero(), pallas::Base::zero()));
+        instance[CV_NET_X] = cv_x;
+        instance[CV_NET_Y] = cv_y;
         instance[NF_OLD] = self.nf_old.inner();
 
-        let rk = pallas::Point::from_bytes(&self.rk.clone().into())
-            .expect("the cached byte encoding of a VerificationKey<_> is canonical")
-            .to_affine()
+        let rk = rk
             .coordinates()
             .expect("rk is non-identity by construction");
 
@@ -1332,7 +1389,7 @@ impl Proof {
             return Err(plonk::Error::InvalidInstances);
         }
 
-        let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
+        let instances = Instance::to_halo2_instances::<false>(instances);
         let instances: Vec<Vec<_>> = instances
             .iter()
             .map(|i| i.iter().map(|c| &c[..]).collect())
@@ -1367,7 +1424,7 @@ impl Proof {
             return Err(plonk::Error::InvalidInstances);
         }
 
-        let instances: Vec<_> = instances.iter().map(|i| i.to_halo2_instance()).collect();
+        let instances = Instance::to_halo2_instances::<true>(instances);
         let instances: Vec<Vec<_>> = instances
             .iter()
             .map(|i| i.iter().map(|c| &c[..]).collect())
@@ -1378,37 +1435,6 @@ impl Proof {
         let mut transcript = Blake2bRead::init(&self.0[..]);
         plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
     }
-
-    /// Adds this proof to the given batch for verification with the given instances.
-    ///
-    /// Internal to [`BatchValidator`], which is the only public batch path. A raw batch
-    /// does not know which [`VerifyingKey`] it will be finalized with, so it cannot enforce
-    /// that instances disabling cross-address transfers are only finalized with a key whose
-    /// circuit version constrains the `disableCrossAddress` public input (see
-    /// [`OrchardCircuitVersion::supports_cross_address_restriction`]). [`BatchValidator`]
-    /// binds its key at construction and rejects such bundles in [`add_bundle`] before they
-    /// reach this method; exposing this directly would let a caller sidestep that check by
-    /// finalizing the batch against an unsupported key.
-    ///
-    /// [`BatchValidator`]: crate::bundle::BatchValidator
-    /// [`add_bundle`]: crate::bundle::BatchValidator::add_bundle
-    pub(crate) fn add_to_batch(
-        &self,
-        batch: &mut BatchVerifier<vesta::Affine>,
-        instances: Vec<Instance>,
-    ) {
-        let instances = instances
-            .iter()
-            .map(|i| {
-                i.to_halo2_instance()
-                    .into_iter()
-                    .map(|c| c.into_iter().collect())
-                    .collect()
-            })
-            .collect();
-
-        batch.add_proof(instances, self.0.clone());
-    }
 }
 
 #[cfg(all(test, feature = "verifier-fingerprint"))]
@@ -1416,6 +1442,9 @@ mod fingerprint;
 
 #[cfg(test)]
 mod benchmark;
+
+#[cfg(test)]
+mod verification_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1438,7 +1467,7 @@ mod tests {
 
     /// Generates a circuit and instance whose output note is addressed to an expanded
     /// receiver distinct from the spent note's.
-    fn generate_circuit_instance<R: Rng>(
+    pub(super) fn generate_circuit_instance<R: Rng>(
         rng: R,
         circuit_version: OrchardCircuitVersion,
     ) -> (Circuit, Instance) {

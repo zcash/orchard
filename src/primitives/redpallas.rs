@@ -13,6 +13,9 @@ pub use reddsa::batch;
 #[cfg(test)]
 use rand::{rand_core::UnwrapErr, rngs::SysRng};
 
+#[cfg(test)]
+mod retained_key_tests;
+
 /// A RedPallas signature type.
 pub trait SigType: reddsa::SigType + private::Sealed {}
 
@@ -126,6 +129,12 @@ impl<T: SigType> Ord for VerificationKey<T> {
 }
 
 impl VerificationKey<SpendAuth> {
+    /// Returns the validated point without decoding its canonical encoding again.
+    #[cfg(feature = "circuit")]
+    pub(crate) fn point(&self) -> pallas::Point {
+        self.0.into()
+    }
+
     /// Used in the note encryption tests.
     #[cfg(test)]
     pub(crate) fn dummy() -> Self {
@@ -146,7 +155,19 @@ impl VerificationKey<SpendAuth> {
         sig: Signature<SpendAuth>,
         msg: &M,
     ) -> batch::Item<SpendAuth, Binding> {
-        batch::Item::from_spendauth(self.0.into(), sig.0, msg)
+        batch::Item::from_spendauth_key(self.0, sig.0, msg)
+    }
+}
+
+impl VerificationKey<Binding> {
+    /// Constructs a binding key from an existing valid point, including identity.
+    pub(crate) fn from_point(point: pallas::Point) -> Self {
+        VerificationKey(point.into())
+    }
+
+    /// Reuses coordinates normalized with the other public verification inputs.
+    pub(crate) fn from_affine(point: pallas::Affine) -> Self {
+        VerificationKey(reddsa::VerificationKey::from_affine(point))
     }
 }
 
@@ -158,7 +179,7 @@ impl VerificationKey<Binding> {
         sig: Signature<Binding>,
         msg: &M,
     ) -> batch::Item<SpendAuth, Binding> {
-        batch::Item::from_binding(self.0.into(), sig.0, msg)
+        batch::Item::from_binding_key(self.0, sig.0, msg)
     }
 }
 

@@ -2,22 +2,144 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use halo2_proofs::plonk;
-use pasta_curves::vesta;
+use pasta_curves::arithmetic::CurveExt;
+use pasta_curves::{pallas, vesta};
 use rand::{CryptoRng, Rng};
 
 use tracing::debug;
 
-use super::{Authorized, Bundle};
+use super::{binding_validating_key, Authorized, Bundle};
 use crate::{
-    circuit::VerifyingKey,
+    circuit::{Instance, VerifyingKey},
     primitives::redpallas::{self, Binding, SpendAuth},
 };
 
-/// A signature within an authorized Orchard bundle.
+#[cfg(feature = "multicore")]
+const MIN_PARALLEL_BUNDLES: usize = 4;
+
+/// Let an enclosing Rayon batch own parallelism rather than nesting preparation jobs.
+#[cfg(feature = "multicore")]
+fn parallel_preparation(bundles: usize) -> bool {
+    bundles >= MIN_PARALLEL_BUNDLES && rayon::current_thread_index().is_none()
+}
+
+/// Owned verification inputs, without the bundle's ciphertexts or cached commitments.
 #[derive(Debug)]
-struct BundleSignature {
-    /// The signature item for validation.
-    signature: redpallas::batch::Item<SpendAuth, Binding>,
+struct BundleInput {
+    instances: Vec<Instance>,
+    spend_signatures: Vec<redpallas::Signature<SpendAuth>>,
+    binding_signature: redpallas::Signature<Binding>,
+    value_balance: i64,
+    sighash: [u8; 32],
+    proof: Vec<u8>,
+}
+
+struct PreparedBundle {
+    instances: Vec<Vec<Vec<vesta::Scalar>>>,
+    signatures: Vec<redpallas::batch::Item<SpendAuth, Binding>>,
+    proof: Vec<u8>,
+}
+
+/// Maps bundles in order, distributing sufficiently large batches across the pool.
+fn map_bundles<T: Send, U: Send>(items: Vec<T>, f: impl Fn(T) -> U + Send + Sync) -> Vec<U> {
+    #[cfg(feature = "multicore")]
+    if parallel_preparation(items.len()) {
+        use rayon::prelude::*;
+        return items.into_par_iter().map(f).collect();
+    }
+    items.into_iter().map(f).collect()
+}
+
+/// Normalizes public transaction points, with one inversion per worker.
+fn normalize(points: &[pallas::Point], bundles: usize) -> Vec<pallas::Affine> {
+    let mut affine = vec![pallas::Affine::default(); points.len()];
+    // The points are transaction cv_net/rk encodings or binding keys derived solely
+    // from public cv_net commitments and valueBalance; no witness or trapdoor enters here.
+    #[cfg(feature = "multicore")]
+    if parallel_preparation(bundles) {
+        use rayon::prelude::*;
+        let chunk = points.len().div_ceil(rayon::current_num_threads()).max(1);
+        points
+            .par_chunks(chunk)
+            .zip(affine.par_chunks_mut(chunk))
+            .for_each(|(points, affine)| pallas::Point::batch_normalize_vartime(points, affine));
+        return affine;
+    }
+    let _ = bundles;
+    pallas::Point::batch_normalize_vartime(points, &mut affine);
+    affine
+}
+
+fn prepare_bundles(bundles: Vec<BundleInput>) -> Vec<PreparedBundle> {
+    let bvks = map_bundles(bundles.iter().collect(), |bundle| {
+        binding_validating_key(
+            bundle.instances.iter().map(Instance::cv_net),
+            bundle.value_balance,
+        )
+        .point()
+    });
+    let point_count = bundles.iter().map(|b| 1 + 2 * b.instances.len()).sum();
+    let mut points = Vec::with_capacity(point_count);
+    let mut starts = Vec::with_capacity(bundles.len());
+    for (bundle, bvk) in bundles.iter().zip(bvks) {
+        starts.push(points.len());
+        points.push(bvk);
+        points.extend(
+            bundle
+                .instances
+                .iter()
+                .map(|instance| instance.cv_net().point()),
+        );
+        points.extend(
+            bundle
+                .instances
+                .iter()
+                .map(|instance| instance.rk().point()),
+        );
+    }
+    let affine = normalize(&points, bundles.len());
+    drop(points);
+
+    map_bundles(
+        bundles.into_iter().zip(starts).collect(),
+        |(bundle, start)| {
+            let BundleInput {
+                instances,
+                spend_signatures,
+                binding_signature,
+                sighash,
+                proof,
+                ..
+            } = bundle;
+            let mut signatures = Vec::with_capacity(instances.len() + 1);
+            signatures.extend(
+                instances
+                    .iter()
+                    .zip(spend_signatures)
+                    .map(|(instance, signature)| {
+                        instance.rk().create_batch_item(signature, &sighash)
+                    }),
+            );
+            signatures.push(
+                redpallas::VerificationKey::<Binding>::from_affine(affine[start])
+                    .create_batch_item(binding_signature, &sighash),
+            );
+            let n = instances.len();
+            let instances = Instance::to_halo2_instances_with_affine(
+                &instances,
+                &affine[start + 1..start + 1 + n],
+                &affine[start + 1 + n..start + 1 + 2 * n],
+            )
+            .into_iter()
+            .map(|columns| columns.into_iter().map(|column| column.to_vec()).collect())
+            .collect();
+            PreparedBundle {
+                instances,
+                signatures,
+                proof,
+            }
+        },
+    )
 }
 
 /// Error returned by [`BatchValidator::add_bundle`] when a bundle's flags require a circuit
@@ -55,8 +177,7 @@ impl core::error::Error for BatchError {}
 /// cannot enforce.
 #[derive(Debug)]
 pub struct BatchValidator<'a> {
-    proofs: plonk::BatchVerifier<vesta::Affine>,
-    signatures: Vec<BundleSignature>,
+    bundles: Vec<BundleInput>,
     /// The verifying key every queued bundle is validated against, and which
     /// [`Self::validate`] finalizes the proof batch with.
     vk: &'a VerifyingKey,
@@ -66,8 +187,7 @@ impl<'a> BatchValidator<'a> {
     /// Constructs a new batch validation context that validates against `vk`.
     pub fn new(vk: &'a VerifyingKey) -> Self {
         BatchValidator {
-            proofs: plonk::BatchVerifier::new(),
-            signatures: vec![],
+            bundles: vec![],
             vk,
         }
     }
@@ -77,6 +197,10 @@ impl<'a> BatchValidator<'a> {
     /// Returns [`BatchError::RestrictionUnsupportedByKey`] if the bundle disables cross-address
     /// transfers but the validator's verifying key's circuit version does not support the
     /// cross-address restriction; in that case the bundle is not added to the batch.
+    ///
+    /// Copies only the verification inputs. Binding-key derivation, point normalization,
+    /// and signature/instance preparation are deferred until [`Self::validate`], where
+    /// sufficiently large batches share that work across the multicore pool.
     pub fn add_bundle<V: Copy + Into<i64>>(
         &mut self,
         bundle: &Bundle<Authorized, V>,
@@ -87,24 +211,18 @@ impl<'a> BatchValidator<'a> {
             return Err(BatchError::RestrictionUnsupportedByKey);
         }
 
-        for action in bundle.actions().iter() {
-            self.signatures.push(BundleSignature {
-                signature: action
-                    .rk()
-                    .create_batch_item(action.authorization().clone(), &sighash),
-            });
-        }
-
-        self.signatures.push(BundleSignature {
-            signature: bundle
-                .binding_validating_key()
-                .create_batch_item(bundle.authorization().binding_signature().clone(), &sighash),
+        self.bundles.push(BundleInput {
+            instances: bundle.to_instances(),
+            spend_signatures: bundle
+                .actions()
+                .iter()
+                .map(|action| action.authorization().clone())
+                .collect(),
+            binding_signature: bundle.authorization().binding_signature().clone(),
+            value_balance: (*bundle.value_balance()).into(),
+            sighash,
+            proof: bundle.authorization().proof().as_ref().to_vec(),
         });
-
-        bundle
-            .authorization()
-            .proof()
-            .add_to_batch(&mut self.proofs, bundle.to_instances());
 
         Ok(())
     }
@@ -122,21 +240,25 @@ impl<'a> BatchValidator<'a> {
     pub fn validate<R: Rng + CryptoRng>(self, mut rng: R) -> bool {
         // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
 
-        if self.signatures.is_empty() {
+        if self.bundles.is_empty() {
             // An empty batch is always valid, but is not free to run; skip it.
-            // Note that a transaction has at least a binding signature, so if
-            // there are no signatures, there are also no proofs.
             return true;
         }
 
+        let prepared = prepare_bundles(self.bundles);
+
         let mut validator = redpallas::batch::Verifier::new();
-        for sig in self.signatures.iter() {
-            validator.queue(sig.signature.clone());
+        let mut proofs = plonk::BatchVerifier::<vesta::Affine>::new();
+        for bundle in prepared {
+            for signature in bundle.signatures {
+                validator.queue(signature);
+            }
+            proofs.add_proof(bundle.instances, bundle.proof);
         }
 
         match validator.verify(&mut rng) {
             // If signatures are valid, check the proofs.
-            Ok(()) => self.proofs.finalize(&self.vk.params, &self.vk.vk),
+            Ok(()) => proofs.finalize(&self.vk.params, &self.vk.vk),
             Err(e) => {
                 debug!("RedPallas batch validation failed: {}", e);
                 false
@@ -144,6 +266,9 @@ impl<'a> BatchValidator<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod preparation_tests;
 
 #[cfg(test)]
 mod tests {
