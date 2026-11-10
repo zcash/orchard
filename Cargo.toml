@@ -123,6 +123,11 @@ name = "orchard_k11_prover"
 harness = false
 required-features = ["circuit"]
 
+[[bench]]
+name = "orchard_k11_prover_multithreaded"
+harness = false
+required-features = ["circuit", "multicore"]
+
 [profile.release]
 debug = true
 
