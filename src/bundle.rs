@@ -27,7 +27,7 @@ use crate::{
     note_encryption::BundleDomain,
     primitives::redpallas::{self, Binding, SpendAuth},
     tree::Anchor,
-    value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
+    value::{ValueCommitment, ValueSum},
     Proof, ProtocolVersion, ValuePool,
 };
 
@@ -771,10 +771,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
             .iter()
             .map(|a| a.cv_net())
             .sum::<ValueCommitment>()
-            - ValueCommitment::derive(
-                ValueSum::from_raw(self.value_balance.into()),
-                ValueCommitTrapdoor::zero(),
-            ))
+            - ValueCommitment::derive_public(ValueSum::from_raw(self.value_balance.into())))
         .into_bvk()
     }
 }

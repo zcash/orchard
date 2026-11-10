@@ -7,6 +7,16 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::value::ValueCommitment::derive_public`, a variable-time commitment
+  constructor for public values with a zero trapdoor.
+
+### Changed
+- Binding validating key derivation uses the public value-balance constructor.
+- Value commitments reuse the existing fixed generators instead of deriving
+  them with hash-to-curve on each call. Secret-bearing scalar multiplication
+  remains unchanged.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added
