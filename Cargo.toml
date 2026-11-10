@@ -128,6 +128,13 @@ name = "orchard_k11_prover_multithreaded"
 harness = false
 required-features = ["circuit", "multicore"]
 
+[patch.crates-io]
+# Temporary: the prover parallelisation of zcash/halo2#1007, so that it can be
+# measured on the Orchard circuit. Remove once a `halo2_proofs` release
+# includes it. Only `halo2_proofs` changes on that branch; `halo2_gadgets`
+# and `halo2_poseidon` stay on their crates.io releases.
+halo2_proofs = { git = "https://github.com/zcash/halo2.git", branch = "dw/prover-parallelism" }
+
 [profile.release]
 debug = true
 

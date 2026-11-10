@@ -1159,9 +1159,8 @@ dependencies = [
 
 [[package]]
 name = "halo2_proofs"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5af2a9457f494f862cd07b81c2e98a19f50b06a2057b7569450d7c26b167d1c"
+version = "0.4.1"
+source = "git+https://github.com/zcash/halo2.git?branch=dw%2Fprover-parallelism#ecdcd094e00dcacb0c2b7d3d5234244e23f0f4af"
 dependencies = [
  "blake2b_simd",
  "ff",
