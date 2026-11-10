@@ -146,7 +146,13 @@ impl VerificationKey<SpendAuth> {
         sig: Signature<SpendAuth>,
         msg: &M,
     ) -> batch::Item<SpendAuth, Binding> {
-        batch::Item::from_spendauth(self.0.into(), sig.0, msg)
+        batch::Item::from_spendauth_key(self.0, sig.0, msg)
+    }
+}
+
+impl VerificationKey<Binding> {
+    pub(crate) fn from_point(point: pallas::Point) -> Self {
+        VerificationKey(point.into())
     }
 }
 
@@ -158,7 +164,7 @@ impl VerificationKey<Binding> {
         sig: Signature<Binding>,
         msg: &M,
     ) -> batch::Item<SpendAuth, Binding> {
-        batch::Item::from_binding(self.0.into(), sig.0, msg)
+        batch::Item::from_binding_key(self.0, sig.0, msg)
     }
 }
 
