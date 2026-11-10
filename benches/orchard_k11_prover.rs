@@ -27,11 +27,13 @@ const WARMUP_SECONDS: u64 = 2;
 const MEASUREMENT_SECONDS: u64 = 15;
 
 fn orchard_k11_prover(c: &mut Criterion) {
-    assert_eq!(
-        std::env::var("RAYON_NUM_THREADS").ok().as_deref(),
-        Some("1"),
-        "run this benchmark with RAYON_NUM_THREADS=1",
-    );
+    // Prove on one thread for reproducible timings. Rayon reads this when it builds its global
+    // pool, which nothing in this benchmark binary has done yet.
+    match std::env::var("RAYON_NUM_THREADS").ok().as_deref() {
+        None => std::env::set_var("RAYON_NUM_THREADS", "1"),
+        Some("1") => {}
+        Some(other) => panic!("orchard_k11_prover needs RAYON_NUM_THREADS=1, not {other}"),
+    }
 
     // Orchard fixes its Action circuit size at k = 11. Key generation is
     // deliberately performed before registering the timed proving routine.

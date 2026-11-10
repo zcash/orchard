@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- RedPallas signature batch items and proof instances reuse validated
+  verification-key points instead of decoding their canonical encodings again.
+- Binding validating keys retain their computed points, including the identity.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added
