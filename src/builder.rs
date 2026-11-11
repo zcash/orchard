@@ -115,6 +115,9 @@ impl BundleType {
     /// Wallets estimating fees (e.g. per [ZIP 317]) must account for this larger action
     /// count.
     ///
+    /// Each asset's spends and outputs are paired only with each other, so a bundle carrying
+    /// more than one asset can have more actions than this; see [`Builder::spend_output_counts`].
+    ///
     /// Returns an error if the specified number of spends and outputs is incompatible with
     /// this bundle type and flags.
     ///
@@ -1058,6 +1061,43 @@ impl Builder {
     /// with, so the two cannot drift.
     pub fn bundle_type(&self) -> BundleType {
         self.bundle_type
+    }
+
+    /// Returns the flags this builder was constructed with, for the same use as
+    /// [`Self::bundle_type`].
+    pub fn flags(&self) -> Flags {
+        self.flags
+    }
+
+    /// Returns the number of requested `(spends, outputs)` of each asset, with changes counted as
+    /// outputs.
+    ///
+    /// Each asset needs at least `max(spends, outputs)` actions of its own, so the bundle has
+    /// the larger of the sum of those and [`BundleType::num_actions`] called with
+    /// [`Self::flags`] and the total spends and outputs:
+    ///
+    /// ```
+    /// # use orchard::builder::Builder;
+    /// fn num_actions(builder: &Builder) -> Result<usize, &'static str> {
+    ///     let counts = builder.spend_output_counts();
+    ///     let per_asset: usize = counts.values().map(|&(s, o)| s.max(o)).sum();
+    ///     let num_outputs = builder.outputs().len() + builder.changes().len();
+    ///     let num_actions = builder
+    ///         .bundle_type()
+    ///         .num_actions(builder.flags(), builder.spends().len(), num_outputs)?;
+    ///     Ok(num_actions.max(per_asset))
+    /// }
+    /// ```
+    pub fn spend_output_counts(&self) -> BTreeMap<AssetBase, (usize, usize)> {
+        let mut counts = BTreeMap::<AssetBase, (usize, usize)>::new();
+        for spend in &self.spends {
+            counts.entry(spend.note.asset()).or_default().0 += 1;
+        }
+        let changes = self.changes.iter().map(|c| &c.output);
+        for output in self.outputs.iter().chain(changes) {
+            counts.entry(output.asset).or_default().1 += 1;
+        }
+        counts
     }
 
     /// Returns the note version associated with this builder's bundle version.
@@ -2938,6 +2978,55 @@ mod tests {
         assert_eq!(unpadded.num_actions(flags, 1, 1), Ok(2));
     }
 
+    /// The action count a wallet derives from the builder, per [`Builder::spend_output_counts`].
+    fn predicted_num_actions(builder: &Builder) -> Result<usize, &'static str> {
+        let counts = builder.spend_output_counts();
+        let per_asset: usize = counts.values().map(|&(s, o)| s.max(o)).sum();
+        let num_outputs = builder.outputs().len() + builder.changes().len();
+        Ok(builder
+            .bundle_type()
+            .num_actions(builder.flags(), builder.spends().len(), num_outputs)?
+            .max(per_asset))
+    }
+
+    #[test]
+    fn spend_output_counts_match_per_asset_padding() {
+        let mut rng = OsRng;
+        let fvk = FullViewingKey::from(&SpendingKey::random(&mut rng));
+        let recipient = fvk.address_at(0u32, Scope::External);
+        let (asset, zatoshi) = (AssetBase::random(&mut rng), AssetBase::zatoshi());
+        let bundle_version = BundleVersion::zsa();
+        let flags = bundle_version.default_flags();
+        let value = NoteValue::from_raw(10);
+        let (note, merkle_path, anchor) = note_with_path_for_asset(
+            &mut rng,
+            recipient,
+            value,
+            asset,
+            bundle_version.note_version(),
+        );
+
+        // A spend of `asset`, burned in full, and two zatoshi outputs: 1 action for `asset` and
+        // 2 for zatoshi, where `num_actions` sees only max(1, 2).
+        let mut builder = Builder::new(BundleType::DEFAULT, bundle_version, flags, anchor).unwrap();
+        builder.add_spend(fvk, note, merkle_path).unwrap();
+        builder.add_burn(asset, value).unwrap();
+        for _ in 0..2 {
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(1), zatoshi, [0u8; 512])
+                .unwrap();
+        }
+
+        assert_eq!(
+            builder.spend_output_counts(),
+            BTreeMap::from([(asset, (1, 0)), (zatoshi, (0, 2))])
+        );
+        assert_eq!(BundleType::DEFAULT.num_actions(flags, 1, 2), Ok(2));
+        assert_eq!(predicted_num_actions(&builder), Ok(3));
+        let (bundle, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+        assert_eq!(bundle.actions().len(), 3);
+    }
+
     #[test]
     fn default_flags_match_pool_policy() {
         // The builder's default flags enable spends and outputs and leave cross-address transfers
@@ -3584,6 +3673,7 @@ mod tests {
             .add_change_output(fvk.clone(), None, recipient, value, asset, [0u8; 512])
             .unwrap();
 
+        assert_eq!(predicted_num_actions(&builder), Ok(2));
         let (bundle, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
         assert_eq!(bundle.actions().len(), 2);
 
