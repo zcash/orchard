@@ -54,9 +54,9 @@ use rand::RngCore;
 use subtle::CtOption;
 
 use crate::{
-    constants::fixed_bases::{
-        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
-    },
+    builder::BuildError,
+    constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES},
+    note::AssetBase,
     primitives::redpallas::{self, Binding},
 };
 
@@ -118,16 +118,30 @@ impl NoteValue {
         NoteValue(value)
     }
 
-    pub(crate) fn from_bytes(bytes: [u8; 8]) -> Self {
+    /// Creates a note value from a byte array.
+    pub fn from_bytes(bytes: [u8; 8]) -> Self {
         NoteValue(u64::from_le_bytes(bytes))
     }
 
-    pub(crate) fn to_bytes(self) -> [u8; 8] {
+    /// Converts the note value to a byte array.
+    pub fn to_bytes(self) -> [u8; 8] {
         self.0.to_le_bytes()
     }
 
     pub(crate) fn to_le_bits(self) -> BitArray<[u8; 8], Lsb0> {
         BitArray::<_, Lsb0>::new(self.0.to_le_bytes())
+    }
+
+    /// Adds two `NoteValue`s.
+    ///
+    /// This helper performs checked addition over `NoteValue`s and returns `None` on overflow.
+    /// It is required by the issuance flow to aggregate per-asset issuance amounts before
+    /// validating and applying supply changes to the global state.
+    ///
+    /// This function is intended for use only by the issuance logic
+    /// (`IssueAction::verify` and `verify_issue_bundle`).
+    pub(crate) fn add(self, rhs: Self) -> Option<Self> {
+        self.0.checked_add(rhs.0).map(NoteValue)
     }
 }
 
@@ -141,7 +155,6 @@ impl From<&NoteValue> for Assigned<pallas::Base> {
 impl Sub for NoteValue {
     type Output = ValueSum;
 
-    #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: Self) -> Self::Output {
         let a = self.0 as i128;
         let b = rhs.0 as i128;
@@ -177,8 +190,19 @@ impl ValueSum {
     /// in `Bundle::binding_validating_key`, where we are converting from the user-defined
     /// `valueBalance` type that enforces any additional constraints on the value's valid
     /// range.
-    pub(crate) fn from_raw(value: i64) -> Self {
+    pub(crate) fn from_raw_inner(value: i64) -> Self {
         ValueSum(value as i128)
+    }
+
+    /// Creates a value sum from a raw i64 (which is always in range for this type).
+    ///
+    /// This function needs to be public because Zebra constructs `ValueCommitment`s using
+    /// `ValueCommitment::derive`, which takes a `ValueSum` as input. In order to avoid duplicating
+    /// the `ValueSum` construction logic between Zebra and Orchard, Zebra must be able to create a
+    /// `ValueSum` directly.
+    #[cfg(feature = "temporary-zebra")]
+    pub fn from_raw(value: i64) -> Self {
+        Self::from_raw_inner(value)
     }
 
     /// Constructs a value sum from its magnitude and sign.
@@ -209,12 +233,17 @@ impl ValueSum {
             sign,
         )
     }
+
+    pub(crate) fn into_value_balance<V: TryFrom<i64>>(self) -> Result<V, BuildError> {
+        i64::try_from(self)
+            .map_err(BuildError::ValueSum)
+            .and_then(|i| V::try_from(i).map_err(|_| BuildError::ValueSum(BalanceError::Overflow)))
+    }
 }
 
 impl Add for ValueSum {
     type Output = Option<ValueSum>;
 
-    #[allow(clippy::suspicious_arithmetic_impl)]
     fn add(self, rhs: Self) -> Self::Output {
         self.0
             .checked_add(rhs.0)
@@ -356,8 +385,18 @@ impl ValueCommitment {
     /// [concretehomomorphiccommit]: https://zips.z.cash/protocol/nu5.pdf#concretehomomorphiccommit
     #[allow(non_snake_case)]
     pub fn derive(value: ValueSum, rcv: ValueCommitTrapdoor) -> Self {
+        ValueCommitment::derive_with_asset(value, rcv, AssetBase::zatoshi())
+    }
+
+    /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{OrchardZSA}}$.
+    ///
+    /// Defined in [ZIP-226][zip226].
+    ///
+    /// [zip226]: https://zips.z.cash/zip-0226
+    #[allow(non_snake_case)]
+    pub fn derive_with_asset(value: ValueSum, rcv: ValueCommitTrapdoor, asset: AssetBase) -> Self {
         let hasher = pallas::Point::hash_to_curve(VALUE_COMMITMENT_PERSONALIZATION);
-        let V = hasher(&VALUE_COMMITMENT_V_BYTES);
+        let V = asset.cv_base();
         let R = hasher(&VALUE_COMMITMENT_R_BYTES);
         let abs_value = u64::try_from(value.0.abs()).expect("value must be in valid range");
 
@@ -471,43 +510,130 @@ pub mod testing {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
     use proptest::prelude::*;
 
     use super::{
         testing::{arb_note_value_bounded, arb_trapdoor, arb_value_sum_bounded},
-        BalanceError, ValueCommitTrapdoor, ValueCommitment, ValueSum, MAX_NOTE_VALUE,
+        ValueCommitTrapdoor, ValueCommitment, ValueSum, MAX_NOTE_VALUE,
     };
-    use crate::primitives::redpallas;
+    use crate::{
+        note::asset_base::testing::arb_asset_base, note::AssetBase, primitives::redpallas,
+        value::NoteValue,
+    };
+
+    fn negate_value_sum(value: ValueSum) -> ValueSum {
+        use crate::value::Sign;
+
+        let (magnitude, sign) = value.magnitude_sign();
+        let neg_sign = match sign {
+            Sign::Positive => Sign::Negative,
+            Sign::Negative => Sign::Positive,
+        };
+        ValueSum::from_magnitude_sign(magnitude, neg_sign)
+    }
+
+    fn arb_asset_values_balanced_per_asset(
+        bound: NoteValue,
+        n_assets: usize,
+    ) -> impl Strategy<Value = Vec<(ValueSum, ValueCommitTrapdoor, AssetBase)>> {
+        (
+            prop::collection::vec(arb_asset_base(), n_assets),
+            prop::collection::vec(arb_value_sum_bounded(bound), n_assets * 4),
+            prop::collection::vec(arb_trapdoor(), n_assets * 5),
+        )
+            .prop_map(move |(assets, vals, traps)| {
+                let mut traps = traps.into_iter();
+                let mut out = Vec::with_capacity(n_assets * 5);
+
+                for (asset, four_values) in assets.into_iter().zip(vals.as_chunks::<4>().0) {
+                    let sum = four_values
+                        .iter()
+                        .cloned()
+                        .sum::<Result<ValueSum, _>>()
+                        .expect("we generate values that won't overflow");
+
+                    let fifth = negate_value_sum(sum);
+
+                    // Four random entries
+                    for value in four_values.iter().cloned() {
+                        out.push((value, traps.next().expect("enough trapdoors"), asset));
+                    }
+
+                    // One balancing entry so that the per-asset balance is zero
+                    out.push((fifth, traps.next().expect("enough trapdoors"), asset));
+                }
+
+                out
+            })
+    }
+
+    fn check_binding_signature(
+        zatoshi_values: &[(ValueSum, ValueCommitTrapdoor)],
+        arb_values: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
+        arb_values_to_burn: &[(ValueSum, ValueCommitTrapdoor, AssetBase)],
+    ) {
+        let zatoshi_value_balance = zatoshi_values
+            .iter()
+            .map(|(value, _)| value)
+            .sum::<Result<ValueSum, _>>()
+            .expect("we generate values that won't overflow");
+
+        let zatoshi_values_with_asset: Vec<(ValueSum, ValueCommitTrapdoor, AssetBase)> =
+            zatoshi_values
+                .iter()
+                .map(|(value_sum, trapdoor)| (*value_sum, trapdoor.clone(), AssetBase::zatoshi()))
+                .collect();
+
+        let values = [&zatoshi_values_with_asset, arb_values, arb_values_to_burn].concat();
+
+        let bsk = values
+            .iter()
+            .map(|(_, rcv, _)| rcv)
+            .sum::<ValueCommitTrapdoor>()
+            .into_bsk();
+
+        let bvk = (values
+            .into_iter()
+            .map(|(value, rcv, asset)| ValueCommitment::derive_with_asset(value, rcv, asset))
+            .sum::<ValueCommitment>()
+            - ValueCommitment::derive(zatoshi_value_balance, ValueCommitTrapdoor::zero())
+            - arb_values_to_burn
+                .iter()
+                .map(|(value, _, asset)| {
+                    ValueCommitment::derive_with_asset(*value, ValueCommitTrapdoor::zero(), *asset)
+                })
+                .sum::<ValueCommitment>())
+        .into_bvk();
+
+        assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+    }
 
     proptest! {
         #[test]
-        fn bsk_consistent_with_bvk(
-            values in (1usize..10).prop_flat_map(|n_values|
+        fn bsk_consistent_with_bvk_with_zsa_transfer_and_burning(
+            zatoshi_values in (1usize..10).prop_flat_map(|n_values|
                 arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64).prop_flat_map(move |bound|
                     prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor()), n_values)
                 )
+            ),
+            // An Orchard ZSA transaction is valid only if the balance of each custom asset is zero.
+            // Accordingly, for each custom asset we generate 5 random ValueSum values (possibly negative)
+            // that sum to zero.
+            asset_values in (1usize..10).prop_flat_map(|n_assets|
+                arb_note_value_bounded(MAX_NOTE_VALUE / (n_assets as u64 * 5)).prop_flat_map(move |bound|
+                    arb_asset_values_balanced_per_asset(bound, n_assets)
+                )
+            ),
+            burn_values in (1usize..10).prop_flat_map(|n_values|
+                arb_note_value_bounded(MAX_NOTE_VALUE / n_values as u64)
+                .prop_flat_map(move |bound| prop::collection::vec((arb_value_sum_bounded(bound), arb_trapdoor(), arb_asset_base()), n_values))
             )
         ) {
-            let value_balance = values
-                .iter()
-                .map(|(value, _)| value)
-                .sum::<Result<ValueSum, BalanceError>>()
-                .expect("we generate values that won't overflow");
-
-            let bsk = values
-                .iter()
-                .map(|(_, rcv)| rcv)
-                .sum::<ValueCommitTrapdoor>()
-                .into_bsk();
-
-            let bvk = (values
-                .into_iter()
-                .map(|(value, rcv)| ValueCommitment::derive(value, rcv))
-                .sum::<ValueCommitment>()
-                - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero()))
-            .into_bvk();
-
-            assert_eq!(redpallas::VerificationKey::from(&bsk), bvk);
+            check_binding_signature(&zatoshi_values, &[], &[]);
+            check_binding_signature(&zatoshi_values, &[], &burn_values);
+            check_binding_signature(&zatoshi_values, &asset_values, &[]);
+            check_binding_signature(&zatoshi_values, &asset_values, &burn_values);
         }
     }
 }

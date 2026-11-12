@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use corez::io::{self, Read, Write};
 
-use ::zip32::{AccountId, ChildIndex};
+use ::zip32::ChildIndex;
 use aes::Aes256;
 use blake2b_simd::{Hash as Blake2bHash, Params};
 use fpe::ff1::{BinaryNumeralString, FF1};
@@ -30,7 +30,7 @@ use crate::{
     zip32::{self, ExtendedSpendingKey},
 };
 
-pub use ::zip32::{DiversifierIndex, Scope};
+pub use ::zip32::{AccountId, DiversifierIndex, Scope};
 
 const KDF_ORCHARD_PERSONALIZATION: &[u8; 16] = b"Zcash_OrchardKDF";
 const ZIP32_PURPOSE: u32 = 32;
@@ -1061,10 +1061,13 @@ mod tests {
         *,
     };
     use crate::{
-        note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
+        note::{AssetBase, ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
         value::NoteValue,
         Note,
     };
+
+    #[cfg(feature = "zsa-issuance")]
+    use crate::issuance::auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr};
 
     #[test]
     fn spend_validating_key_from_bytes() {
@@ -1145,6 +1148,7 @@ mod tests {
             let orchard_note = Note::from_parts(
                 addr,
                 NoteValue::from_raw(tv.note_v),
+                AssetBase::zatoshi(),
                 rho,
                 RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
                 NoteVersion::V2,
@@ -1153,6 +1157,70 @@ mod tests {
 
             let cmx: ExtractedNoteCommitment = orchard_note.commitment().into();
             assert_eq!(cmx.to_bytes(), tv.note_cmx);
+
+            assert_eq!(orchard_note.nullifier(&fvk).to_bytes(), tv.note_nf);
+
+            let internal_rivk = fvk.rivk(Scope::Internal);
+            assert_eq!(internal_rivk.0.to_repr(), tv.internal_rivk);
+
+            let internal_ivk = fvk.to_ivk(Scope::Internal);
+            assert_eq!(internal_ivk.ivk.0.to_repr(), tv.internal_ivk);
+            assert_eq!(internal_ivk.dk.0, tv.internal_dk);
+
+            let internal_ovk = fvk.to_ovk(Scope::Internal);
+            assert_eq!(internal_ovk.0, tv.internal_ovk);
+        }
+    }
+
+    #[cfg(feature = "zsa-issuance")]
+    #[test]
+    fn test_vectors_zsa() {
+        for tv in crate::test_vectors::keys_zsa::TEST_VECTORS {
+            let sk = SpendingKey::from_bytes(tv.sk).unwrap();
+
+            let ask: SpendAuthorizingKey = (&sk).into();
+            assert_eq!(<[u8; 32]>::from(&ask.0), tv.ask);
+
+            let ak: SpendValidatingKey = (&ask).into();
+            assert_eq!(<[u8; 32]>::from(ak.0), tv.ak);
+
+            let isk = IssueAuthKey::<ZSASchnorr>::from_bytes(&tv.isk).unwrap();
+
+            let ik = IssueValidatingKey::from(&isk);
+            assert_eq!(&ik.encode(), &tv.ik_encoding);
+
+            let nk: NullifierDerivingKey = (&sk).into();
+            assert_eq!(nk.0.to_repr(), tv.nk);
+
+            let rivk: CommitIvkRandomness = (&sk).into();
+            assert_eq!(rivk.0.to_repr(), tv.rivk);
+
+            let fvk: FullViewingKey = (&sk).into();
+            assert_eq!(<[u8; 32]>::from(&fvk.ak.0), tv.ak);
+            assert_eq!(fvk.nk().0.to_repr(), tv.nk);
+            assert_eq!(fvk.rivk.0.to_repr(), tv.rivk);
+
+            let external_ivk = fvk.to_ivk(Scope::External);
+            assert_eq!(external_ivk.ivk.0.to_repr(), tv.ivk);
+
+            let diversifier = Diversifier(tv.default_d);
+
+            let addr = fvk.address(diversifier, Scope::External);
+            assert_eq!(&addr.pk_d().to_bytes(), &tv.default_pk_d);
+
+            let rho = Rho::from_bytes(&tv.note_rho).unwrap();
+            let orchard_note = Note::from_parts(
+                addr,
+                NoteValue::from_raw(tv.note_v),
+                AssetBase::from_bytes(&tv.asset).unwrap(),
+                rho,
+                RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap(),
+                NoteVersion::ZSA,
+            )
+            .unwrap();
+
+            let cmx: ExtractedNoteCommitment = orchard_note.commitment().into();
+            assert_eq!(cmx.to_bytes(), tv.note_cmx_zsa);
 
             assert_eq!(orchard_note.nullifier(&fvk).to_bytes(), tv.note_nf);
 

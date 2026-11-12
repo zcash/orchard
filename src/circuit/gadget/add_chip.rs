@@ -1,3 +1,5 @@
+//! `Add` chip implementation.
+
 use halo2_proofs::{
     circuit::{AssignedCell, Chip, Layouter},
     plonk::{self, Advice, Column, ConstraintSystem, Constraints, Selector},

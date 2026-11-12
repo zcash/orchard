@@ -40,6 +40,18 @@ pub const Q_NOTE_COMMITMENT_M_GENERATOR: ([u8; 32], [u8; 32]) = (
     ],
 );
 
+/// Generator used in SinsemillaHashToPoint for ZSA note commitment
+pub const Q_NOTE_ZSA_COMMITMENT_M_GENERATOR: ([u8; 32], [u8; 32]) = (
+    [
+        207, 235, 191, 45, 66, 225, 8, 126, 199, 188, 39, 26, 115, 106, 18, 2, 191, 173, 75, 9, 65,
+        225, 175, 193, 224, 202, 228, 177, 3, 75, 228, 1,
+    ],
+    [
+        220, 251, 80, 86, 182, 182, 99, 67, 254, 97, 241, 22, 79, 111, 161, 176, 79, 97, 208, 98,
+        116, 57, 110, 196, 25, 73, 239, 31, 196, 97, 19, 30,
+    ],
+);
+
 /// Generator used in SinsemillaHashToPoint for IVK commitment
 pub const Q_COMMIT_IVK_M_GENERATOR: ([u8; 32], [u8; 32]) = (
     [
@@ -80,9 +92,12 @@ pub(crate) fn i2lebsp_k(int: usize) -> [bool; K] {
 
 /// The Sinsemilla hash domains used in Orchard.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum OrchardHashDomains {
     /// The domain used by the `NoteCommit` commitment's internal Sinsemilla hash.
     NoteCommit,
+    /// The domain used by the `NoteZsaCommit` commitment's internal Sinsemilla hash.
+    NoteZsaCommit,
     /// The domain used by the `CommitIvk` commitment's internal Sinsemilla hash.
     CommitIvk,
     /// The domain used by the Orchard Merkle tree's `MerkleCRH^Orchard` hash.
@@ -104,6 +119,11 @@ impl HashDomains<pallas::Affine> for OrchardHashDomains {
                 pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap(),
             )
             .unwrap(),
+            OrchardHashDomains::NoteZsaCommit => pallas::Affine::from_xy(
+                pallas::Base::from_repr(Q_NOTE_ZSA_COMMITMENT_M_GENERATOR.0).unwrap(),
+                pallas::Base::from_repr(Q_NOTE_ZSA_COMMITMENT_M_GENERATOR.1).unwrap(),
+            )
+            .unwrap(),
             OrchardHashDomains::MerkleCrh => pallas::Affine::from_xy(
                 pallas::Base::from_repr(Q_MERKLE_CRH.0).unwrap(),
                 pallas::Base::from_repr(Q_MERKLE_CRH.1).unwrap(),
@@ -115,9 +135,12 @@ impl HashDomains<pallas::Affine> for OrchardHashDomains {
 
 /// The Sinsemilla commitment domains used in Orchard.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum OrchardCommitDomains {
     /// The `NoteCommit` commitment domain.
     NoteCommit,
+    /// The `NoteCommit` commitment domain for ZSA.
+    NoteZsaCommit,
     /// The `CommitIvk` commitment domain.
     CommitIvk,
 }
@@ -127,6 +150,8 @@ impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for Or
     fn r(&self) -> OrchardFixedBasesFull {
         match self {
             Self::NoteCommit => OrchardFixedBasesFull::NoteCommitR,
+            // For ZSA note commitment, we use the same `R` than for ZEC note commitment.
+            Self::NoteZsaCommit => OrchardFixedBasesFull::NoteCommitR,
             Self::CommitIvk => OrchardFixedBasesFull::CommitIvkR,
         }
     }
@@ -134,6 +159,7 @@ impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for Or
     fn hash_domain(&self) -> OrchardHashDomains {
         match self {
             Self::NoteCommit => OrchardHashDomains::NoteCommit,
+            Self::NoteZsaCommit => OrchardHashDomains::NoteZsaCommit,
             Self::CommitIvk => OrchardHashDomains::CommitIvk,
         }
     }
@@ -143,7 +169,10 @@ impl CommitDomains<pallas::Affine, OrchardFixedBases, OrchardHashDomains> for Or
 mod tests {
     use super::*;
     use crate::constants::{
-        fixed_bases::{COMMIT_IVK_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION},
+        fixed_bases::{
+            COMMIT_IVK_PERSONALIZATION, NOTE_COMMITMENT_PERSONALIZATION,
+            NOTE_ZSA_COMMITMENT_PERSONALIZATION,
+        },
         sinsemilla::MERKLE_CRH_PERSONALIZATION,
     };
     use group::{ff::PrimeField, Curve};
@@ -201,6 +230,25 @@ mod tests {
         assert_eq!(
             *coords.y(),
             pallas::Base::from_repr(Q_NOTE_COMMITMENT_M_GENERATOR.1).unwrap()
+        );
+    }
+
+    #[test]
+    fn q_note_zsa_commitment_m() {
+        let domain = CommitDomain::new_with_separate_domains(
+            NOTE_ZSA_COMMITMENT_PERSONALIZATION,
+            NOTE_COMMITMENT_PERSONALIZATION,
+        );
+        let point = domain.Q();
+        let coords = point.to_affine().coordinates().unwrap();
+
+        assert_eq!(
+            *coords.x(),
+            pallas::Base::from_repr(Q_NOTE_ZSA_COMMITMENT_M_GENERATOR.0).unwrap()
+        );
+        assert_eq!(
+            *coords.y(),
+            pallas::Base::from_repr(Q_NOTE_ZSA_COMMITMENT_M_GENERATOR.1).unwrap()
         );
     }
 

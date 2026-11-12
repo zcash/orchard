@@ -393,10 +393,12 @@ mod tests {
     use crate::{
         builder::{Builder, BundleMetadata, BundleType},
         bundle::{BundleVersion, Flags},
-        circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
+        circuit::{ProvingKey, VerifyingKey},
+        circuit_version::OrchardCircuitVersion,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
-        note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
+        note::{AssetBase, ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
+        note_encryption::{ENC_CIPHERTEXT_SIZE_VANILLA, ENC_CIPHERTEXT_SIZE_ZSA},
         pczt::{
             IoFinalizerError, ParseError, ProverError, SignerError, TxExtractorError, VerifyError,
             Zip32Derivation,
@@ -434,6 +436,7 @@ mod tests {
         let note = Note::new(
             spend_recipient,
             NoteValue::from_raw(15_000),
+            AssetBase::zatoshi(),
             rho,
             note_version,
             &mut rng,
@@ -455,6 +458,7 @@ mod tests {
                 None,
                 change_recipient,
                 NoteValue::from_raw(5_000),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
@@ -482,7 +486,13 @@ mod tests {
         )
         .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         let mut pczt_bundle = builder.build_for_pczt(&mut rng).unwrap().0;
 
@@ -503,7 +513,13 @@ mod tests {
         )
         .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         builder.build_for_pczt(&mut rng).unwrap().0
     }
@@ -532,7 +548,13 @@ mod tests {
         )
         .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         let balance: i64 = builder.value_balance().unwrap();
         assert_eq!(balance, -5000);
@@ -572,7 +594,50 @@ mod tests {
             .apply_binding_signature(sighash, rng)
             .unwrap();
 
-        assert!(bundle.verify_proof(&vk).is_ok());
+        let proof = bundle.authorization().proof();
+        assert!(proof.verify(&vk, &bundle.to_instances()).is_ok());
+        // The bundle is `orchard_v2`, so bundle-level verification wants the FixedPostNu6_2 key.
+        assert!(bundle.verify_proof(&vk).is_err());
+    }
+
+    #[test]
+    fn output_parse_ties_enc_ciphertext_length_to_note_version() {
+        // `NoteCiphertextBytes::from_slice` accepts either encoding, so `Output::parse` must
+        // pin the length to the one `note_version` implies. Otherwise a ciphertext of the wrong
+        // kind survives the Prover and Signer roles, and is only rejected by
+        // `validate_action_ciphertext_kind` in `to_tx_data`.
+        let mut rng = OsRng;
+        let cmx = pallas::Base::random(&mut rng).to_repr();
+        let out_ciphertext = alloc::vec![0u8; 80];
+
+        let mut parse = |enc_ciphertext_size: usize, note_version| {
+            super::Output::parse(
+                Nullifier::dummy(&mut rng),
+                cmx,
+                [0u8; 32],
+                alloc::vec![0u8; enc_ciphertext_size],
+                out_ciphertext.clone(),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                note_version,
+                alloc::collections::BTreeMap::new(),
+            )
+        };
+
+        assert!(parse(ENC_CIPHERTEXT_SIZE_VANILLA, NoteVersion::V3).is_ok());
+        assert!(parse(ENC_CIPHERTEXT_SIZE_ZSA, NoteVersion::ZSA).is_ok());
+        assert!(matches!(
+            parse(ENC_CIPHERTEXT_SIZE_ZSA, NoteVersion::V3),
+            Err(ParseError::InvalidEncCiphertext)
+        ));
+        assert!(matches!(
+            parse(ENC_CIPHERTEXT_SIZE_VANILLA, NoteVersion::ZSA),
+            Err(ParseError::InvalidEncCiphertext)
+        ));
     }
 
     #[test]
@@ -593,7 +658,13 @@ mod tests {
         )
         .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(5000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
         let output_action_index = bundle_meta.output_action_index(0).unwrap();
@@ -645,6 +716,7 @@ mod tests {
                 if let Some(note) = Note::from_parts(
                     recipient,
                     value,
+                    AssetBase::zatoshi(),
                     rho,
                     RandomSeed::random(&mut rng, &rho),
                     NoteVersion::V3,
@@ -691,7 +763,13 @@ mod tests {
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
         let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
@@ -743,6 +821,7 @@ mod tests {
                 if let Some(note) = Note::from_parts(
                     recipient,
                     value,
+                    AssetBase::zatoshi(),
                     rho,
                     RandomSeed::random(&mut rng, &rho),
                     bundle_version.note_version(),
@@ -791,13 +870,20 @@ mod tests {
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         builder
             .add_output(
                 Some(fvk.to_ovk(Scope::Internal)),
                 fvk.address_at(0u32, Scope::Internal),
                 NoteValue::from_raw(5_000),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
@@ -874,6 +960,7 @@ mod tests {
                 if let Some(note) = Note::from_parts(
                     recipient,
                     value,
+                    AssetBase::zatoshi(),
                     rho,
                     RandomSeed::random(&mut rng, &rho),
                     bundle_version.note_version(),
@@ -921,13 +1008,20 @@ mod tests {
             .add_spend(fvk.clone(), note, merkle_path.into())
             .unwrap();
         builder
-            .add_output(None, recipient, NoteValue::from_raw(10_000), [0u8; 512])
+            .add_output(
+                None,
+                recipient,
+                NoteValue::from_raw(10_000),
+                AssetBase::zatoshi(),
+                [0u8; 512],
+            )
             .unwrap();
         builder
             .add_output(
                 Some(fvk.to_ovk(Scope::Internal)),
                 fvk.address_at(0u32, Scope::Internal),
                 NoteValue::from_raw(5_000),
+                AssetBase::zatoshi(),
                 [0u8; 512],
             )
             .unwrap();
@@ -993,7 +1087,7 @@ mod tests {
                 *spend.nullifier(),
                 output.cmx().to_bytes(),
                 output.encrypted_note().epk_bytes,
-                output.encrypted_note().enc_ciphertext.to_vec(),
+                output.encrypted_note().enc_ciphertext.as_ref().to_vec(),
                 output.encrypted_note().out_ciphertext.to_vec(),
                 output.recipient().map(|r| r.to_raw_address_bytes()),
                 output.value().map(|v| v.inner()),
@@ -1413,6 +1507,7 @@ mod tests {
         let note = Note::new(
             spend_recipient,
             NoteValue::from_raw(15_000),
+            AssetBase::zatoshi(),
             rho,
             note_version,
             &mut rng,
@@ -1511,17 +1606,19 @@ mod tests {
     fn extract_preserves_cross_address_disabled() {
         let rng = OsRng;
 
+        let bundle_version = BundleVersion::orchard_v3();
         let mut pczt_bundle = minimal_finalized_pczt_bundle(rng);
         pczt_bundle.zkproof = Some(crate::Proof::new(vec![
             0;
             crate::Proof::expected_proof_size(
+                pczt_bundle.bundle_version.circuit_version(),
                 pczt_bundle.actions.len()
             )
         ]));
         // Cross-address-disabled flags are only representable from NU6.3 onward, and the Orchard
         // pool at NU6.3 mandates the restriction; that is the version under which an extracted
         // bundle can legitimately carry these flags.
-        pczt_bundle.bundle_version = BundleVersion::orchard_v3();
+        pczt_bundle.bundle_version = bundle_version;
         pczt_bundle.flags = Flags::CROSS_ADDRESS_DISABLED;
 
         let bundle = pczt_bundle.extract::<i64>().unwrap().unwrap();

@@ -5,8 +5,9 @@ use rand::{CryptoRng, RngCore};
 
 use super::Action;
 use crate::{
-    bundle::{Authorization, Authorized, EffectsOnly},
+    bundle::{validate_action_ciphertext_kind, Authorization, Authorized, EffectsOnly},
     primitives::redpallas::{self, Binding, SpendAuth},
+    sighash_kind::{OrchardBindingSig, OrchardSighashKind, OrchardSpendAuthSig},
     Proof,
 };
 
@@ -59,6 +60,7 @@ impl super::Bundle {
         // flags is checked when proving or verifying.
         if let Some(bundle) = &bundle {
             crate::bundle::validate_proof_size(
+                bundle.bundle_version().circuit_version(),
                 &bundle.authorization().proof,
                 bundle.actions().len(),
             )?;
@@ -99,6 +101,9 @@ impl super::Bundle {
             .collect::<Result<_, E>>()?;
 
         Ok(if let Some(actions) = NonEmpty::from_vec(actions) {
+            validate_action_ciphertext_kind(&actions, self.bundle_version)
+                .map_err(TxExtractorError::from)?;
+
             let value_balance = i64::try_from(self.value_sum)
                 .ok()
                 .and_then(|v| v.try_into().ok())
@@ -110,6 +115,7 @@ impl super::Bundle {
                 actions,
                 self.flags,
                 value_balance,
+                vec![], //No burn in PCZT V1
                 self.anchor,
                 authorization,
                 self.bundle_version,
@@ -146,6 +152,10 @@ pub enum TxExtractorError {
     },
     /// The bundle's flags cannot be encoded under its value pool and protocol version.
     UnrepresentableFlags,
+    /// Some action's encrypted-note ciphertext is not the kind the bundle's version implies.
+    MismatchedActionCiphertextKind,
+    /// Burn-specific error.
+    Burn(crate::bundle::burn_validation::BurnError),
 }
 
 impl From<crate::ActionFromPartsError> for TxExtractorError {
@@ -166,6 +176,10 @@ impl From<crate::bundle::BundleError> for TxExtractorError {
             crate::bundle::BundleError::UnrepresentableFlags => {
                 TxExtractorError::UnrepresentableFlags
             }
+            crate::bundle::BundleError::MismatchedActionCiphertextKind => {
+                TxExtractorError::MismatchedActionCiphertextKind
+            }
+            crate::bundle::BundleError::Burn(err) => TxExtractorError::Burn(err),
         }
     }
 }
@@ -202,6 +216,11 @@ impl fmt::Display for TxExtractorError {
                 f,
                 "Orchard bundle flags are not representable under its value pool and protocol version",
             ),
+            TxExtractorError::MismatchedActionCiphertextKind => write!(
+                f,
+                "an action's encrypted-note ciphertext kind is inconsistent with the bundle's version",
+            ),
+            TxExtractorError::Burn(err) => write!(f, "Burn error: {err}"),
         }
     }
 }
@@ -236,8 +255,16 @@ impl<V> crate::Bundle<Unbound, V> {
         {
             Some(self.map_authorization(
                 &mut (),
-                |_, _, a| a,
-                |_, Unbound { proof, bsk }| Authorized::from_parts(proof, bsk.sign(rng, &sighash)),
+                |_, _, a| OrchardSpendAuthSig::new(OrchardSighashKind::AllEffecting, a),
+                |_, Unbound { proof, bsk }| {
+                    Authorized::from_parts(
+                        proof,
+                        OrchardBindingSig::new(
+                            OrchardSighashKind::AllEffecting,
+                            bsk.sign(rng, &sighash),
+                        ),
+                    )
+                },
             ))
         } else {
             None

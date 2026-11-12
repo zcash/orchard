@@ -17,6 +17,17 @@ jobs:
           working-directory: ${{ inputs.target }}
           deny: warnings
 
+  # `zsa-issuance` is not a default feature, so the `clippy` job above never lints the
+  # issuance module.
+  clippy-issuance:
+    name: Clippy (MSRV) with issuance
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run Clippy
+        run: cargo clippy --all-targets --features zsa-issuance -- -D warnings
+
   clippy-nostd:
     name: Clippy (MSRV) no_std for ${{ matrix.target }}
     runs-on: ubuntu-latest

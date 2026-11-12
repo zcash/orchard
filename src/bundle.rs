@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 
+pub mod burn_validation;
 pub mod commitments;
 
 #[cfg(feature = "circuit")]
@@ -21,18 +22,21 @@ use memuse::DynamicUsage;
 use crate::{
     action::Action,
     address::Address,
+    bundle::burn_validation::{validate_burn, BurnError},
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
+    circuit_version::OrchardCircuitVersion,
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
-    note::{Note, NoteVersion},
-    note_encryption::BundleDomain,
-    primitives::redpallas::{self, Binding, SpendAuth},
+    note::{AssetBase, Note, NoteVersion},
+    note_encryption::{BundleDomain, NoteCiphertextBytes},
+    primitives::redpallas::{self, Binding},
+    sighash_kind::{OrchardBindingSig, OrchardSighashKind, OrchardSpendAuthSig},
     tree::Anchor,
-    value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
+    value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Proof, ProtocolVersion, ValuePool,
 };
 
 #[cfg(feature = "circuit")]
-use crate::circuit::{Instance, OrchardCircuitVersion, VerifyingKey};
+use crate::circuit::{Instance, VerifyingKey};
 
 #[cfg(feature = "circuit")]
 impl<T> Action<T> {
@@ -53,7 +57,8 @@ impl<T> Action<T> {
 
 /// A shielded [`ValuePool`] (Orchard or Ironwood) together with the [`ProtocolVersion`]
 /// under which a bundle in that pool is built. The Ironwood pool only exists from NU6.3
-/// onward, so it is only valid in combination with [`ProtocolVersion::V3`].
+/// onward, so it is only valid in combination with [`ProtocolVersion::V3`] or
+/// [`ProtocolVersion::ZSA`].
 ///
 /// This pins the `circuit_version` and the flag-byte format, and determines whether
 /// cross-address transfers are permitted (`permits_cross_address_transfers`).
@@ -112,6 +117,15 @@ impl BundleVersion {
         }
     }
 
+    /// The [`BundleVersion`] for the [`ValuePool::Ironwood`] pool under
+    /// [`ProtocolVersion::ZSA] (the Ironwood pool with ZSA).
+    pub const fn zsa() -> Self {
+        Self {
+            value_pool: ValuePool::Ironwood,
+            protocol_version: ProtocolVersion::ZSA,
+        }
+    }
+
     /// Returns the [`ValuePool`] to which this bundle version applies.
     pub fn value_pool(&self) -> ValuePool {
         self.value_pool
@@ -129,23 +143,35 @@ impl BundleVersion {
     /// under [`ProtocolVersion::V3`] share the post-NU6.3 circuit, so build a key with
     /// `ProvingKey::build(bundle_version.circuit_version())` /
     /// `VerifyingKey::build(bundle_version.circuit_version())`.
-    #[cfg(feature = "circuit")]
     pub fn circuit_version(&self) -> OrchardCircuitVersion {
         match self.protocol_version {
             ProtocolVersion::InsecureV1 => OrchardCircuitVersion::InsecurePreNu6_2,
             ProtocolVersion::V2 => OrchardCircuitVersion::FixedPostNu6_2,
             ProtocolVersion::V3 => OrchardCircuitVersion::PostNu6_3,
+            ProtocolVersion::ZSA => OrchardCircuitVersion::ZSA,
+        }
+    }
+
+    /// Returns the `(base, per_action)` proof-size constants for the circuit that proves and
+    /// verifies actions for this bundle version, such that a canonical proof for `num_actions`
+    /// actions is exactly `base + per_action * num_actions` bytes.
+    pub(crate) const fn proof_size_constants(&self) -> (usize, usize) {
+        match self.protocol_version {
+            ProtocolVersion::InsecureV1 | ProtocolVersion::V2 | ProtocolVersion::V3 => (2720, 2272),
+            ProtocolVersion::ZSA => (2848, 2272),
         }
     }
 
     /// The [`NoteVersion`] associated with this bundle version.
     ///
-    /// Orchard pools use V2 note plaintexts, and Ironwood pools use V3 note
-    /// plaintexts.
+    /// Orchard pools use V2 note plaintexts for all protocol versions.
+    /// Ironwood pools use V3 note plaintexts for all protocol versions except
+    /// [`ProtocolVersion::ZSA`], which uses ZSA note plaintexts.
     pub fn note_version(&self) -> NoteVersion {
-        match self.value_pool {
-            ValuePool::Orchard => NoteVersion::V2,
-            ValuePool::Ironwood => NoteVersion::V3,
+        match (self.value_pool, self.protocol_version) {
+            (ValuePool::Ironwood, ProtocolVersion::ZSA) => NoteVersion::ZSA,
+            (ValuePool::Orchard, _) => NoteVersion::V2,
+            (ValuePool::Ironwood, _) => NoteVersion::V3,
         }
     }
 
@@ -164,16 +190,32 @@ impl BundleVersion {
         )
     }
 
+    /// Whether the consensus rules for this version *permit* zsa transfers.
+    ///
+    /// Only [`ValuePool::Ironwood`] pool under [`ProtocolVersion::ZSA`] permits zsa transfers.
+    pub(crate) fn permits_zsa(&self) -> bool {
+        matches!(
+            (self.protocol_version, self.value_pool),
+            (ProtocolVersion::ZSA, ValuePool::Ironwood)
+        )
+    }
+
     /// The default [`Flags`] for a bundle of this version: spends and outputs enabled, with the
     /// cross-address bit set to the least-restrictive value the version permits (enabled unless
-    /// the version mandates the restriction).
+    /// the version mandates the restriction) and with the enable_zsa bit set only when the version
+    /// permits zsa transfers.
     ///
     /// This is the prover-side default a builder uses when the caller does not restrict the bundle
     /// further. Where the version leaves the cross-address choice free (e.g. the Ironwood pool), a
     /// caller may instead pass a more restricted flag set such as
     /// [`Flags::CROSS_ADDRESS_DISABLED`]; the chosen flags must be representable under the version.
     pub fn default_flags(&self) -> Flags {
-        Flags::from_parts(true, true, self.permits_cross_address_transfers())
+        Flags::from_parts(
+            true,
+            true,
+            self.permits_cross_address_transfers(),
+            self.permits_zsa(),
+        )
     }
 
     /// Whether an authorized bundle of this version must carry a canonically-sized proof.
@@ -193,7 +235,9 @@ impl BundleVersion {
 /// The two formats use different commitment personalization strings and include the bundle's
 /// anchor in different digests: v5 includes the anchor in the transaction-ID digest, while v6
 /// includes it in the authorizing digest. Ironwood bundles exist only in v6 transactions, so
-/// attempting to compute an Ironwood commitment for a v5 transaction returns an error.
+/// attempting to compute an Ironwood commitment for a v5 or ZSA transaction returns an error.
+/// ZSA bundles exist only in ZSA transactions, so attempting to compute a ZSA commitment for a v5
+/// or v6 transaction returns an error.
 ///
 /// This is independent of the [`BundleVersion`] that governs construction: the same
 /// Orchard bundle can be committed under either transaction version, and the caller must pass the one
@@ -206,6 +250,8 @@ pub enum TxVersion {
     V5,
     /// A v6 transaction.
     V6,
+    /// A ZSA transaction.
+    ZSA,
 }
 
 /// Flags denoting what operations may be performed by the Orchard actions
@@ -236,13 +282,21 @@ pub struct Flags {
     /// expanded receiver as the note it spends; proving and verification must reject the
     /// bundle unless they use a circuit key that supports the restriction.
     cross_address_enabled: bool,
+    /// Flag denoting whether ZSA functionality is enabled in the transaction.
+    ///
+    /// If `false`,  all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with zatoshi asset. If `true`, `Action`s may use any asset.
+    zsa_enabled: bool,
 }
 
 const FLAG_SPENDS_ENABLED: u8 = 0b0000_0001;
 const FLAG_OUTPUTS_ENABLED: u8 = 0b0000_0010;
 const FLAG_V6_CROSS_ADDRESS_ENABLED: u8 = 0b0000_0100;
-const FLAGS_ALWAYS_EXPECTED_UNSET: u8 =
-    !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED | FLAG_V6_CROSS_ADDRESS_ENABLED);
+const FLAG_ZSA_ENABLED: u8 = 0b0000_1000;
+const FLAGS_ALWAYS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED
+    | FLAG_OUTPUTS_ENABLED
+    | FLAG_V6_CROSS_ADDRESS_ENABLED
+    | FLAG_ZSA_ENABLED);
 
 impl Flags {
     /// Construct a set of flags from its constituent parts, including the cross-address bit.
@@ -253,11 +307,13 @@ impl Flags {
         spends_enabled: bool,
         outputs_enabled: bool,
         cross_address_enabled: bool,
+        zsa_enabled: bool,
     ) -> Self {
         Flags {
             spends_enabled,
             outputs_enabled,
             cross_address_enabled,
+            zsa_enabled,
         }
     }
 
@@ -272,6 +328,15 @@ impl Flags {
         spends_enabled: true,
         outputs_enabled: true,
         cross_address_enabled: true,
+        zsa_enabled: false,
+    };
+
+    /// The flags set with spends, outputs, cross_address and ZSA enabled.
+    pub const ENABLED_WITH_ZSA: Flags = Flags {
+        spends_enabled: true,
+        outputs_enabled: true,
+        cross_address_enabled: true,
+        zsa_enabled: true,
     };
 
     /// The flag set for a bundle that may create notes but not spend them: every
@@ -283,6 +348,16 @@ impl Flags {
         spends_enabled: false,
         outputs_enabled: true,
         cross_address_enabled: true,
+        zsa_enabled: false,
+    };
+
+    /// The flag set with spends disabled and ZSA enabled. Not valid for coinbase bundles, which
+    /// must disable ZSA.
+    pub const SPENDS_DISABLED_WITH_ZSA: Flags = Flags {
+        spends_enabled: false,
+        outputs_enabled: true,
+        cross_address_enabled: true,
+        zsa_enabled: true,
     };
 
     /// The flag set for a bundle that may spend notes but not create them: every
@@ -294,6 +369,7 @@ impl Flags {
         spends_enabled: true,
         outputs_enabled: false,
         cross_address_enabled: true,
+        zsa_enabled: false,
     };
 
     /// The flag set with spends and outputs enabled and cross-address transfers disabled.
@@ -304,6 +380,7 @@ impl Flags {
         spends_enabled: true,
         outputs_enabled: true,
         cross_address_enabled: false,
+        zsa_enabled: false,
     };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
@@ -332,6 +409,14 @@ impl Flags {
     /// bundle unless they use a circuit key that supports the restriction.
     pub fn cross_address_enabled(&self) -> bool {
         self.cross_address_enabled
+    }
+
+    /// Flag denoting whether ZSA functionality is enabled in the transaction.
+    ///
+    /// If `false`, all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with zatoshi asset. If `true`, `Action`s may use any asset.
+    pub fn zsa_enabled(&self) -> bool {
+        self.zsa_enabled
     }
 
     /// Serialize flags to a byte as defined in [Zcash Protocol Spec § 7.1: Transaction
@@ -366,13 +451,22 @@ impl Flags {
                 }
             }
             // The Ironwood pool encodes the caller's choice in bit 2.
-            (ValuePool::Ironwood, ProtocolVersion::V3) => {
+            (ValuePool::Ironwood, ProtocolVersion::V3 | ProtocolVersion::ZSA) => {
                 if self.cross_address_enabled {
                     value |= FLAG_V6_CROSS_ADDRESS_ENABLED;
                 }
             }
+            // The Orchard pool is not defined for ProtocolVersion::ZSA.
+            (ValuePool::Orchard, ProtocolVersion::ZSA) => return None,
             // The Ironwood pool is not defined prior to ProtocolVersion::V3.
             (ValuePool::Ironwood, _) => return None,
+        }
+
+        if self.zsa_enabled {
+            if !bundle_version.permits_zsa() {
+                return None;
+            }
+            value |= FLAG_ZSA_ENABLED;
         }
 
         Some(value)
@@ -398,7 +492,7 @@ impl Flags {
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8, bundle_version: BundleVersion) -> Option<Self> {
-        // Bits 3..=7 are always reserved and MUST be 0.
+        // Bits 4..=7 are always reserved and MUST be 0.
         // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
         if value & FLAGS_ALWAYS_EXPECTED_UNSET != 0 {
             return None;
@@ -419,12 +513,21 @@ impl Flags {
         // We have already validated bit2 against the pool type
         let cross_address_enabled = match bundle_version.protocol_version {
             ProtocolVersion::InsecureV1 | ProtocolVersion::V2 => true,
-            ProtocolVersion::V3 => bit2,
+            ProtocolVersion::V3 | ProtocolVersion::ZSA => bit2,
         };
+
+        // Bit 3 (`zsa_enabled`) can only be 1 for a bundle version that permits ZSA
+        // transfers; it MUST be 0 otherwise.
+        let bit3 = value & FLAG_ZSA_ENABLED != 0;
+        if bit3 && !bundle_version.permits_zsa() {
+            return None;
+        }
+
         Some(Self {
             spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
             outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
             cross_address_enabled,
+            zsa_enabled: bit3,
         })
     }
 }
@@ -446,6 +549,8 @@ pub struct Bundle<T: Authorization, V> {
     ///
     /// This is the sum of Orchard spends minus the sum of Orchard outputs.
     value_balance: V,
+    /// Assets intended for burning
+    burn: Vec<(AssetBase, NoteValue)>,
     /// The root of the Orchard commitment tree that this bundle commits to.
     anchor: Anchor,
     /// The authorization for this bundle.
@@ -486,8 +591,12 @@ impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
 /// Returns [`BundleError::NonCanonicalProofSize`] if it does not. This is the shared check
 /// used by the proof-carrying bundle constructors to reject non-canonical (e.g. padded)
 /// proofs; see [`Bundle::try_from_parts`] (GHSA-2x4w-pxqw-58v9).
-pub(crate) fn validate_proof_size(proof: &Proof, num_actions: usize) -> Result<(), BundleError> {
-    let expected = Proof::expected_proof_size(num_actions);
+pub(crate) fn validate_proof_size(
+    circuit_version: OrchardCircuitVersion,
+    proof: &Proof,
+    num_actions: usize,
+) -> Result<(), BundleError> {
+    let expected = Proof::expected_proof_size(circuit_version, num_actions);
     let actual = proof.as_ref().len();
     if actual == expected {
         Ok(())
@@ -509,6 +618,32 @@ fn validate_flags(flags: &Flags, bundle_version: BundleVersion) -> Result<(), Bu
     }
 }
 
+/// Checks that every action's encrypted-note ciphertext is the kind `bundle_version` implies.
+///
+/// `Action`'s ciphertext storage ([`crate::note_encryption::NoteCiphertextBytes`]) doesn't encode
+/// its kind at the type level, so nothing otherwise prevents a `Bundle` from mixing Vanilla and
+/// ZSA actions, or carrying the wrong kind for its `bundle_version`. Returns
+/// [`BundleError::MismatchedActionCiphertextKind`] if any action's ciphertext variant doesn't
+/// match.
+pub(crate) fn validate_action_ciphertext_kind<A>(
+    actions: &NonEmpty<Action<A>>,
+    bundle_version: BundleVersion,
+) -> Result<(), BundleError> {
+    let expect_zsa = bundle_version.permits_zsa();
+    let all_match = actions.iter().all(|action| {
+        let is_zsa = matches!(
+            action.encrypted_note().enc_ciphertext,
+            NoteCiphertextBytes::Zsa(_)
+        );
+        is_zsa == expect_zsa
+    });
+    if all_match {
+        Ok(())
+    } else {
+        Err(BundleError::MismatchedActionCiphertextKind)
+    }
+}
+
 impl<T: Authorization, V> Bundle<T, V> {
     /// Constructs a `Bundle` from its constituent parts without validating the authorization.
     ///
@@ -520,10 +655,17 @@ impl<T: Authorization, V> Bundle<T, V> {
     /// `flags` must be representable under `bundle_version`. Every `Bundle` upholds this, so that
     /// [`Bundle::flag_byte`] and the commitment APIs cannot fail; callers are responsible for the
     /// guarantee (it is debug-asserted here).
+    ///
+    /// Callers are also responsible for `actions` being homogeneous in ciphertext kind and
+    /// consistent with `bundle_version` (every action's encrypted-note ciphertext is the ZSA
+    /// variant if and only if `bundle_version.permits_zsa()`). This is checked by
+    /// [`Bundle::try_from_parts`], but not here, for the same reason the proof size is not
+    /// checked here.
     pub(crate) fn from_parts_unchecked(
         actions: NonEmpty<Action<T::SpendAuth>>,
         flags: Flags,
         value_balance: V,
+        burn: Vec<(AssetBase, NoteValue)>,
         anchor: Anchor,
         authorization: T,
         bundle_version: BundleVersion,
@@ -533,6 +675,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             actions,
             flags,
             value_balance,
+            burn,
             anchor,
             authorization,
             bundle_version,
@@ -554,6 +697,13 @@ impl<T: Authorization, V> Bundle<T, V> {
     /// This is the sum of Orchard spends minus the sum Orchard outputs.
     pub fn value_balance(&self) -> &V {
         &self.value_balance
+    }
+
+    /// Returns assets intended for burning
+    ///
+    /// These entries were checked at construction, but not against the global issuance state.
+    pub fn burn(&self) -> &Vec<(AssetBase, NoteValue)> {
+        &self.burn
     }
 
     /// Returns the root of the Orchard commitment tree that this bundle commits to.
@@ -598,6 +748,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             actions: self.actions,
             flags: self.flags,
             value_balance: f(self.value_balance)?,
+            burn: self.burn,
             anchor: self.anchor,
             authorization: self.authorization,
             bundle_version: self.bundle_version,
@@ -618,6 +769,7 @@ impl<T: Authorization, V> Bundle<T, V> {
                 .map(|a| a.map(|a_auth| spend_auth(context, &authorization, a_auth))),
             flags: self.flags,
             value_balance: self.value_balance,
+            burn: self.burn,
             anchor: self.anchor,
             authorization: step(context, authorization),
             bundle_version: self.bundle_version,
@@ -642,6 +794,7 @@ impl<T: Authorization, V> Bundle<T, V> {
             actions: NonEmpty::from_vec(new_actions).unwrap(),
             flags: self.flags,
             value_balance: self.value_balance,
+            burn: self.burn,
             anchor: self.anchor,
             authorization: step(context, authorization)?,
             bundle_version: self.bundle_version,
@@ -743,6 +896,38 @@ impl<T: Authorization, V> Bundle<T, V> {
         })
     }
 }
+pub(crate) fn derive_bvk<'a, T: 'a, V: Clone + Into<i64>>(
+    actions: impl IntoIterator<Item = &'a Action<T>>,
+    value_balance: V,
+    burn: &[(AssetBase, NoteValue)],
+) -> redpallas::VerificationKey<Binding> {
+    derive_bvk_raw(
+        actions.into_iter().map(|a| a.cv_net()),
+        ValueSum::from_raw_inner(value_balance.into()),
+        burn,
+    )
+}
+
+pub(crate) fn derive_bvk_raw<'a>(
+    cv_nets: impl IntoIterator<Item = &'a ValueCommitment>,
+    value_balance: ValueSum,
+    burn: &[(AssetBase, NoteValue)],
+) -> redpallas::VerificationKey<Binding> {
+    // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
+    (cv_nets.into_iter().sum::<ValueCommitment>()
+        - ValueCommitment::derive(value_balance, ValueCommitTrapdoor::zero())
+        - burn
+            .iter()
+            .map(|(asset, value)| {
+                ValueCommitment::derive_with_asset(
+                    ValueSum::from_magnitude_sign(value.inner(), Sign::Positive),
+                    ValueCommitTrapdoor::zero(),
+                    *asset,
+                )
+            })
+            .sum::<ValueCommitment>())
+    .into_bvk()
+}
 
 impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// Computes this bundle's transaction-ID commitment component.
@@ -765,17 +950,7 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
     /// [`Bundle::authorization`].
     pub fn binding_validating_key(&self) -> redpallas::VerificationKey<Binding> {
-        // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
-        (self
-            .actions
-            .iter()
-            .map(|a| a.cv_net())
-            .sum::<ValueCommitment>()
-            - ValueCommitment::derive(
-                ValueSum::from_raw(self.value_balance.into()),
-                ValueCommitTrapdoor::zero(),
-            ))
-        .into_bvk()
+        derive_bvk(&self.actions, self.value_balance, &self.burn)
     }
 }
 
@@ -792,26 +967,35 @@ impl<V> Bundle<EffectsOnly, V> {
     ///
     /// An effects-only bundle carries no proof, so there is no proof size to validate, and flags
     /// are not checked against circuit support (there is no proof key to check against). The flags
-    /// are, however, checked for representability under `bundle_version`, so that the resulting
-    /// bundle is safe to serialize and commit to.
+    /// and the action's encrypted-note ciphertexts are, however, checked for representability
+    /// under `bundle_version`, so that the resulting bundle is safe to serialize and commit to.
+    /// A non-empty `burn` requires a `bundle_version` and `flags` that enable ZSA, and entries
+    /// that are burnable and unique.
     ///
     /// # Errors
     ///
-    /// Returns [`BundleError::UnrepresentableFlags`] if `flags` cannot be encoded under
-    /// `bundle_version`.
+    /// Returns
+    /// - [`BundleError::UnrepresentableFlags`] if `flags` cannot be encoded under `bundle_version`
+    /// - [`BundleError::MismatchedActionCiphertextKind`] if some action's encrypted-note
+    ///   ciphertext is not the kind `bundle_version` implies
+    /// - [`BundleError::Burn`] if `burn` is not valid in this context
     pub fn from_parts(
         actions: NonEmpty<Action<<EffectsOnly as Authorization>::SpendAuth>>,
         flags: Flags,
         value_balance: V,
+        burn: Vec<(AssetBase, NoteValue)>,
         anchor: Anchor,
         authorization: EffectsOnly,
         bundle_version: BundleVersion,
     ) -> Result<Self, BundleError> {
+        validate_action_ciphertext_kind(&actions, bundle_version)?;
         validate_flags(&flags, bundle_version)?;
+        validate_burn(&burn, &flags, bundle_version).map_err(BundleError::Burn)?;
         Ok(Bundle::from_parts_unchecked(
             actions,
             flags,
             value_balance,
+            burn,
             anchor,
             authorization,
             bundle_version,
@@ -823,16 +1007,16 @@ impl<V> Bundle<EffectsOnly, V> {
 #[derive(Debug, Clone)]
 pub struct Authorized {
     proof: Proof,
-    binding_signature: redpallas::Signature<Binding>,
+    binding_signature: OrchardBindingSig,
 }
 
 impl Authorization for Authorized {
-    type SpendAuth = redpallas::Signature<SpendAuth>;
+    type SpendAuth = OrchardSpendAuthSig;
 }
 
 impl Authorized {
     /// Constructs the authorizing data for a bundle of actions from its constituent parts.
-    pub fn from_parts(proof: Proof, binding_signature: redpallas::Signature<Binding>) -> Self {
+    pub fn from_parts(proof: Proof, binding_signature: OrchardBindingSig) -> Self {
         Authorized {
             proof,
             binding_signature,
@@ -845,7 +1029,7 @@ impl Authorized {
     }
 
     /// Return the binding signature.
-    pub fn binding_signature(&self) -> &redpallas::Signature<Binding> {
+    pub fn binding_signature(&self) -> &OrchardBindingSig {
         &self.binding_signature
     }
 }
@@ -875,6 +1059,15 @@ pub enum BundleError {
     /// * cross-address transfers are enabled but the version specifies a post-NU6.3 Orchard pool
     ///   (where cross-address transfers are forbidden).
     UnrepresentableFlags,
+    /// Some action's encrypted-note ciphertext is not the kind the bundle's version implies.
+    ///
+    /// Every action's encrypted-note ciphertext in a `Bundle` must be the ZSA variant if and only
+    /// if `bundle_version` permits ZSA, and the Vanilla variant otherwise; a bundle mixing the two,
+    /// or carrying the wrong variant for its `bundle_version`, cannot be committed to or verified
+    /// correctly.
+    MismatchedActionCiphertextKind,
+    /// Burn-specific error.
+    Burn(BurnError),
 }
 
 impl fmt::Display for BundleError {
@@ -888,6 +1081,10 @@ impl fmt::Display for BundleError {
                 f,
                 "bundle flags are not representable under the bundle's value pool and protocol version",
             ),
+            BundleError::MismatchedActionCiphertextKind => f.write_str(
+                "an action's encrypted-note ciphertext kind is inconsistent with the bundle's version",
+            ),
+            BundleError::Burn(err) => write!(f, "Burn error: {err}"),
         }
     }
 }
@@ -899,9 +1096,6 @@ impl core::error::Error for BundleError {}
 #[non_exhaustive]
 pub enum CommitmentError {
     /// The requested transaction version is not valid for the bundle's [`BundleVersion`].
-    ///
-    /// Ironwood bundles exist only in v6 transactions, so an Ironwood bundle
-    /// (`BundleVersion::ironwood_v3()`) cannot be committed with `TxVersion::V5`.
     InvalidTransactionVersion,
 }
 
@@ -910,7 +1104,7 @@ impl fmt::Display for CommitmentError {
         match self {
             CommitmentError::InvalidTransactionVersion => write!(
                 f,
-                "Ironwood bundles can only be committed in a v6 transaction",
+                "The transaction version is not valid for the bundle version",
             ),
         }
     }
@@ -931,30 +1125,44 @@ impl<V> Bundle<Authorized, V> {
     /// (GHSA-2x4w-pxqw-58v9). Circuit-key support for the bundle flags is checked when proving or
     /// verifying the proof.
     ///
-    /// The flags are also checked for representability under `bundle_version`, so that the
-    /// resulting bundle is safe to serialize and commit to.
+    /// The flags and the action's encrypted-note ciphertexts are also checked for representability
+    /// under `bundle_version`, so that the resulting bundle is safe to serialize and commit to.
+    /// A non-empty `burn` requires a `bundle_version` and `flags` that enable ZSA, and entries
+    /// that are burnable and unique.
     ///
     /// # Errors
     ///
-    /// Returns [`BundleError::NonCanonicalProofSize`] if the proof length is not canonical (for a
-    /// version that enforces it), or [`BundleError::UnrepresentableFlags`] if `flags` cannot be
-    /// encoded under `bundle_version`.
+    /// Returns
+    /// - [`BundleError::NonCanonicalProofSize`] if the proof length is not canonical (for a
+    ///   version that enforces it)
+    /// - [`BundleError::UnrepresentableFlags`] if `flags` cannot be encoded under `bundle_version`
+    /// - [`BundleError::MismatchedActionCiphertextKind`] if some action's encrypted-note
+    ///   ciphertext is not the kind `bundle_version` implies
+    /// - [`BundleError::Burn`] if `burn` is not valid in this context
     pub fn try_from_parts(
         actions: NonEmpty<Action<<Authorized as Authorization>::SpendAuth>>,
         flags: Flags,
         value_balance: V,
+        burn: Vec<(AssetBase, NoteValue)>,
         anchor: Anchor,
         authorization: Authorized,
         bundle_version: BundleVersion,
     ) -> Result<Self, BundleError> {
         if bundle_version.enforces_canonical_proof_size() {
-            validate_proof_size(authorization.proof(), actions.len())?;
+            validate_proof_size(
+                bundle_version.circuit_version(),
+                authorization.proof(),
+                actions.len(),
+            )?;
         }
+        validate_action_ciphertext_kind(&actions, bundle_version)?;
         validate_flags(&flags, bundle_version)?;
+        validate_burn(&burn, &flags, bundle_version).map_err(BundleError::Burn)?;
         Ok(Bundle::from_parts_unchecked(
             actions,
             flags,
             value_balance,
+            burn,
             anchor,
             authorization,
             bundle_version,
@@ -967,6 +1175,8 @@ impl<V> Bundle<Authorized, V> {
     /// [`BundleVersion`] and `tx_version` select the commitment personalization; in a v6
     /// transaction this digest also includes the bundle anchor bytes (in a v5 transaction they are
     /// included by [`Bundle::commitment`] instead).
+    /// The `sighash_info_for_kind` closure returns the `SighashInfo` encoding
+    /// for a given [`OrchardSighashKind`].
     ///
     /// # Errors
     ///
@@ -975,23 +1185,30 @@ impl<V> Bundle<Authorized, V> {
     pub fn authorizing_commitment(
         &self,
         tx_version: TxVersion,
+        sighash_info_for_kind: impl Fn(&OrchardSighashKind) -> Vec<u8>,
     ) -> Result<BundleAuthorizingCommitment, CommitmentError> {
-        hash_bundle_auth_data(self, tx_version).map(BundleAuthorizingCommitment)
+        hash_bundle_auth_data(self, tx_version, sighash_info_for_kind)
+            .map(BundleAuthorizingCommitment)
     }
 
     /// Verifies the proof for this bundle.
     ///
     /// # Errors
     ///
-    /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this
-    /// bundle disables cross-address transfers and `vk` is not an
-    /// [`OrchardCircuitVersion::PostNu6_3`] verifying key.
+    /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if `vk` is not
+    /// for this bundle version's circuit, or if this bundle disables cross-address
+    /// transfers and `vk` is not an [`OrchardCircuitVersion::PostNu6_3`] verifying key.
     ///
     /// Also returns an error if proof verification fails.
     ///
-    /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit::OrchardCircuitVersion::PostNu6_3
+    /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit_version::OrchardCircuitVersion::PostNu6_3
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
+        // The flag checks in `Proof::verify` miss a ZSA bundle with `enableZSA = 0`.
+        if vk.circuit_version() != self.bundle_version.circuit_version() {
+            return Err(halo2_proofs::plonk::Error::InvalidInstances);
+        }
+
         self.authorization()
             .proof()
             .verify(vk, &self.to_instances())
@@ -1052,14 +1269,18 @@ pub mod testing {
     use nonempty::NonEmpty;
     use pasta_curves::pallas;
     use rand::{rngs::StdRng, SeedableRng};
-    use reddsa::orchard::SpendAuth;
 
     use proptest::collection::vec;
     use proptest::prelude::*;
 
     use crate::{
-        bundle::BundleVersion,
-        primitives::redpallas::{self, testing::arb_binding_signing_key},
+        bundle::{burn_validation::MAX_BURN_VALUE, BundleVersion},
+        note::{
+            asset_base::testing::{arb_asset_base, arb_zsa_asset_base},
+            AssetBase,
+        },
+        primitives::redpallas::testing::arb_binding_signing_key,
+        sighash_kind::{OrchardBindingSig, OrchardSighashKind, OrchardSpendAuthSig},
         value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
         Anchor, NoteVersion, Proof,
     };
@@ -1078,19 +1299,36 @@ pub mod testing {
             Just(BundleVersion::orchard_v2()),
             Just(BundleVersion::orchard_v3()),
             Just(BundleVersion::ironwood_v3()),
+            Just(BundleVersion::zsa()),
         ]
     }
 
-    /// Returns `flags` with its `cross_address_enabled` bit forced to the value representable under
-    /// `bundle_version`, leaving the spend/output bits untouched.
+    /// Create an arbitrary non-ZSA [`BundleVersion`].
+    ///
+    /// For some specific tests, we need a non-ZSA bundle version.
+    pub fn arb_bundle_version_vanilla() -> impl Strategy<Value = BundleVersion> {
+        prop_oneof![
+            Just(BundleVersion::orchard_insecure_v1()),
+            Just(BundleVersion::orchard_v2()),
+            Just(BundleVersion::orchard_v3()),
+            Just(BundleVersion::ironwood_v3()),
+        ]
+    }
+
+    /// Returns `flags` with its `cross_address_enabled` and its `zsa_enabled` bit forced to the
+    /// value representable under `bundle_version`, leaving the spend/output bits untouched.
     ///
     /// The arbitrary-bundle strategies generate flags independently of the version; this pairs them
     /// into a combination that a `Bundle` can actually be constructed from.
-    fn flags_for_version(bundle_version: BundleVersion, flags: Flags) -> Flags {
+    pub(crate) fn flags_for_version(bundle_version: BundleVersion, flags: Flags) -> Flags {
         Flags::from_parts(
             flags.spends_enabled(),
             flags.outputs_enabled(),
+            // `cross_address_enabled` is set according to the bundle version: true for all
+            // versions except Orchard V3.
             bundle_version.permits_cross_address_transfers(),
+            // `zsa_enabled` is set according to the bundle version: true only for ZSA version.
+            bundle_version.permits_zsa(),
         )
     }
 
@@ -1114,8 +1352,10 @@ pub mod testing {
             };
 
             output_value_gen.prop_flat_map(move |output_value| {
-                arb_unauthorized_action(note_version, spend_value, output_value)
-                    .prop_map(move |a| (spend_value - output_value, a))
+                arb_asset_base().prop_flat_map(move |asset| {
+                    arb_unauthorized_action(note_version, spend_value, output_value, asset)
+                        .prop_map(move |a| (spend_value - output_value, a))
+                })
             })
         })
     }
@@ -1125,7 +1365,7 @@ pub mod testing {
         note_version: NoteVersion,
         n_actions: usize,
         flags: Flags,
-    ) -> impl Strategy<Value = (ValueSum, Action<redpallas::Signature<SpendAuth>>)> {
+    ) -> impl Strategy<Value = (ValueSum, Action<OrchardSpendAuthSig>)> {
         let spend_value_gen = if flags.spends_enabled {
             Strategy::boxed(arb_note_value_bounded(MAX_NOTE_VALUE / n_actions as u64))
         } else {
@@ -1140,25 +1380,44 @@ pub mod testing {
             };
 
             output_value_gen.prop_flat_map(move |output_value| {
-                arb_action(note_version, spend_value, output_value)
-                    .prop_map(move |a| (spend_value - output_value, a))
+                arb_asset_base().prop_flat_map(move |asset| {
+                    arb_action(note_version, spend_value, output_value, asset)
+                        .prop_map(move |a| (spend_value - output_value, a))
+                })
             })
         })
     }
 
     prop_compose! {
-        /// Create an arbitrary set of flags with cross-address transfers enabled.
-        /// This is representable for all `bundle_version` other than Orchard post-NU6.3.
-        ///
-        /// Use `arb_flags_ironwood_post_nu6_3` for a strategy that can also disable
-        /// cross-address transfers.
-        pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY) -> Flags {
-            Flags::from_parts(spends_enabled, outputs_enabled, true)
+        /// Create an arbitrary burn entry.
+        pub fn arb_asset_to_burn()
+        (
+            asset_base in arb_zsa_asset_base(),
+            value in 1u64..=MAX_BURN_VALUE
+        ) -> (AssetBase, NoteValue) {
+            (asset_base, NoteValue::from_raw(value))
         }
     }
 
     prop_compose! {
-        /// Create an arbitrary set of flags that are valid for an Ironwood bundle post-NU6.3.
+        /// Create an arbitrary set of flags with cross-address transfers enabled and ZSA
+        /// transfers disabled. This is representable for all `bundle_version` other than
+        /// Orchard post-NU6.3.
+        ///
+        /// Use `arb_flags_ironwood_post_nu6_3` for a strategy that can also disable
+        /// cross-address transfers.
+        ///
+        /// The bundle strategies pass the drawn flags through `flags_for_version`, which
+        /// overwrites `cross_address_enabled` and `zsa_enabled` with the bundle version's own
+        /// default values; only `spends_enabled` and `outputs_enabled` survive there.
+        pub fn arb_flags()(spends_enabled in prop::bool::ANY, outputs_enabled in prop::bool::ANY) -> Flags {
+            Flags::from_parts(spends_enabled, outputs_enabled, true, false)
+        }
+    }
+
+    prop_compose! {
+        /// Create an arbitrary set of flags that are valid for an Ironwood bundle post-NU6.3
+        /// under `ProtocolVersion::V3` (which does not permit ZSA transfers).
         pub fn arb_flags_ironwood_post_nu6_3()(
             spends_enabled in prop::bool::ANY,
             outputs_enabled in prop::bool::ANY,
@@ -1168,6 +1427,7 @@ pub mod testing {
                 spends_enabled,
                 outputs_enabled,
                 cross_address_enabled,
+                zsa_enabled: false,
             }
         }
     }
@@ -1194,6 +1454,11 @@ pub mod testing {
             acts in vec(arb_unauthorized_action_n(bundle_version.note_version(), n_actions, flags), n_actions),
             anchor in arb_base().prop_map(Anchor::from),
             flags in Just(flags),
+            burn in if bundle_version.permits_zsa() {
+                vec(arb_asset_to_burn(), 1usize..10).boxed()
+            } else {
+                Just(Vec::<(AssetBase, NoteValue)>::new()).boxed()
+            },
             bundle_version in Just(bundle_version),
         ) -> Bundle<Unauthorized, ValueSum> {
             let (balances, actions): (Vec<ValueSum>, Vec<Action<_>>) = acts.into_iter().unzip();
@@ -1203,21 +1468,25 @@ pub mod testing {
                 NonEmpty::from_vec(actions).unwrap(),
                 flags,
                 balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
+                burn,
                 anchor,
                 super::EffectsOnly,
                 bundle_version,
             )
-            .expect("flags are normalized to be representable under bundle_version")
+            .expect("flags are normalized and the burn is valid for the drawn version")
         }
     }
 
     prop_compose! {
-        /// Generate an arbitrary bundle with fake authorization data. This bundle does not
-        /// necessarily respect consensus rules; for that use
-        /// [`crate::builder::testing::arb_bundle`]
-        pub fn arb_bundle(n_actions: usize)
+        /// Generate an arbitrary bundle with fake authorization data, for a `bundle_version`
+        /// drawn from `versions`.
+        ///
+        /// `burn` is derived from the drawn version rather than drawn independently: it is
+        /// non-empty only when the version permits ZSA, since `try_from_parts` rejects a burn
+        /// unless the version permits ZSA and the flags enable it.
+        fn arb_bundle_for_versions(n_actions: usize, versions: impl Strategy<Value = BundleVersion>)
         (
-            bundle_version in arb_bundle_version(),
+            bundle_version in versions,
             flags in arb_flags(),
         )
         (
@@ -1226,9 +1495,14 @@ pub mod testing {
             sk in arb_binding_signing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             // A fake proof of the canonical length, so the bundle passes `try_from_parts`.
-            fake_proof in vec(prop::num::u8::ANY, Proof::expected_proof_size(n_actions)),
+            fake_proof in vec(prop::num::u8::ANY, Proof::expected_proof_size(bundle_version.circuit_version(), n_actions)),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
             flags in Just(flags),
+            burn in if bundle_version.permits_zsa() {
+                vec(arb_asset_to_burn(), 1usize..10).boxed()
+            } else {
+                Just(Vec::<(AssetBase, NoteValue)>::new()).boxed()
+            },
             bundle_version in Just(bundle_version),
         ) -> Bundle<Authorized, ValueSum> {
             let (balances, actions): (Vec<ValueSum>, Vec<Action<_>>) = acts.into_iter().unzip();
@@ -1239,15 +1513,38 @@ pub mod testing {
                 NonEmpty::from_vec(actions).unwrap(),
                 flags,
                 balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
+                burn,
                 anchor,
                 Authorized {
                     proof: Proof::new(fake_proof),
-                    binding_signature: sk.sign(rng, &fake_sighash),
+                    binding_signature: OrchardBindingSig::new(OrchardSighashKind::AllEffecting, sk.sign(rng, &fake_sighash)),
                 },
                 bundle_version,
             )
-            .expect("fake proof has the canonical length and flags are representable")
+            .expect(
+                "fake proof has the canonical length, flags are representable, and the burn is \
+                 valid for the drawn version",
+            )
         }
+    }
+
+    /// Generate an arbitrary bundle with fake authorization data. This bundle does not
+    /// necessarily respect consensus rules; for that use
+    /// [`crate::builder::testing::arb_bundle`]
+    pub fn arb_bundle(n_actions: usize) -> impl Strategy<Value = Bundle<Authorized, ValueSum>> {
+        arb_bundle_for_versions(n_actions, arb_bundle_version())
+    }
+
+    /// Like [`arb_bundle`], but never draws the ZSA `BundleVersion`.
+    pub fn arb_bundle_vanilla(
+        n_actions: usize,
+    ) -> impl Strategy<Value = Bundle<Authorized, ValueSum>> {
+        arb_bundle_for_versions(n_actions, arb_bundle_version_vanilla())
+    }
+
+    /// Like [`arb_bundle`], but always draws the ZSA `BundleVersion`.
+    pub fn arb_bundle_zsa(n_actions: usize) -> impl Strategy<Value = Bundle<Authorized, ValueSum>> {
+        arb_bundle_for_versions(n_actions, Just(BundleVersion::zsa()))
     }
 }
 
@@ -1257,11 +1554,22 @@ pub(crate) mod tests {
 
     use proptest::prelude::*;
 
-    use super::testing::{arb_bundle, arb_flags, arb_flags_ironwood_post_nu6_3};
-    use super::{
-        Authorized, Bundle, BundleError, BundleVersion, CommitmentError, Flags, TxVersion,
+    use zcash_note_encryption::note_bytes::NoteBytesData;
+
+    use super::testing::{
+        arb_asset_to_burn, arb_bundle, arb_bundle_vanilla, arb_bundle_zsa, arb_flags,
+        arb_flags_ironwood_post_nu6_3, flags_for_version,
     };
-    use crate::Proof;
+    use super::{
+        burn_validation::{BurnError, MAX_BURN_VALUE},
+        Action, AssetBase, Authorized, Bundle, BundleError, BundleVersion, CommitmentError, Flags,
+        NoteValue, TxVersion,
+    };
+    use crate::{
+        note_encryption::{NoteCiphertextBytes, ENC_CIPHERTEXT_SIZE_ZSA},
+        sighash_kind::test_sighash_info_for_kind,
+        Proof, ValuePool,
+    };
 
     #[cfg(feature = "circuit")]
     pub(crate) fn with_cross_address_disabled(
@@ -1274,6 +1582,7 @@ pub(crate) mod tests {
             bundle.actions().clone(),
             flags,
             *bundle.value_balance(),
+            vec![],
             *bundle.anchor(),
             bundle.authorization().clone(),
             bundle.bundle_version(),
@@ -1288,6 +1597,19 @@ pub(crate) mod tests {
 
         let mut runner = proptest::test_runner::TestRunner::deterministic();
         arb_bundle(n_actions)
+            .new_tree(&mut runner)
+            .expect("strategy can generate a bundle")
+            .current()
+    }
+
+    #[cfg(feature = "circuit")]
+    pub(crate) fn sample_authorized_bundle_vanilla(
+        n_actions: usize,
+    ) -> Bundle<Authorized, crate::value::ValueSum> {
+        use proptest::strategy::ValueTree;
+
+        let mut runner = proptest::test_runner::TestRunner::deterministic();
+        arb_bundle_vanilla(n_actions)
             .new_tree(&mut runner)
             .expect("strategy can generate a bundle")
             .current()
@@ -1378,6 +1700,19 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn zsa_is_permitted_correctly() {
+        assert!(BundleVersion::zsa().permits_zsa());
+        for bundle_version in [
+            BundleVersion::orchard_insecure_v1(),
+            BundleVersion::orchard_v2(),
+            BundleVersion::orchard_v3(),
+            BundleVersion::ironwood_v3(),
+        ] {
+            assert!(!bundle_version.permits_zsa());
+        }
+    }
+
+    #[test]
     fn pre_nu6_3_flags_parsing_rejects_reserved_bits() {
         for value in 0b100..=u8::MAX {
             assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v2()), None);
@@ -1402,23 +1737,81 @@ pub(crate) mod tests {
             );
         }
 
-        // Bits 3.. are always reserved, in every NU6.3 pool.
-        for value in 0b1000..=u8::MAX {
+        // Bit 3 (`zsa_enabled`) is reserved until some bundle version's `permits_zsa()` returns true.
+        for value in 0b1000..0b10000 {
+            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v3()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::ironwood_v3()), None);
+        }
+
+        // Bits 4.. are always reserved, in every NU6.3 pool.
+        for value in 0b10000..=u8::MAX {
             assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v3()), None);
             assert_eq!(Flags::from_byte(value, BundleVersion::ironwood_v3()), None);
         }
     }
 
     #[test]
-    fn expected_proof_size_matches_known_values() {
+    fn zsa_flags_parsing_handles_the_zsa_bit() {
+        for value in 0b1000..=0b1111 {
+            // Bit 3 (`enableZSA`) is reserved for every version that does not permit ZSA.
+            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v2()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v3()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::ironwood_v3()), None);
+
+            // The ZSA version recognizes it as `zsa_enabled` and round-trips.
+            let flags = Flags::from_byte(value, BundleVersion::zsa()).unwrap();
+            assert!(flags.zsa_enabled());
+            assert_eq!(flags.to_byte(BundleVersion::zsa()), Some(value));
+
+            // No other version can encode the flag back.
+            assert_eq!(flags.to_byte(BundleVersion::orchard_v2()), None);
+            assert_eq!(flags.to_byte(BundleVersion::orchard_v3()), None);
+            assert_eq!(flags.to_byte(BundleVersion::ironwood_v3()), None);
+        }
+
+        // With bit 3 clear, the ZSA version parses `zsa_enabled` as false.
+        for value in 0b000..=0b111 {
+            let flags = Flags::from_byte(value, BundleVersion::zsa()).unwrap();
+            assert!(!flags.zsa_enabled());
+            assert_eq!(flags.to_byte(BundleVersion::zsa()), Some(value));
+        }
+
+        // Bits 4.. stay reserved for the ZSA version too.
+        for value in 0b10000..=u8::MAX {
+            assert_eq!(Flags::from_byte(value, BundleVersion::zsa()), None);
+        }
+    }
+
+    #[test]
+    fn expected_proof_size_matches_known_values_ironwood_v3() {
         // The canonical proof sizes for one and two actions, fixed by the action circuit.
-        assert_eq!(Proof::expected_proof_size(1), 4992);
-        assert_eq!(Proof::expected_proof_size(2), 7264);
+        let circuit_version = BundleVersion::ironwood_v3().circuit_version();
+        assert_eq!(Proof::expected_proof_size(circuit_version, 1), 4992);
+        assert_eq!(Proof::expected_proof_size(circuit_version, 2), 7264);
 
         // The size is affine in the number of actions: each action contributes a fixed amount.
-        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
+        let per_action = Proof::expected_proof_size(circuit_version, 2)
+            - Proof::expected_proof_size(circuit_version, 1);
         assert_eq!(
-            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
+            Proof::expected_proof_size(circuit_version, 3)
+                - Proof::expected_proof_size(circuit_version, 2),
+            per_action,
+        );
+    }
+
+    #[test]
+    fn expected_proof_size_matches_known_values_zsa() {
+        // The canonical proof sizes for one and two actions, fixed by the action circuit.
+        let circuit_version = BundleVersion::zsa().circuit_version();
+        assert_eq!(Proof::expected_proof_size(circuit_version, 1), 5120);
+        assert_eq!(Proof::expected_proof_size(circuit_version, 2), 7392);
+
+        // The size is affine in the number of actions: each action contributes a fixed amount.
+        let per_action = Proof::expected_proof_size(circuit_version, 2)
+            - Proof::expected_proof_size(circuit_version, 1);
+        assert_eq!(
+            Proof::expected_proof_size(circuit_version, 3)
+                - Proof::expected_proof_size(circuit_version, 2),
             per_action,
         );
     }
@@ -1426,7 +1819,6 @@ pub(crate) mod tests {
     #[test]
     fn empty_commitments_are_domain_separated() {
         use crate::bundle::commitments::{hash_bundle_auth_empty, hash_bundle_txid_empty};
-        use crate::ValuePool;
 
         // The three commitment formats — Orchard v5, Orchard v6, Ironwood v6 — use distinct
         // personalizations, so the absent-bundle digests are all different from one another.
@@ -1434,6 +1826,7 @@ pub(crate) mod tests {
             (ValuePool::Orchard, TxVersion::V5),
             (ValuePool::Orchard, TxVersion::V6),
             (ValuePool::Ironwood, TxVersion::V6),
+            (ValuePool::Ironwood, TxVersion::ZSA),
         ];
         for i in 0..formats.len() {
             for j in (i + 1)..formats.len() {
@@ -1492,15 +1885,15 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn commitment_hashes_the_wire_flag_byte(bundle in arb_bundle(3)) {
+        fn commitment_hashes_the_wire_flag_byte(bundle in arb_bundle_vanilla(3)) {
             let actions = bundle.actions().clone();
             let anchor = *bundle.anchor();
             let authorization = bundle.authorization().clone();
             let spends_enabled = bundle.flags().spends_enabled();
             let outputs_enabled = bundle.flags().outputs_enabled();
 
-            let enabled = Flags::from_parts(spends_enabled, outputs_enabled, true);
-            let disabled = Flags::from_parts(spends_enabled, outputs_enabled, false);
+            let enabled = Flags::from_parts(spends_enabled, outputs_enabled, true, false);
+            let disabled = Flags::from_parts(spends_enabled, outputs_enabled, false, false);
 
             // Build the same actions under different (flags, version) combinations, with `V = i64`
             // so that `commitment()` is available.
@@ -1509,6 +1902,7 @@ pub(crate) mod tests {
                     actions.clone(),
                     flags,
                     0i64,
+                    vec![],
                     anchor,
                     authorization.clone(),
                     bundle_version,
@@ -1538,22 +1932,27 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn ironwood_rejects_v5_commitment_version(bundle in arb_bundle(3)) {
-            let bundle_i64 = Bundle::from_parts_unchecked(
+        fn ironwood_rejects_v5_commitment_version(bundle in arb_bundle_vanilla(3)) {
+            let bundle_version = BundleVersion::ironwood_v3();
+            let flags = flags_for_version(bundle_version, *bundle.flags());
+
+            let bundle_i64: Bundle<Authorized, i64> = Bundle::from_parts_unchecked(
                 bundle.actions().clone(),
-                *bundle.flags(),
+                flags,
                 0i64,
+                vec![],
                 *bundle.anchor(),
                 bundle.authorization().clone(),
-                BundleVersion::ironwood_v3(),
+                bundle_version,
             );
-            let ironwood = Bundle::from_parts_unchecked(
+            let ironwood: Bundle<Authorized, crate::value::ValueSum> = Bundle::from_parts_unchecked(
                 bundle.actions().clone(),
-                *bundle.flags(),
+                flags,
                 *bundle.value_balance(),
+                vec![],
                 *bundle.anchor(),
                 bundle.authorization().clone(),
-                BundleVersion::ironwood_v3(),
+                bundle_version,
             );
 
             prop_assert!(matches!(
@@ -1561,7 +1960,7 @@ pub(crate) mod tests {
                 Err(CommitmentError::InvalidTransactionVersion)
             ));
             prop_assert!(matches!(
-                ironwood.authorizing_commitment(TxVersion::V5),
+                ironwood.authorizing_commitment(TxVersion::V5, test_sighash_info_for_kind),
                 Err(CommitmentError::InvalidTransactionVersion)
             ));
         }
@@ -1571,12 +1970,13 @@ pub(crate) mod tests {
         /// one of the two digests. The v5 and v6 Orchard formats are also domain-separated, so
         /// the same bundle commits to distinct transaction-ID digests under each.
         #[test]
-        fn anchor_placement_follows_tx_version(bundle in arb_bundle(3)) {
+        fn anchor_placement_follows_tx_version(bundle in arb_bundle_vanilla(3)) {
             // Orchard post-NU6.3 cannot encode cross-address transfers, so clear the bit to keep
             // the flags representable in every version under test.
             let flags = Flags::from_parts(
                 bundle.flags().spends_enabled(),
                 bundle.flags().outputs_enabled(),
+                false,
                 false,
             );
 
@@ -1585,6 +1985,7 @@ pub(crate) mod tests {
                     bundle.actions().clone(),
                     flags,
                     0i64,
+                    vec![],
                     anchor,
                     bundle.authorization().clone(),
                     bundle_version,
@@ -1602,8 +2003,8 @@ pub(crate) mod tests {
                 let b = with_anchor(anchor_b, bundle_version);
                 let txid_a: [u8; 32] = a.commitment(tx).unwrap().into();
                 let txid_b: [u8; 32] = b.commitment(tx).unwrap().into();
-                let auth_a = a.authorizing_commitment(tx).unwrap().0;
-                let auth_b = b.authorizing_commitment(tx).unwrap().0;
+                let auth_a = a.authorizing_commitment(tx, test_sighash_info_for_kind).unwrap().0;
+                let auth_b = b.authorizing_commitment(tx, test_sighash_info_for_kind).unwrap().0;
                 if anchor_in_txid_digest {
                     prop_assert_ne!(txid_a, txid_b);
                     prop_assert_eq!(auth_a.as_bytes(), auth_b.as_bytes());
@@ -1623,13 +2024,15 @@ pub(crate) mod tests {
 
         #[test]
         fn try_from_parts_enforces_canonical_proof_size(
-            bundle in arb_bundle(3)
+            // `bundle_version` below is non-ZSA; `arb_bundle_vanilla` keeps the actions non-ZSA
+            // too, avoiding an unrelated `MismatchedActionCiphertextKind` error.
+            bundle in arb_bundle_vanilla(3)
         ) {
             let actions = bundle.actions().clone();
-            let expected = Proof::expected_proof_size(actions.len());
             let flags = *bundle.flags();
             // Ironwood enforces canonical proof size and accepts any cross-address flag value.
             let bundle_version = BundleVersion::ironwood_v3();
+            let expected = Proof::expected_proof_size(bundle_version.circuit_version(), actions.len());
             let value_balance = *bundle.value_balance();
             let anchor = *bundle.anchor();
             let binding_signature = bundle.authorization().binding_signature().clone();
@@ -1639,6 +2042,7 @@ pub(crate) mod tests {
                     actions.clone(),
                     flags,
                     value_balance,
+                    vec![],
                     anchor,
                     Authorized::from_parts(
                         Proof::new(vec![0u8; proof_len]),
@@ -1665,8 +2069,115 @@ pub(crate) mod tests {
         }
 
         #[test]
+        fn try_from_parts_rejects_mismatched_action_ciphertext_kind(
+            bundle in arb_bundle_vanilla(3)
+        ) {
+            // Keep the drawn bundle's own version, so flags, proof size and burn stay valid and the
+            // ciphertext kind of one action is the only violation, whatever order the checks run in.
+            let mut actions = bundle.actions().clone();
+            let first = actions.first().clone();
+            let mut encrypted_note = first.encrypted_note().clone();
+            encrypted_note.enc_ciphertext =
+                NoteCiphertextBytes::Zsa(NoteBytesData([0u8; ENC_CIPHERTEXT_SIZE_ZSA]));
+            *actions.first_mut() = Action::from_parts(
+                *first.nullifier(),
+                first.rk().clone(),
+                *first.cmx(),
+                encrypted_note,
+                first.cv_net().clone(),
+                first.authorization().clone(),
+            )
+            .unwrap();
+
+            let result = Bundle::try_from_parts(
+                actions,
+                *bundle.flags(),
+                *bundle.value_balance(),
+                vec![],
+                *bundle.anchor(),
+                bundle.authorization().clone(),
+                bundle.bundle_version(),
+            );
+            prop_assert_eq!(result.err(), Some(BundleError::MismatchedActionCiphertextKind));
+        }
+
+        #[test]
+        fn try_from_parts_rejects_burn_for_non_zsa_version(
+            // Attaching a non-empty burn in a non-ZSA bundle should fail.
+            bundle in arb_bundle_vanilla(3),
+            burn_entry in arb_asset_to_burn(),
+        ) {
+            let bundle_version = bundle.bundle_version();
+            let expected =
+                Proof::expected_proof_size(bundle_version.circuit_version(), bundle.actions().len());
+
+            let result = Bundle::try_from_parts(
+                bundle.actions().clone(),
+                *bundle.flags(),
+                *bundle.value_balance(),
+                vec![burn_entry],
+                *bundle.anchor(),
+                Authorized::from_parts(
+                    Proof::new(vec![0u8; expected]),
+                    bundle.authorization().binding_signature().clone(),
+                ),
+                bundle_version,
+            );
+            prop_assert_eq!(result.err(), Some(BundleError::Burn(BurnError::BurnNotPermitted)));
+        }
+
+        #[test]
+        fn try_from_parts_rejects_an_invalid_burn(bundle in arb_bundle_zsa(3)) {
+            // `arb_bundle_zsa` draws a valid non-empty burn; each case below breaks one rule.
+            // Only the burn changes, so it is the sole reason `try_from_parts` can fail.
+            let rebuild = |burn| {
+                Bundle::try_from_parts(
+                    bundle.actions().clone(),
+                    *bundle.flags(),
+                    *bundle.value_balance(),
+                    burn,
+                    *bundle.anchor(),
+                    bundle.authorization().clone(),
+                    bundle.bundle_version(),
+                )
+                .err()
+            };
+
+            let burn = bundle.burn().clone();
+            prop_assert!(!burn.is_empty());
+            prop_assert_eq!(rebuild(burn.clone()), None);
+
+            let mut duplicated = burn.clone();
+            duplicated.push(burn[0]);
+            prop_assert_eq!(
+                rebuild(duplicated),
+                Some(BundleError::Burn(BurnError::DuplicateAsset))
+            );
+
+            let mut zatoshi = burn.clone();
+            zatoshi[0].0 = AssetBase::zatoshi();
+            prop_assert_eq!(
+                rebuild(zatoshi),
+                Some(BundleError::Burn(BurnError::ZatoshiAsset))
+            );
+
+            let mut zero = burn.clone();
+            zero[0].1 = NoteValue::from_raw(0);
+            prop_assert_eq!(rebuild(zero), Some(BundleError::Burn(BurnError::ZeroAmount)));
+
+            let mut too_large = burn;
+            too_large[0].1 = NoteValue::from_raw(MAX_BURN_VALUE + 1);
+            prop_assert_eq!(
+                rebuild(too_large),
+                Some(BundleError::Burn(BurnError::InvalidAmount))
+            );
+        }
+
+        #[test]
         fn try_from_parts_preserves_cross_address_disabled(
-            bundle in arb_bundle(3)
+            // `bundle_version` below is non-ZSA; `arb_bundle_vanilla` keeps the actions non-ZSA
+            // too, avoiding an unrelated `MismatchedActionCiphertextKind` error.
+            bundle in arb_bundle_vanilla(3)
         ) {
             let actions = bundle.actions().clone();
             let mut flags = *bundle.flags();
@@ -1679,6 +2190,7 @@ pub(crate) mod tests {
                     actions,
                     flags,
                     value_balance,
+                    vec![],
                     anchor,
                     authorization,
                     BundleVersion::orchard_v3(),
@@ -1689,10 +2201,11 @@ pub(crate) mod tests {
 
         #[test]
         fn try_from_parts_checks_proof_size_with_cross_address_disabled(
-            bundle in arb_bundle(3)
+            bundle in arb_bundle_vanilla(3)
         ) {
+            let bundle_version = BundleVersion::orchard_v3();
             let actions = bundle.actions().clone();
-            let expected = Proof::expected_proof_size(actions.len());
+            let expected = Proof::expected_proof_size(bundle_version.circuit_version(), actions.len());
             let mut flags = *bundle.flags();
             flags.cross_address_enabled = false;
             let value_balance = *bundle.value_balance();
@@ -1704,12 +2217,13 @@ pub(crate) mod tests {
                     actions,
                     flags,
                     value_balance,
+                    vec![],
                     anchor,
                     Authorized::from_parts(
                         Proof::new(vec![0u8; expected + 1]),
                         binding_signature,
                     ),
-                    BundleVersion::orchard_v3(),
+                    bundle_version,
                 )
                 .err(),
                 Some(BundleError::NonCanonicalProofSize { expected, actual: expected + 1 })
@@ -1717,21 +2231,27 @@ pub(crate) mod tests {
         }
 
         #[test]
-        fn insecure_v1_skips_proof_size_enforcement(bundle in arb_bundle(3)) {
+        fn insecure_v1_skips_proof_size_enforcement(
+            // `bundle_version` below is non-ZSA; `arb_bundle_vanilla` keeps the actions non-ZSA
+            // too, avoiding an unrelated `MismatchedActionCiphertextKind` error.
+            bundle in arb_bundle_vanilla(3)
+        ) {
             // The historical pre-NU6.2 Orchard pool does not enforce canonical proof size, so a
             // padded proof is accepted: its transaction is already committed and cannot be
             // re-canonicalized.
-            let expected = Proof::expected_proof_size(bundle.actions().len());
+            let bundle_version = BundleVersion::orchard_insecure_v1();
+            let expected = Proof::expected_proof_size(bundle_version.circuit_version(), bundle.actions().len());
             let padded = Bundle::try_from_parts(
                 bundle.actions().clone(),
                 Flags::ENABLED,
                 *bundle.value_balance(),
+                vec![],
                 *bundle.anchor(),
                 Authorized::from_parts(
                     Proof::new(vec![0u8; expected + 1]),
                     bundle.authorization().binding_signature().clone(),
                 ),
-                BundleVersion::orchard_insecure_v1(),
+                bundle_version,
             );
             prop_assert!(padded.is_ok());
         }
@@ -1742,10 +2262,14 @@ pub(crate) mod tests {
     fn from_parts_rejects_unrepresentable_flags() {
         // A cross-address-disabled flag set has no pre-NU6.3 Orchard encoding, so a bundle
         // carrying that combination cannot be constructed under `orchard_v2()`.
-        let bundle = sample_authorized_bundle(1);
+        //
+        // `bundle_version` below is non-ZSA; `sample_authorized_bundle_vanilla` keeps the actions
+        // non-ZSA too, avoiding an unrelated `MismatchedActionCiphertextKind` error.
+        let bundle = sample_authorized_bundle_vanilla(1);
         let flags = Flags::from_parts(
             bundle.flags().spends_enabled(),
             bundle.flags().outputs_enabled(),
+            false,
             false,
         );
 
@@ -1754,6 +2278,7 @@ pub(crate) mod tests {
                 bundle.actions().clone(),
                 flags,
                 *bundle.value_balance(),
+                vec![],
                 *bundle.anchor(),
                 bundle.authorization().clone(),
                 BundleVersion::orchard_v2(),
@@ -1766,11 +2291,14 @@ pub(crate) mod tests {
     #[cfg(feature = "circuit")]
     #[test]
     fn verify_proof_rejects_cross_address_disabled_for_unsupported_keys() {
-        let bundle = with_cross_address_disabled(sample_authorized_bundle(1));
+        // The `vk`s below are non-ZSA; `sample_authorized_bundle_vanilla` keeps the bundle
+        // non-ZSA too, avoiding an unrelated `InvalidInstances` error from a mismatched circuit
+        // shape.
+        let bundle = with_cross_address_disabled(sample_authorized_bundle_vanilla(1));
 
         for circuit_version in [
-            crate::circuit::OrchardCircuitVersion::InsecurePreNu6_2,
-            crate::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+            crate::circuit_version::OrchardCircuitVersion::InsecurePreNu6_2,
+            crate::circuit_version::OrchardCircuitVersion::FixedPostNu6_2,
         ] {
             let vk = crate::circuit::VerifyingKey::build(circuit_version);
 
