@@ -116,23 +116,6 @@ jobs:
       - name: Test Orchard book
         run: mdbook test book/
 
-  codecov:
-    name: Code coverage
-    runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin:develop-nightly
-      options: --security-opt seccomp=unconfined
-    steps:
-      - uses: actions/checkout@v7
-      - name: Generate coverage report
-        # Enable every feature except `verifier-fingerprint`: it is opt-in capture tooling whose
-        # tests build the k=11 proving key and generate real proofs, which are far too heavy to run
-        # under coverage instrumentation on every PR. Run those manually per the docs in
-        # `src/circuit/fingerprint/mod.rs`.
-        run: cargo tarpaulin --engine llvm --features "dev-graph unstable-frost unstable-voting-circuits test-dependencies" --release --timeout 600 --out xml
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7.0.0
-
   doc-links:
     name: Intra-doc links
     runs-on: ubuntu-latest

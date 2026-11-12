@@ -9,7 +9,8 @@ use pprof::criterion::{Output, PProfProfiler};
 use orchard::{
     builder::{Builder, BundleType},
     bundle::BundleVersion,
-    circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
+    circuit::{ProvingKey, VerifyingKey},
+    circuit_version::OrchardCircuitVersion,
     keys::{FullViewingKey, Scope, SpendingKey},
     value::NoteValue,
     Anchor, Bundle,

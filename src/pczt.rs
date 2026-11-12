@@ -393,7 +393,8 @@ mod tests {
     use crate::{
         builder::{Builder, BundleMetadata, BundleType},
         bundle::{BundleVersion, Flags},
-        circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
+        circuit::{ProvingKey, VerifyingKey},
+        circuit_version::OrchardCircuitVersion,
         constants::MERKLE_DEPTH_ORCHARD,
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
@@ -1515,6 +1516,7 @@ mod tests {
         pczt_bundle.zkproof = Some(crate::Proof::new(vec![
             0;
             crate::Proof::expected_proof_size(
+                pczt_bundle.bundle_version.circuit_version(),
                 pczt_bundle.actions.len()
             )
         ]));

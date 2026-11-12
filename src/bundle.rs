@@ -22,6 +22,7 @@ use crate::{
     action::Action,
     address::Address,
     bundle::commitments::{hash_bundle_auth_data, hash_bundle_txid_data},
+    circuit_version::OrchardCircuitVersion,
     keys::{IncomingViewingKey, OutgoingViewingKey, PreparedIncomingViewingKey},
     note::{Note, NoteVersion},
     note_encryption::BundleDomain,
@@ -32,7 +33,7 @@ use crate::{
 };
 
 #[cfg(feature = "circuit")]
-use crate::circuit::{Instance, OrchardCircuitVersion, VerifyingKey};
+use crate::circuit::{Instance, VerifyingKey};
 
 #[cfg(feature = "circuit")]
 impl<T> Action<T> {
@@ -129,7 +130,6 @@ impl BundleVersion {
     /// under [`ProtocolVersion::V3`] share the post-NU6.3 circuit, so build a key with
     /// `ProvingKey::build(bundle_version.circuit_version())` /
     /// `VerifyingKey::build(bundle_version.circuit_version())`.
-    #[cfg(feature = "circuit")]
     pub fn circuit_version(&self) -> OrchardCircuitVersion {
         match self.protocol_version {
             ProtocolVersion::InsecureV1 => OrchardCircuitVersion::InsecurePreNu6_2,
@@ -162,6 +162,12 @@ impl BundleVersion {
             (self.protocol_version, self.value_pool),
             (ProtocolVersion::V3, ValuePool::Orchard)
         )
+    }
+
+    /// Whether the consensus rules for this version *permit* zsa transfers.
+    pub(crate) fn permits_zsa(&self) -> bool {
+        // TODO ZSA: return true only for bundle versions that support ZSA
+        false
     }
 
     /// The default [`Flags`] for a bundle of this version: spends and outputs enabled, with the
@@ -236,13 +242,21 @@ pub struct Flags {
     /// expanded receiver as the note it spends; proving and verification must reject the
     /// bundle unless they use a circuit key that supports the restriction.
     cross_address_enabled: bool,
+    /// Flag denoting whether ZSA functionality is enabled in the transaction.
+    ///
+    /// If `false`,  all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with zatoshi asset. If `true`, `Action`s may use any asset.
+    zsa_enabled: bool,
 }
 
 const FLAG_SPENDS_ENABLED: u8 = 0b0000_0001;
 const FLAG_OUTPUTS_ENABLED: u8 = 0b0000_0010;
 const FLAG_V6_CROSS_ADDRESS_ENABLED: u8 = 0b0000_0100;
-const FLAGS_ALWAYS_EXPECTED_UNSET: u8 =
-    !(FLAG_SPENDS_ENABLED | FLAG_OUTPUTS_ENABLED | FLAG_V6_CROSS_ADDRESS_ENABLED);
+const FLAG_ZSA_ENABLED: u8 = 0b0000_1000;
+const FLAGS_ALWAYS_EXPECTED_UNSET: u8 = !(FLAG_SPENDS_ENABLED
+    | FLAG_OUTPUTS_ENABLED
+    | FLAG_V6_CROSS_ADDRESS_ENABLED
+    | FLAG_ZSA_ENABLED);
 
 impl Flags {
     /// Construct a set of flags from its constituent parts, including the cross-address bit.
@@ -258,6 +272,8 @@ impl Flags {
             spends_enabled,
             outputs_enabled,
             cross_address_enabled,
+            // TODO ZSA: zsa_enabled should be a param, not hardcoded here
+            zsa_enabled: false,
         }
     }
 
@@ -272,6 +288,7 @@ impl Flags {
         spends_enabled: true,
         outputs_enabled: true,
         cross_address_enabled: true,
+        zsa_enabled: false,
     };
 
     /// The flag set for a bundle that may create notes but not spend them: every
@@ -283,6 +300,7 @@ impl Flags {
         spends_enabled: false,
         outputs_enabled: true,
         cross_address_enabled: true,
+        zsa_enabled: false,
     };
 
     /// The flag set for a bundle that may spend notes but not create them: every
@@ -294,6 +312,7 @@ impl Flags {
         spends_enabled: true,
         outputs_enabled: false,
         cross_address_enabled: true,
+        zsa_enabled: false,
     };
 
     /// The flag set with spends and outputs enabled and cross-address transfers disabled.
@@ -304,6 +323,7 @@ impl Flags {
         spends_enabled: true,
         outputs_enabled: true,
         cross_address_enabled: false,
+        zsa_enabled: false,
     };
 
     /// Flag denoting whether Orchard spends are enabled in the transaction.
@@ -332,6 +352,14 @@ impl Flags {
     /// bundle unless they use a circuit key that supports the restriction.
     pub fn cross_address_enabled(&self) -> bool {
         self.cross_address_enabled
+    }
+
+    /// Flag denoting whether ZSA functionality is enabled in the transaction.
+    ///
+    /// If `false`, all notes within [`Action`]s in the transaction's [`Bundle`] are
+    /// guaranteed to be notes with zatoshi asset. If `true`, `Action`s may use any asset.
+    pub fn zsa_enabled(&self) -> bool {
+        self.zsa_enabled
     }
 
     /// Serialize flags to a byte as defined in [Zcash Protocol Spec § 7.1: Transaction
@@ -375,6 +403,13 @@ impl Flags {
             (ValuePool::Ironwood, _) => return None,
         }
 
+        if self.zsa_enabled {
+            if !bundle_version.permits_zsa() {
+                return None;
+            }
+            value |= FLAG_ZSA_ENABLED;
+        }
+
         Some(value)
     }
 
@@ -398,7 +433,7 @@ impl Flags {
     ///
     /// [txencoding]: https://zips.z.cash/protocol/protocol.pdf#txnencoding
     pub fn from_byte(value: u8, bundle_version: BundleVersion) -> Option<Self> {
-        // Bits 3..=7 are always reserved and MUST be 0.
+        // Bits 4..=7 are always reserved and MUST be 0.
         // https://p.z.cash/TCR:bad-txns-v5-reserved-bits-nonzero
         if value & FLAGS_ALWAYS_EXPECTED_UNSET != 0 {
             return None;
@@ -421,10 +456,19 @@ impl Flags {
             ProtocolVersion::InsecureV1 | ProtocolVersion::V2 => true,
             ProtocolVersion::V3 => bit2,
         };
+
+        // Bit 3 (`zsa_enabled`) can only be 1 for a bundle version that permits ZSA
+        // transfers; it MUST be 0 otherwise.
+        let bit3 = value & FLAG_ZSA_ENABLED != 0;
+        if bit3 && !bundle_version.permits_zsa() {
+            return None;
+        }
+
         Some(Self {
             spends_enabled: value & FLAG_SPENDS_ENABLED != 0,
             outputs_enabled: value & FLAG_OUTPUTS_ENABLED != 0,
             cross_address_enabled,
+            zsa_enabled: bit3,
         })
     }
 }
@@ -486,8 +530,12 @@ impl<T: Authorization, V: fmt::Debug> fmt::Debug for Bundle<T, V> {
 /// Returns [`BundleError::NonCanonicalProofSize`] if it does not. This is the shared check
 /// used by the proof-carrying bundle constructors to reject non-canonical (e.g. padded)
 /// proofs; see [`Bundle::try_from_parts`] (GHSA-2x4w-pxqw-58v9).
-pub(crate) fn validate_proof_size(proof: &Proof, num_actions: usize) -> Result<(), BundleError> {
-    let expected = Proof::expected_proof_size(num_actions);
+pub(crate) fn validate_proof_size(
+    circuit_version: OrchardCircuitVersion,
+    proof: &Proof,
+    num_actions: usize,
+) -> Result<(), BundleError> {
+    let expected = Proof::expected_proof_size(circuit_version, num_actions);
     let actual = proof.as_ref().len();
     if actual == expected {
         Ok(())
@@ -948,7 +996,11 @@ impl<V> Bundle<Authorized, V> {
         bundle_version: BundleVersion,
     ) -> Result<Self, BundleError> {
         if bundle_version.enforces_canonical_proof_size() {
-            validate_proof_size(authorization.proof(), actions.len())?;
+            validate_proof_size(
+                bundle_version.circuit_version(),
+                authorization.proof(),
+                actions.len(),
+            )?;
         }
         validate_flags(&flags, bundle_version)?;
         Ok(Bundle::from_parts_unchecked(
@@ -989,7 +1041,7 @@ impl<V> Bundle<Authorized, V> {
     ///
     /// Also returns an error if proof verification fails.
     ///
-    /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit::OrchardCircuitVersion::PostNu6_3
+    /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit_version::OrchardCircuitVersion::PostNu6_3
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
         self.authorization()
@@ -1168,6 +1220,7 @@ pub mod testing {
                 spends_enabled,
                 outputs_enabled,
                 cross_address_enabled,
+                zsa_enabled: false,
             }
         }
     }
@@ -1226,7 +1279,7 @@ pub mod testing {
             sk in arb_binding_signing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             // A fake proof of the canonical length, so the bundle passes `try_from_parts`.
-            fake_proof in vec(prop::num::u8::ANY, Proof::expected_proof_size(n_actions)),
+            fake_proof in vec(prop::num::u8::ANY, Proof::expected_proof_size(bundle_version.circuit_version(), n_actions)),
             fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
             flags in Just(flags),
             bundle_version in Just(bundle_version),
@@ -1402,23 +1455,33 @@ pub(crate) mod tests {
             );
         }
 
-        // Bits 3.. are always reserved, in every NU6.3 pool.
-        for value in 0b1000..=u8::MAX {
+        // Bit 3 (`zsa_enabled`) is reserved until some bundle version's `permits_zsa()`
+        // returns true; today no version does, so every value with bit 3 set is rejected.
+        for value in 0b1000..0b10000 {
+            assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v3()), None);
+            assert_eq!(Flags::from_byte(value, BundleVersion::ironwood_v3()), None);
+        }
+
+        // Bits 4.. are always reserved, in every NU6.3 pool.
+        for value in 0b10000..=u8::MAX {
             assert_eq!(Flags::from_byte(value, BundleVersion::orchard_v3()), None);
             assert_eq!(Flags::from_byte(value, BundleVersion::ironwood_v3()), None);
         }
     }
 
     #[test]
-    fn expected_proof_size_matches_known_values() {
+    fn expected_proof_size_matches_known_values_ironwood_v3() {
         // The canonical proof sizes for one and two actions, fixed by the action circuit.
-        assert_eq!(Proof::expected_proof_size(1), 4992);
-        assert_eq!(Proof::expected_proof_size(2), 7264);
+        let circuit_version = BundleVersion::ironwood_v3().circuit_version();
+        assert_eq!(Proof::expected_proof_size(circuit_version, 1), 4992);
+        assert_eq!(Proof::expected_proof_size(circuit_version, 2), 7264);
 
         // The size is affine in the number of actions: each action contributes a fixed amount.
-        let per_action = Proof::expected_proof_size(2) - Proof::expected_proof_size(1);
+        let per_action = Proof::expected_proof_size(circuit_version, 2)
+            - Proof::expected_proof_size(circuit_version, 1);
         assert_eq!(
-            Proof::expected_proof_size(3) - Proof::expected_proof_size(2),
+            Proof::expected_proof_size(circuit_version, 3)
+                - Proof::expected_proof_size(circuit_version, 2),
             per_action,
         );
     }
@@ -1626,10 +1689,10 @@ pub(crate) mod tests {
             bundle in arb_bundle(3)
         ) {
             let actions = bundle.actions().clone();
-            let expected = Proof::expected_proof_size(actions.len());
             let flags = *bundle.flags();
             // Ironwood enforces canonical proof size and accepts any cross-address flag value.
             let bundle_version = BundleVersion::ironwood_v3();
+            let expected = Proof::expected_proof_size(bundle_version.circuit_version(), actions.len());
             let value_balance = *bundle.value_balance();
             let anchor = *bundle.anchor();
             let binding_signature = bundle.authorization().binding_signature().clone();
@@ -1691,8 +1754,9 @@ pub(crate) mod tests {
         fn try_from_parts_checks_proof_size_with_cross_address_disabled(
             bundle in arb_bundle(3)
         ) {
+            let bundle_version = BundleVersion::orchard_v3();
             let actions = bundle.actions().clone();
-            let expected = Proof::expected_proof_size(actions.len());
+            let expected = Proof::expected_proof_size(bundle_version.circuit_version(), actions.len());
             let mut flags = *bundle.flags();
             flags.cross_address_enabled = false;
             let value_balance = *bundle.value_balance();
@@ -1709,7 +1773,7 @@ pub(crate) mod tests {
                         Proof::new(vec![0u8; expected + 1]),
                         binding_signature,
                     ),
-                    BundleVersion::orchard_v3(),
+                    bundle_version,
                 )
                 .err(),
                 Some(BundleError::NonCanonicalProofSize { expected, actual: expected + 1 })
@@ -1721,7 +1785,8 @@ pub(crate) mod tests {
             // The historical pre-NU6.2 Orchard pool does not enforce canonical proof size, so a
             // padded proof is accepted: its transaction is already committed and cannot be
             // re-canonicalized.
-            let expected = Proof::expected_proof_size(bundle.actions().len());
+            let bundle_version = BundleVersion::orchard_insecure_v1();
+            let expected = Proof::expected_proof_size(bundle_version.circuit_version(), bundle.actions().len());
             let padded = Bundle::try_from_parts(
                 bundle.actions().clone(),
                 Flags::ENABLED,
@@ -1731,7 +1796,7 @@ pub(crate) mod tests {
                     Proof::new(vec![0u8; expected + 1]),
                     bundle.authorization().binding_signature().clone(),
                 ),
-                BundleVersion::orchard_insecure_v1(),
+                bundle_version,
             );
             prop_assert!(padded.is_ok());
         }
@@ -1769,8 +1834,8 @@ pub(crate) mod tests {
         let bundle = with_cross_address_disabled(sample_authorized_bundle(1));
 
         for circuit_version in [
-            crate::circuit::OrchardCircuitVersion::InsecurePreNu6_2,
-            crate::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+            crate::circuit_version::OrchardCircuitVersion::InsecurePreNu6_2,
+            crate::circuit_version::OrchardCircuitVersion::FixedPostNu6_2,
         ] {
             let vk = crate::circuit::VerifyingKey::build(circuit_version);
 

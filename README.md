@@ -2,6 +2,10 @@
 
 Requires Rust 1.88+.
 
+## Zcash Shielded Assets (ZSA)
+
+This branch contains only the OrchardZSA Action circuit, as specified in [ZIP 226](https://zcash-zips-qedit.netlify.app/zip-0226). The full ZSA implementation (issuance, transfer, burn and the [vZSA transaction format](https://zcash-zips-qedit.netlify.app/draft-qedit-zsa-transaction-format-and-digests)) is on the `zsa1` or `lt-zsa1` branch.
+
 ## Documentation
 
 - [The Orchard Book](https://zcash.github.io/orchard/)

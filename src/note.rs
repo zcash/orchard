@@ -1,4 +1,5 @@
 //! Data structures used for note construction.
+use alloc::vec::Vec;
 use core::fmt;
 use memuse::DynamicUsage;
 
@@ -7,7 +8,7 @@ use ff::PrimeField;
 use group::GroupEncoding;
 use pasta_curves::pallas;
 use rand::RngCore;
-use subtle::CtOption;
+use subtle::{Choice, ConditionallySelectable, CtOption};
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
@@ -15,6 +16,9 @@ use crate::{
     value::NoteValue,
     Address,
 };
+
+pub(crate) mod asset_base;
+pub use self::asset_base::AssetBase;
 
 const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";
 const ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR: u8 = 0x0B;
@@ -231,6 +235,17 @@ impl RandomSeed {
     }
 }
 
+impl ConditionallySelectable for RandomSeed {
+    fn conditional_select(a: &Self, b: &Self, choice: Choice) -> Self {
+        let result: Vec<u8> =
+            a.0.iter()
+                .zip(b.0.iter())
+                .map(|(a_i, b_i)| u8::conditional_select(a_i, b_i, choice))
+                .collect();
+        RandomSeed(<[u8; 32]>::try_from(result).unwrap())
+    }
+}
+
 /// A discrete amount of funds received by an address.
 #[derive(Debug, Copy, Clone)]
 pub struct Note {
@@ -238,6 +253,8 @@ pub struct Note {
     recipient: Address,
     /// The value of this note.
     value: NoteValue,
+    /// The asset of this note.
+    asset: AssetBase,
     /// A unique creation ID for this note.
     ///
     /// This is produced from the nullifier of the note that will be spent in the [`Action`] that
@@ -247,6 +264,10 @@ pub struct Note {
     rho: Rho,
     /// The seed randomness for various note components.
     rseed: RandomSeed,
+    /// The seed randomness for split notes.
+    ///
+    /// If it is not a split note, this field is `None`.
+    rseed_split_note: CtOption<RandomSeed>,
     /// The note plaintext version, determining rcm derivation strategy.
     version: NoteVersion,
 }
@@ -286,8 +307,36 @@ impl Note {
         let note = Note {
             recipient,
             value,
+            // TODO ZSA: asset should be a param, not hardcoded here
+            asset: AssetBase::zatoshi(),
             rho,
             rseed,
+            rseed_split_note: CtOption::new(rseed, 0u8.into()),
+            version,
+        };
+        CtOption::new(note, note.commitment_inner().is_some())
+    }
+
+    /// Creates a `Note` from all its component parts (rseed_split_note included).
+    ///
+    /// This function is only used in tests.
+    #[cfg(test)]
+    pub(crate) fn from_parts_internal(
+        recipient: Address,
+        value: NoteValue,
+        asset: AssetBase,
+        rho: Rho,
+        rseed: RandomSeed,
+        rseed_split_note: CtOption<RandomSeed>,
+        version: NoteVersion,
+    ) -> CtOption<Self> {
+        let note = Note {
+            recipient,
+            value,
+            asset,
+            rho,
+            rseed,
+            rseed_split_note,
             version,
         };
         CtOption::new(note, note.commitment_inner().is_some())
@@ -356,9 +405,19 @@ impl Note {
         self.value
     }
 
+    /// Returns the asset of this note.
+    pub fn asset(&self) -> AssetBase {
+        self.asset
+    }
+
     /// Returns the rseed value of this note.
     pub fn rseed(&self) -> &RandomSeed {
         &self.rseed
+    }
+
+    /// Returns the rseed_split_note value of this note.
+    pub(crate) fn rseed_split_note(&self) -> CtOption<RandomSeed> {
+        self.rseed_split_note
     }
 
     /// Derives the ephemeral secret key for this note.
@@ -379,6 +438,14 @@ impl Note {
     /// Derives the ψ value for this note.
     pub(crate) fn psi(&self) -> pallas::Base {
         self.rseed.psi(&self.rho())
+    }
+
+    /// Derives the `psi_nf` value for this note.
+    ///
+    /// For a split note, this value comes from `rseed_split_note`. It is then different from
+    /// [`Self::psi`]. For all other notes, the two values are the same.
+    pub(crate) fn psi_nf(&self) -> pallas::Base {
+        self.rseed_split_note.unwrap_or(self.rseed).psi(&self.rho())
     }
 
     /// Derives the note commitment trapdoor for this note.
@@ -428,6 +495,7 @@ impl Note {
             g_d_bytes,
             pk_d_bytes,
             self.value,
+            self.asset,
             self.rho.0,
             psi,
             self.rcm(),
@@ -436,7 +504,13 @@ impl Note {
 
     /// Derives the nullifier for this note.
     pub fn nullifier(&self, fvk: &FullViewingKey) -> Nullifier {
-        Nullifier::derive(fvk.nk(), self.rho.0, self.psi(), self.commitment())
+        Nullifier::derive(
+            fvk.nk(),
+            self.rho.0,
+            self.psi_nf(),
+            self.commitment(),
+            self.rseed_split_note.is_some(),
+        )
     }
 }
 
@@ -469,8 +543,11 @@ pub mod testing {
     use proptest::prelude::*;
 
     use crate::{
-        address::testing::arb_address, note::nullifier::testing::arb_nullifier, value::NoteValue,
+        address::testing::arb_address, note::nullifier::testing::arb_nullifier, note::AssetBase,
+        value::NoteValue,
     };
+
+    use subtle::CtOption;
 
     use super::{Note, NoteVersion, RandomSeed, Rho};
 
@@ -491,8 +568,11 @@ pub mod testing {
             Note {
                 recipient,
                 value,
+                // TODO ZSA: asset should not be hardcoded here
+                asset: AssetBase::zatoshi(),
                 rho,
                 rseed,
+                rseed_split_note: CtOption::new(rseed, 0u8.into()),
                 version,
             }
         }
@@ -537,12 +617,28 @@ mod tests {
         let rho_inner = rho.into_inner();
         let value = NoteValue::from_raw(tv.note_v);
 
-        let cmx_old =
-            NoteCommitment::derive(g_d_bytes, pk_d_bytes, value, rho_inner, psi, rcm_old).unwrap();
+        let cmx_old = NoteCommitment::derive(
+            g_d_bytes,
+            pk_d_bytes,
+            value,
+            AssetBase::zatoshi(),
+            rho_inner,
+            psi,
+            rcm_old,
+        )
+        .unwrap();
         let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
 
-        let cmx_qr =
-            NoteCommitment::derive(g_d_bytes, pk_d_bytes, value, rho_inner, psi, rcm_new).unwrap();
+        let cmx_qr = NoteCommitment::derive(
+            g_d_bytes,
+            pk_d_bytes,
+            value,
+            AssetBase::zatoshi(),
+            rho_inner,
+            psi,
+            rcm_new,
+        )
+        .unwrap();
         let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
 
         QrRcmDerivation {
@@ -584,5 +680,42 @@ mod tests {
                 "vector {i}: cmx_qr mismatch"
             );
         }
+    }
+
+    /// A split note takes its psi from the split seed, and adds NULLIFIER_L to its nullifier.
+    /// No constructor sets `rseed_split_note`, so this test sets it directly.
+    #[test]
+    fn split_note_nullifier() {
+        let mut rng = rand::rngs::OsRng;
+        let (_, fvk, note) = Note::dummy(&mut rng, None, NoteVersion::V3);
+        let rho = note.rho();
+        let split_rseed = RandomSeed::random(&mut rng, &rho);
+        let split_note = Note {
+            rseed_split_note: CtOption::new(split_rseed, 1u8.into()),
+            ..note
+        };
+
+        let psi_nf = split_rseed.psi(&rho);
+        assert_eq!(split_note.psi_nf(), psi_nf);
+        assert_ne!(psi_nf, note.psi());
+
+        let derive = |psi, is_split: bool| {
+            Nullifier::derive(
+                fvk.nk(),
+                rho.into_inner(),
+                psi,
+                note.commitment(),
+                Choice::from(u8::from(is_split)),
+            )
+        };
+
+        // The split note uses the split seed's psi and adds NULLIFIER_L.
+        assert_eq!(split_note.nullifier(&fvk), derive(psi_nf, true));
+        // Without NULLIFIER_L  (is_split=false), the result is different.
+        assert_ne!(split_note.nullifier(&fvk), derive(psi_nf, false));
+        // With the note's own psi, the result is different.
+        assert_ne!(split_note.nullifier(&fvk), derive(note.psi(), true));
+        // A note with no split seed uses its own psi and does not add NULLIFIER_L (is_split=false).
+        assert_eq!(note.nullifier(&fvk), derive(note.psi(), false));
     }
 }
