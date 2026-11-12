@@ -4,13 +4,7 @@ Requires Rust 1.88+.
 
 ## Zcash Shielded Assets (ZSA)
 
-This fork extends the orchard crate functionality with issuing, transferring and burning custom assets in the Ironwood shielded pool. Implemented according to the following specifications:
-
-| Specification | Covers |
-|---|---|
-| [ZIP 226](https://zcash-zips-qedit.netlify.app/zip-0226) | Transfer and burn of ZSAs |
-| [ZIP 227](https://zcash-zips-qedit.netlify.app/zip-0227) | Issuance of ZSAs |
-| [ZSA Transaction Format and Digests (draft)](https://zcash-zips-qedit.netlify.app/draft-qedit-zsa-transaction-format-and-digests) | vZSA transaction format |
+This branch contains only the OrchardZSA Action circuit, as specified in [ZIP 226](https://zcash-zips-qedit.netlify.app/zip-0226). The full ZSA implementation (issuance, transfer, burn and the [vZSA transaction format](https://zcash-zips-qedit.netlify.app/draft-qedit-zsa-transaction-format-and-digests)) is on the `zsa1` or `lt-zsa1` branch.
 
 ## Documentation
 
