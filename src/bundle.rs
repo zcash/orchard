@@ -1195,15 +1195,20 @@ impl<V> Bundle<Authorized, V> {
     ///
     /// # Errors
     ///
-    /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if this
-    /// bundle disables cross-address transfers and `vk` is not an
-    /// [`OrchardCircuitVersion::PostNu6_3`] verifying key.
+    /// Returns `Err(`[`halo2_proofs::plonk::Error::InvalidInstances`]`)` if `vk` is not
+    /// for this bundle version's circuit, or if this bundle disables cross-address
+    /// transfers and `vk` is not an [`OrchardCircuitVersion::PostNu6_3`] verifying key.
     ///
     /// Also returns an error if proof verification fails.
     ///
     /// [`OrchardCircuitVersion::PostNu6_3`]: crate::circuit_version::OrchardCircuitVersion::PostNu6_3
     #[cfg(feature = "circuit")]
     pub fn verify_proof(&self, vk: &VerifyingKey) -> Result<(), halo2_proofs::plonk::Error> {
+        // The flag checks in `Proof::verify` miss a ZSA bundle with `enableZSA = 0`.
+        if vk.circuit_version() != self.bundle_version.circuit_version() {
+            return Err(halo2_proofs::plonk::Error::InvalidInstances);
+        }
+
         self.authorization()
             .proof()
             .verify(vk, &self.to_instances())

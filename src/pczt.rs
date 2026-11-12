@@ -594,7 +594,10 @@ mod tests {
             .apply_binding_signature(sighash, rng)
             .unwrap();
 
-        assert!(bundle.verify_proof(&vk).is_ok());
+        let proof = bundle.authorization().proof();
+        assert!(proof.verify(&vk, &bundle.to_instances()).is_ok());
+        // The bundle is `orchard_v2`, so bundle-level verification wants the FixedPostNu6_2 key.
+        assert!(bundle.verify_proof(&vk).is_err());
     }
 
     #[test]

@@ -34,7 +34,8 @@ use Error::{
     AssetBaseCannotBeIdentityPoint, CannotBeFirstIssuance, CannotFinalizeOnFirstIssuance,
     IncorrectRhoDerivation, InvalidIssueBundleSig, InvalidIssueValidatingKey, InvalidSighashKind,
     IssueActionPreviouslyFinalizedAssetBase, IssueActionWithoutNoteNotFinalized,
-    IssueBundleIkMismatchAssetBase, MissingReferenceNoteOnFirstIssuance, ValueOverflow,
+    IssueBundleIkMismatchAssetBase, IssueNoteInvalidVersion, MissingReferenceNoteOnFirstIssuance,
+    ValueOverflow,
 };
 
 pub mod auth;
@@ -212,6 +213,7 @@ impl IssueAction {
     /// * `ValueOverflow`: The total amount value of all notes in the `IssueAction` overflows.
     /// * `IssueBundleIkMismatchAssetBase`: The provided `ik` is not used to derive the
     ///   `AssetBase` for **all** internal notes.
+    /// * `IssueNoteInvalidVersion`: A note is not a [`NoteVersion::ZSA`] note.
     /// * `AssetBaseCannotBeIdentityPoint`: The derived `AssetBase` is the identity point of the
     ///   Pallas curve.
     /// * `IssueActionWithoutNoteNotFinalized`: The `IssueAction` contains no notes and is not finalized.
@@ -236,6 +238,11 @@ impl IssueAction {
                 // All assets should be derived correctly
                 if note.asset() != issue_asset {
                     return Err(IssueBundleIkMismatchAssetBase);
+                }
+
+                // The version selects rcm, so a non-ZSA note would commit a wrong cmx.
+                if note.version() != NoteVersion::ZSA {
+                    return Err(IssueNoteInvalidVersion);
                 }
 
                 // The total amount should not overflow
@@ -868,6 +875,8 @@ pub enum Error {
     IncorrectRhoDerivation,
     /// Overflow error occurred while calculating the value of the asset
     ValueOverflow,
+    /// An issue note is not a [`NoteVersion::ZSA`] note.
+    IssueNoteInvalidVersion,
 
     /// No reference note is provided for the first issuance of a new asset.
     MissingReferenceNoteOnFirstIssuance,
@@ -928,6 +937,9 @@ impl fmt::Display for Error {
                     "overflow error occurred while calculating the value of the asset"
                 )
             }
+            IssueNoteInvalidVersion => {
+                write!(f, "an issue note is not a ZSA note")
+            }
             MissingReferenceNoteOnFirstIssuance => {
                 write!(
                     f,
@@ -945,7 +957,8 @@ mod tests {
             CannotBeFirstIssuance, CannotFinalizeOnFirstIssuance, IncorrectRhoDerivation,
             InvalidIssueBundleSig, InvalidIssueValidatingKey,
             IssueActionPreviouslyFinalizedAssetBase, IssueActionWithoutNoteNotFinalized,
-            IssueBundleIkMismatchAssetBase, MissingReferenceNoteOnFirstIssuance, ValueOverflow,
+            IssueBundleIkMismatchAssetBase, IssueNoteInvalidVersion,
+            MissingReferenceNoteOnFirstIssuance, ValueOverflow,
         },
         issuance::{
             auth::{IssueAuthKey, IssueValidatingKey, ZSASchnorr},
@@ -1147,6 +1160,14 @@ mod tests {
 
         let action = IssueAction::from_parts(hash, vec![note1, note2], false);
         assert_eq!(action.verify(&ik), Err(IssueBundleIkMismatchAssetBase));
+
+        // A non-ZSA note version is rejected too.
+        for version in [NoteVersion::V2, NoteVersion::V3] {
+            let note =
+                Note::new_issue_note(recipient, NoteValue::from_raw(10), asset, version, &mut rng);
+            let action = IssueAction::from_parts(hash, vec![note], false);
+            assert_eq!(action.verify(&ik), Err(IssueNoteInvalidVersion));
+        }
     }
 
     #[test]

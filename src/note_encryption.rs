@@ -573,7 +573,7 @@ pub type IronwoodDomain = NoteEncryptionDomain<IronwoodVersion>;
 /// ZSA-specific note encryption logic.
 ///
 /// This domain is otherwise identical to [`OrchardDomain`], but accepts only
-/// [`NoteVersion::ZSA`] note plaintexts, which use lead byte `0x04`.
+/// [`NoteVersion::ZSA`] note plaintexts, which use lead byte `0xF0`.
 pub type ZSADomain = NoteEncryptionDomain<ZSAVersion>;
 
 /// Note encryption logic restricted to a single note plaintext version.

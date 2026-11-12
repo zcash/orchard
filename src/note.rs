@@ -50,7 +50,10 @@ pub enum NoteVersion {
     ///
     /// [ZIP 2005]: https://zips.z.cash/zip-2005
     V3,
-    /// The quantum-recoverable ZSA note plaintext version.
+    /// The quantum-recoverable ZSA note plaintext version, identified by lead byte `0xF0`, as
+    /// defined in the [ZSA Transaction Format ZIP].
+    ///
+    /// [ZSA Transaction Format ZIP]: https://zips.z.cash/draft-qedit-zsa-transaction-format-and-digests#note-plaintexts
     ZSA,
 }
 
@@ -60,7 +63,7 @@ impl NoteVersion {
         match self {
             Self::V2 => 0x02,
             Self::V3 => 0x03,
-            Self::ZSA => 0x04,
+            Self::ZSA => 0xF0,
         }
     }
 
@@ -70,7 +73,7 @@ impl NoteVersion {
         match b {
             0x02 => Some(Self::V2),
             0x03 => Some(Self::V3),
-            0x04 => Some(Self::ZSA),
+            0xF0 => Some(Self::ZSA),
             _ => None,
         }
     }

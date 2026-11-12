@@ -36,6 +36,8 @@ pub enum BatchError {
     /// [`OrchardCircuitVersion::supports_cross_address_restriction`]: crate::circuit_version::OrchardCircuitVersion::supports_cross_address_restriction
     /// [`OrchardCircuitVersion::ZSA`]: crate::circuit_version::OrchardCircuitVersion::ZSA
     RestrictionUnsupportedByKey,
+    /// The verifying key is not for the bundle version's circuit.
+    CircuitVersionMismatch,
 }
 
 impl fmt::Display for BatchError {
@@ -45,6 +47,10 @@ impl fmt::Display for BatchError {
                 f,
                 "the bundle requires a cross-address restriction or ZSA support that the \
                  verifying key's circuit version does not provide",
+            ),
+            BatchError::CircuitVersionMismatch => write!(
+                f,
+                "the verifying key is not for the bundle version's circuit",
             ),
         }
     }
@@ -57,7 +63,7 @@ impl core::error::Error for BatchError {}
 /// This batch-validates proofs and RedPallas signatures. The verifying key is bound at
 /// construction: every bundle added to the batch is validated against it, and
 /// [`Self::add_bundle`] rejects up front any bundle whose flags the key's circuit version
-/// cannot enforce.
+/// cannot enforce or whose bundle version needs another circuit.
 #[derive(Debug)]
 pub struct BatchValidator<'a> {
     proofs: plonk::BatchVerifier<vesta::Affine>,
@@ -82,8 +88,8 @@ impl<'a> BatchValidator<'a> {
     /// Returns [`BatchError::RestrictionUnsupportedByKey`] if the bundle disables cross-address
     /// transfers but the validator's verifying key's circuit version does not support the
     /// cross-address restriction, or if the bundle enables ZSA but the validator's verifying
-    /// key's circuit version does not support ZSA; in either case the bundle is not added to
-    /// the batch.
+    /// key's circuit version does not support ZSA, and [`BatchError::CircuitVersionMismatch`] if
+    /// the key is not for the bundle version's circuit. A rejected bundle is not added.
     pub fn add_bundle<V: Copy + Into<i64>>(
         &mut self,
         bundle: &Bundle<Authorized, V>,
@@ -96,6 +102,11 @@ impl<'a> BatchValidator<'a> {
 
         if bundle.flags().zsa_enabled() && !self.vk.circuit_version().is_zsa() {
             return Err(BatchError::RestrictionUnsupportedByKey);
+        }
+
+        // The flag checks miss a ZSA bundle with `enableZSA = 0`.
+        if self.vk.circuit_version() != bundle.bundle_version().circuit_version() {
+            return Err(BatchError::CircuitVersionMismatch);
         }
 
         for action in bundle.actions().iter() {
@@ -163,7 +174,10 @@ mod tests {
 
     use super::{BatchError, BatchValidator};
     use crate::{
-        bundle::tests::{sample_authorized_bundle_vanilla, with_cross_address_disabled},
+        bundle::{
+            tests::{sample_authorized_bundle_vanilla, with_cross_address_disabled},
+            BundleVersion,
+        },
         circuit::VerifyingKey,
         circuit_version::OrchardCircuitVersion,
     };
@@ -172,9 +186,10 @@ mod tests {
     fn add_bundle_rejects_unsupported_cross_address_restriction() {
         // A vanilla draw keeps `zsa_enabled` false, so the cross-address restriction is the
         // only capability a key can lack here.
-        let bundle = with_cross_address_disabled(sample_authorized_bundle_vanilla(1))
+        let mut bundle = with_cross_address_disabled(sample_authorized_bundle_vanilla(1))
             .try_map_value_balance(i64::try_from)
             .expect("generated bundle value balance fits in i64");
+        bundle.bundle_version = BundleVersion::orchard_v3();
 
         // Keys whose circuit version cannot constrain the cross-address restriction reject
         // the bundle at insertion, so it never enters the batch.
@@ -204,6 +219,7 @@ mod tests {
         bundle.flags.zsa_enabled = true;
         // Cross-address stays enabled, so ZSA is the only capability a key can lack.
         bundle.flags.cross_address_enabled = true;
+        bundle.bundle_version = BundleVersion::zsa();
 
         // Only a ZSA key constrains the ZSA statement; every other key rejects at insertion.
         for circuit_version in [
@@ -221,6 +237,15 @@ mod tests {
         let vk = VerifyingKey::build(OrchardCircuitVersion::ZSA);
         let mut validator = BatchValidator::new(&vk);
         assert_eq!(validator.add_bundle(&bundle, [0; 32]), Ok(()));
+
+        // With `enableZSA = 0` a ZSA bundle still needs the ZSA key.
+        bundle.flags.zsa_enabled = false;
+        let vk = VerifyingKey::build(OrchardCircuitVersion::PostNu6_3);
+        let mut validator = BatchValidator::new(&vk);
+        assert_eq!(
+            validator.add_bundle(&bundle, [0; 32]),
+            Err(BatchError::CircuitVersionMismatch)
+        );
     }
 
     #[test]
