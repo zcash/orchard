@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use ff::PrimeField;
 use incrementalmerkletree::Hashable;
 use pasta_curves::pallas;
-use zcash_note_encryption::OutgoingCipherKey;
+use zcash_note_encryption::{note_bytes::NoteBytes, OutgoingCipherKey};
 use zip32::ChildIndex;
 
 use super::{Action, Bundle, Output, Spend, Zip32Derivation};
@@ -17,6 +17,7 @@ use crate::{
     note::{
         ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
     },
+    note_encryption::{enc_ciphertext_size, NoteCiphertextBytes},
     primitives::redpallas::{self, SpendAuth},
     tree::{MerkleHashOrchard, MerklePath},
     value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
@@ -375,12 +376,17 @@ impl Output {
             .into_option()
             .ok_or(ParseError::InvalidExtractedNoteCommitment)?;
 
+        // `NoteCiphertextBytes::from_slice` accepts either encoding, so pin the length to the
+        // one `note_version` implies. Otherwise a ciphertext of the wrong kind survives every
+        // PCZT role and is only rejected by `validate_action_ciphertext_kind` at extraction.
+        if enc_ciphertext.len() != enc_ciphertext_size(note_version) {
+            return Err(ParseError::InvalidEncCiphertext);
+        }
+
         let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: ephemeral_key,
-            enc_ciphertext: enc_ciphertext
-                .as_slice()
-                .try_into()
-                .map_err(|_| ParseError::InvalidEncCiphertext)?,
+            enc_ciphertext: NoteCiphertextBytes::from_slice(enc_ciphertext.as_slice())
+                .ok_or(ParseError::InvalidEncCiphertext)?,
             out_ciphertext: out_ciphertext
                 .as_slice()
                 .try_into()

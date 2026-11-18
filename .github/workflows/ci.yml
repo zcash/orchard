@@ -14,8 +14,18 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
     steps:
       - uses: actions/checkout@v7
+      # Compile these tests, to catch one that silently needs the feature.
+      # They run in the superset below (issuance only adds code).
+      - name: Compile-check the default-features tests
+        env:
+          # Disable LTO in CI to avoid very slow/hanging release test builds on macOS (rustc/LLVM).
+          CARGO_PROFILE_RELEASE_LTO: "off"
+        run: cargo test --verbose --release --no-run
       - name: Run tests
-        run: cargo test --verbose
+        env:
+          # Disable LTO in CI to avoid very slow/hanging release test builds on macOS (rustc/LLVM).
+          CARGO_PROFILE_RELEASE_LTO: "off"
+        run: cargo test --verbose --release --features zsa-issuance
       # verifier-fingerprint capture tests build the k=11 proving key and run real proofs, too
       # heavy for every PR (regenerate the fixtures manually per the docs in
       # src/circuit/fingerprint/mod.rs). Compile them so the cfg(test) module can't rot unnoticed:
@@ -115,23 +125,6 @@ jobs:
           echo `pwd`/mdbook >> $GITHUB_PATH
       - name: Test Orchard book
         run: mdbook test book/
-
-  codecov:
-    name: Code coverage
-    runs-on: ubuntu-latest
-    container:
-      image: xd009642/tarpaulin:develop-nightly
-      options: --security-opt seccomp=unconfined
-    steps:
-      - uses: actions/checkout@v7
-      - name: Generate coverage report
-        # Enable every feature except `verifier-fingerprint`: it is opt-in capture tooling whose
-        # tests build the k=11 proving key and generate real proofs, which are far too heavy to run
-        # under coverage instrumentation on every PR. Run those manually per the docs in
-        # `src/circuit/fingerprint/mod.rs`.
-        run: cargo tarpaulin --engine llvm --features "dev-graph unstable-frost unstable-voting-circuits test-dependencies" --release --timeout 600 --out xml
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7.0.0
 
   doc-links:
     name: Intra-doc links
