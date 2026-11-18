@@ -593,3 +593,62 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
 
     verify_bundle(&bundle, post_nu6_3_vk, TxVersion::V6);
 }
+
+/// A binding signature that does not match the bundle fails both batch and single validation,
+/// for Orchard and Ironwood bundles, whether the signature or the value balance was tampered with.
+#[test]
+fn wrong_binding_signature_fails_validation() {
+    let mut rng = OsRng;
+    let recipient = FullViewingKey::from(&SpendingKey::from_bytes([0; 32]).unwrap())
+        .address_at(0u32, Scope::External);
+
+    for (bundle_version, tx_version) in [
+        (BundleVersion::orchard_v2(), TxVersion::V5),
+        (BundleVersion::ironwood_v3(), TxVersion::V6),
+    ] {
+        let keys = cached_test_keys(bundle_version.circuit_version());
+        let (unauthorized, _) = output_only_builder(bundle_version, BundleType::DEFAULT, recipient)
+            .build::<i64>(&mut rng)
+            .unwrap()
+            .unwrap();
+        let sighash: [u8; 32] = unauthorized
+            .commitment(tx_version)
+            .expect("bundle flags are representable in this format")
+            .into();
+        let bundle = unauthorized
+            .create_proof(keys.proving_key(), &mut rng)
+            .unwrap()
+            .apply_signatures(rng, sighash, &[])
+            .unwrap();
+
+        // Returns the batch result, after checking that single validation agrees with it.
+        let validates = |bundle: &Bundle<Authorized, i64>| {
+            let mut validator = BatchValidator::new(keys.verifying_key());
+            validator.add_bundle(bundle, sighash).unwrap();
+            let batch = validator.validate(OsRng);
+            let single = bundle
+                .binding_validating_key()
+                .verify(&sighash, bundle.authorization().binding_signature())
+                .is_ok();
+            assert_eq!(batch, single);
+            batch
+        };
+        assert!(validates(&bundle));
+
+        let mut signature = <[u8; 64]>::from(bundle.authorization().binding_signature());
+        signature[32] ^= 1;
+        let wrong_signature = bundle.clone().map_authorization(
+            &mut (),
+            |_, _, spend_auth| spend_auth,
+            |_, authorization| {
+                Authorized::from_parts(authorization.proof().clone(), signature.into())
+            },
+        );
+        assert!(!validates(&wrong_signature));
+
+        let wrong_value_balance = bundle
+            .try_map_value_balance(|value_balance| Ok::<_, ()>(value_balance + 1))
+            .unwrap();
+        assert!(!validates(&wrong_value_balance));
+    }
+}

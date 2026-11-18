@@ -7,6 +7,11 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- `Bundle::binding_validating_key` (and therefore `BatchValidator::add_bundle`) derives the
+  value balance commitment from the public value balance in variable time, instead of
+  hashing to the curve and performing two constant-time scalar multiplications.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added
