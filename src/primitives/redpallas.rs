@@ -125,6 +125,20 @@ impl<T: SigType> Ord for VerificationKey<T> {
     }
 }
 
+#[cfg(feature = "circuit")]
+impl VerificationKey<SpendAuth> {
+    pub(crate) fn point(&self) -> pallas::Point {
+        self.0.into()
+    }
+}
+
+#[cfg(feature = "circuit")]
+impl VerificationKey<Binding> {
+    pub(crate) fn from_affine(point: pallas::Affine) -> Self {
+        VerificationKey(reddsa::VerificationKey::from_affine(point))
+    }
+}
+
 impl VerificationKey<SpendAuth> {
     /// Used in the note encryption tests.
     #[cfg(test)]

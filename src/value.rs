@@ -351,6 +351,14 @@ impl<'a> Sum<&'a ValueCommitment> for ValueCommitment {
 }
 
 impl ValueCommitment {
+    /// Returns the point for joint normalization of batch verification inputs.
+    #[cfg(feature = "circuit")]
+    pub(crate) fn point(&self) -> pallas::Point {
+        self.0
+    }
+}
+
+impl ValueCommitment {
     /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{Orchard}}$.
     ///
     /// Defined in [Zcash Protocol Spec § 5.4.8.3: Homomorphic Pedersen commitments (Sapling and Orchard)][concretehomomorphiccommit].
