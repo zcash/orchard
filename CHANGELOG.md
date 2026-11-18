@@ -7,6 +7,30 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::trusted::with_trusted_encodings`, which runs a closure with
+  decompression of value commitments parsed on the current thread deferred to
+  first use. It is for encodings the caller has already validated, such as
+  transactions a node reads back from its own state; it must never be used for
+  network input. Only `ValueCommitment` is deferred; keys are parsed by reddsa.
+  Inside the scope:
+  - `ValueCommitment::from_bytes` accepts any bytes, and
+    `ValueCommitment::to_bytes` returns them unchanged.
+  - An invalid commitment makes `Proof::verify` (and so `Bundle::verify_proof`)
+    return `plonk::Error::InvalidInstances` and `BatchValidator::add_bundle`
+    return `BatchError::InvalidEncoding`; other uses, such as
+    `Bundle::binding_validating_key`, panic.
+  - The flag is per thread, so the closure must not block on rayon or drive an
+    executor.
+  It is a no-op without the `std` feature.
+- `orchard::bundle::BatchError::InvalidEncoding`, also returned for an `rk`
+  that is not a canonical encoding (possible for keys parsed inside reddsa's
+  trusted scope).
+
+### Changed
+- `Proof::verify` returns `plonk::Error::InvalidInstances` if an instance's
+  `cv_net` or `rk` is not a canonical point encoding, instead of panicking.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added

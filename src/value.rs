@@ -314,14 +314,36 @@ impl ValueCommitTrapdoor {
 }
 
 /// A commitment to a [`ValueSum`].
-#[derive(Clone, Debug)]
-pub struct ValueCommitment(pallas::Point);
+#[derive(Clone)]
+pub struct ValueCommitment(Repr);
+
+#[derive(Clone)]
+enum Repr {
+    Point(pallas::Point),
+    // Parsed inside `trusted::with_trusted_encodings` (which needs `std`): the bytes as given,
+    // and the point once it has been decoded.
+    #[cfg(feature = "std")]
+    Lazy([u8; 32], std::sync::OnceLock<pallas::Point>),
+}
+
+// Same output for lazy and eagerly decoded commitments.
+impl Debug for ValueCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.checked_point() {
+            Some(point) => f.debug_tuple("ValueCommitment").field(point).finish(),
+            None => f
+                .debug_struct("ValueCommitment")
+                .field("invalid_bytes", &self.to_bytes())
+                .finish(),
+        }
+    }
+}
 
 impl Add<&ValueCommitment> for ValueCommitment {
     type Output = ValueCommitment;
 
     fn add(self, rhs: &Self) -> Self::Output {
-        ValueCommitment(self.0 + rhs.0)
+        ValueCommitment::from_point(self.point() + rhs.point())
     }
 }
 
@@ -329,27 +351,54 @@ impl Sub for ValueCommitment {
     type Output = ValueCommitment;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        ValueCommitment(self.0 - rhs.0)
+        ValueCommitment::from_point(self.point() - rhs.point())
     }
 }
 
 impl Sum for ValueCommitment {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(ValueCommitment(pallas::Point::identity()), |acc, cv| {
-            acc + &cv
-        })
+        iter.fold(
+            ValueCommitment::from_point(pallas::Point::identity()),
+            |acc, cv| acc + &cv,
+        )
     }
 }
 
 impl<'a> Sum<&'a ValueCommitment> for ValueCommitment {
     fn sum<I: Iterator<Item = &'a ValueCommitment>>(iter: I) -> Self {
-        iter.fold(ValueCommitment(pallas::Point::identity()), |acc, cv| {
-            acc + cv
-        })
+        iter.fold(
+            ValueCommitment::from_point(pallas::Point::identity()),
+            |acc, cv| acc + cv,
+        )
     }
 }
 
 impl ValueCommitment {
+    fn from_point(point: pallas::Point) -> Self {
+        ValueCommitment(Repr::Point(point))
+    }
+
+    /// Returns the point, or `None` for a commitment parsed inside
+    /// [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) whose bytes are not a
+    /// canonical point encoding. A lazy point is decoded once and then kept.
+    pub(crate) fn checked_point(&self) -> Option<&pallas::Point> {
+        match &self.0 {
+            Repr::Point(point) => Some(point),
+            #[cfg(feature = "std")]
+            Repr::Lazy(bytes, point) => match point.get() {
+                Some(point) => Some(point),
+                None => Option::from(pallas::Point::from_bytes(bytes))
+                    .map(|decoded| point.get_or_init(|| decoded)),
+            },
+        }
+    }
+
+    pub(crate) fn point(&self) -> pallas::Point {
+        *self
+            .checked_point()
+            .expect("value commitments parsed in a trusted scope are canonical encodings")
+    }
+
     /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{Orchard}}$.
     ///
     /// Defined in [Zcash Protocol Spec § 5.4.8.3: Homomorphic Pedersen commitments (Sapling and Orchard)][concretehomomorphiccommit].
@@ -368,39 +417,61 @@ impl ValueCommitment {
             pallas::Scalar::from(abs_value)
         };
 
-        ValueCommitment(V * value + R * rcv.0)
+        ValueCommitment::from_point(V * value + R * rcv.0)
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
         // TODO: impl From<pallas::Point> for redpallas::VerificationKey.
-        self.0.to_bytes().try_into().unwrap()
+        self.to_bytes().try_into().unwrap()
     }
 
     /// Deserialize a value commitment from its byte representation
+    ///
+    /// Inside [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) it accepts any
+    /// bytes, including off-curve and non-canonical ones, and decodes them on first use. Proof
+    /// verification and `BatchValidator::add_bundle` then return an error, and other uses
+    /// (such as computing the binding validating key) panic.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<ValueCommitment> {
-        pallas::Point::from_bytes(bytes).map(ValueCommitment)
+        #[cfg(feature = "std")]
+        if crate::trusted::encodings_are_trusted() {
+            return CtOption::new(
+                ValueCommitment(Repr::Lazy(*bytes, std::sync::OnceLock::new())),
+                subtle::Choice::from(1),
+            );
+        }
+        pallas::Point::from_bytes(bytes).map(ValueCommitment::from_point)
     }
 
     /// Serialize this value commitment to its canonical byte representation.
+    ///
+    /// A commitment parsed inside
+    /// [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) returns the bytes it
+    /// was parsed from, even if they are off-curve or non-canonical.
     pub fn to_bytes(&self) -> [u8; 32] {
-        self.0.to_bytes()
+        match &self.0 {
+            Repr::Point(point) => point.to_bytes(),
+            #[cfg(feature = "std")]
+            Repr::Lazy(bytes, _) => *bytes,
+        }
     }
 
     /// x-coordinate of this value commitment.
     pub(crate) fn x(&self) -> pallas::Base {
-        if self.0 == pallas::Point::identity() {
+        let point = self.point();
+        if point == pallas::Point::identity() {
             pallas::Base::zero()
         } else {
-            *self.0.to_affine().coordinates().unwrap().x()
+            *point.to_affine().coordinates().unwrap().x()
         }
     }
 
     /// y-coordinate of this value commitment.
     pub(crate) fn y(&self) -> pallas::Base {
-        if self.0 == pallas::Point::identity() {
+        let point = self.point();
+        if point == pallas::Point::identity() {
             pallas::Base::zero()
         } else {
-            *self.0.to_affine().coordinates().unwrap().y()
+            *point.to_affine().coordinates().unwrap().y()
         }
     }
 }

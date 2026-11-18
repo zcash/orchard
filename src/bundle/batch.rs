@@ -31,6 +31,11 @@ pub enum BatchError {
     ///
     /// [`OrchardCircuitVersion::supports_cross_address_restriction`]: crate::circuit::OrchardCircuitVersion::supports_cross_address_restriction
     RestrictionUnsupportedByKey,
+    /// An action's value commitment or `rk` is not a canonical point encoding. That is only
+    /// possible for values parsed inside
+    /// [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) or reddsa's trusted
+    /// scope.
+    InvalidEncoding,
 }
 
 impl fmt::Display for BatchError {
@@ -40,6 +45,10 @@ impl fmt::Display for BatchError {
                 f,
                 "bundle disables cross-address transfers, but the verifying key's circuit \
                  version does not constrain the cross-address restriction",
+            ),
+            BatchError::InvalidEncoding => write!(
+                f,
+                "an action's value commitment or rk is not a canonical point encoding",
             ),
         }
     }
@@ -76,7 +85,9 @@ impl<'a> BatchValidator<'a> {
     ///
     /// Returns [`BatchError::RestrictionUnsupportedByKey`] if the bundle disables cross-address
     /// transfers but the validator's verifying key's circuit version does not support the
-    /// cross-address restriction; in that case the bundle is not added to the batch.
+    /// cross-address restriction, or [`BatchError::InvalidEncoding`] if an action's value
+    /// commitment or `rk` was parsed inside a trusted scope from invalid bytes; in those cases
+    /// the bundle is not added to the batch.
     pub fn add_bundle<V: Copy + Into<i64>>(
         &mut self,
         bundle: &Bundle<Authorized, V>,
@@ -85,6 +96,13 @@ impl<'a> BatchValidator<'a> {
         if !bundle.flags().cross_address_enabled() && !self.vk.supports_cross_address_restriction()
         {
             return Err(BatchError::RestrictionUnsupportedByKey);
+        }
+        let instances = bundle.to_instances();
+        if !instances
+            .iter()
+            .all(|instance| instance.has_valid_encodings())
+        {
+            return Err(BatchError::InvalidEncoding);
         }
 
         for action in bundle.actions().iter() {
@@ -104,7 +122,7 @@ impl<'a> BatchValidator<'a> {
         bundle
             .authorization()
             .proof()
-            .add_to_batch(&mut self.proofs, bundle.to_instances());
+            .add_to_batch(&mut self.proofs, instances);
 
         Ok(())
     }

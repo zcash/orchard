@@ -1268,6 +1268,14 @@ impl Instance {
         self.cross_address_disabled
     }
 
+    /// Returns false if `cv_net` or `rk` is not a canonical point encoding, which is only
+    /// possible for values parsed inside this crate's or reddsa's trusted scope.
+    pub(crate) fn has_valid_encodings(&self) -> bool {
+        let rk: [u8; 32] = self.rk.clone().into();
+        self.cv_net.checked_point().is_some()
+            && bool::from(pallas::Point::from_bytes(&rk).is_some())
+    }
+
     fn to_halo2_instance(&self) -> [[vesta::Scalar; INSTANCE_ROWS]; INSTANCE_COLUMNS] {
         let mut instance = [vesta::Scalar::zero(); INSTANCE_ROWS];
 
@@ -1277,7 +1285,7 @@ impl Instance {
         instance[NF_OLD] = self.nf_old.inner();
 
         let rk = pallas::Point::from_bytes(&self.rk.clone().into())
-            .expect("the cached byte encoding of a VerificationKey<_> is canonical")
+            .expect("rk is canonical: checked when parsed, or by callers for lazily parsed keys")
             .to_affine()
             .coordinates()
             .expect("rk is non-identity by construction");
@@ -1357,13 +1365,20 @@ impl Proof {
     ///
     /// Returns [`plonk::Error::InvalidInstances`] if any instance has
     /// `disableCrossAddress = 1` and `vk` is not an
-    /// [`OrchardCircuitVersion::PostNu6_3`] verifying key.
+    /// [`OrchardCircuitVersion::PostNu6_3`] verifying key, or if any instance's `cv_net` or `rk`
+    /// is not a canonical point encoding. That is only possible for values parsed inside
+    /// [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) or reddsa's trusted
+    /// scope.
     ///
     /// Also returns an error if proof verification fails.
     pub fn verify(&self, vk: &VerifyingKey, instances: &[Instance]) -> Result<(), plonk::Error> {
         if instances.iter().any(Instance::cross_address_disabled)
             && !vk.supports_cross_address_restriction()
         {
+            return Err(plonk::Error::InvalidInstances);
+        }
+        // Values parsed inside a trusted scope are first decoded here.
+        if !instances.iter().all(Instance::has_valid_encodings) {
             return Err(plonk::Error::InvalidInstances);
         }
 
