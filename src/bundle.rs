@@ -764,6 +764,12 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     ///
     /// This can be used to validate the [`Authorized::binding_signature`] returned from
     /// [`Bundle::authorization`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if an action's value commitment was parsed inside
+    /// [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) from bytes that are
+    /// not a canonical point encoding.
     pub fn binding_validating_key(&self) -> redpallas::VerificationKey<Binding> {
         // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
         (self

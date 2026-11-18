@@ -314,14 +314,29 @@ impl ValueCommitTrapdoor {
 }
 
 /// A commitment to a [`ValueSum`].
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ValueCommitment(Repr);
 
-// `Bytes` only for commitments parsed inside `trusted::with_trusted_encodings`.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum Repr {
     Point(pallas::Point),
-    Bytes([u8; 32]),
+    // Parsed inside `trusted::with_trusted_encodings` (which needs `std`): the bytes as given,
+    // and the point once it has been decoded.
+    #[cfg(feature = "std")]
+    Lazy([u8; 32], std::sync::OnceLock<pallas::Point>),
+}
+
+// Same output for lazy and eagerly decoded commitments.
+impl Debug for ValueCommitment {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.checked_point() {
+            Some(point) => f.debug_tuple("ValueCommitment").field(point).finish(),
+            None => f
+                .debug_struct("ValueCommitment")
+                .field("invalid_bytes", &self.to_bytes())
+                .finish(),
+        }
+    }
 }
 
 impl Add<&ValueCommitment> for ValueCommitment {
@@ -363,13 +378,25 @@ impl ValueCommitment {
         ValueCommitment(Repr::Point(point))
     }
 
-    /// Returns the point, decompressing it if this commitment was read from bytes.
-    pub(crate) fn point(&self) -> pallas::Point {
+    /// Returns the point, or `None` for a commitment parsed inside
+    /// [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) whose bytes are not a
+    /// canonical point encoding. A lazy point is decoded once and then kept.
+    pub(crate) fn checked_point(&self) -> Option<&pallas::Point> {
         match &self.0 {
-            Repr::Point(point) => *point,
-            Repr::Bytes(bytes) => Option::from(pallas::Point::from_bytes(bytes))
-                .expect("trusted value commitments are valid points"),
+            Repr::Point(point) => Some(point),
+            #[cfg(feature = "std")]
+            Repr::Lazy(bytes, point) => match point.get() {
+                Some(point) => Some(point),
+                None => Option::from(pallas::Point::from_bytes(bytes))
+                    .map(|decoded| point.get_or_init(|| decoded)),
+            },
         }
+    }
+
+    pub(crate) fn point(&self) -> pallas::Point {
+        *self
+            .checked_point()
+            .expect("value commitments parsed in a trusted scope are canonical encodings")
     }
 
     /// Derives a `ValueCommitment` by $\mathsf{ValueCommit^{Orchard}}$.
@@ -399,11 +426,16 @@ impl ValueCommitment {
     }
 
     /// Deserialize a value commitment from its byte representation
+    ///
+    /// Inside [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) it accepts any
+    /// bytes, including off-curve and non-canonical ones, and decodes them on first use. Proof
+    /// verification and `BatchValidator::add_bundle` then return an error, and other uses
+    /// (such as computing the binding validating key) panic.
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<ValueCommitment> {
-        // The caller validated these bytes before, so decompress the point on first use.
+        #[cfg(feature = "std")]
         if crate::trusted::encodings_are_trusted() {
             return CtOption::new(
-                ValueCommitment(Repr::Bytes(*bytes)),
+                ValueCommitment(Repr::Lazy(*bytes, std::sync::OnceLock::new())),
                 subtle::Choice::from(1),
             );
         }
@@ -411,10 +443,15 @@ impl ValueCommitment {
     }
 
     /// Serialize this value commitment to its canonical byte representation.
+    ///
+    /// A commitment parsed inside
+    /// [`with_trusted_encodings`](crate::trusted::with_trusted_encodings) returns the bytes it
+    /// was parsed from, even if they are off-curve or non-canonical.
     pub fn to_bytes(&self) -> [u8; 32] {
         match &self.0 {
             Repr::Point(point) => point.to_bytes(),
-            Repr::Bytes(bytes) => *bytes,
+            #[cfg(feature = "std")]
+            Repr::Lazy(bytes, _) => *bytes,
         }
     }
 
