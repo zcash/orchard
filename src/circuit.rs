@@ -1394,7 +1394,6 @@ impl Proof {
         let mut transcript = Blake2bRead::init(&self.0[..]);
         plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
     }
-
 }
 
 #[cfg(test)]
