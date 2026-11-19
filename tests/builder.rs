@@ -2,17 +2,17 @@
 
 use incrementalmerkletree::{Hashable, Marking, Retention};
 use orchard::{
-    builder::{Builder, BundleType},
-    bundle::{Authorized, BatchValidator, BundleVersion, Flags, TxVersion},
+    builder::{BuildError, Builder, BundleType, InProgress, MaybeSigned, Unauthorized},
+    bundle::{Authorized, BatchError, BatchValidator, BundleVersion, Flags, TxVersion},
     circuit::{OrchardCircuitVersion, ProvingKey, VerifyingKey},
     keys::{FullViewingKey, PreparedIncomingViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
     note::{ExtractedNoteCommitment, NoteVersion},
     note_encryption::{IronwoodDomain, OrchardDomain},
     tree::{MerkleHashOrchard, MerklePath},
     value::NoteValue,
-    Address, Bundle,
+    Address, Bundle, Proof,
 };
-use rand::{rand_core::UnwrapErr, rngs::SysRng};
+use rand::{rand_core::UnwrapErr, rngs::SysRng, CryptoRng};
 
 /// `rand` 0.10 replaces `rand_core` 0.6's infallible `OsRng` with the
 /// fallible `SysRng`; unwrapping its error type recovers the old interface.
@@ -592,4 +592,299 @@ fn ironwood_post_nu6_3_unrestricted_bundle_proves_and_verifies() {
         .unwrap();
 
     verify_bundle(&bundle, post_nu6_3_vk, TxVersion::V6);
+}
+
+/// One sighash per action, plus a separate binding sighash, all distinct.
+const ACTION_SIGHASHES: [[u8; 32]; 2] = [[0x11; 32], [0x22; 32]];
+const BINDING_SIGHASH: [u8; 32] = [0x33; 32];
+
+/// Spends the note paid by `shielding_bundle` to `fvk`, adding one output so the builder
+/// pads the bundle to two actions: one real spend, and one dummy spend that is signed
+/// automatically. The bundle is proven but unauthorized.
+fn proven_two_action_bundle(
+    pk: &ProvingKey,
+    fvk: &FullViewingKey,
+    shielding_bundle: &Bundle<Authorized, i64>,
+    rng: &mut impl CryptoRng,
+) -> Bundle<InProgress<Proof, Unauthorized>, i64> {
+    let ivk = PreparedIncomingViewingKey::new(&fvk.to_ivk(Scope::External));
+    let (note, _, _) = shielding_bundle
+        .actions()
+        .iter()
+        .find_map(|action| {
+            let domain = OrchardDomain::for_action(action);
+            try_note_decryption(&domain, &ivk, action)
+        })
+        .unwrap();
+
+    let cmx: ExtractedNoteCommitment = note.commitment().into();
+    let (root, merkle_path) = single_leaf_witness(&cmx);
+
+    let mut builder = Builder::new(
+        BundleType::DEFAULT,
+        BundleVersion::orchard_v2(),
+        BundleVersion::orchard_v2().default_flags(),
+        root.into(),
+    )
+    .unwrap();
+    assert_eq!(builder.add_spend(fvk.clone(), note, merkle_path), Ok(()));
+    assert_eq!(
+        builder.add_output(
+            None,
+            fvk.address_at(0u32, Scope::External),
+            NoteValue::from_raw(5000),
+            [0u8; 512],
+        ),
+        Ok(())
+    );
+
+    let (unauthorized, _) = builder.build::<i64>(&mut *rng).unwrap().unwrap();
+    // The builder pads one spend to the default minimum of two actions, so exactly one
+    // action is a dummy spend signed during `prepare_with_sighashes`.
+    assert_eq!(unauthorized.actions().len(), 2);
+    unauthorized.create_proof(pk, &mut *rng).unwrap()
+}
+
+/// Asserts that every action and the binding signature verify under one shared digest.
+fn assert_all_signed_under(bundle: &Bundle<Authorized, i64>, sighash: [u8; 32]) {
+    for action in bundle.actions() {
+        assert_eq!(action.rk().verify(&sighash, action.authorization()), Ok(()));
+    }
+    assert_eq!(
+        bundle
+            .binding_validating_key()
+            .verify(&sighash, bundle.authorization().binding_signature()),
+        Ok(())
+    );
+}
+
+/// Shields 5000 zats to `fvk`, returning the proven, authorized bundle.
+fn shielding_bundle(
+    pk: &ProvingKey,
+    fvk: &FullViewingKey,
+    rng: &mut impl CryptoRng,
+) -> Bundle<Authorized, i64> {
+    let recipient = fvk.address_at(0u32, Scope::External);
+    let builder = output_only_builder(BundleVersion::orchard_v2(), BundleType::DEFAULT, recipient);
+    let (unauthorized, _) = builder.build::<i64>(&mut *rng).unwrap().unwrap();
+    let sighash = unauthorized
+        .commitment(TxVersion::V5)
+        .expect("shielding flags are representable in this format")
+        .into();
+    let proven = unauthorized.create_proof(pk, &mut *rng).unwrap();
+    proven.apply_signatures(rng, sighash, &[]).unwrap()
+}
+
+fn assert_signed_under(
+    bundle: &Bundle<Authorized, i64>,
+    action_sighashes: &[[u8; 32]],
+    binding_sighash: [u8; 32],
+) {
+    for (action, sighash) in bundle.actions().iter().zip(action_sighashes) {
+        assert_eq!(action.rk().verify(sighash, action.authorization()), Ok(()));
+        assert_ne!(
+            action.rk().verify(&binding_sighash, action.authorization()),
+            Ok(()),
+            "an action must not verify under the binding sighash"
+        );
+    }
+    assert_eq!(
+        bundle
+            .binding_validating_key()
+            .verify(&binding_sighash, bundle.authorization().binding_signature()),
+        Ok(())
+    );
+}
+
+#[test]
+fn apply_signatures_with_sighashes_signs_each_action_under_its_own_sighash() {
+    let mut rng = OsRng;
+    let keys = cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2);
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let ask = SpendAuthorizingKey::from(&sk);
+
+    let shielding = shielding_bundle(keys.proving_key(), &fvk, &mut rng);
+    let proven = proven_two_action_bundle(keys.proving_key(), &fvk, &shielding, &mut rng);
+
+    let bundle = proven
+        .apply_signatures_with_sighashes(rng, &ACTION_SIGHASHES, BINDING_SIGHASH, &[ask])
+        .unwrap();
+
+    assert_signed_under(&bundle, &ACTION_SIGHASHES, BINDING_SIGHASH);
+    assert!(bundle.verify_proof(keys.verifying_key()).is_ok());
+}
+
+#[test]
+fn prepare_with_sighashes_signs_dummies_and_verifies_external_signatures_per_action() {
+    let mut rng = OsRng;
+    let keys = cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2);
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let ask = SpendAuthorizingKey::from(&sk);
+
+    let shielding = shielding_bundle(keys.proving_key(), &fvk, &mut rng);
+    let proven = proven_two_action_bundle(keys.proving_key(), &fvk, &shielding, &mut rng);
+
+    // Clone the unauthorized proven bundle to produce a second signing path
+    // independently, while the original is prepared for external-signature append.
+    let proven_for_sign = proven.clone();
+    let partial = proven
+        .prepare_with_sighashes(rng, &ACTION_SIGHASHES, BINDING_SIGHASH)
+        .unwrap();
+
+    // The dummy spend is already signed, and its signature verifies only under the digest
+    // at its own index.
+    for (index, action) in partial.actions().iter().enumerate() {
+        if let MaybeSigned::Signature(sig) = action.authorization() {
+            assert_eq!(action.rk().verify(&ACTION_SIGHASHES[index], sig), Ok(()));
+            assert_ne!(
+                action.rk().verify(&ACTION_SIGHASHES[1 - index], sig),
+                Ok(())
+            );
+        }
+    }
+
+    // Use the cloned unauthorized proven bundle to produce one signature for the
+    // real spend independently, then append it to the unsigned original as an
+    // external signature.
+    let real_index = partial
+        .actions()
+        .iter()
+        .position(|action| matches!(action.authorization(), MaybeSigned::SigningMetadata(_)))
+        .unwrap();
+    let signed = proven_for_sign
+        .prepare_with_sighashes(rng, &ACTION_SIGHASHES, BINDING_SIGHASH)
+        .unwrap()
+        .sign(rng, &ask);
+    let signature = match signed.actions()[real_index].authorization() {
+        MaybeSigned::Signature(sig) => sig.clone(),
+        MaybeSigned::SigningMetadata(_) => panic!("the real spend's key was supplied"),
+    };
+
+    let bundle = partial
+        .append_signatures(&[signature])
+        .unwrap()
+        .finalize()
+        .unwrap();
+    assert_signed_under(&bundle, &ACTION_SIGHASHES, BINDING_SIGHASH);
+}
+
+#[test]
+fn distinct_sighash_count_mismatch_is_rejected() {
+    let mut rng = OsRng;
+    let keys = cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2);
+    let fvk = FullViewingKey::from(&SpendingKey::from_bytes([0; 32]).unwrap());
+
+    let shielding = shielding_bundle(keys.proving_key(), &fvk, &mut rng);
+    let proven = proven_two_action_bundle(keys.proving_key(), &fvk, &shielding, &mut rng);
+
+    // Too few, and too many, per-action digests.
+    for sighashes in [
+        &ACTION_SIGHASHES[..1],
+        &[[0u8; 32], [0u8; 32], [0u8; 32]][..],
+    ] {
+        assert!(matches!(
+            proven.clone().prepare_with_sighashes(
+                rng,
+                sighashes,
+                BINDING_SIGHASH
+            ),
+            Err(BuildError::SighashCountMismatch {
+                expected: 2,
+                actual,
+            }) if actual == sighashes.len()
+        ));
+        assert!(matches!(
+            proven
+                .clone()
+                .apply_signatures_with_sighashes(rng, sighashes, BINDING_SIGHASH, &[]),
+            Err(BuildError::SighashCountMismatch { .. })
+        ));
+    }
+}
+
+#[test]
+fn shared_sighash_wrappers_still_sign_everything_under_one_digest() {
+    let mut rng = OsRng;
+    let keys = cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2);
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let shared_sighash = [0x44u8; 32];
+
+    let shielding = shielding_bundle(keys.proving_key(), &fvk, &mut rng);
+    let proven = proven_two_action_bundle(keys.proving_key(), &fvk, &shielding, &mut rng);
+
+    // `apply_signatures` is the shared-digest wrapper: every signature verifies under the
+    // one digest, and the binding signature too.
+    let bundle = proven
+        .apply_signatures(rng, shared_sighash, &[SpendAuthorizingKey::from(&sk)])
+        .unwrap();
+    assert_all_signed_under(&bundle, shared_sighash);
+
+    // The per-action API with a repeated digest produces the same convention.
+    let shielding = shielding_bundle(keys.proving_key(), &fvk, &mut rng);
+    let proven = proven_two_action_bundle(keys.proving_key(), &fvk, &shielding, &mut rng);
+    let repeated = [shared_sighash; 2];
+    let bundle = proven
+        .apply_signatures_with_sighashes(
+            rng,
+            &repeated,
+            shared_sighash,
+            &[SpendAuthorizingKey::from(&sk)],
+        )
+        .unwrap();
+    assert_all_signed_under(&bundle, shared_sighash);
+}
+
+#[test]
+fn batch_validator_uses_each_action_sighash_and_rejects_mismatched_counts() {
+    let mut rng = OsRng;
+    let keys = cached_test_keys(OrchardCircuitVersion::FixedPostNu6_2);
+    let sk = SpendingKey::from_bytes([0; 32]).unwrap();
+    let fvk = FullViewingKey::from(&sk);
+    let ask = SpendAuthorizingKey::from(&sk);
+
+    let shielding = shielding_bundle(keys.proving_key(), &fvk, &mut rng);
+    let proven = proven_two_action_bundle(keys.proving_key(), &fvk, &shielding, &mut rng);
+    let bundle = proven
+        .apply_signatures_with_sighashes(rng, &ACTION_SIGHASHES, BINDING_SIGHASH, &[ask])
+        .unwrap();
+
+    // A count mismatch is rejected before anything is queued.
+    let mut validator = BatchValidator::new(keys.verifying_key());
+    assert_eq!(
+        validator.add_bundle_with_sighashes(&bundle, &ACTION_SIGHASHES[..1], BINDING_SIGHASH),
+        Err(BatchError::SighashCountMismatch {
+            expected: 2,
+            actual: 1,
+        })
+    );
+
+    // Distinct per-action digests plus a separate binding digest validate.
+    let mut validator = BatchValidator::new(keys.verifying_key());
+    validator
+        .add_bundle_with_sighashes(&bundle, &ACTION_SIGHASHES, BINDING_SIGHASH)
+        .unwrap();
+    assert!(validator.validate(rng));
+
+    // A digest that does not match the action it is indexed at fails validation.
+    let mut wrong = ACTION_SIGHASHES;
+    wrong.swap(0, 1);
+    let mut validator = BatchValidator::new(keys.verifying_key());
+    validator
+        .add_bundle_with_sighashes(&bundle, &wrong, BINDING_SIGHASH)
+        .unwrap();
+    assert!(!validator.validate(rng));
+
+    // The shared-digest wrapper validates the same bundle under one digest.
+    let shared_sighash = [0x44u8; 32];
+    let shielding = shielding_bundle(keys.proving_key(), &fvk, &mut rng);
+    let proven = proven_two_action_bundle(keys.proving_key(), &fvk, &shielding, &mut rng);
+    let bundle = proven
+        .apply_signatures(rng, shared_sighash, &[SpendAuthorizingKey::from(&sk)])
+        .unwrap();
+    let mut validator = BatchValidator::new(keys.verifying_key());
+    validator.add_bundle(&bundle, shared_sighash).unwrap();
+    assert!(validator.validate(rng));
 }
