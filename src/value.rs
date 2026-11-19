@@ -43,7 +43,7 @@ use core::ops::{Add, RangeInclusive, Sub};
 
 use bitvec::{array::BitArray, order::Lsb0};
 use ff::{Field, PrimeField};
-use group::{Curve, Group, GroupEncoding};
+use group::{Curve, Group, GroupEncoding, Wnaf};
 #[cfg(feature = "circuit")]
 use halo2_proofs::plonk::Assigned;
 use pasta_curves::{
@@ -56,7 +56,8 @@ use subtle::CtOption;
 
 use crate::{
     constants::fixed_bases::{
-        VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES, VALUE_COMMITMENT_V_BYTES,
+        value_commit_v, VALUE_COMMITMENT_PERSONALIZATION, VALUE_COMMITMENT_R_BYTES,
+        VALUE_COMMITMENT_V_BYTES,
     },
     primitives::redpallas::{self, Binding},
 };
@@ -369,6 +370,24 @@ impl ValueCommitment {
         };
 
         ValueCommitment(V * value + R * rcv.0)
+    }
+
+    /// Derives $\mathsf{ValueCommit^{Orchard}_0}(\mathsf{value})$, the commitment with a zero
+    /// trapdoor, in variable time.
+    ///
+    /// Equal to `ValueCommitment::derive(value, ValueCommitTrapdoor::zero())`, but it skips
+    /// hashing to the curve and the two constant-time scalar multiplications, so `value` must be
+    /// public.
+    pub(crate) fn derive_public(value: ValueSum) -> Self {
+        let (magnitude, sign) = value.magnitude_sign();
+        let commitment: pallas::Point = Wnaf::new()
+            .scalar(&pallas::Scalar::from(magnitude))
+            .base(value_commit_v::generator().into());
+
+        ValueCommitment(match sign {
+            Sign::Positive => commitment,
+            Sign::Negative => -commitment,
+        })
     }
 
     pub(crate) fn into_bvk(self) -> redpallas::VerificationKey<Binding> {
