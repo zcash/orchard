@@ -403,8 +403,8 @@ mod tests {
         keys::{FullViewingKey, Scope, SpendAuthorizingKey, SpendingKey},
         note::{ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho},
         pczt::{
-            IoFinalizerError, ParseError, ProverError, SignerError, TxExtractorError, VerifyError,
-            Zip32Derivation,
+            IoFinalizerError, ParseError, ProverError, SignerError, TxExtractorError, Unbound,
+            VerifyError, Zip32Derivation,
         },
         primitives::redpallas::{self, SpendAuth},
         tree::{MerkleHashOrchard, MerklePath, EMPTY_ROOTS},
@@ -1407,9 +1407,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn restricted_pczt_io_finalizer_signs_padding_dummy() {
-        let mut rng = UnwrapErr(SysRng);
+    /// Builds an Orchard v3 PCZT bundle with one real spend, padded to the default
+    /// minimum of two actions by the builder. Returns the bundle, the real spend's
+    /// authorizing key, and the padding dummy action's index.
+    fn padding_dummy_pczt_bundle(
+        mut rng: UnwrapErr<SysRng>,
+    ) -> (super::Bundle, SpendAuthorizingKey, usize) {
         let spend_sk = SpendingKey::random(&mut rng);
         let spend_fvk = FullViewingKey::from(&spend_sk);
         let spend_recipient = spend_fvk.address_at(0u32, Scope::External);
@@ -1436,15 +1439,27 @@ mod tests {
         .unwrap();
         builder.add_spend(spend_fvk, note, merkle_path).unwrap();
 
-        let (mut pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
+        let (pczt_bundle, bundle_meta) = builder.build_for_pczt(&mut rng).unwrap();
         assert_eq!(pczt_bundle.actions().len(), 2);
 
-        let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
-        let padding_action_index = 1 - spend_action_index;
+        let padding_action_index = 1 - bundle_meta.spend_action_index(0).unwrap();
         assert!(pczt_bundle.actions()[padding_action_index]
             .spend
             .dummy_sk
             .is_some());
+
+        (
+            pczt_bundle,
+            SpendAuthorizingKey::from(&spend_sk),
+            padding_action_index,
+        )
+    }
+
+    #[test]
+    fn restricted_pczt_io_finalizer_signs_padding_dummy() {
+        let rng = UnwrapErr(SysRng);
+        let (mut pczt_bundle, spend_ask, padding_action_index) = padding_dummy_pczt_bundle(rng);
+        let spend_action_index = 1 - padding_action_index;
 
         let sighash = [0; 32];
         pczt_bundle.finalize_io(sighash, rng).unwrap();
@@ -1460,8 +1475,156 @@ mod tests {
             .is_none());
 
         pczt_bundle.actions_mut()[spend_action_index]
-            .sign(sighash, &SpendAuthorizingKey::from(&spend_sk), rng)
+            .sign(sighash, &spend_ask, rng)
             .unwrap();
+    }
+
+    #[test]
+    fn finalize_io_with_sighashes_signs_dummy_under_its_own_sighash() {
+        let rng = UnwrapErr(SysRng);
+        let (mut pczt_bundle, _, padding_action_index) = padding_dummy_pczt_bundle(rng);
+        let other_index = 1 - padding_action_index;
+
+        let sighashes = [[0x11u8; 32], [0x22u8; 32]];
+        pczt_bundle
+            .finalize_io_with_sighashes(&sighashes, rng)
+            .unwrap();
+
+        // The dummy spend's signature verifies under the digest at its own action index,
+        // not under the digest indexed to the other action.
+        let padding_action = &pczt_bundle.actions()[padding_action_index];
+        let signature = padding_action
+            .spend
+            .spend_auth_sig
+            .as_ref()
+            .expect("the IO Finalizer signed the dummy spend");
+        assert_eq!(
+            padding_action
+                .spend
+                .rk
+                .verify(&sighashes[padding_action_index], signature),
+            Ok(())
+        );
+        assert_ne!(
+            padding_action
+                .spend
+                .rk
+                .verify(&sighashes[other_index], signature),
+            Ok(())
+        );
+
+        // The dummy spend authorizing key is cleared; the real spend is still unsigned.
+        assert!(padding_action.spend.dummy_sk.is_none());
+        assert!(pczt_bundle.actions()[other_index]
+            .spend
+            .spend_auth_sig
+            .is_none());
+    }
+
+    /// Builds a restricted PCZT bundle, finalizes IO, signs every action, proves, and
+    /// extracts, returning an `Unbound` bundle. Each call produces a fresh, independently
+    /// randomized bundle.
+    fn unbound_with_sighashes(
+        rng: UnwrapErr<SysRng>,
+        sighashes: &[[u8; 32]],
+    ) -> crate::Bundle<Unbound, i64> {
+        let (mut pczt_bundle, bundle_meta, spend_ask, change_ask) = restricted_pczt_bundle(rng);
+        pczt_bundle
+            .finalize_io_with_sighashes(sighashes, rng)
+            .unwrap();
+        let spend_action_index = bundle_meta.spend_action_index(0).unwrap();
+        let change_action_index = bundle_meta.output_action_index(0).unwrap();
+        pczt_bundle.actions_mut()[change_action_index]
+            .sign(sighashes[change_action_index], &change_ask, rng)
+            .unwrap();
+        pczt_bundle.actions_mut()[spend_action_index]
+            .sign(sighashes[spend_action_index], &spend_ask, rng)
+            .unwrap();
+        let keys = crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3);
+        pczt_bundle.create_proof(keys.proving_key(), rng).unwrap();
+        pczt_bundle.extract::<i64>().unwrap().unwrap()
+    }
+
+    #[test]
+    fn apply_binding_signature_with_sighashes_verifies_each_action_and_binding_digest() {
+        let rng = UnwrapErr(SysRng);
+        let sighashes = [[0x11u8; 32], [0x22u8; 32]];
+        let binding_sighash = [0x33u8; 32];
+
+        // The digests are positional: reversing them must not validate.
+        let mut reversed = sighashes;
+        reversed.swap(0, 1);
+        assert!(unbound_with_sighashes(rng, &sighashes)
+            .apply_binding_signature_with_sighashes(&reversed, binding_sighash, rng)
+            .is_none());
+
+        // Too few and too many action digests must not validate either.
+        assert!(unbound_with_sighashes(rng, &sighashes)
+            .apply_binding_signature_with_sighashes(&sighashes[..1], binding_sighash, rng)
+            .is_none());
+        assert!(unbound_with_sighashes(rng, &sighashes)
+            .apply_binding_signature_with_sighashes(
+                &[[0u8; 32], [0u8; 32], [0u8; 32]],
+                binding_sighash,
+                rng
+            )
+            .is_none());
+
+        let bundle = unbound_with_sighashes(rng, &sighashes)
+            .apply_binding_signature_with_sighashes(&sighashes, binding_sighash, rng)
+            .unwrap();
+
+        // Each action verifies under its own digest and not under the binding digest.
+        for (action, sighash) in bundle.actions().iter().zip(sighashes) {
+            assert_eq!(action.rk().verify(&sighash, action.authorization()), Ok(()));
+            assert_ne!(
+                action.rk().verify(&binding_sighash, action.authorization()),
+                Ok(())
+            );
+        }
+
+        // The binding signature verifies only under the binding digest.
+        assert_eq!(
+            bundle
+                .binding_validating_key()
+                .verify(&binding_sighash, bundle.authorization().binding_signature()),
+            Ok(())
+        );
+        assert_ne!(
+            bundle
+                .binding_validating_key()
+                .verify(&sighashes[0], bundle.authorization().binding_signature()),
+            Ok(())
+        );
+        assert!(bundle
+            .verify_proof(crate::cached_test_keys(OrchardCircuitVersion::PostNu6_3).verifying_key())
+            .is_ok());
+    }
+
+    #[test]
+    fn finalize_io_with_sighashes_rejects_count_mismatch_before_mutating() {
+        let rng = UnwrapErr(SysRng);
+        let (mut pczt_bundle, _, padding_action_index) = padding_dummy_pczt_bundle(rng);
+
+        // Too few and too many per-action digests are both rejected before any mutation.
+        for (sighashes, expected_actual) in [
+            (&[[0x11u8; 32]][..], 1usize),
+            (&[[0x11u8; 32], [0x22u8; 32], [0x33u8; 32]][..], 3usize),
+        ] {
+            assert!(matches!(
+                pczt_bundle.finalize_io_with_sighashes(sighashes, rng),
+                Err(IoFinalizerError::SighashCountMismatch {
+                    expected: 2,
+                    actual,
+                }) if actual == expected_actual
+            ));
+
+            // Nothing was mutated: `bsk` is unset and the dummy spend is still unsigned.
+            assert!(pczt_bundle.bsk.is_none());
+            let padding_action = &pczt_bundle.actions()[padding_action_index];
+            assert!(padding_action.spend.dummy_sk.is_some());
+            assert!(padding_action.spend.spend_auth_sig.is_none());
+        }
     }
 
     #[test]

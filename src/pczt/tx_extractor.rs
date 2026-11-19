@@ -1,3 +1,4 @@
+use alloc::vec;
 use core::fmt;
 
 use nonempty::NonEmpty;
@@ -223,24 +224,53 @@ impl Authorization for Unbound {
 impl<V> crate::Bundle<Unbound, V> {
     /// Verifies the given sighash with every `spend_auth_sig`, and then binds the bundle.
     ///
+    /// This is the signature message convention of transaction formats that sign the
+    /// whole bundle with one digest. Use [`Self::apply_binding_signature_with_sighashes`]
+    /// when each action and the binding signature have distinct messages.
+    ///
     /// Returns `None` if the given sighash does not validate against every `spend_auth_sig`.
     pub fn apply_binding_signature<R: Rng + CryptoRng>(
         self,
         sighash: [u8; 32],
         rng: R,
     ) -> Option<crate::Bundle<Authorized, V>> {
-        if self
-            .actions()
-            .iter()
-            .all(|action| action.rk().verify(&sighash, action.authorization()).is_ok())
+        let sighashes = vec![sighash; self.actions().len()];
+        self.apply_binding_signature_with_sighashes(&sighashes, sighash, rng)
+    }
+
+    /// Verifies each action's `spend_auth_sig` against its own sighash, and then binds the
+    /// bundle with `binding_sighash`.
+    ///
+    /// `sighashes` must contain exactly one digest per action, in action order: element
+    /// `i` is the signature message for action `i`. `binding_sighash` is the signature
+    /// message for the binding signature only.
+    ///
+    /// Returns `None` if `sighashes` does not contain exactly one digest per action, or if
+    /// any digest does not validate against the corresponding `spend_auth_sig`.
+    pub fn apply_binding_signature_with_sighashes<R: Rng + CryptoRng>(
+        self,
+        sighashes: &[[u8; 32]],
+        binding_sighash: [u8; 32],
+        rng: R,
+    ) -> Option<crate::Bundle<Authorized, V>> {
+        if sighashes.len() != self.actions().len()
+            || !self
+                .actions()
+                .iter()
+                .zip(sighashes)
+                .all(|(action, sighash)| {
+                    action.rk().verify(sighash, action.authorization()).is_ok()
+                })
         {
-            Some(self.map_authorization(
-                &mut (),
-                |_, _, a| a,
-                |_, Unbound { proof, bsk }| Authorized::from_parts(proof, bsk.sign(rng, &sighash)),
-            ))
-        } else {
-            None
+            return None;
         }
+
+        Some(self.map_authorization(
+            &mut (),
+            |_, _, a| a,
+            |_, Unbound { proof, bsk }| {
+                Authorized::from_parts(proof, bsk.sign(rng, &binding_sighash))
+            },
+        ))
     }
 }
