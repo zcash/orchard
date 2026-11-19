@@ -66,7 +66,11 @@ fn new_path(
 #[test]
 fn batch_preparation_matches_original_for_valid_and_tampered_bundles() {
     let mut rng = StdRng::from_seed([92; 32]);
-    for version in [BundleVersion::orchard_v2(), BundleVersion::orchard_v3()] {
+    for version in [
+        BundleVersion::orchard_v2(),
+        BundleVersion::orchard_v3(),
+        BundleVersion::ironwood_v3(),
+    ] {
         let keys = crate::cached_test_keys(version.circuit_version());
         let vk = keys.verifying_key();
         let fixtures = [1, 3].map(|actions| {
@@ -94,7 +98,9 @@ fn batch_preparation_matches_original_for_valid_and_tampered_bundles() {
             let bundles = (0..count)
                 .map(|i| (fixtures[i % 2].clone(), [0; 32]))
                 .collect::<Vec<_>>();
-            assert_eq!(old_path(&bundles, vk), new_path(&bundles, vk));
+            let original = old_path(&bundles, vk);
+            assert!(original.1, "valid {version:?} bundle batch");
+            assert_eq!(original, new_path(&bundles, vk));
             if count == 0 {
                 continue;
             }

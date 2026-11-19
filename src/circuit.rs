@@ -3,8 +3,6 @@
 use alloc::vec::Vec;
 
 use group::Curve;
-#[cfg(test)]
-use halo2_proofs::plonk::BatchVerifier;
 use halo2_proofs::{
     circuit::{floor_planner, Layouter, Value},
     plonk::{
@@ -1397,26 +1395,10 @@ impl Proof {
         plonk::verify_proof(&vk.params, &vk.vk, strategy, &instances, &mut transcript)
     }
 
-    /// Retains the 82a3f6dc per-bundle preparation as the batch differential test's oracle.
-    #[cfg(test)]
-    pub(crate) fn add_to_batch(
-        &self,
-        batch: &mut BatchVerifier<vesta::Affine>,
-        instances: Vec<Instance>,
-    ) {
-        let instances = instances
-            .iter()
-            .map(|i| {
-                i.to_halo2_instance()
-                    .into_iter()
-                    .map(|c| c.into_iter().collect())
-                    .collect()
-            })
-            .collect();
-
-        batch.add_proof(instances, self.0.clone());
-    }
 }
+
+#[cfg(test)]
+mod preparation_oracle;
 
 #[cfg(all(test, feature = "verifier-fingerprint"))]
 mod fingerprint;
