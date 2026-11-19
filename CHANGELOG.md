@@ -7,6 +7,15 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Changed
+- `Bundle::binding_validating_key` derives the value balance commitment from the
+  public value balance in variable time.
+- `BatchValidator::add_bundle` only queues verification inputs; `validate` derives
+  binding validating keys and signature inputs in parallel and normalizes public
+  points together. Unsupported circuit restrictions still fail in `add_bundle`.
+- The minimum supported `pasta_curves` version is 0.6.3.
+- The `multicore` feature now enables `rayon` for parallel batch preparation.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added
