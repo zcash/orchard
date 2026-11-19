@@ -20,8 +20,8 @@ struct BundleSignature {
     signature: redpallas::batch::Item<SpendAuth, Binding>,
 }
 
-/// Error returned by [`BatchValidator::add_bundle`] when a bundle's flags require a circuit
-/// capability the validator's verifying key does not provide.
+/// Error returned by [`BatchValidator::add_bundle`] and
+/// [`BatchValidator::add_bundle_with_sighashes`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum BatchError {
@@ -31,6 +31,14 @@ pub enum BatchError {
     ///
     /// [`OrchardCircuitVersion::supports_cross_address_restriction`]: crate::circuit::OrchardCircuitVersion::supports_cross_address_restriction
     RestrictionUnsupportedByKey,
+    /// The number of per-action sighashes supplied did not match the number of actions in
+    /// the bundle.
+    SighashCountMismatch {
+        /// The number of actions in the bundle, which is the number of sighashes required.
+        expected: usize,
+        /// The number of sighashes supplied.
+        actual: usize,
+    },
 }
 
 impl fmt::Display for BatchError {
@@ -40,6 +48,10 @@ impl fmt::Display for BatchError {
                 f,
                 "bundle disables cross-address transfers, but the verifying key's circuit \
                  version does not constrain the cross-address restriction",
+            ),
+            BatchError::SighashCountMismatch { expected, actual } => write!(
+                f,
+                "expected {expected} action sighashes, but received {actual}"
             ),
         }
     }
@@ -51,8 +63,8 @@ impl core::error::Error for BatchError {}
 ///
 /// This batch-validates proofs and RedPallas signatures. The verifying key is bound at
 /// construction: every bundle added to the batch is validated against it, and
-/// [`Self::add_bundle`] rejects up front any bundle whose flags the key's circuit version
-/// cannot enforce.
+/// [`Self::add_bundle`] and [`Self::add_bundle_with_sighashes`] reject up front any bundle
+/// whose flags the key's circuit version cannot enforce.
 #[derive(Debug)]
 pub struct BatchValidator<'a> {
     proofs: plonk::BatchVerifier<vesta::Affine>,
@@ -72,7 +84,12 @@ impl<'a> BatchValidator<'a> {
         }
     }
 
-    /// Adds the proof and RedPallas signatures from the given bundle to the validator.
+    /// Adds the proof and RedPallas signatures from the given bundle to the validator,
+    /// validating every action and the binding signature against a single shared sighash.
+    ///
+    /// This is the signature message convention of transaction formats that sign the
+    /// whole bundle with one digest. Use [`Self::add_bundle_with_sighashes`] when each
+    /// action and the binding signature have distinct messages.
     ///
     /// Returns [`BatchError::RestrictionUnsupportedByKey`] if the bundle disables cross-address
     /// transfers but the validator's verifying key's circuit version does not support the
@@ -82,23 +99,54 @@ impl<'a> BatchValidator<'a> {
         bundle: &Bundle<Authorized, V>,
         sighash: [u8; 32],
     ) -> Result<(), BatchError> {
+        let sighashes = vec![sighash; bundle.actions().len()];
+        self.add_bundle_with_sighashes(bundle, &sighashes, sighash)
+    }
+
+    /// Adds the proof and RedPallas signatures from the given bundle to the validator,
+    /// validating each action against its own sighash.
+    ///
+    /// `sighashes` must contain exactly one digest per action, in action order: element
+    /// `i` is the signature message for action `i`. `binding_sighash` is the signature
+    /// message for the binding signature only.
+    ///
+    /// Returns [`BatchError::RestrictionUnsupportedByKey`] if the bundle disables cross-address
+    /// transfers but the validator's verifying key's circuit version does not support the
+    /// cross-address restriction, or [`BatchError::SighashCountMismatch`] if `sighashes`
+    /// does not contain exactly one digest per action. In either case nothing is queued
+    /// for the bundle.
+    pub fn add_bundle_with_sighashes<V: Copy + Into<i64>>(
+        &mut self,
+        bundle: &Bundle<Authorized, V>,
+        sighashes: &[[u8; 32]],
+        binding_sighash: [u8; 32],
+    ) -> Result<(), BatchError> {
         if !bundle.flags().cross_address_enabled() && !self.vk.supports_cross_address_restriction()
         {
             return Err(BatchError::RestrictionUnsupportedByKey);
         }
 
-        for action in bundle.actions().iter() {
+        let expected = bundle.actions().len();
+        if sighashes.len() != expected {
+            return Err(BatchError::SighashCountMismatch {
+                expected,
+                actual: sighashes.len(),
+            });
+        }
+
+        for (action, sighash) in bundle.actions().iter().zip(sighashes) {
             self.signatures.push(BundleSignature {
                 signature: action
                     .rk()
-                    .create_batch_item(action.authorization().clone(), &sighash),
+                    .create_batch_item(action.authorization().clone(), sighash),
             });
         }
 
         self.signatures.push(BundleSignature {
-            signature: bundle
-                .binding_validating_key()
-                .create_batch_item(bundle.authorization().binding_signature().clone(), &sighash),
+            signature: bundle.binding_validating_key().create_batch_item(
+                bundle.authorization().binding_signature().clone(),
+                &binding_sighash,
+            ),
         });
 
         bundle
@@ -118,7 +166,7 @@ impl<'a> BatchValidator<'a> {
     /// for sub-batches of the bundles.
     ///
     /// The cross-address-restriction capability is enforced when bundles are added (see
-    /// [`Self::add_bundle`]), so it is already guaranteed here.
+    /// [`Self::add_bundle_with_sighashes`]), so it is already guaranteed here.
     pub fn validate<R: Rng + CryptoRng>(self, mut rng: R) -> bool {
         // https://p.z.cash/TCR:bad-txns-orchard-binding-signature-invalid?partial
 

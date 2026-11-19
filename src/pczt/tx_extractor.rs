@@ -1,3 +1,4 @@
+use alloc::vec;
 use core::fmt;
 
 use nonempty::NonEmpty;
@@ -130,6 +131,15 @@ pub enum TxExtractorError {
     MissingProof,
     /// The Transaction Extractor role requires all `spend_auth_sig` fields to be set.
     MissingSpendAuthSig,
+    /// The number of per-action sighashes supplied did not match the number of actions.
+    SighashCountMismatch {
+        /// The number of actions in the bundle.
+        expected: usize,
+        /// The number of sighashes supplied.
+        actual: usize,
+    },
+    /// A `spend_auth_sig` is invalid for its action's sighash.
+    InvalidSpendAuthSig,
     /// The value sum does not fit into a `valueBalance`.
     ValueSumOutOfRange,
     /// An action has an identity `rk`, which is forbidden by the consensus
@@ -184,6 +194,13 @@ impl fmt::Display for TxExtractorError {
                 f,
                 "`spend_auth_sig` fields must all be set for the Transaction Extractor role"
             ),
+            TxExtractorError::SighashCountMismatch { expected, actual } => write!(
+                f,
+                "expected {expected} action sighashes, but received {actual}"
+            ),
+            TxExtractorError::InvalidSpendAuthSig => {
+                write!(f, "a `spend_auth_sig` is invalid for its action's sighash")
+            }
             TxExtractorError::ValueSumOutOfRange => {
                 write!(f, "value sum does not fit into a `valueBalance`")
             }
@@ -223,24 +240,63 @@ impl Authorization for Unbound {
 impl<V> crate::Bundle<Unbound, V> {
     /// Verifies the given sighash with every `spend_auth_sig`, and then binds the bundle.
     ///
+    /// This is the signature message convention of transaction formats that sign the
+    /// whole bundle with one digest. Use [`Self::apply_binding_signature_with_sighashes`]
+    /// when each action and the binding signature have distinct messages.
+    ///
     /// Returns `None` if the given sighash does not validate against every `spend_auth_sig`.
     pub fn apply_binding_signature<R: Rng + CryptoRng>(
         self,
         sighash: [u8; 32],
         rng: R,
     ) -> Option<crate::Bundle<Authorized, V>> {
-        if self
+        let sighashes = vec![sighash; self.actions().len()];
+        self.apply_binding_signature_with_sighashes(&sighashes, sighash, rng)
+            .ok()
+    }
+
+    /// Verifies each action's `spend_auth_sig` against its own sighash, and then binds the
+    /// bundle with `binding_sighash`.
+    ///
+    /// `sighashes` must contain exactly one digest per action, in action order: element
+    /// `i` is the signature message for action `i`. `binding_sighash` is the signature
+    /// message for the binding signature only.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`TxExtractorError::SighashCountMismatch`] if `sighashes` does not contain
+    /// exactly one digest per action, or [`TxExtractorError::InvalidSpendAuthSig`] if any
+    /// digest does not validate against the corresponding `spend_auth_sig`.
+    /// The count is checked before verifying signatures. The bundle is consumed even
+    /// on error.
+    pub fn apply_binding_signature_with_sighashes<R: Rng + CryptoRng>(
+        self,
+        sighashes: &[[u8; 32]],
+        binding_sighash: [u8; 32],
+        rng: R,
+    ) -> Result<crate::Bundle<Authorized, V>, TxExtractorError> {
+        let expected = self.actions().len();
+        if sighashes.len() != expected {
+            return Err(TxExtractorError::SighashCountMismatch {
+                expected,
+                actual: sighashes.len(),
+            });
+        }
+        if !self
             .actions()
             .iter()
-            .all(|action| action.rk().verify(&sighash, action.authorization()).is_ok())
+            .zip(sighashes)
+            .all(|(action, sighash)| action.rk().verify(sighash, action.authorization()).is_ok())
         {
-            Some(self.map_authorization(
-                &mut (),
-                |_, _, a| a,
-                |_, Unbound { proof, bsk }| Authorized::from_parts(proof, bsk.sign(rng, &sighash)),
-            ))
-        } else {
-            None
+            return Err(TxExtractorError::InvalidSpendAuthSig);
         }
+
+        Ok(self.map_authorization(
+            &mut (),
+            |_, _, a| a,
+            |_, Unbound { proof, bsk }| {
+                Authorized::from_parts(proof, bsk.sign(rng, &binding_sighash))
+            },
+        ))
     }
 }

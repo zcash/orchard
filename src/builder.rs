@@ -1,6 +1,7 @@
 //! Logic for building Orchard components of transactions.
 
 use alloc::collections::BTreeMap;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 use core::iter;
@@ -176,6 +177,14 @@ pub enum BuildError {
     /// An overflow error occurred while attempting to construct the value
     /// for a bundle.
     ValueSum(value::BalanceError),
+    /// The number of per-action sighashes supplied did not match the number of actions in
+    /// the bundle.
+    SighashCountMismatch {
+        /// The number of actions in the bundle, which is the number of sighashes required.
+        expected: usize,
+        /// The number of sighashes supplied.
+        actual: usize,
+    },
     /// External signature is not valid.
     InvalidExternalSignature,
     /// A signature is valid for more than one input. This should never happen if `alpha`
@@ -218,6 +227,10 @@ impl fmt::Display for BuildError {
             #[cfg(feature = "circuit")]
             Proof(e) => write!(f, "Could not create proof: {e}"),
             ValueSum(_) => f.write_str("Overflow occurred during value construction"),
+            SighashCountMismatch { expected, actual } => write!(
+                f,
+                "Expected {expected} action sighashes, but received {actual}"
+            ),
             InvalidExternalSignature => f.write_str("External signature was invalid"),
             DuplicateSignature => f.write_str("Signature valid for more than one input"),
             BundleTypeNotSatisfiable => {
@@ -1667,7 +1680,10 @@ pub struct SigningMetadata {
 #[derive(Debug)]
 pub struct PartiallyAuthorized {
     binding_signature: redpallas::Signature<Binding>,
-    sighash: [u8; 32],
+    /// One sighash per action, in action order.
+    ///
+    /// The length always equals the number of actions in the bundle.
+    sighashes: Vec<[u8; 32]>,
 }
 
 impl InProgressSignatures for PartiallyAuthorized {
@@ -1695,51 +1711,119 @@ impl MaybeSigned {
 }
 
 impl<P: fmt::Debug, V> Bundle<InProgress<P, Unauthorized>, V> {
-    /// Loads the sighash into this bundle, preparing it for signing.
+    /// Loads a single sighash shared by every action and by the binding signature,
+    /// preparing this bundle for signing.
     ///
-    /// This API ensures that all signatures are created over the same sighash.
+    /// This is the signature message convention of transaction formats that sign the
+    /// whole bundle with one digest. Use [`Self::prepare_with_sighashes`] when each
+    /// action and the binding signature have distinct messages.
     pub fn prepare<R: Rng + CryptoRng>(
         self,
-        mut rng: R,
+        rng: R,
         sighash: [u8; 32],
     ) -> Bundle<InProgress<P, PartiallyAuthorized>, V> {
-        self.map_authorization(
-            &mut rng,
-            |rng, _, SigningMetadata { dummy_ask, parts }| {
+        let sighashes = vec![sighash; self.actions().len()];
+        self.prepare_with_sighashes(rng, &sighashes, sighash)
+            .expect("the repeated sighash always matches the action count")
+    }
+
+    /// Loads a sighash for every action, plus one for the binding signature, preparing
+    /// this bundle for signing.
+    ///
+    /// `sighashes` must contain exactly one digest per action, in action order: element
+    /// `i` is the signature message for action `i`. `binding_sighash` is the signature
+    /// message for the binding signature only.
+    ///
+    /// Callers compute these digests according to their transaction format; for v7,
+    /// see [ZIP 248](https://zips.z.cash/zip-0248).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::SighashCountMismatch`] if `sighashes` does not contain
+    /// exactly one digest per action. The count is checked before signing, but the
+    /// bundle is consumed even on error.
+    pub fn prepare_with_sighashes<R: Rng + CryptoRng>(
+        self,
+        mut rng: R,
+        sighashes: &[[u8; 32]],
+        binding_sighash: [u8; 32],
+    ) -> Result<Bundle<InProgress<P, PartiallyAuthorized>, V>, BuildError> {
+        let expected = self.actions().len();
+        if sighashes.len() != expected {
+            return Err(BuildError::SighashCountMismatch {
+                expected,
+                actual: sighashes.len(),
+            });
+        }
+
+        Ok(self.map_authorization(
+            &mut (&mut rng, 0usize),
+            |cursor, _, SigningMetadata { dummy_ask, parts }| {
+                let sighash = sighashes[cursor.1];
+                cursor.1 += 1;
                 // We can create signatures for dummy spends immediately.
                 dummy_ask
-                    .map(|ask| ask.randomize(&parts.alpha).sign(rng, &sighash))
+                    .map(|ask| ask.randomize(&parts.alpha).sign(&mut cursor.0, &sighash))
                     .map(MaybeSigned::Signature)
                     .unwrap_or(MaybeSigned::SigningMetadata(parts))
             },
-            |rng, auth| InProgress {
+            |cursor, auth| InProgress {
                 proof: auth.proof,
                 sigs: PartiallyAuthorized {
-                    binding_signature: auth.sigs.bsk.sign(rng, &sighash),
-                    sighash,
+                    binding_signature: auth.sigs.bsk.sign(&mut cursor.0, &binding_sighash),
+                    sighashes: sighashes.to_vec(),
                 },
             },
-        )
+        ))
     }
 }
 
 impl<V> Bundle<InProgress<Proof, Unauthorized>, V> {
-    /// Applies signatures to this bundle, in order to authorize it.
+    /// Applies signatures to this bundle from a single sighash shared by every action and
+    /// by the binding signature, in order to authorize it.
     ///
-    /// This is a helper method that wraps [`Bundle::prepare`], [`Bundle::sign`], and
-    /// [`Bundle::finalize`].
+    /// This is the signature message convention of transaction formats that sign the
+    /// whole bundle with one digest. It is a helper method that wraps [`Bundle::prepare`],
+    /// [`Bundle::sign`], and [`Bundle::finalize`]; use
+    /// [`Self::apply_signatures_with_sighashes`] when each action and the binding
+    /// signature have distinct messages.
     pub fn apply_signatures<R: Rng + CryptoRng>(
         self,
-        mut rng: R,
+        rng: R,
         sighash: [u8; 32],
         signing_keys: &[SpendAuthorizingKey],
     ) -> Result<Bundle<Authorized, V>, BuildError> {
-        signing_keys
-            .iter()
-            .fold(self.prepare(&mut rng, sighash), |partial, ask| {
-                partial.sign(&mut rng, ask)
-            })
-            .finalize()
+        let sighashes = vec![sighash; self.actions().len()];
+        self.apply_signatures_with_sighashes(rng, &sighashes, sighash, signing_keys)
+    }
+
+    /// Applies signatures to this bundle, in order to authorize it, with a distinct
+    /// sighash for every action plus one for the binding signature.
+    ///
+    /// `sighashes` must contain exactly one digest per action, in action order: element
+    /// `i` is the signature message for action `i`. `binding_sighash` is the signature
+    /// message for the binding signature only.
+    ///
+    /// This is a helper method that wraps [`Bundle::prepare_with_sighashes`],
+    /// [`Bundle::sign`], and [`Bundle::finalize`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::SighashCountMismatch`] if `sighashes` does not contain
+    /// exactly one digest per action, or [`BuildError::MissingSignatures`] if any action
+    /// is left unsigned.
+    pub fn apply_signatures_with_sighashes<R: Rng + CryptoRng>(
+        self,
+        mut rng: R,
+        sighashes: &[[u8; 32]],
+        binding_sighash: [u8; 32],
+        signing_keys: &[SpendAuthorizingKey],
+    ) -> Result<Bundle<Authorized, V>, BuildError> {
+        let mut partial = self.prepare_with_sighashes(&mut rng, sighashes, binding_sighash)?;
+        for ask in signing_keys {
+            partial = partial.sign(&mut rng, ask);
+        }
+        partial.finalize()
     }
 }
 
@@ -1750,14 +1834,18 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
     pub fn sign<R: Rng + CryptoRng>(self, mut rng: R, ask: &SpendAuthorizingKey) -> Self {
         let expected_ak = ask.into();
         self.map_authorization(
-            &mut rng,
-            |rng, partial, maybe| match maybe {
-                MaybeSigned::SigningMetadata(parts) if parts.ak == expected_ak => {
-                    MaybeSigned::Signature(
-                        ask.randomize(&parts.alpha).sign(rng, &partial.sigs.sighash),
-                    )
+            &mut (&mut rng, 0usize),
+            |cursor, partial, maybe| {
+                let sighash = partial.sigs.sighashes[cursor.1];
+                cursor.1 += 1;
+                match maybe {
+                    MaybeSigned::SigningMetadata(parts) if parts.ak == expected_ak => {
+                        MaybeSigned::Signature(
+                            ask.randomize(&parts.alpha).sign(&mut cursor.0, &sighash),
+                        )
+                    }
+                    s => s,
                 }
-                s => s,
             },
             |_, partial| partial,
         )
@@ -1781,20 +1869,25 @@ impl<P: fmt::Debug, V> Bundle<InProgress<P, PartiallyAuthorized>, V> {
         signature: &redpallas::Signature<SpendAuth>,
     ) -> Result<Self, BuildError> {
         let mut signature_valid_for = 0usize;
+        let mut index = 0usize;
         let bundle = self.map_authorization(
-            &mut signature_valid_for,
-            |valid_for, partial, maybe| match maybe {
-                MaybeSigned::SigningMetadata(parts) => {
-                    let rk = parts.ak.randomize(&parts.alpha);
-                    if rk.verify(&partial.sigs.sighash[..], signature).is_ok() {
-                        *valid_for += 1;
-                        MaybeSigned::Signature(signature.clone())
-                    } else {
-                        // Signature isn't for this input.
-                        MaybeSigned::SigningMetadata(parts)
+            &mut (&mut signature_valid_for, &mut index),
+            |(valid_for, index), partial, maybe| {
+                let sighash = partial.sigs.sighashes[**index];
+                **index += 1;
+                match maybe {
+                    MaybeSigned::SigningMetadata(parts) => {
+                        let rk = parts.ak.randomize(&parts.alpha);
+                        if rk.verify(&sighash[..], signature).is_ok() {
+                            **valid_for += 1;
+                            MaybeSigned::Signature(signature.clone())
+                        } else {
+                            // Signature isn't for this input.
+                            MaybeSigned::SigningMetadata(parts)
+                        }
                     }
+                    s => s,
                 }
-                s => s,
             },
             |_, partial| partial,
         );

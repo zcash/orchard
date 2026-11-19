@@ -1,6 +1,6 @@
-use core::fmt;
-
+use alloc::vec;
 use alloc::vec::Vec;
+use core::fmt;
 
 use rand::{CryptoRng, Rng};
 
@@ -13,7 +13,12 @@ use crate::{
 use super::{SignerError, VerifyError};
 
 impl super::Bundle {
-    /// Finalizes the IO for this bundle.
+    /// Finalizes the IO for this bundle, signing every dummy spend with a single sighash
+    /// shared by all of them.
+    ///
+    /// This is the signature message convention of transaction formats that sign the
+    /// whole bundle with one digest. Use [`Self::finalize_io_with_sighashes`] when each
+    /// action has its own message.
     ///
     /// If the bundle disables cross-address transfers, the structural restriction is
     /// first checked with [`Bundle::verify_cross_address_restriction`] (which requires
@@ -24,8 +29,41 @@ impl super::Bundle {
     pub fn finalize_io<R: Rng + CryptoRng>(
         &mut self,
         sighash: [u8; 32],
+        rng: R,
+    ) -> Result<(), IoFinalizerError> {
+        let sighashes = vec![sighash; self.actions.len()];
+        self.finalize_io_with_sighashes(&sighashes, rng)
+    }
+
+    /// Finalizes the IO for this bundle, signing each dummy spend with its own sighash.
+    ///
+    /// `sighashes` must contain exactly one digest per action, in action order: element
+    /// `i` is the signature message for action `i`.
+    ///
+    /// If the bundle disables cross-address transfers, the structural restriction is
+    /// first checked with [`Bundle::verify_cross_address_restriction`] (which requires
+    /// the spend and output `recipient` fields to be set); on failure the bundle is
+    /// left unmodified.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IoFinalizerError::SighashCountMismatch`] if `sighashes` does not contain
+    /// exactly one digest per action; in that case the bundle is left unmodified.
+    ///
+    /// [`Bundle::verify_cross_address_restriction`]: super::Bundle::verify_cross_address_restriction
+    pub fn finalize_io_with_sighashes<R: Rng + CryptoRng>(
+        &mut self,
+        sighashes: &[[u8; 32]],
         mut rng: R,
     ) -> Result<(), IoFinalizerError> {
+        let expected = self.actions.len();
+        if sighashes.len() != expected {
+            return Err(IoFinalizerError::SighashCountMismatch {
+                expected,
+                actual: sighashes.len(),
+            });
+        }
+
         // A bundle that disables cross-address transfers can never be proven or mined
         // if any action violates the structural restriction; fail before mutating
         // anything.
@@ -57,14 +95,14 @@ impl super::Bundle {
         }
         self.bsk = Some(bsk);
 
-        // Add signatures to dummy spends.
-        for action in self.actions.iter_mut() {
+        // Add signatures to dummy spends, each under its own action index.
+        for (index, action) in self.actions.iter_mut().enumerate() {
             // The `Option::take` ensures we don't have any spend authorizing keys in the
             // PCZT after the IO Finalizer has run.
             if let Some(sk) = action.spend.dummy_sk.take() {
                 let ask = SpendAuthorizingKey::from(&sk);
                 action
-                    .sign(sighash, &ask, &mut rng)
+                    .sign(sighashes[index], &ask, &mut rng)
                     .map_err(IoFinalizerError::DummySignature)?;
             }
         }
@@ -84,6 +122,14 @@ pub enum IoFinalizerError {
     DummySignature(SignerError),
     /// The IO Finalizer role requires all `rcv` fields to be set.
     MissingValueCommitTrapdoor,
+    /// The number of per-action sighashes supplied did not match the number of actions in
+    /// the bundle.
+    SighashCountMismatch {
+        /// The number of actions in the bundle, which is the number of sighashes required.
+        expected: usize,
+        /// The number of sighashes supplied.
+        actual: usize,
+    },
     /// The `cv_net`, `rcv`, and `value_sum` values within the Orchard bundle are
     /// inconsistent.
     ValueCommitMismatch,
@@ -104,6 +150,10 @@ impl fmt::Display for IoFinalizerError {
             IoFinalizerError::MissingValueCommitTrapdoor => write!(
                 f,
                 "The IO Finalizer role requires all `rcv` fields to be set"
+            ),
+            IoFinalizerError::SighashCountMismatch { expected, actual } => write!(
+                f,
+                "Expected {expected} action sighashes, but received {actual}"
             ),
             IoFinalizerError::ValueCommitMismatch => write!(
                 f,
