@@ -32,7 +32,7 @@ zcash_spec = "0.2.1"
 # Circuit
 halo2_gadgets = { version = "0.6", optional = true, default-features = false }
 halo2_proofs = { version = "0.4", optional = true, default-features = false, features = ["batch", "floor-planner-v1-legacy-pdqsort"] }
-pasta_curves = { version = "0.6", features = ["glv"] }
+pasta_curves = { version = "0.6.2", features = ["glv"] }
 poseidon = { package = "halo2_poseidon", version = "0.2" }
 reddsa = { version = "0.6", default-features = false }
 sinsemilla = "0.2"

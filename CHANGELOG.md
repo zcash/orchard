@@ -7,6 +7,18 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::Action::from_encoded_parts` validates Orchard action value commitments and
+  ephemeral keys together with the original first-invalid-action order.
+- `orchard::EncodedAction` and `orchard::EncodedAction::from_parts` collect compressed
+  commitments and the other action fields before batch validation.
+- `orchard::EncodedActionError` reports the first invalid action in a batch.
+- `orchard::value::EncodedValueCommitment` reads compressed commitments for batch validation.
+
+### Changed
+- MSRV-compatible bump: the minimum `pasta_curves` version is now 0.6.2, providing
+  `CurveAffine::batch_decode_vartime`.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added

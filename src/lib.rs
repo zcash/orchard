@@ -96,7 +96,7 @@ fn cached_test_keys(circuit_version: circuit::OrchardCircuitVersion) -> &'static
     }
 }
 
-pub use action::{Action, ActionFromPartsError};
+pub use action::{Action, ActionFromPartsError, EncodedAction, EncodedActionError};
 pub use address::Address;
 pub use bundle::Bundle;
 pub use constants::MERKLE_DEPTH_ORCHARD as NOTE_COMMITMENT_TREE_DEPTH;

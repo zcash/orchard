@@ -42,6 +42,7 @@ use core::iter::Sum;
 use core::ops::{Add, RangeInclusive, Sub};
 
 use bitvec::{array::BitArray, order::Lsb0};
+use corez::io::{self, Read};
 use ff::{Field, PrimeField};
 use group::{Curve, Group, GroupEncoding};
 #[cfg(feature = "circuit")]
@@ -313,6 +314,26 @@ impl ValueCommitTrapdoor {
     }
 }
 
+/// A value commitment's compressed wire encoding, not yet checked as a Pallas point.
+#[derive(Debug, Clone, Copy)]
+pub struct EncodedValueCommitment(<pallas::Point as GroupEncoding>::Repr);
+
+impl EncodedValueCommitment {
+    /// Reads a compressed commitment without validating it.
+    ///
+    /// Use [`crate::Action::from_encoded_parts`] to decode and validate a batch.
+    /// Returns the reader's error if the encoded point is truncated.
+    pub fn read<R: Read>(mut reader: R) -> io::Result<Self> {
+        let mut bytes = <pallas::Point as GroupEncoding>::Repr::default();
+        reader.read_exact(bytes.as_mut())?;
+        Ok(Self(bytes))
+    }
+
+    pub(crate) fn bytes(&self) -> <pallas::Point as GroupEncoding>::Repr {
+        self.0
+    }
+}
+
 /// A commitment to a [`ValueSum`].
 #[derive(Clone, Debug)]
 pub struct ValueCommitment(pallas::Point);
@@ -379,6 +400,11 @@ impl ValueCommitment {
     /// Deserialize a value commitment from its byte representation
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<ValueCommitment> {
         pallas::Point::from_bytes(bytes).map(ValueCommitment)
+    }
+
+    /// Wraps a previously decoded public Pallas point as a value commitment.
+    pub(crate) fn from_decoded(point: pallas::Affine) -> Self {
+        ValueCommitment(point.into())
     }
 
     /// Serialize this value commitment to its canonical byte representation.

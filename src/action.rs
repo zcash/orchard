@@ -1,15 +1,14 @@
+use alloc::vec::Vec;
 use core::fmt;
-use core::ops::Not as _;
 
-use group::{Group as _, GroupEncoding as _};
+use group::{CurveAffine as _, GroupEncoding as _};
 use memuse::DynamicUsage;
-use pasta_curves::pallas;
-use subtle::CtOption;
+use pasta_curves::{arithmetic::CurveAffine as _, pallas};
 
 use crate::{
     note::{ExtractedNoteCommitment, Nullifier, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, SpendAuth},
-    value::ValueCommitment,
+    value::{EncodedValueCommitment, ValueCommitment},
 };
 
 /// An action applied to the global ledger.
@@ -37,6 +36,77 @@ pub struct Action<A> {
     authorization: A,
 }
 
+/// An action with a compressed value commitment awaiting validation.
+///
+/// Construction also checks the `encrypted_note.epk_bytes` encoding, the `rk` identity
+/// invariant, and their original action order.
+#[derive(Debug)]
+pub struct EncodedAction<A> {
+    cv_net: EncodedValueCommitment,
+    nf: Nullifier,
+    rk: redpallas::VerificationKey<SpendAuth>,
+    cmx: ExtractedNoteCommitment,
+    encrypted_note: TransmittedNoteCiphertext,
+    authorization: A,
+}
+
+impl<A> EncodedAction<A> {
+    /// Collects already-read fields without checking `cv_net` or `epk_bytes`.
+    ///
+    /// Pass these actions to [`Action::from_encoded_parts`] to validate both points.
+    pub fn from_parts(
+        cv_net: EncodedValueCommitment,
+        nf: Nullifier,
+        rk: redpallas::VerificationKey<SpendAuth>,
+        cmx: ExtractedNoteCommitment,
+        encrypted_note: TransmittedNoteCiphertext,
+        authorization: A,
+    ) -> Self {
+        Self {
+            cv_net,
+            nf,
+            rk,
+            cmx,
+            encrypted_note,
+            authorization,
+        }
+    }
+}
+
+/// An error constructing an [`Action`] from an [`EncodedAction`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EncodedActionError {
+    /// The value commitment is not a Pallas point.
+    InvalidCv,
+    /// The action has an identity `rk` or invalid `epk`.
+    InvalidAction(ActionFromPartsError),
+}
+
+impl fmt::Display for EncodedActionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCv => write!(f, "invalid Pallas point for value commitment"),
+            Self::InvalidAction(error) => fmt::Display::fmt(error, f),
+        }
+    }
+}
+
+impl core::error::Error for EncodedActionError {}
+
+fn check_rk_epk(
+    rk: &redpallas::VerificationKey<SpendAuth>,
+    epk: Option<pallas::Affine>,
+) -> Result<(), ActionFromPartsError> {
+    if rk.is_identity() {
+        return Err(ActionFromPartsError::IdentityRk);
+    }
+    if epk.is_none_or(|epk| bool::from(epk.is_identity())) {
+        return Err(ActionFromPartsError::InvalidEpk);
+    }
+    Ok(())
+}
+
 impl<T> Action<T> {
     /// Constructs an `Action` from its constituent parts.
     ///
@@ -62,15 +132,10 @@ impl<T> Action<T> {
         cv_net: ValueCommitment,
         authorization: T,
     ) -> Result<Self, ActionFromPartsError> {
-        if rk.is_identity() {
-            return Err(ActionFromPartsError::IdentityRk);
-        }
-
-        Option::<()>::from(
-            pallas::Point::from_bytes(&encrypted_note.epk_bytes)
-                .and_then(|p| CtOption::new((), p.is_identity().not())),
-        )
-        .ok_or(ActionFromPartsError::InvalidEpk)?;
+        check_rk_epk(
+            &rk,
+            pallas::Affine::from_bytes(&encrypted_note.epk_bytes).into(),
+        )?;
 
         Ok(Action {
             nf,
@@ -80,6 +145,38 @@ impl<T> Action<T> {
             cv_net,
             authorization,
         })
+    }
+
+    /// Constructs actions by decoding their public `cv` and `epk` points together.
+    ///
+    /// Returns the first invalid action in input order. Invalid value commitments precede
+    /// `rk` identity and `epk` errors in the same action, as in [`Self::from_parts`].
+    /// The input encodings must be public because batch decoding is variable-time.
+    pub fn from_encoded_parts(
+        parts: Vec<EncodedAction<T>>,
+    ) -> Result<Vec<Self>, EncodedActionError> {
+        let encodings: Vec<_> = parts
+            .iter()
+            .flat_map(|part| [part.cv_net.bytes(), part.encrypted_note.epk_bytes])
+            .collect();
+        let points = pallas::Affine::batch_decode_vartime(&encodings);
+        parts
+            .into_iter()
+            .zip(points.chunks_exact(2))
+            .map(|(part, pair)| {
+                let cv_net =
+                    ValueCommitment::from_decoded(pair[0].ok_or(EncodedActionError::InvalidCv)?);
+                check_rk_epk(&part.rk, pair[1]).map_err(EncodedActionError::InvalidAction)?;
+                Ok(Action {
+                    nf: part.nf,
+                    rk: part.rk,
+                    cmx: part.cmx,
+                    encrypted_note: part.encrypted_note,
+                    cv_net,
+                    authorization: part.authorization,
+                })
+            })
+            .collect()
     }
 
     /// Returns the nullifier of the note being spent.
@@ -287,16 +384,22 @@ pub(crate) mod testing {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec::Vec;
+
     use group::ff::{Field as _, PrimeField as _};
     use group::{Group as _, GroupEncoding as _};
     use pasta_curves::pallas;
+    use proptest::prelude::*;
 
-    use super::{Action, ActionFromPartsError};
+    use super::{Action, ActionFromPartsError, EncodedAction, EncodedActionError};
     use crate::{
         note::{ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
         note_encryption::NoteBytesData,
         primitives::redpallas::{self, SpendAuth},
-        value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
+        value::{
+            EncodedValueCommitment, NoteValue, ValueCommitTrapdoor, ValueCommitment, ValueSum,
+        },
+        NoteVersion,
     };
 
     /// The canonical Pallas encoding of the identity is [0u8; 32]; plain
@@ -341,6 +444,42 @@ mod tests {
         let cv_net = ValueCommitment::derive(ValueSum::from_raw(42), ValueCommitTrapdoor::zero());
         (nf, cmx, encrypted_note, cv_net)
     }
+
+    fn encoded(
+        action: &Action<()>,
+        cv: [u8; POINT_BYTES],
+        rk: redpallas::VerificationKey<SpendAuth>,
+        epk: [u8; POINT_BYTES],
+    ) -> EncodedAction<()> {
+        let mut encrypted_note = action.encrypted_note().clone();
+        encrypted_note.epk_bytes = epk;
+        EncodedAction::from_parts(
+            EncodedValueCommitment::read(cv.as_slice())
+                .expect("the fixed-size encoding contains a full point"),
+            *action.nullifier(),
+            rk,
+            *action.cmx(),
+            encrypted_note,
+            (),
+        )
+    }
+
+    /// The length of a compressed Pallas point encoding.
+    const POINT_BYTES: usize = 32;
+    /// A nonzero net value makes the generated commitment non-identity.
+    const SPEND_VALUE: u64 = 2;
+    /// The output is smaller than the spend, leaving a nonzero net value.
+    const OUTPUT_VALUE: u64 = 1;
+    /// This encoding exceeds the Pallas base field modulus.
+    const NONCANONICAL_POINT: [u8; POINT_BYTES] = [0xff; POINT_BYTES];
+    /// For Pallas, x = 2 gives y² = 13, a non-square because its modulus is 5 mod 13.
+    const OFF_CURVE_POINT: [u8; POINT_BYTES] = {
+        let mut bytes = [0; POINT_BYTES];
+        bytes[0] = 2;
+        bytes
+    };
+    /// Include empty, all-valid, and multiple nontrivial batch lengths.
+    const BATCH_SIZES: &[usize] = &[0, 1, 2, 3, 4, 5, 8, 9, 17];
 
     #[test]
     fn is_identity_detects_identity() {
@@ -388,5 +527,78 @@ mod tests {
         encrypted_note.epk_bytes = [0xff; 32];
         let result = Action::from_parts(nf, non_identity_rk(), cmx, encrypted_note, cv_net, ());
         assert!(matches!(result, Err(ActionFromPartsError::InvalidEpk)));
+    }
+
+    proptest! {
+        #[test]
+        fn batch_matches_individual_validation_and_first_error(
+            action in super::testing::arb_unauthorized_action(
+                NoteVersion::V2, NoteValue::from_raw(SPEND_VALUE),
+                NoteValue::from_raw(OUTPUT_VALUE)
+            ),
+        ) {
+            let cv = action.cv_net().to_bytes();
+            let epk = action.encrypted_note().epk_bytes;
+            let rk = action.rk().clone();
+            let identity_epk = pallas::Point::identity().to_bytes();
+            let cases = [
+                (cv, rk.clone(), epk),
+                (identity_epk, rk.clone(), epk), // Identity is a valid commitment.
+                (NONCANONICAL_POINT, rk.clone(), epk),
+                (OFF_CURVE_POINT, rk.clone(), epk),
+                (cv, identity_rk(), epk),
+                (cv, rk.clone(), identity_epk),
+                (cv, rk.clone(), NONCANONICAL_POINT),
+                (cv, rk.clone(), OFF_CURVE_POINT),
+                (NONCANONICAL_POINT, identity_rk(), NONCANONICAL_POINT),
+                (cv, identity_rk(), NONCANONICAL_POINT),
+            ];
+            for start in 0..cases.len() {
+                for &size in BATCH_SIZES {
+                    let inputs: Vec<_> = cases
+                        .iter()
+                        .cloned()
+                        .cycle()
+                        .skip(start)
+                        .take(size)
+                        .collect();
+                    let expected: Result<Vec<_>, EncodedActionError> = inputs
+                        .iter()
+                        .map(|(cv, rk, epk)| {
+                            let value =
+                                Option::<ValueCommitment>::from(ValueCommitment::from_bytes(cv))
+                                    .ok_or(EncodedActionError::InvalidCv)?;
+                            let mut encrypted_note = action.encrypted_note().clone();
+                            encrypted_note.epk_bytes = *epk;
+                            Action::from_parts(
+                                *action.nullifier(),
+                                rk.clone(),
+                                *action.cmx(),
+                                encrypted_note,
+                                value,
+                                (),
+                            )
+                            .map_err(EncodedActionError::InvalidAction)
+                        })
+                        .collect();
+                    let actual = Action::from_encoded_parts(
+                        inputs
+                            .iter()
+                            .map(|(cv, rk, epk)| encoded(&action, *cv, rk.clone(), *epk))
+                            .collect(),
+                    );
+                    prop_assert_eq!(actual.as_ref().err(), expected.as_ref().err());
+                    if let Ok(actual) = actual {
+                        prop_assert_eq!(actual.len(), inputs.len());
+                        for (result, (cv, _, _)) in actual.iter().zip(&inputs) {
+                            let decoded =
+                                Option::<ValueCommitment>::from(ValueCommitment::from_bytes(cv))
+                                    .expect("successful batch has valid commitments");
+                            prop_assert_eq!(result.cv_net().to_bytes(), decoded.to_bytes());
+                        }
+                    }
+                }
+            }
+        }
     }
 }
