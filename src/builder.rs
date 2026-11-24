@@ -1566,6 +1566,7 @@ pub struct InProgress<P, S: InProgressSignatures> {
 }
 
 impl<P: fmt::Debug, S: InProgressSignatures> Authorization for InProgress<P, S> {
+    type Anchor = Anchor;
     type SpendAuth = S::SpendAuth;
 }
 

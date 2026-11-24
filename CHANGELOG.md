@@ -8,6 +8,8 @@ and this project adheres to Rust's notion of
 ## [Unreleased]
 
 ### Added
+- `orchard::Bundle::{map_authorization_with_anchor, try_map_authorization_with_anchor}`
+- `orchard::bundle::CommitmentError::MissingAnchor`
 - `orchard::builder::Bundle::<InProgress<P, Unauthorized>>::prepare_with_sighashes` and
   `orchard::builder::Bundle::<InProgress<Proof, Unauthorized>>::apply_signatures_with_sighashes`,
   which take one sighash per action plus a separate binding sighash.
@@ -24,6 +26,10 @@ and this project adheres to Rust's notion of
 - `orchard::bundle::BatchError::SighashCountMismatch`
 
 ### Changed
+- `bundle::Authorization` requires an `Anchor` associated type. Complete states
+  use `orchard::Anchor`; `EffectsOnly` uses `Option<orchard::Anchor>`.
+  `Bundle::anchor` and the effects-only constructor use that representation.
+- Authorization mappers that preserve anchors require equal anchor types.
 - `Bundle::prepare`, `Bundle::apply_signatures`,
   `Bundle::<Unbound>::apply_binding_signature`, `pczt::Bundle::finalize_io`, and
   `BatchValidator::add_bundle` retain the shared-digest convention and are now thin

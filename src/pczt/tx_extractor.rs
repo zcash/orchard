@@ -20,7 +20,7 @@ impl super::Bundle {
     pub fn extract_effects<V: TryFrom<i64>>(
         &self,
     ) -> Result<Option<crate::Bundle<EffectsOnly, V>>, TxExtractorError> {
-        self.to_tx_data(|_| Ok(()), |_| Ok(EffectsOnly))
+        self.to_tx_data(Some(self.anchor), |_| Ok(()), |_| Ok(EffectsOnly))
     }
 
     /// Extracts a fully authorized [regular `Bundle`] from this PCZT bundle.
@@ -32,6 +32,7 @@ impl super::Bundle {
         &self,
     ) -> Result<Option<crate::Bundle<Unbound, V>>, TxExtractorError> {
         let bundle = self.to_tx_data(
+            self.anchor,
             |action| {
                 action
                     .spend
@@ -71,6 +72,7 @@ impl super::Bundle {
     /// Converts this PCZT bundle into a regular bundle with the given authorizations.
     fn to_tx_data<A, V, E, F, G>(
         &self,
+        anchor: A::Anchor,
         action_auth: F,
         bundle_auth: G,
     ) -> Result<Option<crate::Bundle<A, V>>, E>
@@ -111,7 +113,7 @@ impl super::Bundle {
                 actions,
                 self.flags,
                 value_balance,
-                self.anchor,
+                anchor,
                 authorization,
                 self.bundle_version,
             ))
@@ -234,6 +236,7 @@ pub struct Unbound {
 }
 
 impl Authorization for Unbound {
+    type Anchor = crate::Anchor;
     type SpendAuth = redpallas::Signature<SpendAuth>;
 }
 
