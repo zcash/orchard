@@ -69,7 +69,18 @@ fn bench_combine_pairs(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::from_parameter(pairs),
             &children,
-            |b, children| b.iter(|| MerkleHashOrchard::combine_pairs(level, black_box(children))),
+            |b, children| {
+                b.iter(|| {
+                    MerkleHashOrchard::combine_pairs(
+                        level,
+                        black_box(children)
+                            .as_chunks::<2>()
+                            .0
+                            .iter()
+                            .map(|[left, right]| (left, right)),
+                    )
+                })
+            },
         );
     }
     group.finish();

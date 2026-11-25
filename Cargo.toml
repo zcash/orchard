@@ -134,9 +134,9 @@ harness = false
 
 [patch.crates-io]
 # `Hashable::combine_pairs` (zcash/incrementalmerkletree#219); drop once released
-incrementalmerkletree = { git = "https://github.com/elicbarbieri/incrementalmerkletree.git", rev = "e11bf32479c30059f94e652e390d5939831cc901" }
-# `runtime-precomputation` (zcash/sinsemilla#9) + `HashDomain::hash_many_vartime`; drop once released
-sinsemilla = { git = "https://github.com/zingolabs/sinsemilla.git", rev = "09b92cf4e87bb3f5a803053d457f6604d1a1dce5" }
+incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "b584b803026162beda22e437427eb61607959507" }
+# `HashDomain::hash_many_vartime` (zcash/sinsemilla#22); drop once released
+sinsemilla = { git = "https://github.com/zcash/sinsemilla.git", rev = "915e8a10f9707c46e319a1d9b445f6ab1f2f97e5" }
 
 [profile.release]
 debug = true

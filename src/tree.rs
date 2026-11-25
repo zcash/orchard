@@ -310,34 +310,38 @@ impl Hashable for MerkleHashOrchard {
         )
     }
 
-    /// - [`MerkleHashOrchard::combine_batch`] over each task's pairs
-    /// - `multicore`: one task per rayon thread, clamped to `MIN..=MAX_PAIRS_PER_TASK` pairs
-    fn combine_pairs(level: Level, children: &[Self]) -> Vec<Self> {
-        assert!(children.len().is_multiple_of(2), "children pair up");
-        let parents = |children: &[Self]| {
-            Self::combine_batch(
-                level,
-                children
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|[left, right]| (left, right)),
-            )
-        };
+    /// Hashes borrowed pairs with [`MerkleHashOrchard::combine_batch`].
+    ///
+    /// With `multicore`, wide batches are split into ordered rayon tasks, each
+    /// targeting `MIN_PAIRS_PER_TASK..=MAX_PAIRS_PER_TASK` pairs.
+    fn combine_pairs<'a, I>(level: Level, pairs: I) -> Vec<Self>
+    where
+        Self: 'a,
+        I: IntoIterator<Item = (&'a Self, &'a Self)>,
+    {
+        #[cfg(not(feature = "multicore"))]
+        {
+            Self::combine_batch(level, pairs)
+        }
+
         #[cfg(feature = "multicore")]
         {
             use rayon::prelude::*;
-            let per_task = (children.len() / 2)
+
+            let pairs: Vec<_> = pairs.into_iter().collect();
+            let per_task = pairs
+                .len()
                 .div_ceil(rayon::current_num_threads())
                 .clamp(MIN_PAIRS_PER_TASK, MAX_PAIRS_PER_TASK);
-            if children.len() > 2 * per_task {
-                return children
-                    .par_chunks(2 * per_task)
-                    .flat_map_iter(parents)
-                    .collect();
+            if pairs.len() > per_task {
+                pairs
+                    .par_chunks(per_task)
+                    .flat_map_iter(|pairs| Self::combine_batch(level, pairs.iter().copied()))
+                    .collect()
+            } else {
+                Self::combine_batch(level, pairs)
             }
         }
-        parents(children)
     }
 
     fn empty_root(level: Level) -> Self {
@@ -518,7 +522,14 @@ mod tests {
                     .map(|[left, right]| MerkleHashOrchard::combine(level, left, right))
                     .collect();
                 assert_eq!(
-                    MerkleHashOrchard::combine_pairs(level, children),
+                    MerkleHashOrchard::combine_pairs(
+                        level,
+                        children
+                            .as_chunks::<2>()
+                            .0
+                            .iter()
+                            .map(|[left, right]| (left, right)),
+                    ),
                     expected,
                     "level {level:?}, {pairs} pairs"
                 );
@@ -527,18 +538,12 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "children pair up")]
-    fn combine_pairs_refuses_an_odd_count() {
-        MerkleHashOrchard::combine_pairs(Level::from(0), &[MerkleHashOrchard::empty_leaf()]);
-    }
-
-    #[test]
     fn combine_pairs_rebuilds_the_empty_root_and_merkle_path_vectors() {
         let tv_empty_roots = crate::test_vectors::commitment_tree::test_vectors().empty_roots;
         let mut node = MerkleHashOrchard::empty_leaf();
         assert_eq!(tv_empty_roots[0], node.to_bytes());
         for level in 0..MERKLE_DEPTH_ORCHARD as u8 {
-            node = MerkleHashOrchard::combine_pairs(level.into(), &[node, node])[0];
+            node = MerkleHashOrchard::combine_pairs(level.into(), [(&node, &node)])[0];
             assert_eq!(
                 tv_empty_roots[usize::from(level) + 1],
                 node.to_bytes(),
@@ -557,7 +562,14 @@ mod tests {
                 .collect();
             nodes.resize(tv.leaves.len(), MerkleHashOrchard::empty_leaf());
             for level in 0..tv.paths[i].len() as u8 {
-                nodes = MerkleHashOrchard::combine_pairs(level.into(), &nodes);
+                nodes = MerkleHashOrchard::combine_pairs(
+                    level.into(),
+                    nodes
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|[left, right]| (left, right)),
+                );
             }
             let root = MerkleHashOrchard::from_bytes(&tv.root).expect("canonical vector root");
             assert_eq!(nodes, [root], "vector {i}");

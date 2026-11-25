@@ -1324,7 +1324,7 @@ checksum = "6e44b0a4eaa4c82f441d50a963f2d5f05a787240aeee097597033e72accfd22f"
 [[package]]
 name = "incrementalmerkletree"
 version = "0.9.0"
-source = "git+https://github.com/elicbarbieri/incrementalmerkletree.git?rev=e11bf32479c30059f94e652e390d5939831cc901#d5e07689456e0be0154934aa39d347a9e5f18765"
+source = "git+https://github.com/zcash/incrementalmerkletree.git?rev=b584b803026162beda22e437427eb61607959507#b584b803026162beda22e437427eb61607959507"
 dependencies = [
  "either",
  "proptest",
@@ -2531,9 +2531,10 @@ dependencies = [
 [[package]]
 name = "sinsemilla"
 version = "0.2.0"
-source = "git+https://github.com/zingolabs/sinsemilla.git?rev=09b92cf4e87bb3f5a803053d457f6604d1a1dce5#09b92cf4e87bb3f5a803053d457f6604d1a1dce5"
+source = "git+https://github.com/zcash/sinsemilla.git?rev=915e8a10f9707c46e319a1d9b445f6ab1f2f97e5#915e8a10f9707c46e319a1d9b445f6ab1f2f97e5"
 dependencies = [
  "group",
+ "once_cell",
  "pasta_curves",
  "subtle",
 ]
