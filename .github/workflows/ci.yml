@@ -31,6 +31,29 @@ jobs:
       - name: Verify working directory is clean
         run: git diff --exit-code
 
+  merkle-precomputation:
+    name: Merkle precomputation (${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features:
+          - std,runtime-precomputation
+          - std,multicore,runtime-precomputation
+    env:
+      # A 52-word Merkle message needs 53 generator rows of 64 KiB each.
+      SINSEMILLA_TABLE_LIMIT: "3473408"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run tree tests with precomputed tables
+        run: cargo test --locked --release --no-default-features --features "${FEATURES}" --lib tree
+        env:
+          FEATURES: ${{ matrix.features }}
+      - name: Verify working directory is clean
+        run: git diff --exit-code
+
   build-latest:
     name: Latest build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -61,13 +84,16 @@ jobs:
         run: git diff --exit-code ':!Cargo.lock'
 
   build-nostd:
-    name: Build no_std for target ${{ matrix.target }}
+    name: Build no_std for target ${{ matrix.target }}${{ matrix.precomputation && ' with precomputation' || '' }}
     runs-on: ubuntu-latest
+    env:
+      SINSEMILLA_TABLE_LIMIT: "3473408"
     strategy:
       matrix:
         target:
           - wasm32-wasip1
           - thumbv7em-none-eabihf
+        precomputation: [false, true]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,6 +115,10 @@ jobs:
       - name: Add dependencies of the synthetic crate (e.g. sapling-crypto)
         working-directory: ./ci-build
         run: cargo add --no-default-features --path ../crate_root
+      - name: Enable runtime precomputation
+        if: matrix.precomputation
+        working-directory: ./ci-build
+        run: cargo add orchard --no-default-features --path ../crate_root --features runtime-precomputation
       - name: Add lazy_static with the spin_no_std feature
         working-directory: ./ci-build
         run: cargo add lazy_static --no-default-features --features "spin_no_std"

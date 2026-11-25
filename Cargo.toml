@@ -44,7 +44,7 @@ rand_core = { version = "0.10", default-features = false }
 # Zcash protocol
 blake2b_simd = { version = "1", default-features = false }
 bitvec = { version = "1", default-features = false }
-incrementalmerkletree = "0.9"
+incrementalmerkletree = "0.9.1"
 zcash_note_encryption = "0.5.1"
 zip32 = { version = "0.3", default-features = false }
 
@@ -85,7 +85,7 @@ proptest = "1"
 rand = { version = "0.10", features = ["chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
 sinsemilla = { version = "0.2", features = ["test-dependencies"] }
 zcash_note_encryption = { version = "0.5.1", features = ["pre-zip-212"] }
-incrementalmerkletree = { version = "0.9", features = ["test-dependencies"] }
+incrementalmerkletree = { version = "0.9.1", features = ["test-dependencies"] }
 shardtree = "0.8"
 
 [target.'cfg(unix)'.dev-dependencies]
@@ -133,8 +133,6 @@ name = "merkle_crh"
 harness = false
 
 [patch.crates-io]
-# `Hashable::combine_pairs` (zcash/incrementalmerkletree#219); drop once released
-incrementalmerkletree = { git = "https://github.com/zcash/incrementalmerkletree.git", rev = "b584b803026162beda22e437427eb61607959507" }
 # `HashDomain::hash_many_vartime` (zcash/sinsemilla#22); drop once released
 sinsemilla = { git = "https://github.com/zcash/sinsemilla.git", rev = "915e8a10f9707c46e319a1d9b445f6ab1f2f97e5" }
 

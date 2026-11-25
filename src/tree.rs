@@ -379,12 +379,15 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
 }
 
 /// Test utilities available under the `test-dependencies` feature flag.
-#[cfg(feature = "test-dependencies")]
+#[cfg(any(test, feature = "test-dependencies"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
     use ff::Field;
+    use proptest::prelude::*;
     use rand::{
         distr::{Distribution, StandardUniform},
-        Rng,
+        rngs::StdRng,
+        Rng, SeedableRng,
     };
 
     use super::MerkleHashOrchard;
@@ -401,6 +404,12 @@ pub mod testing {
             MerkleHashOrchard(pasta_curves::Fp::random(rng))
         }
     }
+
+    /// Generates an arbitrary Merkle node using the field's uniform sampler.
+    pub fn arb_merkle_hash() -> impl Strategy<Value = MerkleHashOrchard> {
+        prop::array::uniform32(any::<u8>())
+            .prop_map(|seed| MerkleHashOrchard::random(&mut StdRng::from_seed(seed)))
+    }
 }
 
 #[cfg(test)]
@@ -409,14 +418,19 @@ mod tests {
         crate::{
             constants::sinsemilla::MERKLE_CRH_PERSONALIZATION,
             constants::MERKLE_DEPTH_ORCHARD,
-            tree::{merkle_crh_message, merkle_crh_words, MerkleHashOrchard, EMPTY_ROOTS},
+            tree::{
+                merkle_crh_message, merkle_crh_words, testing::arb_merkle_hash, MerkleHashOrchard,
+                EMPTY_ROOTS,
+            },
         },
-        alloc::vec::Vec,
+        alloc::{rc::Rc, vec::Vec},
+        core::{cell::Cell, iter},
         group::ff::{Field, PrimeField},
         incrementalmerkletree::{
             frontier::Frontier, Hashable, Level, Marking, MerklePath, Retention,
         },
         pasta_curves::pallas,
+        proptest::prelude::*,
         rand::{rngs::ChaCha20Rng, SeedableRng},
         shardtree::{store::memory::MemoryShardStore, ShardTree},
         sinsemilla::HashDomain,
@@ -426,6 +440,123 @@ mod tests {
     const BATCH_WIDTHS: [usize; 12] = [0, 1, 2, 3, 4, 8, 16, 32, 64, 128, 256, 512];
     /// Fixed seed makes the scalar-equivalence test deterministic.
     const BATCH_TEST_SEED: [u8; 32] = [0x42; 32];
+    /// Each case hashes hundreds of nodes through both scalar and batch paths.
+    const BATCH_PROPERTY_CASES: u32 = 8;
+    /// Spans two maximum-sized tasks plus a trailing singleton.
+    const MAX_ITERATOR_PAIRS: usize = 513;
+    /// Allows all generated append batches to fit while crossing subtree boundaries.
+    const FRONTIER_TEST_DEPTH: u8 = 11;
+    /// Initial prefixes exercise carries from partially populated subtrees.
+    const MAX_INITIAL_LEAVES: usize = 32;
+    /// Includes batches that cross a 256-leaf subtree boundary.
+    const MAX_APPEND_LEAVES: usize = 257;
+    /// Successive appends exercise reuse of the resulting frontier.
+    const MAX_APPEND_BATCHES: usize = 4;
+    const _: () = assert!(
+        MAX_INITIAL_LEAVES + MAX_APPEND_LEAVES * MAX_APPEND_BATCHES <= 1 << FRONTIER_TEST_DEPTH
+    );
+
+    /// Fixed pool sizes exercise serial execution and deterministic task splits.
+    #[cfg(feature = "multicore")]
+    const TEST_THREAD_COUNTS: [usize; 3] = [1, 2, 4];
+    /// Covers both scheduling thresholds and an incomplete final task.
+    #[cfg(feature = "multicore")]
+    const TASK_BOUNDARY_WIDTHS: [usize; 9] = [
+        0,
+        1,
+        super::MIN_PAIRS_PER_TASK - 1,
+        super::MIN_PAIRS_PER_TASK,
+        super::MIN_PAIRS_PER_TASK + 1,
+        super::MAX_PAIRS_PER_TASK - 1,
+        super::MAX_PAIRS_PER_TASK,
+        super::MAX_PAIRS_PER_TASK + 1,
+        MAX_ITERATOR_PAIRS,
+    ];
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(BATCH_PROPERTY_CASES))]
+
+        #[test]
+        fn combine_pairs_consumes_a_single_pass_iterator_in_order(
+            level in 0u8..MERKLE_DEPTH_ORCHARD as u8,
+            pairs in prop::collection::vec(
+                (arb_merkle_hash(), arb_merkle_hash()),
+                0..=MAX_ITERATOR_PAIRS,
+            ),
+        ) {
+            let level = Level::from(level);
+            let expected: Vec<_> = pairs
+                .iter()
+                .map(|(left, right)| MerkleHashOrchard::combine(level, left, right))
+                .collect();
+            let consumed = Rc::new(Cell::new(0));
+            let count = Rc::clone(&consumed);
+            let mut input = pairs.iter();
+            // No exact size hint, and the captured Rc makes this iterator non-Send.
+            let input = iter::from_fn(move || {
+                let (left, right) = input.next()?;
+                count.set(count.get() + 1);
+                Some((left, right))
+            });
+
+            let actual = MerkleHashOrchard::combine_pairs(level, input);
+            prop_assert_eq!(actual, expected);
+            prop_assert_eq!(consumed.get(), pairs.len());
+        }
+
+        #[test]
+        fn append_batch_matches_serial_frontiers(
+            initial in prop::collection::vec(arb_merkle_hash(), 0..=MAX_INITIAL_LEAVES),
+            batches in prop::collection::vec(
+                prop::collection::vec(arb_merkle_hash(), 0..=MAX_APPEND_LEAVES),
+                0..=MAX_APPEND_BATCHES,
+            ),
+        ) {
+            let mut serial: Frontier<MerkleHashOrchard, FRONTIER_TEST_DEPTH> = Frontier::empty();
+            for leaf in initial {
+                prop_assert!(serial.append(leaf));
+            }
+            let mut batched = serial.clone();
+
+            for batch in batches {
+                prop_assert!(batched.append_batch(&batch));
+                for leaf in batch {
+                    prop_assert!(serial.append(leaf));
+                }
+                prop_assert_eq!(&batched, &serial);
+                prop_assert_eq!(batched.root(), serial.root());
+            }
+        }
+
+        #[cfg(feature = "multicore")]
+        #[test]
+        fn combine_pairs_matches_scalar_in_fixed_thread_pools(
+            level in 0u8..MERKLE_DEPTH_ORCHARD as u8,
+            pairs in prop::collection::vec(
+                (arb_merkle_hash(), arb_merkle_hash()),
+                MAX_ITERATOR_PAIRS,
+            ),
+        ) {
+            let level = Level::from(level);
+            let expected: Vec<_> = pairs
+                .iter()
+                .map(|(left, right)| MerkleHashOrchard::combine(level, left, right))
+                .collect();
+
+            for threads in TEST_THREAD_COUNTS {
+                let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+                pool.install(|| {
+                    for width in TASK_BOUNDARY_WIDTHS {
+                        let actual = MerkleHashOrchard::combine_pairs(
+                            level,
+                            pairs[..width].iter().map(|(left, right)| (left, right)),
+                        );
+                        assert_eq!(actual, expected[..width], "{threads} threads, {width} pairs");
+                    }
+                });
+            }
+        }
+    }
 
     fn combine_with_fresh_domain(
         level: Level,

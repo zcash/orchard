@@ -1323,8 +1323,9 @@ checksum = "6e44b0a4eaa4c82f441d50a963f2d5f05a787240aeee097597033e72accfd22f"
 
 [[package]]
 name = "incrementalmerkletree"
-version = "0.9.0"
-source = "git+https://github.com/zcash/incrementalmerkletree.git?rev=b584b803026162beda22e437427eb61607959507#b584b803026162beda22e437427eb61607959507"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54fe6acabe6e60d25e1fd7bb05c587c03332401d282710418c678b42f749524c"
 dependencies = [
  "either",
  "proptest",

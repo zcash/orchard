@@ -11,10 +11,12 @@ and this project adheres to Rust's notion of
 - `Hashable::combine_pairs` for `tree::MerkleHashOrchard`, equal to
   `Hashable::combine` per pair via `combine_batch`; the `multicore` feature (now
   implying `std`) splits wide levels across rayon tasks. Requires
-  `incrementalmerkletree` with `Hashable::combine_pairs`.
+  `incrementalmerkletree` 0.9.1 with `Hashable::combine_pairs`.
 - `runtime-precomputation` feature flag, which enables `sinsemilla`'s
   `runtime-precomputation` (position-weighted tables built on first use, sized
   by `SINSEMILLA_TABLE_LIMIT` at build time)
+- `tree::testing::arb_merkle_hash`, available with `test-dependencies`, for
+  generating arbitrary canonical Merkle nodes in property tests.
 
 ### Changed
 - `tree::MerkleHashOrchard::combine_batch` hashes its pairs with

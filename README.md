@@ -7,6 +7,29 @@ Requires Rust 1.88+.
 - [The Orchard Book](https://zcash.github.io/orchard/)
 - [Crate documentation](https://docs.rs/orchard)
 
+## Batch Merkle hashing
+
+`MerkleHashOrchard::combine_batch` and `Hashable::combine_pairs` hash borrowed
+pairs of public tree nodes in input order. They are variable time. The
+`multicore` feature splits wide `combine_pairs` batches across Rayon tasks and
+requires `std`.
+
+The optional `runtime-precomputation` feature enables Sinsemilla's
+position-weighted tables, built on first use. Its generator-table budget is set
+at build time by `SINSEMILLA_TABLE_LIMIT`, in bytes. Orchard's 52-word Merkle
+messages need at least `3473408` bytes (53 rows of 64 KiB). The default budget
+covers this on macOS, but not on other targets; smaller budgets retain the
+per-message fallback with shared batch normalization. Table metadata and hashing
+scratch space require additional memory.
+
+To benchmark batches with tables enabled:
+
+```sh
+SINSEMILLA_TABLE_LIMIT=3473408 cargo bench --features runtime-precomputation --bench merkle_crh
+```
+
+`runtime-precomputation` does not itself require `std`.
+
 ## `no_std` compatibility
 
 In order to take advantage of `no_std` builds, downstream users of this crate
