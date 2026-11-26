@@ -40,9 +40,6 @@ jobs:
         features:
           - std,runtime-precomputation
           - std,multicore,runtime-precomputation
-    env:
-      # A 52-word Merkle message needs 53 generator rows of 64 KiB each.
-      SINSEMILLA_TABLE_LIMIT: "3473408"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -86,8 +83,6 @@ jobs:
   build-nostd:
     name: Build no_std for target ${{ matrix.target }}${{ matrix.precomputation && ' with precomputation' || '' }}
     runs-on: ubuntu-latest
-    env:
-      SINSEMILLA_TABLE_LIMIT: "3473408"
     strategy:
       matrix:
         target:
@@ -105,10 +100,6 @@ jobs:
         run: cargo init --edition 2021 --lib ci-build
       - name: Copy Rust version into synthetic crate
         run: cp crate_root/rust-toolchain.toml ci-build/
-      - name: Copy patch directives into synthetic crate
-        run: |
-          echo "[patch.crates-io]" >> ./ci-build/Cargo.toml
-          cat ./crate_root/Cargo.toml | sed "0,/.\+\(patch.crates.\+\)/d" >> ./ci-build/Cargo.toml
       - name: Add no_std pragma to lib.rs
         run: |
           echo "#![no_std]" > ./ci-build/src/lib.rs

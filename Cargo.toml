@@ -35,7 +35,7 @@ halo2_proofs = { version = "0.4", optional = true, default-features = false, fea
 pasta_curves = { version = "0.6", features = ["glv"] }
 poseidon = { package = "halo2_poseidon", version = "0.2" }
 reddsa = { version = "0.6", default-features = false }
-sinsemilla = "0.2"
+sinsemilla = "0.2.1"
 
 # CSPRNG
 rand = { version = "0.10", default-features = false }
@@ -83,7 +83,7 @@ halo2_gadgets = { version = "0.6", features = ["test-dependencies"] }
 hex = "0.4"
 proptest = "1"
 rand = { version = "0.10", features = ["chacha", "std", "std_rng", "sys_rng", "thread_rng"] }
-sinsemilla = { version = "0.2", features = ["test-dependencies"] }
+sinsemilla = { version = "0.2.1", features = ["test-dependencies"] }
 zcash_note_encryption = { version = "0.5.1", features = ["pre-zip-212"] }
 incrementalmerkletree = { version = "0.9.1", features = ["test-dependencies"] }
 shardtree = "0.8"
@@ -106,8 +106,8 @@ dev-graph = ["halo2_proofs?/dev-graph", "image", "plotters"]
 verifier-fingerprint = ["circuit", "halo2_proofs/unstable-verifier-fingerprint"]
 test-dependencies = ["proptest", "rand/std", "rand/std_rng"]
 zeroize = ["dep:zeroize", "pasta_curves/zeroize", "reddsa/zeroize", "zip32/zeroize"]
-# Sinsemilla's position-weighted tables, built on first use (size: `SINSEMILLA_TABLE_LIMIT` at build)
-runtime-precomputation = ["sinsemilla/runtime-precomputation"]
+# Sinsemilla's position-weighted tables, built on first use, covering Orchard Merkle messages.
+runtime-precomputation = ["sinsemilla/merkle-table"]
 
 [[bench]]
 name = "note_decryption"
@@ -131,10 +131,6 @@ required-features = ["circuit"]
 [[bench]]
 name = "merkle_crh"
 harness = false
-
-[patch.crates-io]
-# `HashDomain::hash_many_vartime` (zcash/sinsemilla#22); drop once released
-sinsemilla = { git = "https://github.com/zcash/sinsemilla.git", rev = "915e8a10f9707c46e319a1d9b445f6ab1f2f97e5" }
 
 [profile.release]
 debug = true

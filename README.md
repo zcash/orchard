@@ -14,18 +14,18 @@ pairs of public tree nodes in input order. They are variable time. The
 `multicore` feature splits wide `combine_pairs` batches across Rayon tasks and
 requires `std`.
 
-The optional `runtime-precomputation` feature enables Sinsemilla's
-position-weighted tables, built on first use. Its generator-table budget is set
-at build time by `SINSEMILLA_TABLE_LIMIT`, in bytes. Orchard's 52-word Merkle
-messages need at least `3473408` bytes (53 rows of 64 KiB). The default budget
-covers this on macOS, but not on other targets; smaller budgets retain the
-per-message fallback with shared batch normalization. Table metadata and hashing
-scratch space require additional memory.
+The optional `runtime-precomputation` feature enables Sinsemilla's `merkle-table`
+feature and position-weighted tables, built on first use. It guarantees coverage
+of Orchard's 52-word Merkle messages with at least `3473408` bytes (53 rows of
+64 KiB) of generator tables on every target. The build-time
+`SINSEMILLA_TABLE_LIMIT` setting can increase this budget, but cannot reduce it
+below the Merkle minimum. Table metadata and hashing scratch space require
+additional memory.
 
 To benchmark batches with tables enabled:
 
 ```sh
-SINSEMILLA_TABLE_LIMIT=3473408 cargo bench --features runtime-precomputation --bench merkle_crh
+cargo bench --features runtime-precomputation --bench merkle_crh
 ```
 
 `runtime-precomputation` does not itself require `std`.

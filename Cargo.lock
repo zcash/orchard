@@ -2531,8 +2531,9 @@ dependencies = [
 
 [[package]]
 name = "sinsemilla"
-version = "0.2.0"
-source = "git+https://github.com/zcash/sinsemilla.git?rev=915e8a10f9707c46e319a1d9b445f6ab1f2f97e5#915e8a10f9707c46e319a1d9b445f6ab1f2f97e5"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae8be47763e68830322a21f6f79ed3f69910f7613d190844f054425c5740615d"
 dependencies = [
  "group",
  "once_cell",

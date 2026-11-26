@@ -13,8 +13,8 @@ and this project adheres to Rust's notion of
   implying `std`) splits wide levels across rayon tasks. Requires
   `incrementalmerkletree` 0.9.1 with `Hashable::combine_pairs`.
 - `runtime-precomputation` feature flag, which enables `sinsemilla`'s
-  `runtime-precomputation` (position-weighted tables built on first use, sized
-  by `SINSEMILLA_TABLE_LIMIT` at build time)
+  `merkle-table` (position-weighted tables built on first use, with at least
+  53 rows covering Orchard Merkle messages). Requires `sinsemilla` 0.2.1.
 - `tree::testing::arb_merkle_hash`, available with `test-dependencies`, for
   generating arbitrary canonical Merkle nodes in property tests.
 
