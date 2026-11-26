@@ -206,20 +206,23 @@ impl MerkleHashOrchard {
         pallas::Base::from_repr(*bytes).map(MerkleHashOrchard)
     }
 
-    /// Combines same-level node pairs using `MerkleCRH^Orchard`.
+    /// Hashes many pairs of Merkle tree nodes at one level faster than
+    /// [`Hashable::combine`] hashes them one at a time.
     ///
-    /// This is equivalent to calling [`Hashable::combine`] for each pair in
-    /// input order, but hashes the pairs together with
-    /// [`HashDomain::hash_many_vartime`] to amortize field inversions across the
-    /// batch. That is variable time, which is fine for Merkle tree nodes because
-    /// they are public.
+    /// The hash is `MerkleCRH^Orchard`. This function runs in variable time, so
+    /// use it only for public tree nodes.
     ///
-    /// Every pair is evaluated at `level`. As with [`Hashable::combine`], the
-    /// caller is responsible for supplying children that belong at that level.
-    ///
-    /// The input iterator is consumed once and only borrows its nodes. This
-    /// method allocates and returns one digest per input pair, preserving input
-    /// order. An empty iterator returns an empty [`Vec`].
+    /// - Preconditions: the two children of each pair belong at `level`. The
+    ///   function does not check this.
+    /// - Inputs: `level` is the tree level of the children. `pairs` yields each
+    ///   pair as (left child, right child), and borrows the nodes. The function
+    ///   reads `pairs` once.
+    /// - Outputs: a [`Vec`] with one parent node for each pair, in input order.
+    ///   Each parent is the node that [`Hashable::combine`] returns for the same
+    ///   level and pair. No pairs give an empty [`Vec`].
+    /// - Side effects: with the `runtime-precomputation` feature flag, a call
+    ///   that has at least one pair builds the Sinsemilla tables if they do not
+    ///   exist yet. A call with no pairs has no side effects.
     pub fn combine_batch<'a>(
         level: Level,
         pairs: impl IntoIterator<Item = (&'a Self, &'a Self)>,
@@ -228,6 +231,10 @@ impl MerkleHashOrchard {
             .into_iter()
             .map(|(left, right)| merkle_crh_words(level, left, right))
             .collect();
+        // `hash_many_vartime` builds the Sinsemilla tables even for no messages.
+        if messages.is_empty() {
+            return Vec::new();
+        }
         MERKLE_CRH_DOMAIN
             .hash_many_vartime(&messages)
             .into_iter()
@@ -310,10 +317,27 @@ impl Hashable for MerkleHashOrchard {
         )
     }
 
-    /// Hashes borrowed pairs with [`MerkleHashOrchard::combine_batch`].
+    /// Hashes many pairs of Merkle tree nodes at one level with
+    /// [`MerkleHashOrchard::combine_batch`], and splits a large batch across
+    /// rayon tasks.
     ///
-    /// With `multicore`, wide batches are split into ordered rayon tasks, each
-    /// targeting `MIN_PAIRS_PER_TASK..=MAX_PAIRS_PER_TASK` pairs.
+    /// The hash is `MerkleCRH^Orchard`. This function runs in variable time, so
+    /// use it only for public tree nodes.
+    ///
+    /// - Preconditions: the two children of each pair belong at `level`. The
+    ///   function does not check this.
+    /// - Inputs: `level` is the tree level of the children. `pairs` yields each
+    ///   pair as (left child, right child), and borrows the nodes. The function
+    ///   reads `pairs` once.
+    /// - Outputs: a [`Vec`] with one parent node for each pair, in input order.
+    ///   Each parent is the node that [`Hashable::combine`] returns for the same
+    ///   level and pair. No pairs give an empty [`Vec`].
+    /// - Side effects: with the `multicore` feature flag, a batch of more than
+    ///   `MIN_PAIRS_PER_TASK` pairs runs on the current rayon thread pool. If
+    ///   the caller is outside any rayon thread pool, this builds the global
+    ///   pool. With the `runtime-precomputation` feature flag, a call that has
+    ///   at least one pair builds the Sinsemilla tables if they do not exist
+    ///   yet. A call with no pairs has no side effects.
     fn combine_pairs<'a, I>(level: Level, pairs: I) -> Vec<Self>
     where
         Self: 'a,
@@ -329,6 +353,10 @@ impl Hashable for MerkleHashOrchard {
             use rayon::prelude::*;
 
             let pairs: Vec<_> = pairs.into_iter().collect();
+            // A small batch runs on the calling thread and does not touch rayon.
+            if pairs.len() <= MIN_PAIRS_PER_TASK {
+                return Self::combine_batch(level, pairs);
+            }
             let per_task = pairs
                 .len()
                 .div_ceil(rayon::current_num_threads())
