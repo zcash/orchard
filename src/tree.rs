@@ -362,6 +362,10 @@ impl Hashable for MerkleHashOrchard {
                 .div_ceil(rayon::current_num_threads())
                 .clamp(MIN_PAIRS_PER_TASK, MAX_PAIRS_PER_TASK);
             if pairs.len() > per_task {
+                // Without this, each rayon task that makes the first hash builds its
+                // own copy of the Sinsemilla tables.
+                #[cfg(feature = "runtime-precomputation")]
+                sinsemilla::precompute();
                 pairs
                     .par_chunks(per_task)
                     .flat_map_iter(|pairs| Self::combine_batch(level, pairs.iter().copied()))
