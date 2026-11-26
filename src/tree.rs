@@ -381,15 +381,21 @@ impl Hashable for MerkleHashOrchard {
     }
 }
 
-/// Fewest pairs per rayon task (= `sinsemilla`'s lockstep threshold)
+/// The smallest task size, in pairs, that `combine_pairs` chooses for rayon tasks.
 ///
-/// - 20 threads, µs/pair at 64 / 128 / 512 pairs: 4.3 / 2.7 / 1.7 (64 per task: 6.8 / 4.7 / 2.4)
+/// - `combine_pairs` hashes a batch of at most this many pairs on the calling thread, and
+///   does not call into rayon.
+/// - When `combine_pairs` splits a batch, each task gets at least this many pairs, except
+///   the last task, which can get fewer.
+///
+/// A smaller task costs more to schedule than it saves.
 #[cfg(feature = "multicore")]
 const MIN_PAIRS_PER_TASK: usize = 8;
 
-/// Most pairs per rayon task (more tasks than threads: balance across P- and E-cores)
+/// The largest task size, in pairs, that `combine_pairs` chooses for rayon tasks.
 ///
-/// - 20 threads, µs/pair at 2048 / 8192 / 32768 pairs: 1.46 / 1.24 / 0.99 (512 or 2048: no better)
+/// A large batch becomes more tasks than threads, so that rayon can balance the work across
+/// cores of different speeds.
 #[cfg(feature = "multicore")]
 const MAX_PAIRS_PER_TASK: usize = 256;
 
