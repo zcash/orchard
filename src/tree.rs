@@ -427,15 +427,18 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
 #[cfg(any(test, feature = "test-dependencies"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use ff::Field;
+    use ff::{Field, FromUniformBytes};
+    use pasta_curves::pallas;
     use proptest::prelude::*;
     use rand::{
         distr::{Distribution, StandardUniform},
-        rngs::StdRng,
-        Rng, SeedableRng,
+        Rng,
     };
 
     use super::MerkleHashOrchard;
+
+    /// The number of bytes that `pallas::Base::from_uniform_bytes` reduces to one field element.
+    const UNIFORM_BYTES_LEN: usize = 64;
 
     impl MerkleHashOrchard {
         /// Return a random fake `MerkleHashOrchard`.
@@ -450,10 +453,22 @@ pub mod testing {
         }
     }
 
-    /// Generates an arbitrary Merkle node using the field's uniform sampler.
+    /// Generates arbitrary Merkle tree nodes for property tests.
+    ///
+    /// Each node holds a Pallas base field element. The strategy draws 32 bytes, reads them as
+    /// a little-endian integer, and reduces that integer modulo the field order. A failing
+    /// node shrinks toward the zero field element.
+    ///
+    /// - Preconditions: none.
+    /// - Inputs: none.
+    /// - Outputs: a strategy that generates [`MerkleHashOrchard`] values.
+    /// - Side effects: none.
     pub fn arb_merkle_hash() -> impl Strategy<Value = MerkleHashOrchard> {
-        prop::array::uniform32(any::<u8>())
-            .prop_map(|seed| MerkleHashOrchard::random(&mut StdRng::from_seed(seed)))
+        prop::array::uniform32(any::<u8>()).prop_map(|bytes| {
+            let mut uniform_bytes = [0u8; UNIFORM_BYTES_LEN];
+            uniform_bytes[..bytes.len()].copy_from_slice(&bytes);
+            MerkleHashOrchard(pallas::Base::from_uniform_bytes(&uniform_bytes))
+        })
     }
 }
 
