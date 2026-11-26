@@ -646,6 +646,20 @@ mod tests {
         }
     }
 
+    /// The Sinsemilla tables cover a whole MerkleCRH message, so a batch hashes with them.
+    #[cfg(feature = "runtime-precomputation")]
+    #[test]
+    fn sinsemilla_tables_cover_merkle_crh_messages() {
+        let leaf = MerkleHashOrchard::empty_leaf();
+        MerkleHashOrchard::combine_batch(Level::ZERO, [(&leaf, &leaf)]);
+        let covered_words = super::MERKLE_CRH_DOMAIN.precomputed_message_words();
+        assert!(
+            covered_words >= super::MERKLE_CRH_WORDS,
+            "the tables cover {covered_words} words, and a MerkleCRH message has {} words",
+            super::MERKLE_CRH_WORDS
+        );
+    }
+
     /// Children 0, 1, p − 1 (largest canonical) and random, at the top and bottom levels
     #[test]
     fn merkle_crh_words_pack_merkle_crh_message() {
