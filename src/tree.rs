@@ -258,29 +258,36 @@ fn merkle_crh_message(
 const MERKLE_CRH_WORDS: usize = (K + 2 * L_ORCHARD_MERKLE) / K;
 const _: () = assert!((K + 2 * L_ORCHARD_MERKLE).is_multiple_of(K));
 
+/// The number of bits in one `u64` limb of a packed MerkleCRH message.
+const LIMB_BITS: usize = u64::BITS as usize;
+/// The number of bytes in one `u64` limb of a node's canonical encoding.
+const LIMB_BYTES: usize = core::mem::size_of::<u64>();
+
 /// [`merkle_crh_message`] as `K`-bit words, packed limb-wise (not bit by bit)
 fn merkle_crh_words(
     level: Level,
     left: &MerkleHashOrchard,
     right: &MerkleHashOrchard,
 ) -> [u16; MERKLE_CRH_WORDS] {
-    let mut bits = [0u64; (MERKLE_CRH_WORDS * K).div_ceil(64)];
+    let mut bits = [0u64; (MERKLE_CRH_WORDS * K).div_ceil(LIMB_BITS)];
     bits[0] = u64::from(u8::from(level));
     for (child, at) in [(left, K), (right, K + L_ORCHARD_MERKLE)] {
         // canonical repr < 2^255 (bit 255 = 0): spill past `L_ORCHARD_MERKLE` ORs nothing
-        for (i, limb) in child.0.to_repr().as_chunks::<8>().0.iter().enumerate() {
-            let (word, shift) = ((at + 64 * i) / 64, (at + 64 * i) % 64);
+        let repr = child.0.to_repr();
+        for (i, limb) in repr.as_chunks::<LIMB_BYTES>().0.iter().enumerate() {
+            let offset = at + LIMB_BITS * i;
+            let (word, shift) = (offset / LIMB_BITS, offset % LIMB_BITS);
             let limb = u64::from_le_bytes(*limb);
             bits[word] |= limb << shift;
             if shift > 0 {
-                bits[word + 1] |= limb >> (64 - shift);
+                bits[word + 1] |= limb >> (LIMB_BITS - shift);
             }
         }
     }
     core::array::from_fn(|i| {
-        let (at, shift) = (i * K / 64, i * K % 64);
-        let high = match shift + K > 64 {
-            true => bits[at + 1] << (64 - shift),
+        let (at, shift) = (i * K / LIMB_BITS, i * K % LIMB_BITS);
+        let high = match shift + K > LIMB_BITS {
+            true => bits[at + 1] << (LIMB_BITS - shift),
             false => 0,
         };
         // masked to K = 10 bits
