@@ -7,6 +7,25 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::tree::MerkleHashOrchard` now overrides
+  `incrementalmerkletree::Hashable::combine_pairs`. It returns the same nodes as
+  `Hashable::combine` for each pair, in variable time. With the `multicore`
+  feature flag, it hashes large batches on the current `rayon` thread pool.
+- `runtime-precomputation` feature flag, which enables the `merkle-table`
+  feature of `sinsemilla`. The first Merkle hash or incoming viewing key
+  derivation then builds lookup tables of at least 3473408 bytes, which are
+  kept until the process exits.
+- `orchard::tree::testing::arb_merkle_hash`, behind the `test-dependencies`
+  feature flag.
+
+### Changed
+- Migrated to `incrementalmerkletree 0.9.1`, `sinsemilla 0.2.1`.
+- The `multicore` feature flag now enables the `std` feature flag and the
+  `rayon` dependency.
+- `orchard::tree::MerkleHashOrchard::combine_batch` now runs in variable time.
+  It returns the same nodes as before. Use it only for public tree nodes.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added

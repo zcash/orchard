@@ -1048,9 +1048,7 @@ pub struct BundleAuthorizingCommitment(pub Blake2bHash);
 pub mod testing {
     use alloc::vec::Vec;
 
-    use group::ff::FromUniformBytes;
     use nonempty::NonEmpty;
-    use pasta_curves::pallas;
     use rand::{rngs::StdRng, SeedableRng};
     use reddsa::orchard::SpendAuth;
 
@@ -1060,6 +1058,7 @@ pub mod testing {
     use crate::{
         bundle::BundleVersion,
         primitives::redpallas::{self, testing::arb_binding_signing_key},
+        tree::testing::arb_merkle_hash,
         value::{testing::arb_note_value_bounded, NoteValue, ValueSum, MAX_NOTE_VALUE},
         Anchor, NoteVersion, Proof,
     };
@@ -1173,15 +1172,6 @@ pub mod testing {
     }
 
     prop_compose! {
-        fn arb_base()(bytes in prop::array::uniform32(0u8..)) -> pallas::Base {
-            // Instead of rejecting out-of-range bytes, let's reduce them.
-            let mut buf = [0; 64];
-            buf[..32].copy_from_slice(&bytes);
-            pallas::Base::from_uniform_bytes(&buf)
-        }
-    }
-
-    prop_compose! {
         /// Generate an arbitrary unauthorized bundle. This bundle does not
         /// necessarily respect consensus rules; for that use
         /// [`crate::builder::testing::arb_bundle`]
@@ -1192,7 +1182,7 @@ pub mod testing {
         )
         (
             acts in vec(arb_unauthorized_action_n(bundle_version.note_version(), n_actions, flags), n_actions),
-            anchor in arb_base().prop_map(Anchor::from),
+            anchor in arb_merkle_hash().prop_map(Anchor::from),
             flags in Just(flags),
             bundle_version in Just(bundle_version),
         ) -> Bundle<Unauthorized, ValueSum> {
@@ -1222,7 +1212,7 @@ pub mod testing {
         )
         (
             acts in vec(arb_action_n(bundle_version.note_version(), n_actions, flags), n_actions),
-            anchor in arb_base().prop_map(Anchor::from),
+            anchor in arb_merkle_hash().prop_map(Anchor::from),
             sk in arb_binding_signing_key(),
             rng_seed in prop::array::uniform32(prop::num::u8::ANY),
             // A fake proof of the canonical length, so the bundle passes `try_from_parts`.

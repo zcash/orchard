@@ -9,12 +9,11 @@ use crate::{
         MERKLE_DEPTH_ORCHARD,
     },
     note::commitment::ExtractedNoteCommitment,
-    spec::extract_p_bottom_batch,
 };
 
 use incrementalmerkletree::{Hashable, Level};
 use pasta_curves::pallas;
-use sinsemilla::HashDomain;
+use sinsemilla::{HashDomain, K};
 
 use ff::{Field, PrimeField, PrimeFieldBits};
 use lazy_static::lazy_static;
@@ -207,27 +206,40 @@ impl MerkleHashOrchard {
         pallas::Base::from_repr(*bytes).map(MerkleHashOrchard)
     }
 
-    /// Combines same-level node pairs using `MerkleCRH^Orchard`.
+    /// Hashes many pairs of Merkle tree nodes at one level faster than
+    /// [`Hashable::combine`] hashes them one at a time.
     ///
-    /// This is equivalent to calling [`Hashable::combine`] for each pair in
-    /// input order, but normalizes all resulting projective Pallas points
-    /// together to amortize the field inversion across the batch.
+    /// The hash is `MerkleCRH^Orchard`. This function runs in variable time, so
+    /// use it only for public tree nodes.
     ///
-    /// Every pair is evaluated at `level`. As with [`Hashable::combine`], the
-    /// caller is responsible for supplying children that belong at that level.
-    ///
-    /// The input iterator is consumed once and only borrows its nodes. This
-    /// method allocates and returns one digest per input pair, preserving input
-    /// order. An empty iterator returns an empty [`Vec`].
+    /// - Preconditions: the two children of each pair belong at `level`. The
+    ///   function does not check this.
+    /// - Inputs: `level` is the tree level of the children. `pairs` yields each
+    ///   pair as (left child, right child), and borrows the nodes. The function
+    ///   reads `pairs` once.
+    /// - Outputs: a [`Vec`] with one parent node for each pair, in input order.
+    ///   Each parent is the node that [`Hashable::combine`] returns for the same
+    ///   level and pair. No pairs give an empty [`Vec`].
+    /// - Side effects: with the `runtime-precomputation` feature flag, a call
+    ///   that has at least one pair builds the Sinsemilla tables if they do not
+    ///   exist yet. A call with no pairs has no side effects.
     pub fn combine_batch<'a>(
         level: Level,
         pairs: impl IntoIterator<Item = (&'a Self, &'a Self)>,
     ) -> Vec<Self> {
-        extract_p_bottom_batch(pairs.into_iter().map(|(left, right)| {
-            MERKLE_CRH_DOMAIN.hash_to_point(merkle_crh_message(level, left, right))
-        }))
-        .map(|hash| MerkleHashOrchard(hash.unwrap_or(pallas::Base::zero())))
-        .collect()
+        let messages: Vec<_> = pairs
+            .into_iter()
+            .map(|(left, right)| merkle_crh_words(level, left, right))
+            .collect();
+        // `hash_many_vartime` builds the Sinsemilla tables even for no messages.
+        if messages.is_empty() {
+            return Vec::new();
+        }
+        MERKLE_CRH_DOMAIN
+            .hash_many_vartime(&messages)
+            .into_iter()
+            .map(|hash| MerkleHashOrchard(hash.unwrap_or(pallas::Base::zero())))
+            .collect()
     }
 }
 
@@ -240,6 +252,47 @@ fn merkle_crh_message(
         .into_iter()
         .chain(left.0.to_le_bits().into_iter().take(L_ORCHARD_MERKLE))
         .chain(right.0.to_le_bits().into_iter().take(L_ORCHARD_MERKLE))
+}
+
+/// `K`-bit words of a MerkleCRH message (10 + 2 · 255 = 520 bits, no padding word)
+const MERKLE_CRH_WORDS: usize = (K + 2 * L_ORCHARD_MERKLE) / K;
+const _: () = assert!((K + 2 * L_ORCHARD_MERKLE).is_multiple_of(K));
+
+/// The number of bits in one `u64` limb of a packed MerkleCRH message.
+const LIMB_BITS: usize = u64::BITS as usize;
+/// The number of bytes in one `u64` limb of a node's canonical encoding.
+const LIMB_BYTES: usize = core::mem::size_of::<u64>();
+
+/// [`merkle_crh_message`] as `K`-bit words, packed limb-wise (not bit by bit)
+fn merkle_crh_words(
+    level: Level,
+    left: &MerkleHashOrchard,
+    right: &MerkleHashOrchard,
+) -> [u16; MERKLE_CRH_WORDS] {
+    let mut bits = [0u64; (MERKLE_CRH_WORDS * K).div_ceil(LIMB_BITS)];
+    bits[0] = u64::from(u8::from(level));
+    for (child, at) in [(left, K), (right, K + L_ORCHARD_MERKLE)] {
+        // canonical repr < 2^255 (bit 255 = 0): spill past `L_ORCHARD_MERKLE` ORs nothing
+        let repr = child.0.to_repr();
+        for (i, limb) in repr.as_chunks::<LIMB_BYTES>().0.iter().enumerate() {
+            let offset = at + LIMB_BITS * i;
+            let (word, shift) = (offset / LIMB_BITS, offset % LIMB_BITS);
+            let limb = u64::from_le_bytes(*limb);
+            bits[word] |= limb << shift;
+            if shift > 0 {
+                bits[word + 1] |= limb >> (LIMB_BITS - shift);
+            }
+        }
+    }
+    core::array::from_fn(|i| {
+        let (at, shift) = (i * K / LIMB_BITS, i * K % LIMB_BITS);
+        let high = match shift + K > LIMB_BITS {
+            true => bits[at + 1] << (LIMB_BITS - shift),
+            false => 0,
+        };
+        // masked to K = 10 bits
+        ((bits[at] >> shift | high) & ((1 << K) - 1)) as u16
+    })
 }
 
 impl ConditionallySelectable for MerkleHashOrchard {
@@ -271,10 +324,87 @@ impl Hashable for MerkleHashOrchard {
         )
     }
 
+    /// Hashes many pairs of Merkle tree nodes at one level with
+    /// [`MerkleHashOrchard::combine_batch`], and splits a large batch across
+    /// rayon tasks.
+    ///
+    /// The hash is `MerkleCRH^Orchard`. This function runs in variable time, so
+    /// use it only for public tree nodes.
+    ///
+    /// - Preconditions: the two children of each pair belong at `level`. The
+    ///   function does not check this.
+    /// - Inputs: `level` is the tree level of the children. `pairs` yields each
+    ///   pair as (left child, right child), and borrows the nodes. The function
+    ///   reads `pairs` once.
+    /// - Outputs: a [`Vec`] with one parent node for each pair, in input order.
+    ///   Each parent is the node that [`Hashable::combine`] returns for the same
+    ///   level and pair. No pairs give an empty [`Vec`].
+    /// - Side effects: with the `multicore` feature flag, a batch of more than
+    ///   `MIN_PAIRS_PER_TASK` pairs runs on the current rayon thread pool. If
+    ///   the caller is outside any rayon thread pool, this builds the global
+    ///   pool. With the `runtime-precomputation` feature flag, a call that has
+    ///   at least one pair builds the Sinsemilla tables if they do not exist
+    ///   yet. A call with no pairs has no side effects.
+    fn combine_pairs<'a, I>(level: Level, pairs: I) -> Vec<Self>
+    where
+        Self: 'a,
+        I: IntoIterator<Item = (&'a Self, &'a Self)>,
+    {
+        #[cfg(not(feature = "multicore"))]
+        {
+            Self::combine_batch(level, pairs)
+        }
+
+        #[cfg(feature = "multicore")]
+        {
+            use rayon::prelude::*;
+
+            let pairs: Vec<_> = pairs.into_iter().collect();
+            // A small batch runs on the calling thread and does not touch rayon.
+            if pairs.len() <= MIN_PAIRS_PER_TASK {
+                return Self::combine_batch(level, pairs);
+            }
+            let per_task = pairs
+                .len()
+                .div_ceil(rayon::current_num_threads())
+                .clamp(MIN_PAIRS_PER_TASK, MAX_PAIRS_PER_TASK);
+            if pairs.len() > per_task {
+                // Without this, each rayon task that makes the first hash builds its
+                // own copy of the Sinsemilla tables.
+                #[cfg(feature = "runtime-precomputation")]
+                sinsemilla::precompute();
+                pairs
+                    .par_chunks(per_task)
+                    .flat_map_iter(|pairs| Self::combine_batch(level, pairs.iter().copied()))
+                    .collect()
+            } else {
+                Self::combine_batch(level, pairs)
+            }
+        }
+    }
+
     fn empty_root(level: Level) -> Self {
         EMPTY_ROOTS[<usize>::from(level)]
     }
 }
+
+/// The smallest task size, in pairs, that `combine_pairs` chooses for rayon tasks.
+///
+/// - `combine_pairs` hashes a batch of at most this many pairs on the calling thread, and
+///   does not call into rayon.
+/// - When `combine_pairs` splits a batch, each task gets at least this many pairs, except
+///   the last task, which can get fewer.
+///
+/// A smaller task costs more to schedule than it saves.
+#[cfg(feature = "multicore")]
+const MIN_PAIRS_PER_TASK: usize = 8;
+
+/// The largest task size, in pairs, that `combine_pairs` chooses for rayon tasks.
+///
+/// A large batch becomes more tasks than threads, so that rayon can balance the work across
+/// cores of different speeds.
+#[cfg(feature = "multicore")]
+const MAX_PAIRS_PER_TASK: usize = 256;
 
 impl Serialize for MerkleHashOrchard {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -294,15 +424,21 @@ impl<'de> Deserialize<'de> for MerkleHashOrchard {
 }
 
 /// Test utilities available under the `test-dependencies` feature flag.
-#[cfg(feature = "test-dependencies")]
+#[cfg(any(test, feature = "test-dependencies"))]
+#[cfg_attr(docsrs, doc(cfg(feature = "test-dependencies")))]
 pub mod testing {
-    use ff::Field;
+    use ff::{Field, FromUniformBytes};
+    use pasta_curves::pallas;
+    use proptest::prelude::*;
     use rand::{
         distr::{Distribution, StandardUniform},
         Rng,
     };
 
     use super::MerkleHashOrchard;
+
+    /// The number of bytes that `pallas::Base::from_uniform_bytes` reduces to one field element.
+    const UNIFORM_BYTES_LEN: usize = 64;
 
     impl MerkleHashOrchard {
         /// Return a random fake `MerkleHashOrchard`.
@@ -316,6 +452,24 @@ pub mod testing {
             MerkleHashOrchard(pasta_curves::Fp::random(rng))
         }
     }
+
+    /// Generates arbitrary Merkle tree nodes for property tests.
+    ///
+    /// Each node holds a Pallas base field element. The strategy draws 32 bytes, reads them as
+    /// a little-endian integer, and reduces that integer modulo the field order. A failing
+    /// node shrinks toward the zero field element.
+    ///
+    /// - Preconditions: none.
+    /// - Inputs: none.
+    /// - Outputs: a strategy that generates [`MerkleHashOrchard`] values.
+    /// - Side effects: none.
+    pub fn arb_merkle_hash() -> impl Strategy<Value = MerkleHashOrchard> {
+        prop::array::uniform32(any::<u8>()).prop_map(|bytes| {
+            let mut uniform_bytes = [0u8; UNIFORM_BYTES_LEN];
+            uniform_bytes[..bytes.len()].copy_from_slice(&bytes);
+            MerkleHashOrchard(pallas::Base::from_uniform_bytes(&uniform_bytes))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -324,14 +478,20 @@ mod tests {
         crate::{
             constants::sinsemilla::MERKLE_CRH_PERSONALIZATION,
             constants::MERKLE_DEPTH_ORCHARD,
-            tree::{merkle_crh_message, MerkleHashOrchard, EMPTY_ROOTS},
+            tree::{
+                merkle_crh_message, merkle_crh_words, testing::arb_merkle_hash, MerkleHashOrchard,
+                EMPTY_ROOTS,
+            },
         },
-        alloc::vec::Vec,
+        alloc::{rc::Rc, vec::Vec},
+        core::{cell::Cell, iter},
         group::ff::{Field, PrimeField},
         incrementalmerkletree::{
-            frontier::Frontier, Hashable, Level, Marking, MerklePath, Retention,
+            frontier::Frontier, testing::check_combine_pairs, Hashable, Level, Marking, MerklePath,
+            Retention,
         },
         pasta_curves::pallas,
+        proptest::prelude::*,
         rand::{rngs::ChaCha20Rng, SeedableRng},
         shardtree::{store::memory::MemoryShardStore, ShardTree},
         sinsemilla::HashDomain,
@@ -341,6 +501,137 @@ mod tests {
     const BATCH_WIDTHS: [usize; 12] = [0, 1, 2, 3, 4, 8, 16, 32, 64, 128, 256, 512];
     /// Fixed seed makes the scalar-equivalence test deterministic.
     const BATCH_TEST_SEED: [u8; 32] = [0x42; 32];
+    /// Each case hashes hundreds of nodes through both scalar and batch paths.
+    const BATCH_PROPERTY_CASES: u32 = 8;
+    /// Spans two maximum-sized tasks plus a trailing singleton.
+    const MAX_ITERATOR_PAIRS: usize = 513;
+    /// The lowest and the highest tree level at which `combine` hashes a pair of children.
+    const BOUNDARY_COMBINE_LEVELS: [u8; 2] = [0, MERKLE_DEPTH_ORCHARD as u8 - 1];
+    /// Allows all generated append batches to fit while crossing subtree boundaries.
+    const FRONTIER_TEST_DEPTH: u8 = 11;
+    /// Initial prefixes exercise carries from partially populated subtrees.
+    const MAX_INITIAL_LEAVES: usize = 32;
+    /// Includes batches that cross a 256-leaf subtree boundary.
+    const MAX_APPEND_LEAVES: usize = 257;
+    /// Successive appends exercise reuse of the resulting frontier.
+    const MAX_APPEND_BATCHES: usize = 4;
+    const _: () = assert!(
+        MAX_INITIAL_LEAVES + MAX_APPEND_LEAVES * MAX_APPEND_BATCHES <= 1 << FRONTIER_TEST_DEPTH
+    );
+
+    /// Fixed pool sizes exercise serial execution and deterministic task splits.
+    #[cfg(feature = "multicore")]
+    const TEST_THREAD_COUNTS: [usize; 3] = [1, 2, 4];
+    /// Covers both scheduling thresholds and an incomplete final task.
+    #[cfg(feature = "multicore")]
+    const TASK_BOUNDARY_WIDTHS: [usize; 9] = [
+        0,
+        1,
+        super::MIN_PAIRS_PER_TASK - 1,
+        super::MIN_PAIRS_PER_TASK,
+        super::MIN_PAIRS_PER_TASK + 1,
+        super::MAX_PAIRS_PER_TASK - 1,
+        super::MAX_PAIRS_PER_TASK,
+        super::MAX_PAIRS_PER_TASK + 1,
+        MAX_ITERATOR_PAIRS,
+    ];
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(BATCH_PROPERTY_CASES))]
+
+        #[test]
+        fn combine_pairs_consumes_a_single_pass_iterator_in_order(
+            level in 0u8..MERKLE_DEPTH_ORCHARD as u8,
+            pairs in prop::collection::vec(
+                (arb_merkle_hash(), arb_merkle_hash()),
+                0..=MAX_ITERATOR_PAIRS,
+            ),
+        ) {
+            let level = Level::from(level);
+            let expected: Vec<_> = pairs
+                .iter()
+                .map(|(left, right)| MerkleHashOrchard::combine(level, left, right))
+                .collect();
+            let consumed = Rc::new(Cell::new(0));
+            let count = Rc::clone(&consumed);
+            let mut input = pairs.iter();
+            // No exact size hint, and the captured Rc makes this iterator non-Send.
+            let input = iter::from_fn(move || {
+                let (left, right) = input.next()?;
+                count.set(count.get() + 1);
+                Some((left, right))
+            });
+
+            let actual = MerkleHashOrchard::combine_pairs(level, input);
+            prop_assert_eq!(actual, expected);
+            prop_assert_eq!(consumed.get(), pairs.len());
+        }
+
+        /// `combine_pairs` passes the `incrementalmerkletree` contract check for `Hashable`.
+        #[test]
+        fn combine_pairs_equals_combine_per_pair(
+            level in 0u8..MERKLE_DEPTH_ORCHARD as u8,
+            pairs in prop::collection::vec(
+                (arb_merkle_hash(), arb_merkle_hash()),
+                0..=MAX_ITERATOR_PAIRS,
+            ),
+        ) {
+            check_combine_pairs(Level::from(level), &pairs);
+        }
+
+        #[test]
+        fn append_batch_matches_serial_frontiers(
+            initial in prop::collection::vec(arb_merkle_hash(), 0..=MAX_INITIAL_LEAVES),
+            batches in prop::collection::vec(
+                prop::collection::vec(arb_merkle_hash(), 0..=MAX_APPEND_LEAVES),
+                0..=MAX_APPEND_BATCHES,
+            ),
+        ) {
+            let mut serial: Frontier<MerkleHashOrchard, FRONTIER_TEST_DEPTH> = Frontier::empty();
+            for leaf in initial {
+                prop_assert!(serial.append(leaf));
+            }
+            let mut batched = serial.clone();
+
+            for batch in batches {
+                prop_assert!(batched.append_batch(&batch));
+                for leaf in batch {
+                    prop_assert!(serial.append(leaf));
+                }
+                prop_assert_eq!(&batched, &serial);
+                prop_assert_eq!(batched.root(), serial.root());
+            }
+        }
+
+        #[cfg(feature = "multicore")]
+        #[test]
+        fn combine_pairs_matches_scalar_in_fixed_thread_pools(
+            level in 0u8..MERKLE_DEPTH_ORCHARD as u8,
+            pairs in prop::collection::vec(
+                (arb_merkle_hash(), arb_merkle_hash()),
+                MAX_ITERATOR_PAIRS,
+            ),
+        ) {
+            let level = Level::from(level);
+            let expected: Vec<_> = pairs
+                .iter()
+                .map(|(left, right)| MerkleHashOrchard::combine(level, left, right))
+                .collect();
+
+            for threads in TEST_THREAD_COUNTS {
+                let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().unwrap();
+                pool.install(|| {
+                    for width in TASK_BOUNDARY_WIDTHS {
+                        let actual = MerkleHashOrchard::combine_pairs(
+                            level,
+                            pairs[..width].iter().map(|(left, right)| (left, right)),
+                        );
+                        assert_eq!(actual, expected[..width], "{threads} threads, {width} pairs");
+                    }
+                });
+            }
+        }
+    }
 
     fn combine_with_fresh_domain(
         level: Level,
@@ -382,6 +673,119 @@ mod tests {
 
                 assert_eq!(actual, expected, "level {level:?}, width {width}");
             }
+        }
+    }
+
+    /// The Sinsemilla tables cover a whole MerkleCRH message, so a batch hashes with them.
+    #[cfg(feature = "runtime-precomputation")]
+    #[test]
+    fn sinsemilla_tables_cover_merkle_crh_messages() {
+        let leaf = MerkleHashOrchard::empty_leaf();
+        MerkleHashOrchard::combine_batch(Level::ZERO, [(&leaf, &leaf)]);
+        let covered_words = super::MERKLE_CRH_DOMAIN.precomputed_message_words();
+        assert!(
+            covered_words >= super::MERKLE_CRH_WORDS,
+            "the tables cover {covered_words} words, and a MerkleCRH message has {} words",
+            super::MERKLE_CRH_WORDS
+        );
+    }
+
+    /// Splits a message into `K`-bit words, one bit at a time.
+    ///
+    /// - Preconditions: none.
+    /// - Inputs: `message` yields the bits of the message in order.
+    /// - Outputs: one word for each `K` consecutive bits of `message`. The first bit of each
+    ///   group is the least significant bit of its word. A final group of fewer than `K` bits
+    ///   gives a word with only those bits.
+    /// - Side effects: none.
+    fn k_bit_words(message: impl Iterator<Item = bool>) -> Vec<u16> {
+        let bits: Vec<bool> = message.collect();
+        bits.chunks(sinsemilla::K)
+            .map(|word| {
+                word.iter()
+                    .rev()
+                    .fold(0, |acc, &bit| acc << 1 | u16::from(bit))
+            })
+            .collect()
+    }
+
+    proptest! {
+        /// `merkle_crh_words` returns the `K`-bit words of `merkle_crh_message` for any level
+        /// and any two nodes.
+        #[test]
+        fn merkle_crh_words_pack_any_merkle_crh_message(
+            level in any::<u8>(),
+            left in arb_merkle_hash(),
+            right in arb_merkle_hash(),
+        ) {
+            let level = Level::from(level);
+            prop_assert_eq!(
+                merkle_crh_words(level, &left, &right).to_vec(),
+                k_bit_words(merkle_crh_message(level, &left, &right))
+            );
+        }
+    }
+
+    /// `merkle_crh_words` returns the `K`-bit words of `merkle_crh_message` for the children 0,
+    /// 1 and p − 1 (the largest canonical value), at the levels in `BOUNDARY_COMBINE_LEVELS`.
+    #[test]
+    fn merkle_crh_words_pack_merkle_crh_message() {
+        let children = [
+            pallas::Base::zero(),
+            pallas::Base::one(),
+            -pallas::Base::one(),
+        ]
+        .map(MerkleHashOrchard);
+        for level in BOUNDARY_COMBINE_LEVELS.map(Level::from) {
+            for (left, right) in children
+                .iter()
+                .flat_map(|l| children.iter().map(move |r| (l, r)))
+            {
+                assert_eq!(
+                    merkle_crh_words(level, left, right).to_vec(),
+                    k_bit_words(merkle_crh_message(level, left, right)),
+                    "level {level:?}, {left:?} ‖ {right:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn combine_pairs_rebuilds_the_empty_root_and_merkle_path_vectors() {
+        let tv_empty_roots = crate::test_vectors::commitment_tree::test_vectors().empty_roots;
+        let mut node = MerkleHashOrchard::empty_leaf();
+        assert_eq!(tv_empty_roots[0], node.to_bytes());
+        for level in 0..MERKLE_DEPTH_ORCHARD as u8 {
+            node = MerkleHashOrchard::combine_pairs(level.into(), [(&node, &node)])[0];
+            assert_eq!(
+                tv_empty_roots[usize::from(level) + 1],
+                node.to_bytes(),
+                "{level}"
+            );
+        }
+
+        // vector `i` = depth-4 tree of leaves `0..=i`, the rest uncommitted
+        for (i, tv) in crate::test_vectors::merkle_path::test_vectors()
+            .into_iter()
+            .enumerate()
+        {
+            let mut nodes: Vec<MerkleHashOrchard> = tv.leaves[..=i]
+                .iter()
+                .map(|leaf| MerkleHashOrchard::from_bytes(leaf).expect("canonical vector leaf"))
+                .collect();
+            nodes.resize(tv.leaves.len(), MerkleHashOrchard::empty_leaf());
+            for level in 0..tv.paths[i].len() as u8 {
+                nodes = MerkleHashOrchard::combine_pairs(
+                    level.into(),
+                    nodes
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|[left, right]| (left, right)),
+                );
+            }
+            let root = MerkleHashOrchard::from_bytes(&tv.root).expect("canonical vector root");
+            assert_eq!(nodes, [root], "vector {i}");
         }
     }
 
