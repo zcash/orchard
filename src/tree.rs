@@ -487,7 +487,8 @@ mod tests {
         core::{cell::Cell, iter},
         group::ff::{Field, PrimeField},
         incrementalmerkletree::{
-            frontier::Frontier, Hashable, Level, Marking, MerklePath, Retention,
+            frontier::Frontier, testing::check_combine_pairs, Hashable, Level, Marking, MerklePath,
+            Retention,
         },
         pasta_curves::pallas,
         proptest::prelude::*,
@@ -504,6 +505,8 @@ mod tests {
     const BATCH_PROPERTY_CASES: u32 = 8;
     /// Spans two maximum-sized tasks plus a trailing singleton.
     const MAX_ITERATOR_PAIRS: usize = 513;
+    /// The lowest and the highest tree level at which `combine` hashes a pair of children.
+    const BOUNDARY_COMBINE_LEVELS: [u8; 2] = [0, MERKLE_DEPTH_ORCHARD as u8 - 1];
     /// Allows all generated append batches to fit while crossing subtree boundaries.
     const FRONTIER_TEST_DEPTH: u8 = 11;
     /// Initial prefixes exercise carries from partially populated subtrees.
@@ -562,6 +565,18 @@ mod tests {
             let actual = MerkleHashOrchard::combine_pairs(level, input);
             prop_assert_eq!(actual, expected);
             prop_assert_eq!(consumed.get(), pairs.len());
+        }
+
+        /// `combine_pairs` passes the `incrementalmerkletree` contract check for `Hashable`.
+        #[test]
+        fn combine_pairs_equals_combine_per_pair(
+            level in 0u8..MERKLE_DEPTH_ORCHARD as u8,
+            pairs in prop::collection::vec(
+                (arb_merkle_hash(), arb_merkle_hash()),
+                0..=MAX_ITERATOR_PAIRS,
+            ),
+        ) {
+            check_combine_pairs(Level::from(level), &pairs);
         }
 
         #[test]
@@ -675,68 +690,61 @@ mod tests {
         );
     }
 
-    /// Children 0, 1, p − 1 (largest canonical) and random, at the top and bottom levels
+    /// Splits a message into `K`-bit words, one bit at a time.
+    ///
+    /// - Preconditions: none.
+    /// - Inputs: `message` yields the bits of the message in order.
+    /// - Outputs: one word for each `K` consecutive bits of `message`. The first bit of each
+    ///   group is the least significant bit of its word. A final group of fewer than `K` bits
+    ///   gives a word with only those bits.
+    /// - Side effects: none.
+    fn k_bit_words(message: impl Iterator<Item = bool>) -> Vec<u16> {
+        let bits: Vec<bool> = message.collect();
+        bits.chunks(sinsemilla::K)
+            .map(|word| {
+                word.iter()
+                    .rev()
+                    .fold(0, |acc, &bit| acc << 1 | u16::from(bit))
+            })
+            .collect()
+    }
+
+    proptest! {
+        /// `merkle_crh_words` returns the `K`-bit words of `merkle_crh_message` for any level
+        /// and any two nodes.
+        #[test]
+        fn merkle_crh_words_pack_any_merkle_crh_message(
+            level in any::<u8>(),
+            left in arb_merkle_hash(),
+            right in arb_merkle_hash(),
+        ) {
+            let level = Level::from(level);
+            prop_assert_eq!(
+                merkle_crh_words(level, &left, &right).to_vec(),
+                k_bit_words(merkle_crh_message(level, &left, &right))
+            );
+        }
+    }
+
+    /// `merkle_crh_words` returns the `K`-bit words of `merkle_crh_message` for the children 0,
+    /// 1 and p − 1 (the largest canonical value), at the levels in `BOUNDARY_COMBINE_LEVELS`.
     #[test]
     fn merkle_crh_words_pack_merkle_crh_message() {
-        let mut rng = ChaCha20Rng::from_seed(BATCH_TEST_SEED);
         let children = [
             pallas::Base::zero(),
             pallas::Base::one(),
             -pallas::Base::one(),
-            pallas::Base::random(&mut rng),
         ]
         .map(MerkleHashOrchard);
-        for level in [0, 31].map(Level::from) {
+        for level in BOUNDARY_COMBINE_LEVELS.map(Level::from) {
             for (left, right) in children
                 .iter()
                 .flat_map(|l| children.iter().map(move |r| (l, r)))
             {
-                let bits: Vec<bool> = merkle_crh_message(level, left, right).collect();
-                let expected: Vec<u16> = bits
-                    .chunks(sinsemilla::K)
-                    .map(|word| {
-                        word.iter()
-                            .rev()
-                            .fold(0, |acc, &bit| acc << 1 | u16::from(bit))
-                    })
-                    .collect();
                 assert_eq!(
                     merkle_crh_words(level, left, right).to_vec(),
-                    expected,
+                    k_bit_words(merkle_crh_message(level, left, right)),
                     "level {level:?}, {left:?} ‖ {right:?}"
-                );
-            }
-        }
-    }
-
-    /// 1000 pairs: several rayon tasks under `multicore` (on any machine with >= 2 threads)
-    #[test]
-    fn combine_pairs_equals_combine_per_pair_across_task_splits() {
-        let mut rng = ChaCha20Rng::from_seed(BATCH_TEST_SEED);
-        let children: Vec<_> = (0..2 * 1000)
-            .map(|_| MerkleHashOrchard(pallas::Base::random(&mut rng)))
-            .collect();
-
-        for level in [0, 31].map(Level::from) {
-            for pairs in [0, 1, 7, 8, 9, 1000] {
-                let children = &children[..2 * pairs];
-                let expected: Vec<_> = children
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|[left, right]| MerkleHashOrchard::combine(level, left, right))
-                    .collect();
-                assert_eq!(
-                    MerkleHashOrchard::combine_pairs(
-                        level,
-                        children
-                            .as_chunks::<2>()
-                            .0
-                            .iter()
-                            .map(|[left, right]| (left, right)),
-                    ),
-                    expected,
-                    "level {level:?}, {pairs} pairs"
                 );
             }
         }
