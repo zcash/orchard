@@ -23,3 +23,11 @@ designed to integrate with Zcash, and certain forks of Zcash, is no longer
 necessary. For clarity, this is intended to be a strict relaxation of the
 previous licensing, i.e. it permits all usage that was previously possible
 with or without use of the license exception.
+
+# Third party contributions
+
+Copyright notices for third-party contributions, ported or adapted from forks of
+this crates or other sources, are preserved below. For precise attributions, see
+the commits introducing the code.
+
+- Copyright (c) The Zakura Contributors
