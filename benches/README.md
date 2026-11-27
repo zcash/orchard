@@ -18,6 +18,22 @@ Key generation and one genuine proof-verification preflight occur before the
 timed routine. The benchmark uses ten flat samples, a two-second warmup, and a
 15-second measurement interval.
 
+## One-Action prover, multi-threaded
+
+The same fixture, proof and sampling, on every Rayon worker instead of one. It
+measures how much of the prover runs in parallel, which the single-worker
+benchmark cannot show:
+
+```console
+cargo +1.88 bench --locked \
+    -p orchard --features circuit \
+    --bench orchard_k11_prover_multithreaded
+```
+
+Leave `RAYON_NUM_THREADS` unset, or set it above 1. The benchmark prints the
+number of workers it ran with; record it and the host with every result, since
+the time depends on both.
+
 ## Batch verifier fixture corpus
 
 The batch-verifier harness is an ignored library test because it needs access
