@@ -164,7 +164,8 @@ pub(crate) fn hash_bundle_txid_data<A: Authorization, V: Copy + Into<i64>>(
     h.update(&[bundle.flag_byte()]);
     h.update(&(*bundle.value_balance()).into().to_le_bytes());
     if format.includes_anchor_in_txid_digest() {
-        h.update(&bundle.anchor().to_bytes());
+        let anchor: Option<crate::Anchor> = (*bundle.anchor()).into();
+        h.update(&anchor.ok_or(CommitmentError::MissingAnchor)?.to_bytes());
     }
     Ok(h.finalize())
 }

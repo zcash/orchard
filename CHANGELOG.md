@@ -7,6 +7,36 @@ and this project adheres to Rust's notion of
 
 ## [Unreleased]
 
+### Added
+- `orchard::Bundle::{map_authorization_with_anchor, try_map_authorization_with_anchor}`
+- `orchard::bundle::CommitmentError::MissingAnchor`
+- `orchard::builder::Bundle::<InProgress<P, Unauthorized>>::prepare_with_sighashes` and
+  `orchard::builder::Bundle::<InProgress<Proof, Unauthorized>>::apply_signatures_with_sighashes`,
+  which take one sighash per action plus a separate binding sighash.
+- `orchard::builder::BuildError::SighashCountMismatch`
+- `orchard::pczt::Bundle::finalize_io_with_sighashes`, which signs each dummy spend
+  under its own action's sighash.
+- `orchard::pczt::Bundle::<Unbound>::apply_binding_signature_with_sighashes`
+- `orchard::pczt::TxExtractorError::{SighashCountMismatch, InvalidSpendAuthSig}`,
+  distinguishing digest count mistakes from invalid spend signatures in the
+  per-action binding API. The shared-digest wrapper retains its `Option` return type.
+- `orchard::pczt::IoFinalizerError::SighashCountMismatch`
+- `orchard::bundle::BatchValidator::add_bundle_with_sighashes`, which queues every
+  action under its own sighash and the binding signature under a separate one.
+- `orchard::bundle::BatchError::SighashCountMismatch`
+
+### Changed
+- `bundle::Authorization` requires an `Anchor` associated type. Complete states
+  use `orchard::Anchor`; `EffectsOnly` uses `Option<orchard::Anchor>`.
+  `Bundle::anchor` and the effects-only constructor use that representation.
+- Authorization mappers that preserve anchors require equal anchor types.
+- `Bundle::prepare`, `Bundle::apply_signatures`,
+  `Bundle::<Unbound>::apply_binding_signature`, `pczt::Bundle::finalize_io`, and
+  `BatchValidator::add_bundle` retain the shared-digest convention and are now thin
+  wrappers over the per-action APIs. When signing action by action with
+  `pczt::Action::sign` or `pczt::Action::apply_signature`, pass the digest indexed to
+  that action.
+
 ## [0.16.0] - 2026-09-29
 
 ### Added

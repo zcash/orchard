@@ -431,6 +431,8 @@ impl Flags {
 
 /// Defines the authorization type of an Orchard bundle.
 pub trait Authorization: fmt::Debug {
+    /// Tree root representation; complete states require a concrete root.
+    type Anchor: Copy + fmt::Debug + Into<Option<Anchor>>;
     /// The authorization type of an Orchard action.
     type SpendAuth: fmt::Debug;
 }
@@ -447,7 +449,7 @@ pub struct Bundle<T: Authorization, V> {
     /// This is the sum of Orchard spends minus the sum of Orchard outputs.
     value_balance: V,
     /// The root of the Orchard commitment tree that this bundle commits to.
-    anchor: Anchor,
+    anchor: T::Anchor,
     /// The authorization for this bundle.
     authorization: T,
     /// The value pool and protocol version this bundle is encoded under.
@@ -524,7 +526,7 @@ impl<T: Authorization, V> Bundle<T, V> {
         actions: NonEmpty<Action<T::SpendAuth>>,
         flags: Flags,
         value_balance: V,
-        anchor: Anchor,
+        anchor: T::Anchor,
         authorization: T,
         bundle_version: BundleVersion,
     ) -> Self {
@@ -556,8 +558,10 @@ impl<T: Authorization, V> Bundle<T, V> {
         &self.value_balance
     }
 
-    /// Returns the root of the Orchard commitment tree that this bundle commits to.
-    pub fn anchor(&self) -> &Anchor {
+    /// Returns the root representation selected by the authorization state.
+    ///
+    /// Complete states return a concrete root. Effects-only bundles may omit it.
+    pub fn anchor(&self) -> &T::Anchor {
         &self.anchor
     }
 
@@ -605,9 +609,23 @@ impl<T: Authorization, V> Bundle<T, V> {
     }
 
     /// Transitions this bundle from one authorization state to another.
-    pub fn map_authorization<R, U: Authorization>(
+    pub fn map_authorization<R, U>(
         self,
         context: &mut R,
+        spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> U::SpendAuth,
+        step: impl FnOnce(&mut R, T) -> U,
+    ) -> Bundle<U, V>
+    where
+        U: Authorization<Anchor = T::Anchor>,
+    {
+        self.map_authorization_with_anchor(context, |_, anchor| anchor, spend_auth, step)
+    }
+
+    /// Transitions authorization and maps the anchor representation.
+    pub fn map_authorization_with_anchor<R, U: Authorization>(
+        self,
+        context: &mut R,
+        anchor: impl FnOnce(&mut R, T::Anchor) -> U::Anchor,
         mut spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> U::SpendAuth,
         step: impl FnOnce(&mut R, T) -> U,
     ) -> Bundle<U, V> {
@@ -618,16 +636,30 @@ impl<T: Authorization, V> Bundle<T, V> {
                 .map(|a| a.map(|a_auth| spend_auth(context, &authorization, a_auth))),
             flags: self.flags,
             value_balance: self.value_balance,
-            anchor: self.anchor,
+            anchor: anchor(context, self.anchor),
             authorization: step(context, authorization),
             bundle_version: self.bundle_version,
         }
     }
 
     /// Transitions this bundle from one authorization state to another.
-    pub fn try_map_authorization<R, U: Authorization, E>(
+    pub fn try_map_authorization<R, U, E>(
         self,
         context: &mut R,
+        spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> Result<U::SpendAuth, E>,
+        step: impl FnOnce(&mut R, T) -> Result<U, E>,
+    ) -> Result<Bundle<U, V>, E>
+    where
+        U: Authorization<Anchor = T::Anchor>,
+    {
+        self.try_map_authorization_with_anchor(context, |_, anchor| Ok(anchor), spend_auth, step)
+    }
+
+    /// Transitions authorization and maps the anchor, returning the first mapping error.
+    pub fn try_map_authorization_with_anchor<R, U: Authorization, E>(
+        self,
+        context: &mut R,
+        anchor: impl FnOnce(&mut R, T::Anchor) -> Result<U::Anchor, E>,
         mut spend_auth: impl FnMut(&mut R, &T, T::SpendAuth) -> Result<U::SpendAuth, E>,
         step: impl FnOnce(&mut R, T) -> Result<U, E>,
     ) -> Result<Bundle<U, V>, E> {
@@ -642,14 +674,17 @@ impl<T: Authorization, V> Bundle<T, V> {
             actions: NonEmpty::from_vec(new_actions).unwrap(),
             flags: self.flags,
             value_balance: self.value_balance,
-            anchor: self.anchor,
+            anchor: anchor(context, self.anchor)?,
             authorization: step(context, authorization)?,
             bundle_version: self.bundle_version,
         })
     }
 
     #[cfg(feature = "circuit")]
-    pub(crate) fn to_instances(&self) -> Vec<Instance> {
+    pub(crate) fn to_instances(&self) -> Vec<Instance>
+    where
+        T: Authorization<Anchor = Anchor>,
+    {
         self.actions
             .iter()
             .map(|a| a.to_instance(self.flags, self.anchor))
@@ -755,7 +790,8 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     /// # Errors
     ///
     /// Returns [`CommitmentError::InvalidTransactionVersion`] if `tx_version` is not valid for the
-    /// bundle's [`BundleVersion`] (e.g. an Ironwood bundle committed with [`TxVersion::V5`]).
+    /// bundle's [`BundleVersion`] (e.g. an Ironwood bundle committed with [`TxVersion::V5`]),
+    /// or [`CommitmentError::MissingAnchor`] if version 5 effects lack an anchor.
     pub fn commitment(&self, tx_version: TxVersion) -> Result<BundleCommitment, CommitmentError> {
         hash_bundle_txid_data(self, tx_version).map(BundleCommitment)
     }
@@ -779,11 +815,15 @@ impl<T: Authorization, V: Copy + Into<i64>> Bundle<T, V> {
     }
 }
 
-/// Marker type for a bundle that contains no authorizing data.
+/// Marker type for effects without proofs or signatures.
+///
+/// The anchor is `None` when authorizing data was pruned and `Some` when it is
+/// required as an effect by the transaction format.
 #[derive(Clone, Debug)]
 pub struct EffectsOnly;
 
 impl Authorization for EffectsOnly {
+    type Anchor = Option<Anchor>;
     type SpendAuth = ();
 }
 
@@ -793,7 +833,8 @@ impl<V> Bundle<EffectsOnly, V> {
     /// An effects-only bundle carries no proof, so there is no proof size to validate, and flags
     /// are not checked against circuit support (there is no proof key to check against). The flags
     /// are, however, checked for representability under `bundle_version`, so that the resulting
-    /// bundle is safe to serialize and commit to.
+    /// flags have a canonical encoding. A version 5 commitment additionally
+    /// requires `anchor` to be `Some`; version 6 does not commit to the anchor.
     ///
     /// # Errors
     ///
@@ -803,7 +844,7 @@ impl<V> Bundle<EffectsOnly, V> {
         actions: NonEmpty<Action<<EffectsOnly as Authorization>::SpendAuth>>,
         flags: Flags,
         value_balance: V,
-        anchor: Anchor,
+        anchor: Option<Anchor>,
         authorization: EffectsOnly,
         bundle_version: BundleVersion,
     ) -> Result<Self, BundleError> {
@@ -820,6 +861,16 @@ impl<V> Bundle<EffectsOnly, V> {
 }
 
 /// Authorizing data for a bundle of actions, ready to be committed to the ledger.
+///
+/// Complete bundles cannot carry an absent anchor:
+/// ```compile_fail
+/// use orchard::{Bundle, bundle::Authorized};
+/// fn remove_anchor(bundle: Bundle<Authorized, i64>) -> Bundle<Authorized, i64> {
+///     bundle.map_authorization_with_anchor(
+///         &mut (), |_, _| None, |_, _, signature| signature, |_, auth| auth,
+///     )
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct Authorized {
     proof: Proof,
@@ -827,6 +878,7 @@ pub struct Authorized {
 }
 
 impl Authorization for Authorized {
+    type Anchor = Anchor;
     type SpendAuth = redpallas::Signature<SpendAuth>;
 }
 
@@ -898,6 +950,8 @@ impl core::error::Error for BundleError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CommitmentError {
+    /// A version 5 commitment requires a real effecting anchor.
+    MissingAnchor,
     /// The requested transaction version is not valid for the bundle's [`BundleVersion`].
     ///
     /// Ironwood bundles exist only in v6 transactions, so an Ironwood bundle
@@ -908,6 +962,7 @@ pub enum CommitmentError {
 impl fmt::Display for CommitmentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            CommitmentError::MissingAnchor => f.write_str("version 5 effects require an anchor"),
             CommitmentError::InvalidTransactionVersion => write!(
                 f,
                 "Ironwood bundles can only be committed in a v6 transaction",
@@ -1203,7 +1258,7 @@ pub mod testing {
                 NonEmpty::from_vec(actions).unwrap(),
                 flags,
                 balances.into_iter().sum::<Result<ValueSum, _>>().unwrap(),
-                anchor,
+                Some(anchor),
                 super::EffectsOnly,
                 bundle_version,
             )
@@ -1564,6 +1619,30 @@ pub(crate) mod tests {
                 ironwood.authorizing_commitment(TxVersion::V5),
                 Err(CommitmentError::InvalidTransactionVersion)
             ));
+        }
+
+        #[test]
+        fn native_effects_allow_absent_anchors(bundle in arb_bundle(3)) {
+            let _: &crate::Anchor = bundle.anchor();
+            let bundle = bundle.try_map_value_balance(|_| Ok::<_, ()>(0i64)).unwrap();
+            let expected_v5 = bundle.commitment(TxVersion::V5).ok().map(|commitment| commitment.0);
+            let expected_v6 = bundle.commitment(TxVersion::V6).unwrap().0;
+            let effects = bundle.clone().map_authorization_with_anchor(
+                &mut (), |_, _| None, |_, _, _| (), |_, _| super::EffectsOnly,
+            );
+            prop_assert!(effects.anchor().is_none());
+            prop_assert_eq!(effects.commitment(TxVersion::V6).unwrap().0, expected_v6);
+            prop_assert_eq!(effects.commitment(TxVersion::V5).unwrap_err(),
+                if expected_v5.is_some() { CommitmentError::MissingAnchor } else { CommitmentError::InvalidTransactionVersion });
+            for (effect, action) in effects.actions().iter().zip(bundle.actions()) {
+                prop_assert_eq!(effect.nullifier(), action.nullifier());
+                prop_assert_eq!(effect.cmx(), action.cmx());
+            }
+            let retained = bundle.map_authorization_with_anchor(
+                &mut (), |_, anchor| Some(anchor), |_, _, _| (), |_, _| super::EffectsOnly,
+            );
+            prop_assert!(retained.anchor().is_some());
+            prop_assert_eq!(retained.commitment(TxVersion::V5).ok().map(|commitment| commitment.0), expected_v5);
         }
 
         /// The anchor bytes are included in the transaction-ID digest for the v5 format and in
